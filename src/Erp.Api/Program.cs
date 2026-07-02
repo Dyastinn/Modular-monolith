@@ -1,9 +1,9 @@
 using Erp.Api.Endpoints.Orders;
-using Erp.Application.Orders.Ping;
+using Erp.Infrastructure.Messaging;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddTransient<PingHandler>();
+builder.Services.AddMessaging();
 
 var app = builder.Build();
 
