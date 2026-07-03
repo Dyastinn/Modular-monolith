@@ -1,86 +1,67 @@
 # Phase 7 — Remaining Slices, State Machine & Domain Event Dispatch
 
-**Goal:** complete the write side — `CancelOrder`, `UpdateCustomer`, the full status state machine —
-and implement how domain events actually get dispatched without an EF change tracker.
-**Produces:** `CancelOrder` and `UpdateCustomer` slices, the enforced `OrderStatus` transition table,
-and a domain-event dispatch mechanism that runs after commit.
-**Prereq:** Phases 4–6. You can create, book, and read orders.
+**Goal:** complete the write side — `CancelSalesOrder`, `UpdateSalesOrder`, `CompleteSalesOrder`, the full
+status state machine — and dispatch domain events without an EF change tracker, including across the module
+wall.
+**Produces:** the three slices (two files each), the enforced `SalesOrderStatus` transition table, and an
+after-commit domain-event dispatch mechanism.
+**Prereq:** Phases 4–6.
 
 ---
 
-## Step 1 — CancelOrder and the state machine
+## Step 1 — CancelSalesOrder and the state machine
 
-Cancelling isn't always allowed — a `Completed` order can't be cancelled; a `Cancelled` one can't be
-cancelled again. This is the state machine from Phase 3, now enforced end-to-end.
+`Completed` can't cancel; `Cancelled` can't cancel again. Cancel releases the reservation — through the
+Inventory contract, never a direct reach.
 
 ```csharp
-public sealed record CancelOrderCommand(long OrderId) : ICommand<Unit>;
+public sealed record CancelSalesOrderCommand(long SalesOrderId) : ICommand<Unit>;
 
-public sealed class CancelOrderHandler(
-    IOrderRepository orders, IInventoryService inventory, IUnitOfWork uow)
-    : IRequestHandler<CancelOrderCommand, Unit>
+public sealed class CancelSalesOrderHandler(
+    ISalesOrderRepository orders, IStockReservation stock, IUnitOfWork uow)
+    : ICommandHandler<CancelSalesOrderCommand, Unit>
 {
-    public async Task<Unit> Handle(CancelOrderCommand cmd, CancellationToken ct)
+    public async Task<Unit> Handle(CancelSalesOrderCommand cmd, CancellationToken ct)
     {
-        var order = await orders.GetAsync(new OrderId(cmd.OrderId), ct)
-            ?? throw new NotFoundException($"Order {cmd.OrderId} not found.");
-
-        order.Cancel();   // domain: throws if the transition is illegal (Phase 3 state machine)
-
+        var order = await orders.GetAsync(new SalesOrderId(cmd.SalesOrderId), ct)
+            ?? throw new NotFoundException($"Sales order {cmd.SalesOrderId} not found.");
+        order.Cancel();   // domain: throws if the transition is illegal
         await using var tx = await uow.BeginAsync(ct);
-        // If it was booked, release the reservations we made in Phase 5 (atomic SQL).
         foreach (var line in order.Lines)
-            await inventory.Release(line.MaterialId, line.Quantity, tx, ct);
-        await orders.UpdateAsync(order, tx, ct);   // version-checked status update
+            await stock.ReleaseAsync(line.ProductId.Value, line.Quantity.Value, tx.Inner, ct);
+        await orders.UpdateAsync(order, tx, ct);
         await tx.CommitAsync(ct);
-
-        return Unit.Value;   // OrderCancelled event dispatched after commit (Step 3)
+        return Unit.Value;
     }
 }
 ```
 
-The handler decides *nothing* about whether cancellation is legal — `order.Cancel()` does, via
-`CanTransitionTo`. The handler only orchestrates the side effects (release reservations) and the
-transaction. Same shape as `BookOrder`; by now the template should feel repetitive — that repetition
-*is* the maintainability win (every command reads the same way).
+The handler decides nothing about legality — `order.Cancel()` does. Same shape as `SubmitSalesOrder`; the
+repetition *is* the maintainability win.
 
-**Enforce the transition table** so illegal moves are impossible:
+**Transition table** (in `Sales/Domain`):
 
 ```csharp
-private static readonly Dictionary<OrderStatus, OrderStatus[]> _allowed = new()
+private static readonly Dictionary<SalesOrderStatus, SalesOrderStatus[]> _allowed = new()
 {
-    [OrderStatus.Draft]     = new[] { OrderStatus.Booked, OrderStatus.Cancelled },
-    [OrderStatus.Booked]    = new[] { OrderStatus.Completed, OrderStatus.Cancelled },
-    [OrderStatus.Cancelled] = Array.Empty<OrderStatus>(),
-    [OrderStatus.Completed] = Array.Empty<OrderStatus>(),
+    [SalesOrderStatus.Draft]     = new[] { SalesOrderStatus.Submitted, SalesOrderStatus.Cancelled },
+    [SalesOrderStatus.Submitted] = new[] { SalesOrderStatus.Completed, SalesOrderStatus.Cancelled },
+    [SalesOrderStatus.Cancelled] = Array.Empty<SalesOrderStatus>(),
+    [SalesOrderStatus.Completed] = Array.Empty<SalesOrderStatus>(),
 };
-public static bool CanTransitionTo(this OrderStatus from, OrderStatus to) =>
-    _allowed[from].Contains(to);
+public static bool CanTransitionTo(this SalesOrderStatus from, SalesOrderStatus to) => _allowed[from].Contains(to);
 ```
 
-## Step 2 — UpdateCustomer (a simpler slice, deliberately)
+## Step 2 — UpdateSalesOrder (restraint)
 
-Not every use case needs the full aggregate ceremony. `UpdateCustomer` (name, contact) has few
-invariants. Use it to show restraint: a slice can be small when the domain rules are thin.
+Editing a *draft* order's lines has few invariants. Input checks in the validator; the one business rule
+("only a draft can be edited") on `SalesOrder.ReplaceLines`; persist via the repository. **No
+`SalesOrderService`** — an aggregate + handler is enough; a service would be the anemic trap. (Re-apply the
+Phase 5 service test.) `DeleteSalesOrder`, if offered, is a draft-only soft-delete, not a hard `DELETE`.
 
-- Input validation in the validator (required fields, formats).
-- The one *business* rule — e.g. "cannot deactivate a customer with open booked orders" — lives on the
-  `Customer` domain method (or a small check the handler asks the domain to make), **not** the validator.
-- Persist via `ICustomerRepository`.
+## Step 3 — Domain event dispatch without a change tracker
 
-> **Teaching point — "when NOT to create a service":** you might reflexively add a `CustomerService`.
-> Don't. There's a `Customer` aggregate and a handler; that's enough. A service here would be an empty
-> pass-through — the anemic layer the brief tells you to avoid. Add a service only when Phase 5's test
-> holds (logic spans aggregates or needs data the aggregate doesn't own).
-
-## Step 3 — Domain event dispatch without a change tracker (the real mechanics)
-
-EF-based tutorials dispatch domain events by hooking `SaveChanges`. You have no `SaveChanges`. So you
-dispatch explicitly. The honest options, with tradeoffs:
-
-**Option 1 — dispatch in the handler after commit (recommended for this project).** After
-`tx.CommitAsync`, pull events off the aggregate and publish them. Simple, explicit, and the ordering
-("only after the write is durable") is obvious.
+**Option 1 — after-commit dispatch in the handler (recommended):**
 
 ```csharp
 await tx.CommitAsync(ct);
@@ -88,65 +69,53 @@ foreach (var e in order.DomainEvents) await publisher.Publish(e, ct);
 order.ClearEvents();
 ```
 
-**Option 2 — a dispatch step in the mediator pipeline.** A behavior that, after the handler returns,
-collects events from aggregates and publishes them. DRYer, but it needs a way to *find* the aggregates
-that were touched (an ambient "unit of work tracks loaded aggregates" mechanism), which is real
-machinery. Note it as the "next step" but don't build it yet.
+**Option 2 — a pipeline dispatch behavior** (needs an aggregate tracker). Note it; don't build it.
 
-**Publishing** reuses your mediator's notification side. Add a minimal notification contract:
+Notification contract in `Shared.Messaging`:
 
 ```csharp
-public interface INotification { }   // domain events implement this (or wrap them)
-public interface INotificationHandler<in T> where T : INotification
-{ Task Handle(T notification, CancellationToken ct); }
+public interface INotification { }
+public interface INotificationHandler<in T> where T : INotification { Task Handle(T notification, CancellationToken ct); }
 ```
 
-`IPublisher.Publish(e)` resolves all `INotificationHandler<T>` and invokes them. Example handler:
-`OrderBookedHandler` that (say) writes an audit row or logs — a *side effect*, kept out of the domain.
+**Cross-module reactions (integration events):** publishing `SalesOrderCancelled` and letting **Inventory
+subscribe** decouples further than a synchronous contract call. Use the **synchronous contract** when the
+two must be in one transaction (submit *must* reserve); use an **integration event** for react-afterwards,
+best-effort work (audit, notify). Keep domain events and integration events as **separate types** — internal
+vs. published contract.
 
-> **Tradeoff to state:** publishing after commit means if a notification handler throws, the write is
-> already durable — the event handling failed but the order is booked. That's usually the *correct*
-> semantics (don't roll back a booking because an email failed), but you must handle notification
-> failures out-of-band (retry/queue) rather than assuming they're transactional. For in-process,
-> best-effort side effects this is fine; if a side effect *must* be reliable, that's a message-queue
-> concern, not an in-process domain event — and a signpost toward Phase 9.
+> **Tradeoff:** after-commit dispatch is best-effort — a failing handler doesn't roll back the write. Fine
+> for audit/notify; must-not-lose reactions need a transactional outbox (Phase 9).
 
-## Step 4 — Completing an order (closing the state machine)
+## Step 4 — CompleteSalesOrder
 
-Add `Order.Complete()` (Booked → Completed) which, in its handler, **deducts** `OnHand` (converting the
-reservation to an actual stock reduction, per Phase 5's reserve→deduct policy). This closes the
-lifecycle and exercises the last transition. Keep it a thin slice mirroring `BookOrder`.
+`SalesOrder.Complete()` (Submitted → Completed); the handler **deducts** stock via the contract
+(`DeductAsync`). Thin slice mirroring `SubmitSalesOrder`.
 
-## What Sonnet should produce
+## What to produce
 
-- `CancelOrder` slice (releases reservations, version-checked update).
-- `UpdateCustomer` slice (thin; business rule on the `Customer` domain, no service).
-- `CompleteOrder` slice (deducts stock).
-- Enforced `OrderStatus` transition table; `Order.Cancel`/`Complete` methods.
-- `INotification`/`INotificationHandler`/`IPublisher` + registration; after-commit dispatch in the
-  command handlers; at least one notification handler (audit/log) to prove the path.
-- Endpoints: `POST /orders/{id}/cancel`, `POST /orders/{id}/complete`, `PUT /customers/{id}`.
+- `CancelSalesOrder` (release via contract), `UpdateSalesOrder` (thin, no service), `CompleteSalesOrder`
+  (deduct via contract) — two files each.
+- Transition table; `Cancel`/`Complete`/`ReplaceLines` on `SalesOrder`.
+- `INotification`/`INotificationHandler`/`IPublisher` in `Shared.Messaging`; after-commit dispatch; ≥1
+  notification handler (audit) + optionally an Inventory handler for a Sales integration event.
+- Carter endpoints: `POST /sales-orders/{id}/cancel`, `.../complete`, `PUT /sales-orders/{id}`.
 
-**NOT in this phase:** a full unit-of-work aggregate tracker (note it as Option 2, don't build it);
-message queues; cross-module events (Phase 9).
+**NOT:** aggregate-tracking UoW; queues/outbox; module extraction (Phase 9).
 
 ## Pitfalls
 
-- **Dispatching events before commit.** Then a rollback leaves handlers having reacted to a change that
-  didn't persist. Dispatch after commit.
-- **Assuming notification handlers are transactional.** They're not (they run post-commit). Reliable
-  side effects need a queue, not a domain event.
-- **Adding a `CustomerService`/`OrderService`** out of habit. Re-apply the Phase 5 test before creating
-  any service.
-- **Skipping reservation release on cancel.** Leaves stock phantom-reserved (see Phase 5 set:
-  reserve/deduct/release).
+- Dispatching events before commit.
+- Assuming notification handlers are transactional.
+- Adding a `SalesOrderService` out of habit.
+- Skipping reservation release on cancel.
+- Reaching into `inventory.*` to release instead of using the contract/event.
 
 ---
 
-## Checkpoint — you understand this phase when you can answer:
+## Checkpoint
 
-1. Why is the legality of cancellation decided by `order.Cancel()` and not the handler?
-2. Why dispatch domain events *after* commit, and what's the consequence for a failing handler?
-3. Why does `UpdateCustomer` deliberately not get a service, and what test would justify one?
-4. What's the difference between a best-effort in-process domain event and a side effect that must be
-   reliable — and where does the latter push you architecturally?
+1. Why does `order.Cancel()` decide legality, not the handler?
+2. Why after commit, and the consequence of a failing handler?
+3. Synchronous contract vs. integration event — when each?
+4. Why no service for `UpdateSalesOrder`, and what would justify one?

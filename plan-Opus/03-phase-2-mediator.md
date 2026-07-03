@@ -3,7 +3,8 @@
 **Goal:** understand what the mediator pattern buys you and what it costs, by first feeling the pain
 of not having one, then building a ~150-line free implementation with MediatR-shaped interfaces.
 **Produces:** `IRequest`, `IRequestHandler`, `ISender`, `IPipelineBehavior`, a `Sender` implementation,
-DI registration, and one `LoggingBehavior`. The `Ping` slice now runs through it.
+DI registration, and one `LoggingBehavior` — all in `Erp.Shared.Messaging`. The `Ping` slice now runs
+through it.
 **Prereq:** Phase 1 skeleton compiles.
 
 > This is one of your stated top goals: *"I do not yet understand what problem it solves because I have
@@ -18,16 +19,16 @@ must know the concrete handler and all of its dependencies, and wire them by han
 
 ```csharp
 // The endpoint has to construct/inject the exact handler and its dependencies.
-app.MapPost("/orders", async (
-    CreateOrderRequest req,
-    IOrderRepository orders,          // dependency of the handler...
+app.MapPost("/sales-orders", async (
+    CreateSalesOrderRequest req,
+    ISalesOrderRepository orders,     // dependency of the handler...
     ICustomerRepository customers,    // ...leaking up into the endpoint
     IPricingService pricing,
     IUnitOfWork uow,
-    ILogger<CreateOrderHandler> log,
+    ILogger<CreateSalesOrderHandler> log,
     CancellationToken ct) =>
 {
-    var handler = new CreateOrderHandler(orders, customers, pricing, uow, log);
+    var handler = new CreateSalesOrderHandler(orders, customers, pricing, uow, log);
     return await handler.Handle(req, ct);
 });
 ```
@@ -55,12 +56,12 @@ wired or *what wraps it*.
 The mediator inverts it. The endpoint holds **one** dependency (`ISender`) and sends a message:
 
 ```csharp
-app.MapPost("/orders", async (CreateOrderCommand cmd, ISender sender, CancellationToken ct) =>
+app.MapPost("/sales-orders", async (CreateSalesOrderCommand cmd, ISender sender, CancellationToken ct) =>
     await sender.Send(cmd, ct));
 ```
 
 `sender.Send(cmd)`:
-1. Looks up the handler registered for `CreateOrderCommand`.
+1. Looks up the handler registered for `CreateSalesOrderCommand`.
 2. Wraps it in the registered **pipeline behaviors** (logging, validation, transaction) — once,
    centrally, for every message.
 3. Runs it and returns the result.
@@ -70,7 +71,7 @@ The endpoint no longer knows the handler's dependencies or the cross-cutting sta
 
 ## Step 4 — The implementation (hand-rolled, ~150 lines)
 
-### 4a. The contracts (`Erp.Application/Abstractions/Messaging`)
+### 4a. The contracts (`Erp.Shared.Messaging`)
 
 ```csharp
 public interface IRequest<out TResponse> { }
@@ -99,7 +100,7 @@ These names deliberately mirror MediatR so the mental model transfers if you eve
 We add thin `ICommand`/`IQuery` marker interfaces later (Phase 4/6) that extend `IRequest<T>`, purely
 to make command-vs-query intent obvious in the folder tree.
 
-### 4b. The dispatcher (`Erp.Infrastructure/Messaging/Sender.cs`)
+### 4b. The dispatcher (`Erp.Shared.Messaging/Sender.cs`)
 
 The hard part: `Send<TResponse>` receives an `IRequest<TResponse>` whose concrete type is only known
 at runtime, and must find `IRequestHandler<TThatConcreteType, TResponse>`. Two standard approaches —
@@ -160,12 +161,13 @@ public sealed class LoggingBehavior<TRequest, TResponse>(ILogger<LoggingBehavior
 }
 ```
 
-### 4d. Registration
+### 4d. Registration — shared mediator, per-module handlers
 
-Scan the `Erp.Application` assembly for `IRequestHandler<,>` implementations and register each;
-register `ISender` → `Sender`; register open-generic behaviors in the order they should wrap
-(`LoggingBehavior<,>` now; `ValidationBehavior<,>` in Phase 4). Behavior order matters — the first
-registered is the outermost wrapper.
+`AddMessaging()` in `Erp.Shared.Infrastructure` registers `ISender` → `Sender` and the open-generic
+behaviors in the order they should wrap (`LoggingBehavior<,>` now; `ValidationBehavior<,>` in Phase 4) —
+first registered is the outermost wrapper. Each **module's** `DependencyInjection.cs` scans *its own*
+assembly for `IRequestHandler<,>` implementations and registers them. No module registers another's
+handlers — DI wiring respects the module walls.
 
 ## Step 5 — Benefits, tradeoffs, and when NOT to use it
 
@@ -195,12 +197,13 @@ registered is the outermost wrapper.
 > transactions, logging) that the cross-cutting payoff is real. In a three-endpoint CRUD app it
 > wouldn't be worth it — and saying so is part of the lesson.
 
-## What Sonnet should produce
+## What to produce
 
-- The five contracts in `Application/Abstractions/Messaging`.
-- `Sender` (Approach A) + wrapper types + DI registration in `Infrastructure/Messaging`.
+- The five contracts in `Erp.Shared.Messaging`.
+- `Sender` (Approach A) + wrapper types in `Erp.Shared.Messaging`; `AddMessaging()` in
+  `Erp.Shared.Infrastructure`; per-module handler scanning in each `DependencyInjection.cs`.
 - `LoggingBehavior<,>`, registered.
-- `Ping` slice now resolves and runs through the real `Sender`; `GET /orders/ping` returns "pong"
+- `Ping` slice now resolves and runs through the real `Sender`; `GET /sales/ping` returns "pong"
   and logs the handling.
 - A brief comment in `Sender.cs` noting the reflection-vs-source-generator tradeoff and the library
   alternative.

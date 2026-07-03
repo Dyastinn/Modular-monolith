@@ -1,163 +1,134 @@
 # Phase 1 — Solution Skeleton + Walking Skeleton
 
-**Goal:** create the project structure and prove the plumbing with one trivial end-to-end slice
-*before* any real complexity exists.
-**Produces:** a compiling solution, the folder tree, and a `Ping`/health slice that goes
-HTTP → mediator → handler → response.
-**Prereq:** Phase 0 read. .NET 10 SDK installed. SQL Server reachable (LocalDB or a dev instance).
+**Goal:** create the modular project structure and prove the plumbing with one trivial end-to-end slice
+*before* any real complexity.
+**Produces:** a compiling solution, the folder tree, and a `Ping` slice: HTTP → Carter → mediator → handler
+→ response.
+**Prereq:** Phase 0 read. .NET 10 SDK. SQL Server reachable (LocalDB fine).
 
-> **Why a "walking skeleton" first?** If you introduce CQRS, DDD, Dapper, and the mediator all at
-> once, and it doesn't work, you can't tell *which* part is wrong. A walking skeleton is the thinnest
-> possible slice that exercises the whole pipe. Once `GET /ping` returns "pong" through the mediator,
+> **Why a walking skeleton first?** Introduce CQRS, DDD, Dapper, and the mediator all at once and, if it
+> breaks, you can't tell which part is wrong. Once `GET /sales/ping` returns "pong" through the mediator,
 > every later slice is a variation on a proven path.
 
 ---
 
 ## 1. Solution and projects
 
-Four projects. This is the Clean Architecture layering from the overview, made concrete.
+Split by **capability**, not technical layer: a Shared kernel, one project per module, and a host.
 
 ```
-Erp.sln
+Erp.slnx
 ├── src/
-│   ├── Erp.Domain/            <- entities, value objects, domain events, domain interfaces. No dependencies.
-│   ├── Erp.Application/       <- vertical feature slices, the mediator abstractions, behaviors.
-│   ├── Erp.Infrastructure/    <- Dapper, connection factory, stored-proc callers, repositories, dispatchers.
-│   └── Erp.Api/               <- ASP.NET Core host, endpoints, DI composition root.
+│   ├── Shared/
+│   │   ├── Erp.Shared.BuildingBlocks   <- Entity, AggregateRoot, ValueObject, IDomainEvent. No deps.
+│   │   ├── Erp.Shared.Common           <- Result/Error, IClock, paging. No deps.
+│   │   ├── Erp.Shared.Messaging        <- mediator contracts + Sender + behaviors (Phase 2)
+│   │   └── Erp.Shared.Infrastructure   <- IDbConnectionFactory, Carter/auth/error wiring, AddSharedInfrastructure()
+│   ├── Modules/
+│   │   └── Sales/  (Erp.Modules.Sales) <- Domain/ Features/ Infrastructure/ DependencyInjection.cs
+│   └── Erp.Api                         <- host / composition root
 └── tests/
-    ├── Erp.Domain.Tests/          <- unit (Phase 8)
-    ├── Erp.Application.Tests/     <- unit for validators/handlers (Phase 8)
-    └── Erp.Integration.Tests/     <- real DB (Phase 8)
+    ├── Erp.Modules.Sales.UnitTests
+    └── Erp.Integration.Tests
 ```
 
-**Project reference direction (enforces the dependency rule):**
+**Project reference direction (enforces the two rules):**
 
 ```
-Erp.Api            -> Erp.Application, Erp.Infrastructure
-Erp.Application    -> Erp.Domain
-Erp.Infrastructure -> Erp.Application, Erp.Domain
-Erp.Domain         -> (nothing)
+Erp.Api                   -> each Module, Erp.Shared.Infrastructure
+Erp.Modules.Sales         -> Erp.Shared.{BuildingBlocks, Common, Messaging, Infrastructure}
+Erp.Modules.Inventory     -> Erp.Shared.*   (added Phase 5; NOT -> Sales)
+Erp.Shared.Infrastructure -> Erp.Shared.Messaging, Erp.Shared.Common
+Erp.Shared.Messaging      -> Erp.Shared.Common
+Erp.Shared.BuildingBlocks -> (nothing)
+Erp.Shared.Common         -> (nothing)
 ```
 
-If `Erp.Domain` ever needs a reference to Dapper or ASP.NET, something is in the wrong project.
-That compile error is a *feature* — it stops the domain from getting polluted.
-
-> **Note on "one module":** the brief says each module is a department that could become a service.
-> For now everything Order-related lives under an `Orders` folder inside each project (not separate
-> projects). Phase 9 explains why folder-level module boundaries are enough until extraction, and
-> what you'd change to promote a module to its own assembly/service.
+No module references another module — the compiler enforces the island rule. `BuildingBlocks`/`Common`
+reference nothing, so a Domain built on them can't drag in Dapper or the web. Those compile errors are
+*features*.
 
 ## 2. Folder tree, with every folder defended
 
-Below is the target tree with the walking-skeleton slice in place. Each folder answers:
-*why does it exist, why is code here, why not elsewhere?*
-
 ```
-src/Erp.Domain/
-    Common/
-        # WHY: primitives shared by all aggregates — base Entity, AggregateRoot, IDomainEvent,
-        #      strongly-typed ID structs live near the aggregates that own them (see Phase 3).
-        # WHY HERE: pure domain concepts, no persistence or framework types.
-    Orders/
-        # WHY: the Ordering module's domain lives here. Populated in Phase 3.
-        # (empty in Phase 1 except a placeholder)
+src/Shared/Erp.Shared.Messaging/
+    IRequest.cs, IRequestHandler.cs, ISender.cs, IPipelineBehavior.cs   # mediator contract (Phase 2)
 
-src/Erp.Application/
-    Abstractions/
-        Messaging/
-            # WHY: IRequest, IRequestHandler, ISender, IPipelineBehavior — the mediator contract.
-            # WHY HERE: the Application layer defines the shape of its own use cases; Infrastructure
-            #           implements the dispatcher. Domain must not know about it.
-    Behaviors/
-        # WHY: cross-cutting pipeline behaviors (logging in Phase 2; validation in Phase 4).
-    Orders/
-        Ping/                          <- the walking-skeleton slice
-            PingQuery.cs
-            PingHandler.cs
-        # WHY: features grouped by module (Orders), then by use case (Ping). This is the VSA spine:
-        #      each use case folder will later hold its command/query + validator + handler.
+src/Shared/Erp.Shared.Infrastructure/
+    Messaging/Sender.cs               # the hand-rolled dispatcher (Phase 2)
+    Persistence/                      # IDbConnectionFactory, Dapper setup (Phase 4)
+    DependencyInjection.cs            # AddSharedInfrastructure(): mediator + db + Carter services
 
-src/Erp.Infrastructure/
-    Messaging/
-        Sender.cs                      <- the hand-rolled mediator implementation (Phase 2)
-        DependencyInjection.cs         <- handler + behavior registration
-        # WHY: the dispatcher is an implementation detail (reflection, DI lookup) — infrastructure.
-    Persistence/
-        # WHY: IDbConnectionFactory, Dapper setup, stored-proc callers, repositories (Phase 4).
-        # Empty in Phase 1.
+src/Modules/Sales/
+    Domain/                           # SalesOrder aggregate & rules (Phase 3). Uses only BuildingBlocks.
+    Features/
+        Ping/                         # walking-skeleton slice
+            PingHandler.cs            #   PingQuery + PingHandler
+            PingEndpoint.cs           #   Carter ICarterModule
+    Infrastructure/                   # Dapper repositories, SQL (Phase 4)
+    DependencyInjection.cs            # AddSalesModule(): registers this module's handlers/validators/repos
 
 src/Erp.Api/
-    Endpoints/
-        Orders/
-            PingEndpoint.cs            <- maps GET /orders/ping -> ISender.Send(new PingQuery())
-        # WHY: endpoints are thin adapters. They translate HTTP <-> messages and nothing else.
-    Program.cs                         <- composition root: wires DI, mediator, endpoints.
-    appsettings.json
-    appsettings.Development.json       <- Development connection string (Phase 4)
+    Program.cs                        # composition root: AddSharedInfrastructure + AddSalesModule + MapCarter
+    appsettings*.json
 ```
 
-**Two placement rules to internalize now:**
+**Two placement rules:** (1) a use case's code lives in its feature folder as two files, *not* in generic
+`Commands/`/`Handlers/`/`Endpoints/` folders; (2) anything shared by multiple use cases moves down — to the
+module's `Domain/`/`Infrastructure/`, or to `Shared/` if every module needs it.
 
-- **A use case's code lives in its use-case folder** (`Application/Orders/<UseCase>/`), *not* spread
-  across generic `Commands/`, `Validators/`, `Handlers/` folders. Grouping by *technical kind* is the
-  layered anti-pattern VSA rejects — it scatters one feature across the tree.
-- **Anything shared by multiple use cases moves down a level** (to `Domain` if it's a rule/model,
-  to `Infrastructure` if it's plumbing). The `Order` aggregate is shared by many slices, so it's in
-  `Domain`, not inside `CreateOrder`.
-
-## 3. The walking-skeleton slice
-
-`PingQuery` is an `IRequest<string>`; `PingHandler` returns `"pong"`. No DB, no domain. Its only job
-is to prove: endpoint → `ISender.Send` → correct handler resolved → response returned.
-
-Illustrative shapes (final interfaces defined in Phase 2 — here they're placeholders so the skeleton
-compiles):
+## 3. The walking-skeleton slice (Carter)
 
 ```csharp
-// Application/Orders/Ping/PingQuery.cs
+// Modules/Sales/Features/Ping/PingHandler.cs
 public sealed record PingQuery : IRequest<string>;
-
-// Application/Orders/Ping/PingHandler.cs
 public sealed class PingHandler : IRequestHandler<PingQuery, string>
 {
     public Task<string> Handle(PingQuery request, CancellationToken ct) => Task.FromResult("pong");
 }
 
-// Api/Endpoints/Orders/PingEndpoint.cs (minimal API)
-app.MapGet("/orders/ping",
-    async (ISender sender, CancellationToken ct) => await sender.Send(new PingQuery(), ct));
+// Modules/Sales/Features/Ping/PingEndpoint.cs
+public sealed class PingEndpoint : ICarterModule
+{
+    public void AddRoutes(IEndpointRouteBuilder app) =>
+        app.MapGet("/sales/ping", async (ISender sender, CancellationToken ct) =>
+            await sender.Send(new PingQuery(), ct));
+}
+
+// Erp.Api/Program.cs
+builder.Services.AddSharedInfrastructure(builder.Configuration);
+builder.Services.AddSalesModule(builder.Configuration);
+var app = builder.Build();
+app.MapCarter();
+app.Run();
 ```
 
-Until Phase 2 exists, you may temporarily register `PingHandler` directly and call it without a real
-`Sender`. **Preferred:** do Phase 1 and Phase 2 back to back so the skeleton runs through the real
-mediator immediately. If you split them, keep Phase 1's direct-call version clearly marked as
-throwaway.
+The mediator interfaces and `Add*` methods are fleshed out in Phase 2. **Preferred:** do Phase 1 and 2 back
+to back so the skeleton runs through the real mediator. Otherwise mark any direct-call shim as throwaway.
 
-## 4. What Sonnet should produce in this phase
+## 4. Produce in this phase
 
-- The four `src` projects + three `tests` projects, with the reference directions above.
-- The folder tree (empty folders can hold a `.gitkeep` or a placeholder file).
-- The `Ping` slice and endpoint.
-- `Program.cs` wired so the app starts and `GET /orders/ping` responds (via direct handler call if
-  Phase 2 isn't done yet; via the mediator if it is).
-- A short `README` in the repo root pointing at these phase docs.
+- The four Shared projects + Sales module + Api + two test projects, with the references above.
+- The folder tree (`.gitkeep` placeholders where empty).
+- The `Ping` slice (two files); `AddSharedInfrastructure`/`AddSalesModule` stubs; `Program.cs` with
+  `MapCarter()`.
+- A repo-root `README` pointing at the phase docs.
 
-**Explicitly NOT in this phase:** no domain model, no Dapper, no stored procs, no validation, no real
-business logic. Resist all of it.
+**Explicitly NOT:** domain model, Dapper, stored procs, validation, business logic, a second module.
 
 ## 5. Pitfalls
 
-- **Over-building the skeleton.** If the `Ping` slice touches a database, it's not a skeleton anymore.
-- **Generic `Commands/`/`Handlers/` folders.** This is the most common reflex from layered tutorials
-  and it quietly kills the VSA benefit. Group by use case.
-- **Domain project sprouting a Dapper reference.** If it compiles with one, you've broken the
-  dependency rule; the compiler won't warn you unless the reference is genuinely absent.
+- **Over-building the skeleton** (any DB access → not a skeleton).
+- **Generic `Commands/`/`Handlers/`/`Endpoints/` folders** — the layered reflex that kills VSA.
+- **Routes piled into `Program.cs`** — with Carter each feature owns its endpoint.
+- **A module referencing another** (or a pure building block referencing the DB) — check the references.
 
 ---
 
-## Checkpoint — you understand this phase when you can answer:
+## Checkpoint
 
-1. Why does `Erp.Domain` reference nothing, and what breaks (helpfully) if it references Dapper?
-2. Why do we group `Application` code by use case instead of by `Commands/`/`Handlers/`?
-3. Why build a `Ping` slice that does nothing useful before building `CreateOrder`?
-4. Where would the shared `Order` aggregate live, and why not inside the `CreateOrder` folder?
+1. Why split by module + Shared kernel instead of four layer projects?
+2. Why do `BuildingBlocks`/`Common` reference nothing, and what breaks if a module references another?
+3. What does Carter change about where endpoints live?
+4. Why build a useless `Ping` slice before `CreateSalesOrder`?
+5. Where does the shared `SalesOrder` aggregate live, and why not inside `CreateSalesOrder`?

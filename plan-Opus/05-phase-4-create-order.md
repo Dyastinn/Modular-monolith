@@ -1,77 +1,91 @@
-# Phase 4 — First Command Slice: CreateOrder
+# Phase 4 — First Command Slice: CreateSalesOrder
 
-**Goal:** wire one command end-to-end so the anatomy of a slice is concrete: endpoint → validation
-behavior → handler → domain → repository → Dapper → stored procedure → transaction → response. This
-is the template every later command copies.
-**Produces:** the `CreateOrder` slice, `ValidationBehavior`, `IDbConnectionFactory`, `IOrderRepository`
-+ Dapper implementation, the ID `TypeHandler`s, the `usp_Order_Insert` stored procedure, and explicit
-transaction handling.
-**Prereq:** Phases 1–3 done; a dev SQL Server database with the schema (see §6).
+**Goal:** wire one command end-to-end as **two files** so the anatomy of a slice is concrete: Carter
+endpoint → validation behavior → handler → domain → repository → Dapper → stored procedure → transaction →
+response. The template every later command copies.
+**Produces:** the `CreateSalesOrder` slice (two files), `ValidationBehavior`, `IDbConnectionFactory`,
+`ISalesOrderRepository` + Dapper impl, the ID `TypeHandler`s, `usp_SalesOrder_Insert`, explicit
+transactions.
+**Prereq:** Phases 1–3; a dev SQL Server database with the schema (§6).
 
 ---
 
-## Step 1 — The anatomy of a command slice
+## Step 1 — The anatomy of a command slice (two files)
 
 ```
-Application/Orders/CreateOrder/
-    CreateOrderCommand.cs     <- inputs (a record); implements ICommand<OrderId>
-    CreateOrderValidator.cs   <- input validation (well-formedness), NOT business rules
-    CreateOrderHandler.cs     <- orchestration: load deps, run domain, persist, return
-Api/Endpoints/Orders/
-    CreateOrderEndpoint.cs    <- POST /orders -> ISender.Send(command)
-Infrastructure/Persistence/Orders/
-    OrderRepository.cs        <- IOrderRepository impl (Dapper + stored procs)
-db/
-    usp_Order_Insert.sql
+Modules/Sales/Features/CreateSalesOrder/
+    CreateSalesOrderHandler.cs    <- Command + Result + Validator + Handler
+    CreateSalesOrderEndpoint.cs   <- Request + Response + Carter endpoint
+Modules/Sales/Infrastructure/
+    SalesOrderRepository.cs       <- ISalesOrderRepository impl (Dapper + stored procs)
+    SalesOrderIdTypeHandler.cs
+    Sql/usp_SalesOrder_Insert.sql
+Shared/Erp.Shared.Infrastructure/Persistence/
+    IDbConnectionFactory.cs, IUnitOfWork.cs (+ SQL Server impls)
 ```
 
-Add thin marker interfaces to make intent visible (they just extend `IRequest<T>`):
+Marker interfaces in `Shared.Messaging` (extend `IRequest<T>`): `ICommand<T>`, `IQuery<T>`,
+`ICommandHandler<,>`, `IQueryHandler<,>`. **Do not split Command/Validator/Handler into separate files** —
+keep the slice's behavior in one file, its web edge in the other.
 
 ```csharp
-public interface ICommand<TResponse> : IRequest<TResponse> { }
-public interface IQuery<TResponse>   : IRequest<TResponse> { }
+// CreateSalesOrderHandler.cs
+public sealed record CreateSalesOrderCommand(long CustomerId, IReadOnlyList<OrderLineInput> Lines)
+    : ICommand<CreateSalesOrderResult>;
+public sealed record OrderLineInput(long ProductId, int Quantity);
+public sealed record CreateSalesOrderResult(long SalesOrderId);
+
+public sealed class CreateSalesOrderValidator : AbstractValidator<CreateSalesOrderCommand> { /* Step 2 */ }
+public sealed class CreateSalesOrderHandler(...) : ICommandHandler<CreateSalesOrderCommand, CreateSalesOrderResult> { /* Step 4 */ }
 ```
 
-`CreateOrder` is a **command** (it changes state) returning the new `OrderId`.
+```csharp
+// CreateSalesOrderEndpoint.cs
+public sealed record CreateSalesOrderRequest(long CustomerId, List<OrderLineInput> Lines);
+public sealed record CreateSalesOrderResponse(long SalesOrderId);
 
-## Step 2 — Where validation belongs (a core learning goal)
+public sealed class CreateSalesOrderEndpoint : ICarterModule
+{
+    public void AddRoutes(IEndpointRouteBuilder app) =>
+        app.MapPost("/sales-orders", async (CreateSalesOrderRequest r, ISender sender, CancellationToken ct) =>
+        {
+            var result = await sender.Send(new CreateSalesOrderCommand(r.CustomerId, r.Lines), ct);
+            return Results.Created($"/sales-orders/{result.SalesOrderId}",
+                new CreateSalesOrderResponse(result.SalesOrderId));
+        });
+}
+```
 
-There are **two** kinds of "validation" and they live in different places:
+Keep `Request` and `Command` separate types: `Request` = HTTP contract, `Command` = internal operation.
+They diverge the moment the endpoint reads a value from the JWT rather than the body.
+
+## Step 2 — Where validation belongs
 
 | Kind | Question | Lives in | Example |
 |---|---|---|---|
-| **Input validation** | Is the request well-formed? | **Validator** (Application slice), run by `ValidationBehavior` before the handler | `CustomerId > 0`, at least one line, quantities present |
-| **Business rule** | Is this allowed by the domain? | **Domain** (entity methods) | "only draft orders can be booked", "customer must be active" |
-
-Do **not** put business rules in the validator. The validator answers "should this request even reach
-the handler?" The domain answers "is this operation legal given the state of the world?" Mixing them
-scatters rules and makes the domain non-authoritative again.
+| **Input validation** | Well-formed? | **Validator** (handler file), run by `ValidationBehavior` before the handler | `CustomerId > 0`, ≥ 1 line, quantities present |
+| **Business rule** | Allowed by the domain? | **Domain** (entity methods) | "only draft orders can be submitted", "customer must be active" |
 
 ```csharp
-public sealed class CreateOrderValidator : AbstractValidator<CreateOrderCommand>
+public sealed class CreateSalesOrderValidator : AbstractValidator<CreateSalesOrderCommand>
 {
-    public CreateOrderValidator()
+    public CreateSalesOrderValidator()
     {
         RuleFor(x => x.CustomerId).GreaterThan(0);
         RuleFor(x => x.Lines).NotEmpty();
         RuleForEach(x => x.Lines).ChildRules(l =>
         {
             l.RuleFor(x => x.Quantity).GreaterThan(0);
-            l.RuleFor(x => x.MaterialId).GreaterThan(0);
+            l.RuleFor(x => x.ProductId).GreaterThan(0);
         });
     }
 }
 ```
 
-> **Validation library:** FluentValidation is MIT-licensed and free (verify the current package
-> license before adding). If you'd rather hand-roll to avoid any dependency, a validator is just a
-> method returning a list of errors — the `ValidationBehavior` doesn't care how validation is
-> implemented. Either is fine; FluentValidation is the idiomatic default.
+FluentValidation (MIT) is the idiomatic default. Unlike the mediator, validation isn't a teaching target —
+use the library.
 
-## Step 3 — The ValidationBehavior (why it's a pipeline behavior)
-
-Instead of every handler calling its validator, one behavior does it for all commands, before the
-handler runs. This is the concrete payoff of Phase 2's pipeline:
+## Step 3 — The ValidationBehavior (in `Shared.Messaging`)
 
 ```csharp
 public sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValidator<TRequest>> validators)
@@ -79,186 +93,117 @@ public sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValidat
 {
     public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken ct)
     {
-        var failures = validators
-            .Select(v => v.Validate(request))
-            .SelectMany(r => r.Errors)
-            .Where(f => f is not null)
-            .ToList();
+        var failures = validators.Select(v => v.Validate(request)).SelectMany(r => r.Errors)
+            .Where(f => f is not null).ToList();
         if (failures.Count != 0) throw new ValidationException(failures);
         return await next();
     }
 }
 ```
 
-Register it **before** `LoggingBehavior`? No — decide the order deliberately: typically
-`Logging` outermost (so you log even failed validation), then `Validation`, then the handler. Register
-in that outer-to-inner order.
+Order: `Logging` outermost (logs even failed validation), then `Validation`, then the handler.
 
 ## Step 4 — The handler (orchestration only)
 
-The handler coordinates; it holds **no business rules** — those are in the domain.
-
 ```csharp
-public sealed class CreateOrderHandler(
-    ICustomerRepository customers,
-    IOrderRepository orders,
-    IPricingService pricing,          // introduced properly in Phase 5; here: unit price lookup
-    IUnitOfWork uow)
-    : IRequestHandler<CreateOrderCommand, OrderId>
+public sealed class CreateSalesOrderHandler(
+    ICustomerRepository customers, ISalesOrderRepository orders, IPricingService pricing, IUnitOfWork uow)
+    : ICommandHandler<CreateSalesOrderCommand, CreateSalesOrderResult>
 {
-    public async Task<OrderId> Handle(CreateOrderCommand cmd, CancellationToken ct)
+    public async Task<CreateSalesOrderResult> Handle(CreateSalesOrderCommand cmd, CancellationToken ct)
     {
         var customerId = new CustomerId(cmd.CustomerId);
-
-        // Business rule lives in the domain / a check the domain owns — handler just invokes it.
         var customer = await customers.GetAsync(customerId, ct)
             ?? throw new NotFoundException($"Customer {cmd.CustomerId} not found.");
         customer.EnsureCanOrder();          // domain method: throws if on credit hold / inactive
 
-        var order = Order.Create(customerId);
+        var order = SalesOrder.Create(customerId);
         foreach (var line in cmd.Lines)
         {
-            var unitPrice = await pricing.GetUnitPrice(new MaterialId(line.MaterialId), ct);
-            order.AddLine(new MaterialId(line.MaterialId), new Quantity(line.Quantity), unitPrice);
+            var unitPrice = await pricing.GetUnitPrice(new ProductId(line.ProductId), ct);
+            order.AddLine(new ProductId(line.ProductId), new Quantity(line.Quantity), unitPrice);
         }
 
         await using var tx = await uow.BeginAsync(ct);   // explicit transaction boundary
         await orders.AddAsync(order, ct);
         await tx.CommitAsync(ct);
 
-        // Domain events dispatched after commit — full treatment in Phase 7.
-        return order.Id;
+        return new CreateSalesOrderResult(order.Id.Value);
     }
 }
 ```
 
-Read what the handler does and does **not** do: it *orchestrates* (load customer, build order, persist,
-commit) and *delegates rules* (`EnsureCanOrder`, `AddLine`'s draft check, `Quantity`'s positivity). No
-`if` about business policy lives here. If you find a policy `if` creeping into a handler, it belongs in
-the domain.
+Orchestrates (load, build, persist, commit); delegates rules (`EnsureCanOrder`, `AddLine`'s draft check,
+`Quantity`'s positivity). No policy `if` here.
 
-## Step 5 — Persistence with Dapper + stored procedure
+## Step 5 — Persistence with Dapper + stored procedure (module `Infrastructure`)
 
-**No generic repository.** `IOrderRepository` is specific to the `Order` aggregate:
+No generic repository. `ISalesOrderRepository` is specific to the aggregate and lives in
+`Sales/Infrastructure/`:
 
 ```csharp
-public interface IOrderRepository
+public interface ISalesOrderRepository
 {
-    Task AddAsync(Order order, CancellationToken ct);
-    Task<Order?> GetAsync(OrderId id, CancellationToken ct);   // rehydrates the aggregate
-    Task UpdateAsync(Order order, CancellationToken ct);       // Phase 5/7
+    Task AddAsync(SalesOrder order, CancellationToken ct);
+    Task<SalesOrder?> GetAsync(SalesOrderId id, CancellationToken ct);   // rehydrates
+    Task UpdateAsync(SalesOrder order, CancellationToken ct);            // Phase 5/7
 }
 ```
 
-The Dapper implementation calls stored procedures and maps rows back into the aggregate. Because there's
-no change tracker, persistence is **explicit**: you pass the whole aggregate and the repository writes
-header + lines.
+Explicit persistence (no change tracker): pass the whole aggregate, write header + lines via
+`usp_SalesOrder_Insert` / `usp_SalesOrderLine_Insert`. Register a Dapper `TypeHandler` per strongly-typed
+ID. `AddSalesModule` registers the repos + type handlers — the Api never sees them.
 
-```csharp
-public sealed class OrderRepository(IDbConnectionFactory factory) : IOrderRepository
-{
-    public async Task AddAsync(Order order, CancellationToken ct)
-    {
-        using var conn = factory.Create();
-        // The repository maps the aggregate to proc params. It does NOT contain business rules.
-        var orderId = await conn.ExecuteScalarAsync<long>(new CommandDefinition(
-            "usp_Order_Insert",
-            new { order.CustomerId /* mapped via TypeHandler */, Status = (int)order.Status },
-            commandType: CommandType.StoredProcedure, cancellationToken: ct));
-
-        foreach (var line in order.Lines)
-            await conn.ExecuteAsync(new CommandDefinition(
-                "usp_OrderLine_Insert",
-                new { OrderId = orderId, line.MaterialId, Quantity = line.Quantity.Value,
-                      UnitPrice = line.UnitPrice.Amount },
-                commandType: CommandType.StoredProcedure, cancellationToken: ct));
-    }
-    // GetAsync: call usp_Order_Get + usp_OrderLine_GetByOrder, rehydrate via the private ctor.
-}
-```
-
-**Strongly-typed ID mapping** — register a Dapper `TypeHandler` per ID so `OrderId`/`CustomerId` map
-to/from the column type. This is the ~10-lines-per-ID cost noted in Phase 3:
-
-```csharp
-public sealed class OrderIdTypeHandler : SqlMapper.TypeHandler<OrderId>
-{
-    public override OrderId Parse(object value) => new((long)value);
-    public override void SetValue(IDbDataParameter p, OrderId value) => p.Value = value.Value;
-}
-// SqlMapper.AddTypeHandler(new OrderIdTypeHandler()); at startup.
-```
-
-## Step 6 — What goes in the stored procedure (and what doesn't)
-
-`usp_Order_Insert` does **persistence and integrity**, not policy:
+## Step 6 — What goes in the stored procedure
 
 ```sql
-CREATE PROCEDURE usp_Order_Insert
-    @CustomerId BIGINT,
-    @Status     INT
+CREATE PROCEDURE sales.usp_SalesOrder_Insert
+    @CustomerId BIGINT, @Status INT
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO dbo.[Order] (CustomerId, Status, CreatedUtc)
+    INSERT INTO sales.SalesOrder (CustomerId, Status, CreatedUtc)
     VALUES (@CustomerId, @Status, SYSUTCDATETIME());
-    SELECT CAST(SCOPE_IDENTITY() AS BIGINT);   -- returns the new OrderId
+    SELECT CAST(SCOPE_IDENTITY() AS BIGINT);
 END
 ```
 
-The **schema** enforces integrity the app shouldn't have to trust: `CustomerId` is a FK, `Status` is
-constrained (CHECK or a lookup table), quantities are `> 0` via CHECK as a backstop. Integrity in SQL;
-policy ("only draft can be booked") in the domain. No booking/approval logic here — that would be the
-split-brain Tension A warns about.
+Note the `sales.` schema — each module owns its schema. The schema enforces integrity (FKs, CHECK,
+constraints); policy stays in the domain. No submit/approval logic here (split-brain, Tension A).
 
-## Step 7 — Transactions (why explicit, not a behavior)
+## Step 7 — Transactions (explicit, not a behavior)
 
-We keep the transaction boundary **visible in the handler** (`uow.BeginAsync` / `CommitAsync`) rather
-than hiding it in a `TransactionBehavior`. Tradeoff, stated:
+Boundary visible in the handler (`uow.BeginAsync`/`CommitAsync`). Behavior-based transactions hide the
+boundary and complicate event dispatch; explicit costs two lines and stays obvious. `IUnitOfWork`/
+`IDbConnectionFactory` live in `Shared.Infrastructure`; the handler depends only on the interface.
 
-- **Behavior-based transactions** (wrap every command in a transaction automatically) are convenient
-  and DRY, but they hide *where* the boundary is, wrap queries you didn't mean to, and complicate
-  domain-event dispatch ordering.
-- **Explicit transactions** cost a couple of lines per command but make the boundary obvious while
-  you're learning where it belongs. For CreateOrder the boundary spans "insert header + all lines."
+## What to produce
 
-`IUnitOfWork`/`IDbConnectionFactory` live in Infrastructure; the handler depends only on the
-`IUnitOfWork` interface (declared in Application/Domain), preserving the dependency rule.
+- `ICommand<T>`/`IQuery<T>`/`ICommandHandler<,>` markers; the two `CreateSalesOrder` files.
+- `ValidationBehavior<,>` registered in `Shared`; deliberate order vs `LoggingBehavior`.
+- `IDbConnectionFactory`, `IUnitOfWork` + impls in `Shared.Infrastructure`.
+- `ISalesOrderRepository` + impl (Dapper, procs) + ID `TypeHandler`s, registered in `AddSalesModule`.
+- `ICustomerRepository` + impl with `Customer.EnsureCanOrder()`.
+- SQL: `sales` schema for `SalesOrder`, `SalesOrderLine`, `Customer`, `Product` + insert/get procs.
+- `POST /sales-orders` works end to end; Development connection string.
 
-> Once the pattern is second nature, promoting transactions to a command-only behavior is a reasonable
-> refactor — but do it *after* you've felt where the boundary goes, not before.
-
-## What Sonnet should produce
-
-- `ICommand<T>`/`IQuery<T>` markers; `CreateOrderCommand`, `CreateOrderValidator`, `CreateOrderHandler`.
-- `ValidationBehavior<,>` registered in deliberate order relative to `LoggingBehavior`.
-- `IDbConnectionFactory`, `IUnitOfWork` (interfaces) + SQL Server implementations.
-- `IOrderRepository` + `OrderRepository` (Dapper, stored procs), ID `TypeHandler`s registered.
-- `ICustomerRepository` + impl with `Customer.EnsureCanOrder()` on the domain side (minimal Customer
-  aggregate is fine here; expand in Phase 5 as needed).
-- SQL: schema for `Order`, `OrderLine`, `Customer`, `Material` (minimal), plus `usp_Order_Insert`,
-  `usp_OrderLine_Insert`, `usp_Order_Get`, `usp_OrderLine_GetByOrder`.
-- `POST /orders` endpoint; a manual run creates an order and returns its id.
-- Development connection string in `appsettings.Development.json` (Testing string comes in Phase 8).
-
-**NOT in this phase:** inventory reservation, stock deduction, booking, concurrency, pricing rules
-(beyond a simple unit-price lookup), queries beyond `GetAsync` for rehydration.
+**NOT in this phase:** inventory reservation, the second module, submit/approval, concurrency, pricing rules
+beyond a lookup, queries beyond `GetAsync`.
 
 ## Pitfalls
 
-- **Business `if`s migrating into the handler.** The moment you write `if (status != Draft)` in the
-  handler, stop — that belongs on `Order`.
-- **A generic `Repository<T>`.** Forbidden by the brief and by good sense here; it forces a
-  lowest-common-denominator API and encourages anemic aggregates.
-- **Public setters to satisfy Dapper.** Rehydrate via the private ctor; keep the domain sealed.
-- **Booking/approval logic sneaking into `usp_Order_Insert`.** Persistence only.
+- **Four files instead of two.** Keep behavior in one file, endpoint in one.
+- **Business `if`s in the handler.** `if (status != Draft)` belongs on `SalesOrder`.
+- **A generic `Repository<T>`.** Forbidden.
+- **Public setters for Dapper.** Rehydrate via the private ctor.
+- **Submit/approval logic in the proc.** Persistence only.
 
 ---
 
-## Checkpoint — you understand this phase when you can answer:
+## Checkpoint
 
-1. What's the difference between input validation and a business rule, and where does each live?
-2. Trace a `POST /orders` request through every layer, naming what each does.
-3. Why does the handler contain no policy `if`s, and where did they go?
-4. Why is the transaction explicit in the handler instead of a pipeline behavior — and what's the cost?
-5. What belongs in `usp_Order_Insert` and what deliberately does not?
+1. What two files make up a slice, what's in each, and why not four?
+2. Input validation vs. business rule — where does each live?
+3. Trace `POST /sales-orders` through every step.
+4. Why no policy `if`s in the handler, and where did they go?
+5. What belongs in `usp_SalesOrder_Insert` and what does not?

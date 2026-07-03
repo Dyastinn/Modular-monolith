@@ -1,158 +1,127 @@
 # 00 — Overview & Architecture Decisions
 
-This is the master document. Read it once, fully, before starting Phase 0. It holds
-every cross-cutting decision so the phase files don't repeat themselves. Phase files
-*reference* decisions made here rather than re-arguing them.
+This is the master document. Read it once, fully, before starting Phase 0. It holds every cross-cutting
+decision so the phase files don't repeat themselves. Phase files *reference* decisions made here rather
+than re-arguing them.
 
-> **How to read this set:** one file per phase. Each phase file is self-contained enough
-> to hand to an implementer (e.g. Sonnet) as "build exactly this, nothing more." You review
-> against the phase's **Checkpoint** section before moving on. Do not let the implementer
-> skip ahead — the whole point is that each phase is understandable in isolation.
+> **How to read this set:** one file per phase. Each phase file is self-contained enough to hand to an
+> implementer as "build exactly this, nothing more." Review against the phase's **Checkpoint** before
+> moving on.
 
 ---
 
 ## 1. What we are actually building
 
-An **Order module** for a fictional enterprise ERP. One department (Ordering), modelled
-so that HR / Accounting / Manufacturing could later become separate modules or services.
+A **Sales** module for a fictional enterprise ERP — plus a second **Inventory** module — built as a
+**modular monolith** using **Vertical Slice Architecture** with a rich domain. The two-module setup is
+deliberate: it forces the cross-module boundary (Sales reserves stock owned by Inventory) that a
+single-module example can't teach.
 
 The domain has real rules (not CRUD):
 
-- Create an order (draft) with line items
-- Price it (line prices, discounts, totals)
+- Create a sales order (draft) with line items
+- Price it (line prices, totals)
 - Validate the customer (credit hold, active status)
-- Validate inventory availability
-- Reserve inventory, then deduct stock on booking
-- Book an order (draft → booked) with an approval rule for large orders
+- Reserve inventory atomically, deduct on completion, release on cancel — **across the module wall**
+- Submit an order (draft → submitted) with an approval rule for large orders
 - Cancel an order (releases reservations), with rules about *which* states can cancel
 - Concurrency + transactions around the money-and-stock operations
 
-That list is deliberately chosen so that "where does this logic go?" has a *non-obvious*
-answer. If everything were CRUD, the architecture would look like pointless ceremony.
+That list makes "where does this logic go?" have a *non-obvious* answer. If everything were CRUD, the
+architecture would be pointless ceremony.
 
 ---
 
 ## 2. Verified facts (checked, with dates)
 
-- **.NET 10** — released Nov 2025, LTS, current as of this writing. Baseline for the solution. *(fact)*
-- **MediatR licensing** — MediatR moved to a **dual license** on **2 July 2025** (Lucky Penny Software).
-  It remains **free** for individuals and companies under **$5M USD revenue**; larger commercial
-  use requires a paid license. It does not hard-block usage without a key — it logs a prompt. *(fact)*
-  - Implication: for a learning project MediatR would actually be free. We still avoid it, per your
-    brief, and because **hand-rolling teaches the pattern better than importing it.**
-- **Free MediatR-shaped library** — `martinothamar/Mediator` (source-generator based, MediatR-like API,
-  MIT — *verify the LICENSE file yourself*). Caveats: performance degrades past ~500 message types
-  (being addressed in v3), no generic requests/notifications, returns `ValueTask`. *(fact + caveat)*
-- **Recommendation** — we **hand-roll a ~150-line mediator** in Phase 2 (MediatR-compatible interface
-  names so the mental model transfers), and note `martinothamar/Mediator` as the drop-in replacement
-  if you later stop wanting to maintain your own. *(opinion, reasoned)*
+- **.NET 10** — LTS, current baseline. *(fact)*
+- **MediatR licensing** — dual-licensed since **2 Jul 2025**; free under $5M revenue, paid above. We
+  hand-roll anyway because **building it teaches the pattern better than importing it**. *(fact + opinion)*
+- **Free MediatR-shaped library** — `martinothamar/Mediator` (source-generated, MIT — verify LICENSE).
+  Noted as the drop-in if you stop wanting to maintain your own. *(fact)*
+- **Carter** — thin library over ASP.NET minimal APIs (`ICarterModule`, `app.MapCarter()`), MIT. Used so
+  each feature owns its endpoint at the web edge. Unlike the mediator, endpoint routing isn't a teaching
+  target — using the library is the production-quality call. *(fact + opinion)*
+- **FluentValidation** — MIT, idiomatic input validation. Same reasoning as Carter. *(fact)*
 
 ---
 
-## 3. The four tensions in your brief (read this carefully)
+## 3. The tensions in the brief (read this carefully)
 
-Your requirements are mostly coherent, but four pairs of them pull against each other. Each is
-resolved below with a default you can override. These are the decisions most likely to confuse a
-learner if left implicit.
+### Tension A — Rich domain **vs.** "business rules in SQL" *(most important)*
 
-### Tension A — Rich DDD domain **vs.** "business rules stay in SQL" *(most important)*
-
-If you put order/booking rules in **both** stored procedures **and** domain entities, you get
-*split-brain logic*: two sources of truth that drift apart. This is the single most common way
-"DDD + Dapper + stored procs" projects rot.
-
-**Resolution — ownership split, no duplication:**
+Putting order rules in **both** stored procedures **and** domain entities gives *split-brain logic* — two
+sources of truth that drift. Resolution — ownership split, no duplication:
 
 | Concern | Owner | Why |
 |---|---|---|
-| Invariants & decisions ("can this order be cancelled?", "is this status transition legal?", "is quantity > 0?") | **C# domain layer** | Pure, unit-testable with zero DB, and the *reason the domain layer exists*. |
-| Persistence, mapping, set-based reads | **Stored procedures / Dapper** | That's what SQL is good at. |
-| **Atomic concurrency guards** ("deduct stock only if enough remains", optimistic version check) | **Stored procedures** | Under concurrency this *must* be atomic at the DB, or you get race conditions. See Tension A.1. |
-| Data-integrity constraints (FKs, NOT NULL, CHECK) | **SQL schema** | Enforced regardless of which app touches the DB. |
+| Invariants & decisions ("can this order be cancelled?", "is this transition legal?", "qty > 0?") | **C# domain** | Pure, unit-testable with zero DB. |
+| Persistence, mapping, set-based reads | **Stored procedures / Dapper** | What SQL is good at. |
+| **Atomic concurrency guards** ("reserve only if enough remains", version check) | **Stored procedures** | Must be atomic at the DB or you get races. See A.1. |
+| Data-integrity constraints (FKs, NOT NULL, CHECK) | **SQL schema** | Enforced regardless of caller. |
 
-**Rule of thumb:** *policy* lives in the domain; *integrity and atomicity* live in SQL. When a rule
-looks like it belongs in both, ask "does concurrency make the in-memory check unsafe?" If yes → SQL.
-If no → domain.
+**Rule of thumb:** *policy* lives in the domain; *integrity and atomicity* live in SQL. When a rule looks
+like both, ask "does concurrency make the in-memory check unsafe?" Yes → SQL. No → domain.
 
 #### Tension A.1 — the one legitimate overlap
 
-"Reserve inventory only if `Available >= Requested`" *feels* like a business rule that belongs in the
-domain. But if two orders check availability in memory at the same time, both pass, both reserve, and
-you oversell. So the **final** guard is a single atomic SQL statement:
+"Reserve only if `Available >= Requested`" feels like a domain rule, but two concurrent in-memory checks
+both pass and oversell. The **final** guard is a single atomic SQL statement (owned by Inventory):
 
 ```sql
-UPDATE Inventory
+UPDATE inventory.Stock
 SET Reserved = Reserved + @Qty
-WHERE MaterialId = @MaterialId
-  AND (OnHand - Reserved) >= @Qty;   -- returns 0 rows affected if not enough
+WHERE ProductId = @ProductId
+  AND (OnHand - Reserved) >= @Qty;   -- 0 rows affected if not enough
 ```
 
-The domain still *expresses* the rule (for fast feedback and testing); SQL *enforces* it under
-concurrency. This is a teaching highlight, not an accident — Phase 5 dwells on it.
+The domain *expresses* the rule (fast feedback, testing); SQL *enforces* it under concurrency. Phase 5
+dwells on it.
 
 ### Tension B — Generic `TId` **vs.** "avoid unnecessary abstraction"
 
-Your brief asks for a generic `TId` that lets you swap `int`/`long`/`Guid`/`ULID`. A single generic
-type parameter threaded through every entity, handler, repository, and Dapper mapping is **viral** —
-it complicates signatures everywhere and fights your own "avoid unnecessary abstraction" and
-"simple/maintainable" goals.
-
-**Resolution — strongly-typed IDs per aggregate, not a global generic:**
+A global generic `TId` threaded through every entity/handler/repository/mapping is **viral**. Resolution —
+strongly-typed IDs per aggregate:
 
 ```csharp
-public readonly record struct OrderId(long Value);
+public readonly record struct SalesOrderId(long Value);
 public readonly record struct CustomerId(long Value);
+public readonly record struct ProductId(long Value);
 ```
 
-This gets you *more* than the brief asked for:
+- **Type safety** — can't pass a `CustomerId` where a `SalesOrderId` is expected.
+- **Swap the backing type** in one line per aggregate + one Dapper `TypeHandler` (~10 lines each). No viral
+  generic. *(direct override of "generic TId"; decide before Phase 3.)*
 
-- **Type safety** — you cannot pass a `CustomerId` where an `OrderId` is expected (a `long`/`Guid`
-  would let you). This alone catches a whole class of bugs.
-- **Swap the backing type** — change `long` to `Guid`/`ulong`/etc. in **one line per aggregate**,
-  plus one Dapper `TypeHandler`. No viral generic parameter.
+### Tension C — VSA + Modular Monolith + DDD (the project's spine)
 
-**Cost (stated honestly):** each strongly-typed ID needs a Dapper `SqlMapper.TypeHandler<T>` so it maps
-to/from the column type. That's ~10 lines per ID type. If you truly want the *literal* generic `TId`,
-Phase 3 notes how, but the default is strongly-typed IDs. **This is a direct override of your brief;
-decide before Phase 3.**
+These compose *well* — better than "VSA + Clean Architecture," which fights itself by splitting one feature
+across four technical-layer projects.
 
-### Tension C — VSA + Clean Architecture + DDD together
+- **Modular monolith** — top-level split by **business capability**: one project per module (`Sales`,
+  `Inventory`), plus a `Shared` kernel and an `Api` host.
+- **VSA** — inside a module, organize by **feature**: `Features/CreateSalesOrder/`, each a **two-file**
+  slice (Handler file = Command + Result + Validator + Handler; Endpoint file = Request + Response + Carter
+  endpoint).
+- **DDD** — each module has a `Domain/` folder (its aggregates, value objects, events) that depends only on
+  `Shared.BuildingBlocks`.
 
-They don't compose as cleanly as tutorials imply:
+The resolution replaces Clean Architecture's four concentric layers with **two rules**:
 
-- **VSA** says: organize by feature, minimize shared layers, keep a feature's code together.
-- **Clean Architecture** says: enforce a layered dependency rule (domain depends on nothing).
-- **DDD** adds a domain layer shared across features.
+1. **Modules are islands** — a module never references another's internals (compiler-enforced: no project
+   reference). Cross-module contact is a published contract in `Shared` (`IStockReservation`) or an
+   integration event.
+2. **Keep the Domain pure** — inside a module, `Features/` and `Infrastructure/` depend on `Domain/`;
+   `Domain/` depends only on shared building blocks. Same testability payoff as Clean Architecture's inner
+   circle, via folder discipline, not four projects.
 
-The conflict: `CreateOrder`, `BookOrder`, and `CancelOrder` all operate on the **same `Order`
-aggregate**. Pure VSA would duplicate or trap the aggregate inside one slice; that's wrong — the
-aggregate is genuinely shared.
-
-**Resolution — pragmatic hybrid (this is the project's spine):**
-
-- **Domain** is a shared project (the `Order` aggregate, value objects, domain services). Depends on nothing.
-- **Application** is organized **vertically by feature** — each feature folder owns its command/query,
-  validator, handler, and any feature-specific DTOs.
-- **Infrastructure** (Dapper, connection factory, stored-proc callers, dispatchers) is shared.
-- **Api** is thin — endpoints call `ISender.Send(command)` and return the result.
-
-So: **layers for the things that are genuinely shared (domain, infra), slices for the things that
-are per-feature (application handlers).** Phase 1 draws the exact folder tree and defends every folder.
+Phase 1 draws the exact tree and defends every folder.
 
 ### Tension D — "CQRS" here is CQRS-lite
 
-Full CQRS = separate read and write **models/stores**, often with event sourcing and eventual
-consistency. That is a large, operationally heavy commitment and **not** what this project needs.
-
-**What we build (CQRS-lite):**
-
-- Separate **command** handlers (go through the domain, enforce rules, write) and **query** handlers
-  (bypass the domain, read straight into DTOs via Dapper).
-- **Same** SQL Server database for both.
-
-**What we deliberately do NOT build:** separate read store, projections, event sourcing, eventual
-consistency. Phase 6 names exactly what full CQRS would add and when it's worth it, so you don't
-conflate the two.
+Separate command handlers (through the domain, write) and query handlers (bypass domain, Dapper → DTO), on
+the **same** database. **Not** built: separate read store, projections, event sourcing, eventual
+consistency. Phase 6 names what full CQRS would add.
 
 ---
 
@@ -161,14 +130,17 @@ conflate the two.
 | Decision | Choice | Rationale |
 |---|---|---|
 | Runtime | .NET 10 (LTS) | Current, supported. |
-| Data access | Dapper + stored procedures | Per brief. Explicit SQL, no ORM magic; you see every query. |
-| ORM | **None** (no EF) | Per brief; also removes the change-tracker crutch so persistence is explicit. |
-| Mediator | **Hand-rolled** (MediatR-shaped API) | Free, teaches the pattern, no license risk. |
+| Architecture | Modular monolith + VSA | Split by capability, then feature; islands + pure domain. |
+| Data access | Dapper + stored procedures | Explicit SQL, no ORM magic. |
+| ORM | **None** (no EF) | Persistence stays explicit; no change-tracker crutch. |
+| Web edge | **Carter** (ICarterModule) | Each feature owns its endpoint; VSA to the web edge. |
+| Mediator | **Hand-rolled** (MediatR-shaped API), in `Shared.Messaging` | Free, teaches the pattern. |
 | IDs | Strongly-typed per aggregate | See Tension B. |
-| Validation | FluentValidation (MIT) *or* hand-rolled | Phase 4 decides; FluentValidation is free and idiomatic. |
-| Repository | **Per-aggregate** repositories, **no generic repository** | Per brief; generic repos leak persistence concerns and encourage anemic domains. |
-| Services | Domain services **only** when logic spans aggregates | Per brief; "when NOT to create a service" is a Phase 3/5 topic. |
-| Transactions | **Explicit** in command handlers (not hidden in a pipeline behavior) | So the transaction boundary is visible while learning. See Phase 4. |
+| Validation | FluentValidation (MIT) | Free, idiomatic; input-shape only. |
+| Repository | **Per-aggregate**, no generic repository | Generic repos leak persistence, encourage anemic domains. |
+| Cross-module | Synchronous **contract** in Shared, or **integration event** | Never a direct reference/join across modules. |
+| Schema | One DB **schema per module** (`sales`, `inventory`) | Data boundary echoes the code boundary. |
+| Transactions | **Explicit** in command handlers | Boundary visible while learning. |
 
 ---
 
@@ -176,41 +148,39 @@ conflate the two.
 
 | Phase | File | Produces | Core lesson |
 |---|---|---|---|
-| 0 | `01-phase-0-orientation.md` | Nothing (reading) | WebForms → VSA mental model; glossary |
-| 1 | `02-phase-1-skeleton.md` | Solution, projects, folders, one trivial end-to-end slice | Where code lives and why; walking skeleton |
-| 2 | `03-phase-2-mediator.md` | Hand-rolled mediator + pipeline behaviors | What the mediator solves; before/after |
-| 3 | `04-phase-3-domain.md` | `Order` aggregate, value objects, IDs, domain events (defined) | Rich vs anemic; where domain logic lives |
-| 4 | `05-phase-4-create-order.md` | `CreateOrder` slice end-to-end (Dapper + proc + tx) | Anatomy of a command slice; validation placement |
-| 5 | `06-phase-5-inventory-concurrency.md` | Reservation, stock deduction, pricing, approval, `BookOrder`, concurrency | Atomicity vs policy; SQL vs domain |
-| 6 | `07-phase-6-queries.md` | `GetOrder`, `SearchOrders` read slices | Why queries bypass the domain (CQRS-lite) |
-| 7 | `08-phase-7-remaining-slices.md` | `CancelOrder`, `UpdateCustomer`, status state machine, event dispatch | State transitions as domain behavior |
-| 8 | `09-phase-8-testing.md` | Unit, integration, e2e tests | What each test level is *for* |
-| 9 | `10-phase-9-modularity.md` | Module boundaries, extraction notes | How this becomes a service later |
+| 0 | `01-phase-0-orientation.md` | Nothing (reading) | WebForms → VSA/module mental model |
+| 1 | `02-phase-1-skeleton.md` | Solution, Shared kernel, Sales module, Carter host, one trivial slice | Where code lives; walking skeleton |
+| 2 | `03-phase-2-mediator.md` | Hand-rolled mediator + behaviors in `Shared.Messaging` | What the mediator solves |
+| 3 | `04-phase-3-domain.md` | `SalesOrder` aggregate, value objects, IDs, events | Rich vs anemic; pure domain |
+| 4 | `05-phase-4-create-order.md` | `CreateSalesOrder` slice (two files, Dapper + proc + tx) | Anatomy of a command slice |
+| 5 | `06-phase-5-inventory-concurrency.md` | **Inventory module**, `IStockReservation` contract, `SubmitSalesOrder`, concurrency | Module boundary; atomicity vs policy |
+| 6 | `07-phase-6-queries.md` | `GetSalesOrder`, `SearchSalesOrders` read slices | Why queries bypass the domain |
+| 7 | `08-phase-7-remaining-slices.md` | `CancelSalesOrder`, `UpdateSalesOrder`, `CompleteSalesOrder`, events | State transitions; integration events |
+| 8 | `09-phase-8-testing.md` | Unit, integration, e2e tests | What each test level is for |
+| 9 | `10-phase-9-modularity.md` | Extraction path for a module | How a module becomes a service |
 
 ---
 
-## 6. How to drive this with Sonnet (practical)
+## 6. How to drive this (practical)
 
-1. **One phase per session.** Paste the phase file and say: *"Implement exactly this phase. Do not
-   build anything from later phases. Stop at the Checkpoint and summarize what you built and why."*
-2. **Review against the Checkpoint** questions before continuing. If you can't answer them, the
-   phase didn't teach — ask for the explanation, not more code.
-3. **Keep a decisions log.** When you override a default here (e.g. you *do* want literal `TId`),
-   record it so later phases stay consistent.
-4. **Resist scope creep.** If Sonnet starts adding caching, MediatR, EF, or a generic repository,
-   that's a signal it drifted from the brief — pull it back.
-5. **Build order is dependency order.** Phases assume the previous one compiles and its Checkpoint passed.
+1. **One phase per session.** "Implement exactly this phase. Nothing from later phases. Stop at the
+   Checkpoint and summarize what you built and why."
+2. **Review against the Checkpoint** before continuing.
+3. **Keep a decisions log** for any override.
+4. **Resist scope creep** — Clean Architecture layers, EF, MediatR, a generic repository, a cross-module
+   join all signal drift.
+5. **Build order is dependency order.**
 
 ---
 
-## 7. Success criteria for the whole project
+## 7. Success criteria
 
 You're done when you can, without notes, explain:
 
 - Why a command slice and a query slice are shaped differently.
-- Which of the twelve business operations has its rule in the domain, and which in SQL, and *why*.
-- What the mediator gave you that a direct method call didn't — and what it cost.
-- Where you would (and would not) add a domain service.
-- What would have to change to split the Order module into its own service.
+- Which business operation has its rule in the domain, which in SQL, and *why*.
+- What the mediator gave you over a direct call — and what it cost.
+- Why Sales may not reference Inventory, and how they communicate instead.
+- What would have to change to split Inventory into its own service.
 
 If you can explain those five, the architecture has done its teaching job.

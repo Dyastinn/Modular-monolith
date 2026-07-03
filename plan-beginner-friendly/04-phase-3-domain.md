@@ -1,31 +1,32 @@
-# Phase 3 — The Smart `Order` Object (the heart of the project)
+# Phase 3 — The Smart `SalesOrder` Object (the heart of the project)
 
 > 📄 Expert version: [`../plan-Opus/04-phase-3-domain.md`](../plan-Opus/04-phase-3-domain.md)
 
-**In one sentence:** We build an `Order` object that *knows and protects its own rules*, so later code
+**In one sentence:** We build a `SalesOrder` object that *knows and protects its own rules*, so later code
 just *asks* it to do things instead of policing it from outside.
 
-**What you'll build:** The `Order` object (with real behavior), its line items, small value objects
-like `Money` and `Quantity`, strongly-typed IDs, and the rules for how an order's status can change. No
-database yet — this is pure C#.
+**What you'll build:** The `SalesOrder` object (with real behavior), its line items, small value objects
+like `Money` and `Quantity`, strongly-typed IDs, and the rules for how a sales order's status can change.
+No database yet — this is pure C#. It lives in the module's `Sales/Domain/` folder; the shared base types
+live in `Erp.Shared.BuildingBlocks`.
 
 **Before you start:** Phases 1–2 done.
 
 ---
 
-## Step 1 — The trap: the "dumb data bag" (anemic) `Order`
+## Step 1 — The trap: the "dumb data bag" (anemic) `SalesOrder`
 
-Coming from most backgrounds, the natural first instinct is an `Order` that's just data with public
-setters:
+Coming from most backgrounds — and *especially* from WebForms, where the "order" was just a DataSet or a
+bag of properties — the natural instinct is a `SalesOrder` that's just data with public setters:
 
 ```csharp
 // ❌ ANEMIC — a bag of properties anyone can set to anything.
-public class Order
+public class SalesOrder
 {
     public long Id { get; set; }
     public long CustomerId { get; set; }
-    public string Status { get; set; }     // "Draft"? "Booked"? "Banana"? Anything goes!
-    public List<OrderLine> Lines { get; set; }
+    public string Status { get; set; }     // "Draft"? "Submitted"? "Banana"? Anything goes!
+    public List<SalesOrderLine> Lines { get; set; }
     public decimal Total { get; set; }     // who keeps this correct when lines change?
 }
 ```
@@ -33,71 +34,74 @@ public class Order
 Then the rules live somewhere *else*, in a service:
 
 ```csharp
-public class OrderService
+public class SalesOrderService
 {
-    public void Book(Order o)
+    public void Submit(SalesOrder o)
     {
-        if (o.Status != "Draft") throw ...;    // rule lives here...
-        if (o.Total > 50000 && !approved) ...;  // ...and here...
-        o.Status = "Booked";                     // ...but anyone can set Status elsewhere too!
+        if (o.Status != "Draft") throw ...;      // rule lives here...
+        if (o.Total > 50000 && !approved) ...;   // ...and here...
+        o.Status = "Submitted";                   // ...but anyone can set Status elsewhere too!
     }
 }
 ```
 
-**Why this rots:** the `Order` doesn't protect anything. Any code anywhere can write
-`order.Status = "Banana"`, or add a line and forget to update `Total`. The rules get scattered across
-every service that touches orders, and they drift apart. **This is the exact WebForms problem from
-Phase 0, just relocated to a "service."** It's precisely the "generic service layer" we're told to
-avoid — and now you can see *why* it's bad.
+**Why this rots:** the `SalesOrder` doesn't protect anything. Any code anywhere can write
+`order.Status = "Banana"`, or add a line and forget to update `Total`. The rules scatter across every
+service that touches orders, and they drift apart. **This is the exact WebForms problem from Phase 0, just
+relocated to a "service."** Now you can see *why* a generic "service layer" is a trap.
 
 ## Step 2 — The building blocks (and why each exists)
 
-Domain-Driven Design gives us a small vocabulary of object types. Here's each, with its reason for
-existing:
+A rich domain model gives us a small vocabulary of object types. Each, with its reason for existing:
 
 - **Entity** — has an identity and a lifespan. Two orders with identical details are still *different
-  orders*. Examples: `Order`, `Customer`. *(Two people named John Smith are still two people.)*
+  orders*. Examples: `SalesOrder`, `Customer`. *(Two people named John Smith are still two people.)*
 - **Value object** — defined purely by its values, and never changes after creation. Examples: `Money`,
-  `Quantity`. Why bother? Because a raw `decimal` can't protect itself — but a `Money` type can *refuse*
-  to be negative, and a `Quantity` can *refuse* to be zero. *(Any $10 bill equals any other $10 bill.)*
-- **Aggregate** — a group of objects that must stay consistent together. `Order` + its `OrderLine`s
-  are one aggregate; they change as a unit.
-- **Aggregate root** — the single front door to the aggregate. Outside code holds an `Order`, never
-  grabs an `OrderLine` directly. This gives the rules *one guardian*: everything goes through the
-  root's methods. *(You talk to the store manager, not the stock in the back room.)*
-- **Domain event** — a recorded fact that something happened ("OrderBooked"). Lets other code react
-  later without hard-wiring side effects into the `Order`.
-- **Domain service** — reserved for logic that spans *several* aggregates and has no natural home on
-  one object. Rare — we don't need one until Phase 5.
+  `Quantity`. Why bother? A raw `decimal` can't protect itself — but a `Money` type can *refuse* to be
+  negative, and a `Quantity` can *refuse* to be zero. *(Any $10 bill equals any other $10 bill.)*
+- **Aggregate** — a group of objects that must stay consistent together. `SalesOrder` + its
+  `SalesOrderLine`s are one aggregate; they change as a unit.
+- **Aggregate root** — the single front door to the aggregate. Outside code holds a `SalesOrder`, never
+  grabs a `SalesOrderLine` directly. One guardian: everything goes through the root's methods. *(You talk
+  to the store manager, not the stock in the back room.)*
+- **Domain event** — a recorded fact that something happened (`SalesOrderSubmitted`). Lets other code — or
+  even *another module* — react later without hard-wiring side effects into the `SalesOrder`.
+- **Domain service** — reserved for logic that spans *several* aggregates and has no natural home on one
+  object. Rare — we don't need one until Phase 5.
+
+These base types (`Entity`, `AggregateRoot`, `IDomainEvent`) live in **`Erp.Shared.BuildingBlocks`**, since
+*every* module's domain reuses them. The `SalesOrder` itself lives in **`Sales/Domain/`** — it's this
+module's business object, not shared.
 
 ## Step 3 — Strongly-typed IDs (a small idea with a big payoff)
 
-Instead of using a plain `long` for every ID, we make a distinct little type for each:
+Instead of a plain `long` for every ID, we make a distinct little type for each:
 
 ```csharp
-public readonly record struct OrderId(long Value);
+public readonly record struct SalesOrderId(long Value);
 public readonly record struct CustomerId(long Value);
-public readonly record struct MaterialId(long Value);
+public readonly record struct ProductId(long Value);
 ```
 
 Why go to this trouble?
 
-- **The compiler catches ID mix-ups.** A method `Book(OrderId id)` *cannot* be called with a
-  `CustomerId` — the code won't compile. With a plain `long`, you could pass the wrong ID and it'd
-  silently "work" (wrongly). This kills a whole category of real, nasty bugs. *(Color-coded keys: the
-  red key physically won't fit the blue lock.)*
-- **You can swap the underlying type easily.** Want `OrderId` to be a `Guid` instead of a `long` later?
-  Change it in *one line* here (plus one small database-mapping helper in Phase 4). No ripple across
-  the whole codebase.
+- **The compiler catches ID mix-ups.** A method `Submit(SalesOrderId id)` *cannot* be called with a
+  `CustomerId` — the code won't compile. With a plain `long`, you could pass the wrong ID and it'd silently
+  "work" (wrongly). This kills a whole category of real, nasty bugs. *(Color-coded keys: the red key won't
+  fit the blue lock.)*
+- **You can swap the underlying type easily.** Want `SalesOrderId` to be a `Guid` later? Change it in *one
+  line* here (plus one small database-mapping helper in Phase 4).
 
-> 💬 **Honest cost:** each ID type needs a ~10-line "type handler" so Dapper knows how to read/write it
-> to the database (we add those in Phase 4). That's the price of the safety — and it's worth it.
+> 💬 **Honest cost:** each ID type needs a ~10-line "type handler" so Dapper knows how to read/write it to
+> the database (we add those in Phase 4). That's the price of the safety — and it's worth it.
 
-## Step 4 — The base building blocks
+## Step 4 — The base building blocks (in `Erp.Shared.BuildingBlocks`)
 
-A couple of small base classes that all aggregates share:
+A couple of small base classes every module's aggregates share:
 
 ```csharp
+namespace Erp.Shared.BuildingBlocks;
+
 public abstract class Entity<TId> where TId : struct   // TId is the strongly-typed ID
 {
     public TId Id { get; protected set; }
@@ -112,65 +116,74 @@ public abstract class AggregateRoot<TId> : Entity<TId>
 }
 
 public interface IDomainEvent { }   // a marker; the actual events are records
+
+public sealed class DomainException(string message) : Exception(message);
 ```
 
-## Step 5 — The rich `Order` (this is the payoff)
+> ❓ **"Why put these in a shared project instead of the Sales module?"** Because they're not about Sales —
+> they're the generic scaffolding *any* aggregate uses. When the Inventory module arrives in Phase 5, its
+> `StockItem` aggregate reuses the exact same `AggregateRoot` and `IDomainEvent`. Shared base types, per-
+> module business objects.
+
+## Step 5 — The rich `SalesOrder` (this is the payoff)
 
 Now the good version. Notice the design choices:
 
 - **No public setters.** State only changes through methods that enforce rules.
-- **`Total` is *calculated*** from the lines every time — it can't drift out of sync, because it's
-  never stored separately.
+- **`Total` is *calculated*** from the lines every time — it can't drift, because it's never stored
+  separately.
 - **`Status` is a real enum with allowed transitions**, not a free-for-all string.
 - **Lines are added through the root**, keeping the aggregate consistent.
 - **Business methods record domain events.**
 
 ```csharp
-public sealed class Order : AggregateRoot<OrderId>
+namespace Erp.Modules.Sales.Domain;
+
+public sealed class SalesOrder : AggregateRoot<SalesOrderId>
 {
-    private readonly List<OrderLine> _lines = new();
-    public IReadOnlyList<OrderLine> Lines => _lines;
+    private readonly List<SalesOrderLine> _lines = new();
+    public IReadOnlyList<SalesOrderLine> Lines => _lines;
     public CustomerId CustomerId { get; private set; }
-    public OrderStatus Status { get; private set; }
+    public SalesOrderStatus Status { get; private set; }
 
     // Total is COMPUTED from the lines — it literally cannot be wrong.
     public Money Total => _lines.Aggregate(Money.Zero, (sum, l) => sum + l.LineTotal);
 
-    private Order() { }  // private — only the repository uses this to rebuild from the DB (Phase 4)
+    private SalesOrder() { }  // private — only the repository uses this to rebuild from the DB (Phase 4)
 
-    // The only way to make a new Order — and it starts as Draft.
-    public static Order Create(CustomerId customerId)
+    // The only way to make a new SalesOrder — and it starts as Draft.
+    public static SalesOrder Create(CustomerId customerId)
     {
-        var order = new Order { CustomerId = customerId, Status = OrderStatus.Draft };
-        order.Raise(new OrderCreated(order.Id, customerId));
+        var order = new SalesOrder { CustomerId = customerId, Status = SalesOrderStatus.Draft };
+        order.Raise(new SalesOrderCreated(order.Id, customerId));
         return order;
     }
 
-    public void AddLine(MaterialId material, Quantity qty, Money unitPrice)
+    public void AddLine(ProductId product, Quantity qty, Money unitPrice)
     {
-        if (Status != OrderStatus.Draft)
+        if (Status != SalesOrderStatus.Draft)
             throw new DomainException("Lines can only be added to a draft order.");
-        _lines.Add(new OrderLine(material, qty, unitPrice));
+        _lines.Add(new SalesOrderLine(product, qty, unitPrice));
     }
 
-    public void Book(bool approvalGranted)
+    public void Submit(bool approvalGranted)
     {
-        if (Status != OrderStatus.Draft)
-            throw new DomainException($"Only draft orders can be booked (was {Status}).");
+        if (Status != SalesOrderStatus.Draft)
+            throw new DomainException($"Only draft orders can be submitted (was {Status}).");
         if (_lines.Count == 0)
-            throw new DomainException("Cannot book an empty order.");
+            throw new DomainException("Cannot submit an empty order.");
         if (RequiresApproval && !approvalGranted)
             throw new DomainException("Order exceeds approval threshold and needs manager approval.");
-        Status = OrderStatus.Booked;
-        Raise(new OrderBooked(Id, CustomerId, Total));
+        Status = SalesOrderStatus.Submitted;
+        Raise(new SalesOrderSubmitted(Id, CustomerId, Total));
     }
 
     public void Cancel()
     {
-        if (!Status.CanTransitionTo(OrderStatus.Cancelled))
+        if (!Status.CanTransitionTo(SalesOrderStatus.Cancelled))
             throw new DomainException($"Cannot cancel an order in status {Status}.");
-        Status = OrderStatus.Cancelled;
-        Raise(new OrderCancelled(Id));
+        Status = SalesOrderStatus.Cancelled;
+        Raise(new SalesOrderCancelled(Id));
     }
 
     // The approval threshold is a BUSINESS RULE, so it lives here — not in a handler.
@@ -178,36 +191,77 @@ public sealed class Order : AggregateRoot<OrderId>
 }
 ```
 
-Read what this buys you: `Book` and `Cancel` are the *only* ways `Status` can change, and each one
-checks its own preconditions first. The $50,000 approval rule is a property *on the order*, not an `if`
-buried in some handler. **The payoff:** the handler in Phase 4/5 will just call `order.Book(approved)`
-and won't re-check *any* of this — because the `Order` already guarantees it.
+### Let's walk through the `Submit` method line by line
 
-> 🚫 **What deliberately stays OUT of the `Order`:** how it's saved (SQL), who called it (the web),
-> and safety-under-simultaneous-access (that's Phase 5's database guard). The `Order` can *express* the
-> rule "reserve only if available," but it cannot, by itself, make that safe when two people order at
-> once. Keep that line sharp — it's the theme of Phase 5.
+This one method is the whole philosophy of the phase in miniature:
 
-## Step 6 — `OrderStatus` as a state machine
+```csharp
+public void Submit(bool approvalGranted)
+{
+    if (Status != SalesOrderStatus.Draft)                    // (a)
+        throw new DomainException($"Only draft orders can be submitted (was {Status}).");
+    if (_lines.Count == 0)                                   // (b)
+        throw new DomainException("Cannot submit an empty order.");
+    if (RequiresApproval && !approvalGranted)                // (c)
+        throw new DomainException("Order exceeds approval threshold and needs manager approval.");
+    Status = SalesOrderStatus.Submitted;                     // (d)
+    Raise(new SalesOrderSubmitted(Id, CustomerId, Total));   // (e)
+}
+```
+
+- **(a) The guard clauses come first.** Before changing *anything*, `Submit` checks every rule that could
+  make submitting illegal. "Only a draft can be submitted." If already Submitted or Cancelled, it throws
+  and *stops*. This is the object *defending itself*.
+- **(b) "You can't submit an empty order."** A business truth expressed as plain code — a non-programmer
+  could read it and nod.
+- **(c) The approval rule.** `RequiresApproval` is that `Total > $50,000` property. If approval is needed
+  but wasn't granted, refuse. The order *itself* knows the threshold — the handler doesn't.
+- **(d) Only *after* every check passes** does the status change. If any check threw, we never reach this
+  line, so an order can never end up Submitted while breaking a rule. That guarantee is the entire value of
+  putting the rule here.
+- **(e) Record that it happened.** `Raise(new SalesOrderSubmitted(...))` drops a note. Other code — or the
+  Inventory module — can react later (reserve stock, send a confirmation) without the `SalesOrder` doing
+  those side effects itself. (Full story in Phase 5 & 7.)
+
+The payoff: the handler in Phase 4/5 will just call `order.Submit(approved)` and won't re-check *any* of
+this — because the `SalesOrder` already guarantees it.
+
+> ❓ **"Why throw an exception instead of returning false or an error code?"** Because submitting a
+> non-draft order isn't a normal outcome to politely report — it's a *rule violation that should never
+> happen* if the rest of the code is correct. Throwing makes it *loud and unignorable*: the operation stops
+> dead, and the caller can't accidentally continue as if it worked. A thrown `DomainException` can't be
+> silently ignored the way a `false` can.
+
+> ❓ **"The handler passes in `approvalGranted` — isn't that the handler making the decision?"** Subtle but
+> important: the handler supplies a *fact* ("a manager did approve this"), but the `SalesOrder` decides what
+> to *do* with it ("given my total, do I even need approval, and was it granted?"). The handler reports the
+> world; the domain judges it.
+
+> 🚫 **What deliberately stays OUT of the `SalesOrder`:** how it's saved (SQL), who called it (the web), and
+> safety-under-simultaneous-access (Phase 5's database guard). The `SalesOrder` can *express* the rule
+> "reserve only if available," but it can't, by itself, make that safe when two people order at once. Keep
+> that line sharp — it's the theme of Phase 5.
+
+## Step 6 — `SalesOrderStatus` as a state machine
 
 An order's status can't jump around arbitrarily. Encode the legal moves:
 
 ```csharp
-public enum OrderStatus { Draft, Booked, Cancelled, Completed }
+public enum SalesOrderStatus { Draft, Submitted, Cancelled, Completed }
 ```
 
 Allowed transitions (a real business rule — write it down, don't leave it implied):
 
 ```
-Draft     → Booked, Cancelled
-Booked    → Completed, Cancelled
+Draft     → Submitted, Cancelled
+Submitted → Completed, Cancelled
 Cancelled → (nowhere — it's final)
 Completed → (nowhere — it's final)
 ```
 
-We implement a small `CanTransitionTo` lookup so illegal moves are *impossible*, not merely frowned
-upon. *(Analogy: a board game where the pieces physically can't move to illegal squares.)* Phase 7
-exercises the full machine.
+We implement a small `CanTransitionTo` lookup so illegal moves are *impossible*, not merely frowned upon.
+*(Analogy: a board game where pieces physically can't move to illegal squares.)* Phase 7 exercises the full
+machine, and the business tutorial adds an explicit manager `Approved` state on top of this.
 
 ## Step 7 — Value objects: making bad values impossible
 
@@ -232,42 +286,100 @@ public readonly record struct Money
 }
 ```
 
-The point: you **cannot construct** a negative price or a zero quantity — the object refuses. Invalid
-states become *unrepresentable*. A raw `decimal`/`int` can't protect you like that.
+Reading `Money` closely, because it packs several ideas into a few lines:
+
+- **`readonly record struct`** — `struct` = a small lightweight value; `readonly` = never changes after
+  creation; `record` = handy equality (two `Money(10)`s are equal). Together: a tiny, unchangeable,
+  value-compared wrapper around a `decimal`. Exactly what "a value object" means.
+- **The constructor throws on negatives:** the *only* way a `Money` can exist is with a non-negative
+  amount. There is no such thing as a negative `Money` in this program. Ever.
+- **`operator +`** lets you write `priceA + priceB` and get a valid `Money` back.
+- **`operator >`** lets `Total > ApprovalPolicy.Threshold` read like plain English in the `SalesOrder`.
+
+You **cannot construct** a negative price or a zero quantity — the object refuses. Invalid states become
+*unrepresentable*.
+
+> ❓ **"Why bother? A `decimal` for money works fine."** It works until it doesn't. With a raw `decimal`,
+> nothing stops `-50` from being a price, or you accidentally adding a price to a quantity (both are just
+> numbers to the compiler). With `Money` and `Quantity` as distinct types: negatives are impossible, and
+> `Money + Quantity` won't even compile. You've turned runtime bugs into "the code won't build" — always
+> cheaper. Same idea as strongly-typed IDs, applied to values.
+
+> ❓ **"What's the private `SalesOrder()` constructor for?"** For *your* code, you always use
+> `SalesOrder.Create(...)`. The private constructor exists purely so the **repository** (Phase 4) can
+> rebuild a `SalesOrder` from database rows. Loading from the DB isn't "creating a new order," so it uses a
+> separate, private door your feature code can't see.
 
 > 🚫 **Don't over-model.** `Money` here is single-currency on purpose — this pretend company uses one
-> currency. Adding multi-currency now would be building for a requirement that doesn't exist (exactly
-> the over-engineering we avoid). If it ever becomes real, `Money` is the *one* place it changes.
+> currency. Adding multi-currency now would build for a requirement that doesn't exist. If it ever becomes
+> real, `Money` is the *one* place it changes.
 
 ## What to produce in this phase
 
-- `Common`: `Entity<TId>`, `AggregateRoot<TId>`, `IDomainEvent`, `DomainException`.
-- `Orders`: the IDs, `Order`, `OrderLine`, `Money`, `Quantity`, `OrderStatus` + transition rules,
-  `ApprovalPolicy` (the threshold), and the domain events (`OrderCreated`, `OrderBooked`,
-  `OrderCancelled`).
-- **Unit tests for the domain** (yes, now — they're basically free and prove the rules work): booking a
-  non-draft throws; an empty order can't be booked; over-threshold without approval throws; illegal
-  status transitions throw; `Money`/`Quantity` reject bad values.
+- `Erp.Shared.BuildingBlocks`: `Entity<TId>`, `AggregateRoot<TId>`, `IDomainEvent`, `DomainException`.
+- `Sales/Domain`: the IDs, `SalesOrder`, `SalesOrderLine`, `Money`, `Quantity`, `SalesOrderStatus` +
+  transition rules, `ApprovalPolicy` (the threshold), and the domain events (`SalesOrderCreated`,
+  `SalesOrderSubmitted`, `SalesOrderCancelled`).
+- **Unit tests for the domain** (yes, now — they're basically free): submitting a non-draft throws; an
+  empty order can't be submitted; over-threshold without approval throws; illegal status transitions throw;
+  `Money`/`Quantity` reject bad values.
 
 **NOT now:** no repositories, no database, no handlers, no web. The domain compiles and is tested with
 *zero* infrastructure — that isolation is the whole point.
 
 ## Common mistakes to avoid
 
-- **Adding public setters "so the database mapper can fill it in."** Don't — use the private constructor
-  + `Create` factory, and let the repository rebuild via that private constructor in Phase 4. Public
-  setters re-open the dumb-data-bag hole.
-- **Putting the approval threshold in a handler.** It's a business rule; it lives on `Order`.
+- **Adding public setters "so the database mapper can fill it in."** Use the private constructor + `Create`
+  factory; let the repository rebuild via the private constructor in Phase 4.
+- **Putting the approval threshold in a handler.** It's a business rule; it lives on `SalesOrder`.
 - **Modeling things nothing requires yet** (currencies, tax engines). Stop at the rules the actual
   operations need.
+- **Putting `SalesOrder` in a shared project.** It belongs to the Sales module. Only the *generic* base
+  types are shared.
 
 ---
 
 ## ✅ Check Yourself
 
-1. **Give a concrete bug the dumb (anemic) `Order` allows that the smart (rich) `Order` prevents.**
-   *(Hint: `Status = "Banana"`, or a `Total` that doesn't match the lines.)*
+1. **Give a concrete bug the dumb (anemic) `SalesOrder` allows that the smart (rich) one prevents.**
 2. **Why are IDs strongly-typed structs instead of `long`, and what does that cost?**
 3. **Why is `Total` a calculated property instead of a stored field you can set?**
-4. **Which order rule lives on the entity, and why not in the handler?** *(The approval threshold.)*
-5. **Name one thing that deliberately does *not* go in the domain, and where it goes instead.**
+4. **Which order rule lives on the entity, and why not in the handler?**
+5. **Why do the base types (`AggregateRoot`, `IDomainEvent`) live in `Shared.BuildingBlocks` but
+   `SalesOrder` lives in the Sales module?**
+
+---
+
+## 👨‍🏫 Answer Key
+
+**1. Concrete bug the anemic `SalesOrder` allows that the rich one prevents.**
+With the anemic version, any code can write `order.Status = "Banana"` or add a line and forget to update
+`Total`, so the total no longer matches the lines. The rich version prevents both: `Status` has a `private
+set` and only changes through methods like `Submit()`/`Cancel()` that check the rules, and `Total` is
+*computed* from the lines every time so it *can't* be out of sync.
+
+**2. Why strongly-typed ID structs, and what does it cost?**
+The compiler **stops you mixing them up** — you can't pass a `CustomerId` where a `SalesOrderId` is
+expected; it won't compile. A plain `long` would silently accept the wrong id. The **cost**: each ID type
+needs a small (~10-line) Dapper "type handler" (added in Phase 4). Cheap insurance.
+
+**3. Why is `Total` calculated, not a stored settable field?**
+A stored, settable total can *drift*: change the lines, forget to recompute, now it lies. Computing `Total`
+from the lines on every read makes it **always correct by construction** — no separate copy to desync, no
+setter to misuse.
+
+**4. Which rule lives on the entity, and why not the handler?**
+The **approval threshold** (`RequiresApproval => Total > ApprovalPolicy.Threshold`, checked inside
+`Submit()`). It lives on `SalesOrder` because it's a rule about the order's *own state*. As an `if` in a
+handler it would be easy to forget in another handler and would make the domain no longer the single source
+of truth. Put the rule where the data is.
+
+**5. Why are base types shared but `SalesOrder` module-owned?**
+`AggregateRoot`/`IDomainEvent` are generic scaffolding *any* aggregate in *any* module reuses — so they
+live in `Shared.BuildingBlocks`. `SalesOrder` is a specific business object owned by the Sales department —
+so it lives in `Sales/Domain/`. Sharing it would let other modules depend on Sales' internals, breaking the
+island rule.
+
+> ✅ **You're ready for Phase 4 if:** you can explain "anemic vs. rich" with a concrete bug, and you get
+> *why* `Total` is computed and `Status` is guarded. This phase is the conceptual heart of the project.
+> Bonus: your Phase 3 unit tests passing is proof you understood it.
