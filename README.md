@@ -10,14 +10,24 @@ those are the traps this project deliberately avoids.
 
 ## Where to start
 
-Three companion guides, same architecture, different depth:
+Three companion guides — **same architecture, three different jobs.** They share phase numbers, so you can
+move between them:
 
-- **[`plan-beginner-friendly/`](plan-beginner-friendly/)** — the hands-on build guide. Follow it phase by
-  phase to build the solution. **Start here if you're building.**
-- **[`plan-business-tutorial/`](plan-business-tutorial/)** — the "why" companion for a developer migrating
-  from **ASP.NET WebForms (`.aspx.vb` + jQuery AJAX / `[WebMethod]`)**. Explains every decision by contrast
-  with what you already know.
-- **[`plan-Opus/`](plan-Opus/)** — the terse expert reference: decisions and reasoning, no hand-holding.
+- **[`plan-beginner-friendly/`](plan-beginner-friendly/) — Understand it.** Concept-first and plain-English:
+  *what problem* each pattern solves and *how* the pieces fit, with analogies, answer keys, and a small slice
+  you build to make the ideas click. Read this to **get the concepts cold.** (Also written to help a
+  developer coming from **ASP.NET WebForms**.)
+- **[`plan-business-tutorial/`](plan-business-tutorial/) — Build it for real.** Roll up your sleeves and
+  implement the full, secured Sales Order module end-to-end — JWT, roles, credit limits, inventory
+  reservation, concurrency — applying the concepts **with your own hands.**
+- **[`plan-Opus/`](plan-Opus/) — Let AI build it.** A terse, unambiguous, **AI-ready spec.** Hand a phase to
+  a coding agent (e.g. Claude Code) and have it implement exactly that phase — so you **see the architecture
+  come together first-hand** and review real code against the plan.
+
+> **Suggested path:** read `plan-beginner-friendly` to understand *why*, then either build it yourself with
+> `plan-business-tutorial` **or** drive an AI through `plan-Opus` and watch it materialize — then read the
+> result back against the concepts. Doing both (build one slice by hand, let AI do the next) is the fastest
+> way to internalize it.
 
 ## Solution layout
 

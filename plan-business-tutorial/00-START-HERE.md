@@ -10,14 +10,21 @@
 
 ## How this tutorial relates to the other two folders
 
-You are standing on the shoulders of two documents. **Read them first if you haven't:**
+Three folders, same architecture, **three different jobs** — this one is **"build it for real."** You're
+doing the implementation yourself, applying concepts the other folders frame differently:
 
-- [`../plan-beginner-friendly/`](../plan-beginner-friendly/) — the gentle, plain-English explanation of
-  every pattern (mediator, domain, CQRS, vertical slices, testing). If a *concept* here confuses you,
-  the matching phase there explains it slowly with analogies. Start with
+- [`../plan-beginner-friendly/`](../plan-beginner-friendly/) — **Understand it.** The gentle, plain-English
+  explanation of *what problem* each pattern solves and *how* it works (mediator, domain, CQRS, vertical
+  slices, testing). If a *concept* here confuses you, the matching phase there explains it slowly with
+  analogies. Read it first if you haven't; start with
   [00a-FOUNDATIONS.md](../plan-beginner-friendly/00a-FOUNDATIONS.md) if C# itself is new.
-- [`../plan-Opus/`](../plan-Opus/) — the terse, expert reference with the architectural *decisions* and
-  the reasoning behind them.
+- [`../plan-Opus/`](../plan-Opus/) — **Let AI build it.** The terse, AI-ready spec of the same phases. If
+  you'd rather *watch* the module get built than type it, hand a phase to a coding agent (e.g. Claude Code),
+  let it implement exactly that phase, then compare the result to what you'd have written here.
+
+So: **understand** in `plan-beginner-friendly`, **build by hand** here, and optionally **let an AI build**
+from `plan-Opus` to see it a second way. A great rhythm is to build a slice yourself here, then have the AI
+do the next one from Opus and review its work.
 
 **This folder does not repeat or change that architecture.** When we use a mediator, a value object, an
 atomic SQL guard, or a validation behavior, we link back instead of re-explaining from scratch — then we

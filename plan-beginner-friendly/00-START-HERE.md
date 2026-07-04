@@ -1,14 +1,20 @@
 # 00 — Start Here (Read This First)
 
-Welcome. This folder is the **plain-English, beginner-friendly build guide**. You follow it phase by
-phase and, by the end, you've built a real slice of ERP software with your own hands. It explains every
-idea using everyday language, analogies, and lots of "here's *why*."
+Welcome. This folder's job is to make you **understand the concepts really well** — *what problem* each
+piece solves and *how* it works — in plain English, with everyday analogies and lots of "here's *why*." You
+build a small teaching slice as you go, but the goal here is **understanding**, not shipping the finished
+product. Once the ideas click, the companion folders are where you *do* it.
 
-> **Two companion folders, same project, different jobs:**
-> - [`../plan-business-tutorial/`](../plan-business-tutorial/) — the deep "why" companion, written for
->   someone coming from **ASP.NET WebForms** (`.aspx.vb` + jQuery AJAX / `[WebMethod]`). If a *decision*
->   here feels arbitrary, that folder explains it by contrast with what you already know.
-> - [`../plan-Opus/`](../plan-Opus/) — the terse expert version. Same phase numbers line up.
+> **Three folders, same architecture, three different jobs:**
+> - **This folder (`plan-beginner-friendly`) — Understand it.** Get the ideas cold: the problem, the fix,
+>   the trade-offs, with analogies and answer keys.
+> - [`../plan-business-tutorial/`](../plan-business-tutorial/) — **Build it for real.** Implement the full,
+>   secured Sales Order module end-to-end with your own hands (JWT, roles, credit limits, concurrency). Also
+>   written for someone coming from **ASP.NET WebForms** (`.aspx.vb` + jQuery AJAX / `[WebMethod]`) — it
+>   explains each decision by contrast with what you already know.
+> - [`../plan-Opus/`](../plan-Opus/) — **Let AI build it.** A terse, AI-ready spec: hand a phase to a coding
+>   agent (e.g. Claude Code), have it implement exactly that phase, and watch the architecture come together
+>   — then read the real code against what you learned here. Same phase numbers line up.
 
 ---
 

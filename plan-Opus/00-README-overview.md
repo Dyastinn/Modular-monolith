@@ -1,12 +1,20 @@
 # 00 — Overview & Architecture Decisions
 
+> **This folder's job — "let AI build it."** Of the three companion folders, this is the terse, unambiguous,
+> **AI-ready implementation spec.** Its purpose is to be handed to a coding agent (e.g. Claude Code) one
+> phase at a time so it implements exactly that phase — letting you *watch the architecture materialize* and
+> review real code against the plan. The two sibling folders do the other jobs:
+> [`../plan-beginner-friendly/`](../plan-beginner-friendly/) — **understand** the concepts (what problem,
+> how); [`../plan-business-tutorial/`](../plan-business-tutorial/) — **build it by hand** with a fuller,
+> production-shaped feature set. Same architecture, same phase numbers.
+
 This is the master document. Read it once, fully, before starting Phase 0. It holds every cross-cutting
 decision so the phase files don't repeat themselves. Phase files *reference* decisions made here rather
 than re-arguing them.
 
 > **How to read this set:** one file per phase. Each phase file is self-contained enough to hand to an
-> implementer as "build exactly this, nothing more." Review against the phase's **Checkpoint** before
-> moving on.
+> implementer (human or AI) as "build exactly this, nothing more." Review against the phase's **Checkpoint**
+> before moving on. §6 below gives ready-to-use driving prompts.
 
 ---
 
