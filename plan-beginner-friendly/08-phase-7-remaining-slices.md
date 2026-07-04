@@ -39,7 +39,7 @@ public sealed class CancelSalesOrderHandler(
         // If it was submitted, give back the stock we reserved in Phase 5 — through the Inventory contract.
         foreach (var line in order.Lines)
             await stock.ReleaseAsync(line.ProductId.Value, line.Quantity.Value, tx.Inner, ct);
-        await orders.UpdateAsync(order, tx, ct);   // version-checked status update
+        await orders.UpdateAsync(order, tx.Inner, ct);   // version-checked status update, on the same transaction
         await tx.CommitAsync(ct);
 
         return Unit.Value;   // SalesOrderCancelled event dispatched after commit (Step 3)
@@ -124,6 +124,17 @@ public interface INotificationHandler<in T> where T : INotification
 
 `IPublisher.Publish(e)` finds all `INotificationHandler<T>` for that event and runs them. Example: a
 `SalesOrderSubmittedHandler` that writes an audit row — a *side effect*, kept out of the domain.
+
+> 🔗 **Same idea, two names — don't let it trip you.** The [business tutorial](../plan-business-tutorial/08-approval-cancellation.md)
+> builds this exact mechanism but names it after the *domain-event* vocabulary. The mapping is one-to-one:
+> | Here (beginner) | Business tutorial | Role |
+> |---|---|---|
+> | `INotification` | *(the event implements `IDomainEvent`)* | the "something happened" record |
+> | `INotificationHandler<T>` | `IDomainEventHandler<T>` | a reaction to that event |
+> | `IPublisher` | `IDomainEventDispatcher` | finds the handlers and runs them after commit |
+>
+> Both dispatch domain events to zero-or-more handlers *after* the transaction commits. Pick one naming set
+> in your own build and stay consistent — they are the same pattern, not two different ones.
 
 > 💡 **Notification vs. command.** A **command** goes to exactly *one* handler and usually returns a result.
 > A **notification** is an announcement to *any number* of handlers (zero to ten) and returns nothing.

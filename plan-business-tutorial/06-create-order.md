@@ -115,7 +115,7 @@ public sealed class CreateSalesOrderHandler(
     IItemRepository items,
     ISalesOrderRepository orders,
     IUnitOfWork uow,
-    ICurrentUser currentUser) : IRequestHandler<CreateSalesOrderCommand, long>
+    ICurrentUser currentUser) : ICommandHandler<CreateSalesOrderCommand, long>   // command marker (Phase 2)
 {
     public async Task<long> Handle(CreateSalesOrderCommand cmd, CancellationToken ct)
     {

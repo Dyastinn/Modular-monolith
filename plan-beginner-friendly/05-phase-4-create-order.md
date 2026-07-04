@@ -38,15 +38,26 @@ Shared/Erp.Shared.Infrastructure/Persistence/
 > what you read together), and we don't merge the endpoint in (the web edge has different dependencies and
 > is tested differently).
 
-We add two tiny "marker" interfaces in `Erp.Shared.Messaging` just to make intent obvious (they add no
-behavior — they only extend `IRequest<T>`):
+We add a few tiny "marker" interfaces in `Erp.Shared.Messaging` just to make intent obvious (they add no
+behavior — they only narrow `IRequest<T>` / `IRequestHandler<,>`):
 
 ```csharp
+// Request markers — is this request a change or a read?
 public interface ICommand<TResponse> : IRequest<TResponse> { }  // "I change something"
 public interface IQuery<TResponse>   : IRequest<TResponse> { }  // "I only read"
+
+// Matching handler markers — read better than IRequestHandler and let us target behaviors
+// at just commands (e.g. "wrap every ICommandHandler in a transaction") later if we want.
+public interface ICommandHandler<in TCommand, TResponse> : IRequestHandler<TCommand, TResponse>
+    where TCommand : ICommand<TResponse> { }
+public interface IQueryHandler<in TQuery, TResponse> : IRequestHandler<TQuery, TResponse>
+    where TQuery : IQuery<TResponse> { }
 ```
 
-`CreateSalesOrder` is a **command** that returns the new order's id.
+That's the whole definition — `ICommandHandler<,>` / `IQueryHandler<,>` are literally `IRequestHandler<,>`
+with a clearer name and a constraint, nothing more. The mediator still resolves and runs them as
+`IRequestHandler<,>`, so no other code changes. `CreateSalesOrder` is a **command** that returns the new
+order's id.
 
 ### File 1 — `CreateSalesOrderHandler.cs` (the whole behavior)
 
@@ -101,7 +112,7 @@ public sealed class CreateSalesOrderHandler(
         }
 
         await using var tx = await uow.BeginAsync(ct);   // transaction boundary — kept visible (Step 7)
-        await orders.AddAsync(order, ct);
+        await orders.AddAsync(order, tx.Inner, ct);        // save ON the handler's transaction (Step 7)
         await tx.CommitAsync(ct);
 
         return new CreateSalesOrderResult(order.Id.Value);
@@ -109,12 +120,11 @@ public sealed class CreateSalesOrderHandler(
 }
 ```
 
-(`ICommandHandler<,>` is just `IRequestHandler<,>` narrowed to commands — a one-line marker in
-`Shared.Messaging`, same idea as `ICommand`.)
-
 > ℹ️ **About `IPricingService`:** it's a small interface — "given a `ProductId`, give me its `Money` unit
-> price." We *use* it here but only *justify* it properly in [Phase 5](06-phase-5-inventory-concurrency.md)
-> (it's our first genuine "domain service," because pricing needs data the order itself doesn't own). For
+> price." Be precise about what it *is*: because it fetches data from a price list, it's really a **read port
+> (data access) that the domain declares and Infrastructure implements** — the same shape as a repository, not
+> a "domain service." (A *true* domain service holds stateless domain *logic* that spans several aggregates
+> and does **no** I/O — see the corrected note in [Phase 5 §2](06-phase-5-inventory-concurrency.md).) For
 > Phase 4, read it as a simple price lookup; a stub that returns a fixed price is fine to get this running.
 
 ### File 2 — `CreateSalesOrderEndpoint.cs` (the web edge, via Carter)
@@ -255,9 +265,9 @@ rules). **If you ever catch a business `if` sneaking into a handler, stop: it be
 ```csharp
 public interface ISalesOrderRepository
 {
-    Task AddAsync(SalesOrder order, CancellationToken ct);
-    Task<SalesOrder?> GetAsync(SalesOrderId id, CancellationToken ct);   // rebuilds the whole aggregate
-    Task UpdateAsync(SalesOrder order, CancellationToken ct);            // used in Phase 5/7
+    Task AddAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct);      // writes run on the handler's tx
+    Task<SalesOrder?> GetAsync(SalesOrderId id, CancellationToken ct);             // a read — opens its own connection
+    Task UpdateAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct);   // used in Phase 5/7
 }
 ```
 
@@ -268,20 +278,21 @@ all the lines:
 ```csharp
 public sealed class SalesOrderRepository(IDbConnectionFactory factory) : ISalesOrderRepository
 {
-    public async Task AddAsync(SalesOrder order, CancellationToken ct)
+    public async Task AddAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct)
     {
-        using var conn = factory.Create();
+        var conn = tx.Connection!;   // reuse the handler's transaction's connection — do NOT open a new one,
+                                     // or the inserts wouldn't be part of the transaction the handler committed.
         var orderId = await conn.ExecuteScalarAsync<long>(new CommandDefinition(
             "sales.usp_SalesOrder_Insert",   // always schema-qualify: the proc lives in the sales schema
             new { order.CustomerId /* mapped via a TypeHandler */, Status = (int)order.Status },
-            commandType: CommandType.StoredProcedure, cancellationToken: ct));
+            transaction: tx, commandType: CommandType.StoredProcedure, cancellationToken: ct));
 
         foreach (var line in order.Lines)
             await conn.ExecuteAsync(new CommandDefinition(
                 "sales.usp_SalesOrderLine_Insert",
                 new { SalesOrderId = orderId, line.ProductId, Quantity = line.Quantity.Value,
                       UnitPrice = line.UnitPrice.Amount },
-                commandType: CommandType.StoredProcedure, cancellationToken: ct));
+                transaction: tx, commandType: CommandType.StoredProcedure, cancellationToken: ct));
     }
     // GetAsync: call sales.usp_SalesOrder_Get + sales.usp_SalesOrderLine_GetByOrder, rebuild via the private constructor.
 }
@@ -338,8 +349,28 @@ We deliberately keep the transaction boundary **right there in the handler**
   you want while learning where it belongs. For `CreateSalesOrder`, the boundary spans "insert the header +
   all the lines."
 
-The `IUnitOfWork`/`IDbConnectionFactory` implementations live in `Shared.Infrastructure`; the handler
-depends only on the *interface*.
+Here are the two small interfaces the handler leans on. They live in `Shared.Infrastructure` (with their SQL
+Server implementations); the handler depends only on the *interface*:
+
+```csharp
+public interface IUnitOfWork
+{
+    Task<IAppTransaction> BeginAsync(CancellationToken ct);   // opens a connection + starts a transaction
+}
+
+public interface IAppTransaction : IAsyncDisposable
+{
+    IDbTransaction Inner { get; }               // the raw transaction to hand to repositories (and, in Phase 5, the stock contract)
+    Task CommitAsync(CancellationToken ct);     // make the changes permanent
+    // If you dispose WITHOUT calling CommitAsync (e.g. a rule threw), disposing rolls the transaction back —
+    // so "throw = rollback" falls out for free. That's why the handler uses `await using var tx = …`.
+}
+```
+
+> ℹ️ **Naming heads-up:** the [business tutorial](../plan-business-tutorial/06-create-order.md) calls this
+> same property `Transaction` instead of `Inner`. They're the identical concept — the raw `IDbTransaction` you
+> pass to a repository or the stock contract. Pick one name and use it everywhere in *your* build; we use
+> `Inner` throughout this course.
 
 > Later, once this is second nature, promoting transactions to a behavior is a reasonable refactor — but do
 > it *after* you've felt where the boundary goes.

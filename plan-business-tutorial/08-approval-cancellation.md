@@ -41,7 +41,7 @@ public sealed class ApproveSalesOrderHandler(
     ICustomerRepository customers,
     IUnitOfWork uow,
     ICurrentUser currentUser,
-    IDomainEventDispatcher events) : IRequestHandler<ApproveSalesOrderCommand, Unit>
+    IDomainEventDispatcher events) : ICommandHandler<ApproveSalesOrderCommand, Unit>   // command marker (Phase 2)
 {
     public async Task<Unit> Handle(ApproveSalesOrderCommand cmd, CancellationToken ct)
     {
@@ -127,7 +127,7 @@ public sealed class CancelSalesOrderHandler(
     ICustomerRepository customers,  // needed to reverse the balance if the order was already Approved
     IStockReservation stock,        // the Inventory contract — release goes back across the wall
     IUnitOfWork uow,
-    IDomainEventDispatcher events) : IRequestHandler<CancelSalesOrderCommand, Unit>
+    IDomainEventDispatcher events) : ICommandHandler<CancelSalesOrderCommand, Unit>   // command marker (Phase 2)
 {
     public async Task<Unit> Handle(CancelSalesOrderCommand cmd, CancellationToken ct)
     {
@@ -183,12 +183,28 @@ public sealed class CancelSalesOrderHandler(
 The domain events raised in [Phase 5](05-domain-model.md) (`SalesOrderApproved`, etc.) get dispatched
 *after* the transaction commits. Minimal dispatcher (Infrastructure):
 
-```csharp
-public interface IDomainEventDispatcher { Task DispatchAsync(AggregateRoot<SalesOrderId> agg, CancellationToken ct); }
+First, the two contracts — a handler for one event type, and the dispatcher that runs them. These belong in
+`Erp.Shared.Messaging` (every module's events reuse them), alongside the other messaging contracts:
 
+```csharp
+// A reaction to a specific domain event. Zero-to-many handlers may exist per event.
+public interface IDomainEventHandler<in TEvent> where TEvent : IDomainEvent
+{
+    Task Handle(TEvent domainEvent, CancellationToken ct);
+}
+
+// Note the GENERIC TId — the dispatcher works for ANY aggregate (SalesOrder, Inventory's Stock, …),
+// so this shared type isn't coupled to a Sales-specific id.
+public interface IDomainEventDispatcher
+{
+    Task DispatchAsync<TId>(AggregateRoot<TId> agg, CancellationToken ct) where TId : struct;
+}
+```
+
+```csharp
 public sealed class DomainEventDispatcher(IServiceProvider sp) : IDomainEventDispatcher
 {
-    public async Task DispatchAsync(AggregateRoot<SalesOrderId> agg, CancellationToken ct)
+    public async Task DispatchAsync<TId>(AggregateRoot<TId> agg, CancellationToken ct) where TId : struct
     {
         foreach (var e in agg.DomainEvents)
         {
@@ -200,6 +216,11 @@ public sealed class DomainEventDispatcher(IServiceProvider sp) : IDomainEventDis
     }
 }
 ```
+
+> 🔑 **Why generic `<TId>` and not `AggregateRoot<SalesOrderId>`?** This dispatcher lives in the *shared*
+> kernel, so it must not know about a Sales-specific type like `SalesOrderId`. Making `DispatchAsync<TId>`
+> generic keeps it usable by every module's aggregates while staying inside the module walls — a small change
+> with a real boundary payoff.
 
 An example handler that logs an audit entry:
 
@@ -216,12 +237,25 @@ public sealed class SalesOrderApprovedAuditHandler(ILogger<SalesOrderApprovedAud
 }
 ```
 
+> ℹ️ **Register these like handlers.** `IDomainEventHandler<>` implementations are found the same way as your
+> request handlers — extend `AddSalesModule`'s assembly scan to also register every closed
+> `IDomainEventHandler<>` in the module (the same reflection loop from
+> [Phase 2](02-mediator-own-vs-free.md), swapping `IRequestHandler<,>` for `IDomainEventHandler<>`). A handler
+> that isn't registered simply never runs — and since dispatch is best-effort after commit, you'd get *silent*
+> no-ops, so it's worth a quick check that yours are picked up.
+
 > 📎 **Why dispatch *after* commit** (and the consequence if a handler fails) —
 > [beginner Phase 7 §3](../plan-beginner-friendly/08-phase-7-remaining-slices.md). Short version: only
 > react to things that *actually saved*; if the audit log fails, the order is still correctly approved
 > (a failed log shouldn't un-approve an order). Reliable cross-system reactions would need a queue/outbox
 > — deliberately out of scope here (that's the [beginner Phase 9](../plan-beginner-friendly/10-phase-9-modularity.md)
 > "next step").
+
+> 🔗 **Same mechanism, two names.** The [beginner course](../plan-beginner-friendly/08-phase-7-remaining-slices.md)
+> introduces this dispatch under the *notification* vocabulary. It's one-to-one with what we build here:
+> `INotification` ↔ our `IDomainEvent`, `INotificationHandler<T>` ↔ our **`IDomainEventHandler<T>`**, and
+> `IPublisher` ↔ our **`IDomainEventDispatcher`**. Same pattern (publish an event to zero-or-more handlers
+> after commit) — just pick one naming set and stay consistent in your own build.
 
 ## 7. The endpoints (each a Carter module in its feature folder; note the role gate on approve)
 

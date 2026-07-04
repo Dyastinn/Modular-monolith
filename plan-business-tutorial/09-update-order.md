@@ -53,7 +53,7 @@ public sealed class UpdateSalesOrderHandler(
     ICustomerRepository customers,
     IItemRepository items,
     IUnitOfWork uow,
-    ICurrentUser currentUser) : IRequestHandler<UpdateSalesOrderCommand, Unit>
+    ICurrentUser currentUser) : ICommandHandler<UpdateSalesOrderCommand, Unit>   // command marker (Phase 2)
 {
     public async Task<Unit> Handle(UpdateSalesOrderCommand cmd, CancellationToken ct)
     {

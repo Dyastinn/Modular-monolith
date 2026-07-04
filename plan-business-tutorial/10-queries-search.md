@@ -48,7 +48,7 @@ public sealed record SalesOrderDetailDto(
 public sealed record SalesOrderLineDto(long ItemId, string ItemName, int Quantity, decimal UnitPrice, decimal LineTotal);
 
 public sealed class GetSalesOrderHandler(IDbConnectionFactory factory)
-    : IRequestHandler<GetSalesOrderQuery, SalesOrderDetailDto?>
+    : IQueryHandler<GetSalesOrderQuery, SalesOrderDetailDto?>   // query marker (Phase 2)
 {
     public async Task<SalesOrderDetailDto?> Handle(GetSalesOrderQuery q, CancellationToken ct)
     {
@@ -99,7 +99,7 @@ public sealed class SearchSalesOrdersValidator : AbstractValidator<SearchSalesOr
 }
 
 public sealed class SearchSalesOrdersHandler(IDbConnectionFactory factory)
-    : IRequestHandler<SearchSalesOrdersQuery, PagedResult<SalesOrderSummaryDto>>
+    : IQueryHandler<SearchSalesOrdersQuery, PagedResult<SalesOrderSummaryDto>>   // query marker (Phase 2)
 {
     public async Task<PagedResult<SalesOrderSummaryDto>> Handle(SearchSalesOrdersQuery q, CancellationToken ct)
     {

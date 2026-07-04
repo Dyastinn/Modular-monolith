@@ -47,10 +47,16 @@ namespace Erp.Shared.Common.Contracts;   // namespace matches the folder: Erp.Sh
 
 public interface IStockReservation
 {
-    Task<bool> TryReserveAsync(long productId, int quantity, IDbTransaction tx, CancellationToken ct);
-    Task ReleaseAsync(long productId, int quantity, IDbTransaction tx, CancellationToken ct);
+    Task<bool> TryReserveAsync(long productId, int quantity, IDbTransaction tx, CancellationToken ct);  // hold stock (submit)
+    Task ReleaseAsync(long productId, int quantity, IDbTransaction tx, CancellationToken ct);           // give it back (cancel)
+    Task DeductAsync(long productId, int quantity, IDbTransaction tx, CancellationToken ct);            // ship it (complete) — Phase 7
 }
 ```
+
+> ℹ️ **Three methods, one lifecycle.** We show all three now so the contract is complete, even though you
+> only *use* `TryReserveAsync` in this phase. `ReleaseAsync` is used on cancel and `DeductAsync` on complete —
+> both in [Phase 7](08-phase-7-remaining-slices.md). They're the *reserve → (deduct | release)* set from
+> Step 6; each is one atomic SQL statement of the same shape.
 
 ```
    Sales module                 Shared.Contracts            Inventory module
@@ -89,11 +95,10 @@ payoff:
 > (a "saga") — which is exactly the trade-off Phase 9 discusses. We take the simple correct option now and
 > name the upgrade path.
 
-## Step 2 — Pricing: our first *justified* domain service (inside Sales)
+## Step 2 — Pricing: a read *port*, and what a *real* domain service would be
 
-Back in Phase 3 we said domain services are rare. So why does pricing get one? Because pricing needs data
-from *more than one* place (products, price lists) and doesn't belong to `SalesOrder` alone. **That** is the
-specific situation a domain service is for.
+Pricing needs data the order doesn't own (a price list), so `SalesOrder` can't compute it alone. We express
+that need as a small interface the Sales domain *declares* and Infrastructure *implements*:
 
 ```csharp
 public interface IPricingService
@@ -103,10 +108,19 @@ public interface IPricingService
 }
 ```
 
-> 🔑 **The test for "should this be a service?":** *A domain service exists only when the logic spans
-> multiple aggregates, or needs data the aggregate doesn't own.* If pricing were just "unit price × quantity"
-> using data already on the order, it'd be a method on `SalesOrderLine` — **not** a service. It becomes a
-> service *only because* it reaches for price-list data. Say that test out loud every time you're tempted.
+> ⚠️ **Naming correction (important — earlier drafts called this a "domain service"; it isn't one).** Because
+> `IPricingService` *fetches data from a price list*, it's really a **read port — data access** — the same
+> shape as a repository (declared by the domain, implemented in Infrastructure with Dapper/SQL). A DDD
+> **domain service** is something else: **stateless domain *logic* that spans several aggregates and does no
+> I/O.** The tell is I/O: anything that reads a database or calls another system is a *port/adapter*, not a
+> domain service. `IPricingService` reads the price list → port. (The name has "Service" in it, but the name
+> isn't what decides the category — the *behavior* does.)
+>
+> **What a genuine domain service looks like** (for contrast): imagine a rule like *"spread a whole-order
+> discount across its lines proportionally to each line's value."* That's pure calculation over data already
+> on the aggregate(s), touches no database, and doesn't sit naturally on any single line — so it'd be a
+> stateless `IOrderDiscountPolicy.Apply(order)` domain service. Notice: **no I/O.** That's the difference.
+> This project doesn't need one; we're just naming the shape so you can recognize it.
 
 > 🧭 **A note for later:** in a full ERP, product catalog and pricing might themselves be a module. We keep
 > `IPricingService` inside Sales here to keep the phase focused on *one* new module (Inventory). Introducing
@@ -254,13 +268,25 @@ public sealed class SubmitSalesOrderHandler(
                 throw new DomainException($"Insufficient stock for product {line.ProductId.Value}.");
         }
 
-        await orders.UpdateAsync(order, tx, ct);   // save Submitted status + version check (Step 5)
+        await orders.UpdateAsync(order, tx.Inner, ct);   // save Submitted status + version check (Step 5)
         await tx.CommitAsync(ct);
 
         return Unit.Value;   // SalesOrderSubmitted event dispatched after commit (Phase 7)
     }
 }
 ```
+
+*(`tx.Inner` is the raw `IDbTransaction` from the `IAppTransaction` we defined in
+[Phase 4 §7](05-phase-4-create-order.md). Every write here — the reservation contract call **and**
+`orders.UpdateAsync` — runs on that **one** transaction, so they commit or roll back together.)*
+
+> ⚠️ **Reminder: `ApprovalGranted` here is a self-asserted flag, not a real approval.** The command carries
+> `bool ApprovalGranted`, and `order.Submit(cmd.ApprovalGranted)` trusts it — but nothing checks a *manager*
+> granted it (this course has no auth). So the "$50k needs approval" rule is *modeled* but *unenforced*; a
+> caller could pass `true`. That's fine for learning **where the rule lives**, but see the ⚠️ box in
+> [Phase 3 §5](04-phase-3-domain.md) and the [business tutorial's role-gated `/approve`](../plan-business-tutorial/08-approval-cancellation.md)
+> for how a real system makes approval an authorized, un-fakeable step. *(`Unit` is a tiny "nothing to return"
+> type — defined in the next callout.)*
 
 The clean division of labor — **four responsibilities, four homes, no overlap:**
 
@@ -269,7 +295,17 @@ The clean division of labor — **four responsibilities, four homes, no overlap:
 - The **contract** (`IStockReservation`) is the only channel between them — the wall with a doorway.
 - The **handler** owns the *transaction boundary* that makes them commit together.
 
-*(`Unit` is a tiny "nothing meaningful to return" type; define it in `Shared.Messaging`.)*
+`Unit` is a tiny "nothing meaningful to return" type — it lets a command that changes state but has no useful
+result still fit the `IRequest<TResponse>` shape (you can't write `IRequest<void>`). Define it once in
+`Shared.Messaging`:
+
+```csharp
+// A stand-in for "void" that still satisfies IRequest<TResponse>.
+public readonly record struct Unit
+{
+    public static readonly Unit Value = default;
+}
+```
 
 ## Step 5 — Protecting against "two managers editing the same order"
 

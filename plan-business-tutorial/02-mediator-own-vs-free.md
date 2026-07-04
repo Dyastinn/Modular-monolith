@@ -69,6 +69,14 @@ public interface IRequestHandler<in TRequest, TResponse>
     Task<TResponse> Handle(TRequest request, CancellationToken ct);
 }
 
+// Handler markers that mirror ICommand/IQuery — they add no behavior, they just read better and let us
+// constrain a future behavior to "commands only". Every slice in this tutorial declares its handler with
+// one of these (e.g. `: ICommandHandler<SubmitSalesOrderCommand, Unit>`), NOT raw IRequestHandler.
+public interface ICommandHandler<in TCommand, TResponse> : IRequestHandler<TCommand, TResponse>
+    where TCommand : ICommand<TResponse> { }
+public interface IQueryHandler<in TQuery, TResponse> : IRequestHandler<TQuery, TResponse>
+    where TQuery : IQuery<TResponse> { }
+
 // "The rest of the pipeline" — used by behaviors.
 public delegate Task<TResponse> RequestHandlerDelegate<TResponse>();
 

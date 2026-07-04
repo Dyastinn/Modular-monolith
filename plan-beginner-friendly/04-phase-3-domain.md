@@ -226,6 +226,15 @@ public void Submit(bool approvalGranted)
 The payoff: the handler in Phase 4/5 will just call `order.Submit(approved)` and won't re-check *any* of
 this — because the `SalesOrder` already guarantees it.
 
+> ⚠️ **A subtlety about the id inside `SalesOrderCreated`.** A brand-new order hasn't been saved yet, so the
+> database hasn't assigned its identity — `order.Id` is still the default `SalesOrderId(0)` at the moment
+> `Create()` raises `SalesOrderCreated(order.Id, …)`. That event id is therefore **provisional**. Two clean
+> ways to handle it, both fine for this project: (1) **don't put the id in the "created" event at all** — a
+> `SalesOrderCreated(CustomerId)` is enough, since the real id only becomes meaningful after insert; or (2)
+> let the **repository stamp `Id`** on the aggregate right after the `INSERT` returns `SCOPE_IDENTITY()`, and
+> dispatch events *after* save (which we do anyway — Phase 7 dispatches after commit), so any handler reads
+> the real id. The trap to avoid is *assuming* `SalesOrderCreated.Id` is usable before the order is persisted.
+
 > ❓ **"Why throw an exception instead of returning false or an error code?"** Because submitting a
 > non-draft order isn't a normal outcome to politely report — it's a *rule violation that should never
 > happen* if the rest of the code is correct. Throwing makes it *loud and unignorable*: the operation stops
@@ -236,6 +245,34 @@ this — because the `SalesOrder` already guarantees it.
 > important: the handler supplies a *fact* ("a manager did approve this"), but the `SalesOrder` decides what
 > to *do* with it ("given my total, do I even need approval, and was it granted?"). The handler reports the
 > world; the domain judges it.
+
+> ⚠️ **Honest limitation — approval here is *not* actually enforced, and you must know that.** The domain
+> correctly decides *whether* approval is **needed** (`RequiresApproval`), but `Submit(bool approvalGranted)`
+> just *trusts* the boolean it's handed. Nothing in this beginner build checks that a **manager** actually
+> granted it — whoever calls the endpoint could simply pass `approvalGranted: true` and sail through. The
+> domain answers "*is* approval required?" but no one answers "*who is allowed to grant it?*" — that second
+> question is **authorization**, a platform concern this course deliberately leaves out to stay focused.
+>
+> The [business tutorial](../plan-business-tutorial/08-approval-cancellation.md) does it the real way: a
+> **separate, manager-role-gated `POST /sales-orders/{id}/approve` endpoint** (a JWT role check the caller
+> can't fake), so approval becomes a genuine step performed by an authorized person — not a self-asserted flag.
+> The contrast is worth burning in:
+>
+> ```
+>  BEGINNER (this course) — approval is a SELF-ASSERTED FACT (unguarded)
+>  ────────────────────────────────────────────────────────────────────
+>    caller ──► Submit(approvalGranted: true) ──► domain: "is approval NEEDED?" ──► ✅ submitted
+>               ▲ anyone can set this true; nothing verifies a manager said so
+>
+>  BUSINESS TUTORIAL — approval is a ROLE-GATED ACTION (guarded)
+>  ────────────────────────────────────────────────────────────────────
+>    caller  ──► POST /submit  ───────────────────────► order becomes PendingApproval
+>    MANAGER ──► POST /approve ──[RequireRole("SalesManager")]──► ✅ Approved
+>               ▲ the JWT role check rejects non-managers with 403 before any handler runs
+> ```
+>
+> For *this* phase, `approvalGranted` is a fine way to learn **where the "is approval needed?" rule lives.**
+> Just don't mistake it for a security control — it isn't one until an authorization check stands in front of it.
 
 > 🚫 **What deliberately stays OUT of the `SalesOrder`:** how it's saved (SQL), who called it (the web), and
 > safety-under-simultaneous-access (Phase 5's database guard). The `SalesOrder` can *express* the rule

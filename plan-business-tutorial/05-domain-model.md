@@ -270,6 +270,15 @@ public sealed class SalesOrder : AggregateRoot<SalesOrderId>
 }
 ```
 
+> ⚠️ **A subtlety in `Create`: the id inside `SalesOrderCreated` is provisional.** The order isn't saved yet
+> when `Create()` runs, so the database hasn't handed out its identity — `order.Id` is still `SalesOrderId(0)`
+> at the moment we raise `SalesOrderCreated(order.Id, …)`. Don't rely on that id being real. Two clean fixes,
+> both fine here: **(a)** leave the id *out* of the created event (`SalesOrderCreated(CustomerId, CreatedBy)`
+> is enough — the id only matters once persisted); or **(b)** have the repository stamp `Id` on the aggregate
+> right after `INSERT … SELECT SCOPE_IDENTITY()`, and dispatch events **after commit** (which we already do —
+> [Phase 8 §6](08-approval-cancellation.md)), so any handler reads the persisted id. The trap is *assuming*
+> `SalesOrderCreated.Id` is usable before the order is saved.
+
 ### Line by line: the `Submit` method
 
 ```csharp
