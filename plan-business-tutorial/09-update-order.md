@@ -118,18 +118,18 @@ public async Task ReplaceLinesAsync(SalesOrder order, IDbTransaction tx, Cancell
     var conn = tx.Connection!;
     // Delete existing lines, then insert the current set, then refresh the header total.
     await conn.ExecuteAsync(new CommandDefinition(
-        "usp_SalesOrderLine_DeleteByOrder", new { SalesOrderId = order.Id.Value },
+        "sales.usp_SalesOrderLine_DeleteByOrder", new { SalesOrderId = order.Id.Value },
         transaction: tx, commandType: CommandType.StoredProcedure, cancellationToken: ct));
 
     foreach (var line in order.Lines)
         await conn.ExecuteAsync(new CommandDefinition(
-            "usp_SalesOrderLine_Insert",
+            "sales.usp_SalesOrderLine_Insert",
             new { SalesOrderId = order.Id.Value, ItemId = line.ItemId.Value,
                   Quantity = line.Quantity.Value, UnitPrice = line.UnitPrice.Amount },
             transaction: tx, commandType: CommandType.StoredProcedure, cancellationToken: ct));
 
     await conn.ExecuteAsync(new CommandDefinition(
-        "usp_SalesOrder_UpdateTotal",
+        "sales.usp_SalesOrder_UpdateTotal",
         new { Id = order.Id.Value, TotalAmount = order.Total.Amount },
         transaction: tx, commandType: CommandType.StoredProcedure, cancellationToken: ct));
 }

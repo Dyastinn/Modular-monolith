@@ -103,11 +103,11 @@ public class SalesOrderStateTests
     }
 
     [Fact]
-    public void Order_over_threshold_requires_approval()
+    public void Order_over_threshold_is_flagged_high_value()   // tests the FLAG, not a workflow branch
     {
         var order = SalesOrder.Create("SO-1", new CustomerId(1), new UserId(1));
         order.AddLine(new ItemId(1), new Quantity(1), new Money(12_000));  // > $10k threshold
-        order.RequiresApproval.Should().BeTrue();
+        order.RequiresApproval.Should().BeTrue();   // surfaced for a manager UI; see Phase 5 §8 ⚠️ note
     }
 }
 ```
@@ -186,6 +186,27 @@ public class InventoryReservationTests : IClassFixture<TestDatabaseFixture>
   stale copy; assert a `ConcurrencyException` (rowcount 0).
 - **Round-trip mapping:** insert an order via the repo, load it back; assert the strongly-typed IDs,
   `Money`, and status survived the trip (proves the Dapper `TypeHandler`s work).
+- **Balance is reversed on cancel-after-approve:** approve an order (customer balance goes up by the
+  total), then cancel it; assert `OutstandingBalance` returns to its original value *and* the reservation
+  was released. This guards the matched debit/credit pair from [Phase 8](08-approval-cancellation.md) — a
+  regression here silently eats a customer's credit limit, so it's worth an explicit test:
+
+```csharp
+[Fact]
+public async Task Cancelling_an_approved_order_restores_the_customer_balance()
+{
+    // Arrange: Acme (customer 1) starts at OutstandingBalance = 10,000 (from seed).
+    var before = await GetOutstandingBalance(customerId: 1);
+
+    // Act: create → submit → approve (balance += total) → cancel (balance -= total, stock released).
+    var id = await CreateSubmitApprove(customerId: 1, itemId: 1, qty: 2);   // 2 × $25 = $50
+    await Cancel(id);
+
+    // Assert: balance is back where it started, and nothing is left reserved for those lines.
+    (await GetOutstandingBalance(customerId: 1)).Should().Be(before);
+    (await GetReserved(itemId: 1)).Should().Be(0);
+}
+```
 
 ## 5. End-to-end tests — the critical workflows
 

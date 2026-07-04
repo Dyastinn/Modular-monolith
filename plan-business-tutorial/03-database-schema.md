@@ -183,18 +183,28 @@ Each repository method calls one proc. We'll add procs as phases need them; here
 what each is *for*. (Full bodies for the tricky ones — insert and the atomic reserve — shown now; the
 rest follow the same shape.)
 
+> 🧱 **Every proc is schema-qualified — and every *call* is too.** These procs live in their module's
+> schema (`sales.*`, `inventory.*`, `identity.*`), and your C# always calls them **with the prefix**
+> (`"sales.usp_SalesOrder_Insert"`, not `"usp_SalesOrder_Insert"`). A bare name resolves against the
+> connection's *default* schema (usually `dbo`) and will fail to find a proc you put in `sales`. This table
+> is the **single source of truth** for proc names; if a later phase calls one, it's listed here.
+
 | Proc | Used by | Does |
 |---|---|---|
-| `usp_AppUser_GetByUsername` | Login (Phase 4) | Fetch a user + hash for password check |
-| `usp_Customer_GetById` | Create/Submit | Load blocking + credit numbers |
-| `usp_Item_GetByIds` | Create | Load items + category + price for the requested lines |
-| `usp_SalesOrder_Insert` / `usp_SalesOrderLine_Insert` | Create | Persist header + lines |
-| `usp_SalesOrder_GetById` / `usp_SalesOrderLine_GetByOrder` | Load aggregate | Rehydrate a `SalesOrder` |
-| `usp_SalesOrder_UpdateStatus` | Submit/Approve/Cancel | Version-checked status change |
-| `usp_Inventory_Reserve` | Submit (Phase 7) | **Atomic** reserve-if-available |
-| `usp_Inventory_Release` | Cancel (Phase 8) | Give reserved stock back |
-| `usp_Customer_AdjustBalance` | Approve (Phase 8) | Add the order total to the customer's balance |
-| `usp_SalesOrders_Search` | Search (Phase 10) | Filtered, paged read for the grid |
+| `identity.usp_AppUser_GetByUsername` | Login (Phase 4) | Fetch a user + hash for password check |
+| `sales.usp_Customer_GetById` | Create/Submit | Load blocking + credit numbers |
+| `sales.usp_Customer_AdjustBalance` | Approve/Cancel (Phase 8) | Add (or reverse) the order total on the customer's balance |
+| `sales.usp_Item_GetByIds` | Create | Load items + category + price for the requested lines |
+| `sales.usp_SalesOrder_NextNumber` | Create (Phase 6) | Hand out the next unique order number (sequence-backed) |
+| `sales.usp_SalesOrder_Insert` / `sales.usp_SalesOrderLine_Insert` | Create | Persist header + lines |
+| `sales.usp_SalesOrder_GetById` / `sales.usp_SalesOrderLine_GetByOrder` | Load aggregate | Rehydrate a `SalesOrder` (write side) |
+| `sales.usp_SalesOrder_GetDetail` | Get one (Phase 10) | Read side: header + lines + names, joined for a detail screen |
+| `sales.usp_SalesOrderLine_DeleteByOrder` | Update (Phase 9) | Remove a draft's existing lines before re-inserting |
+| `sales.usp_SalesOrder_UpdateTotal` | Update (Phase 9) | Refresh the persisted total after re-lining |
+| `sales.usp_SalesOrder_UpdateStatus` | Submit/Approve/Cancel | Version-checked status change |
+| `inventory.usp_Inventory_Reserve` | Submit (Phase 7) | **Atomic** reserve-if-available |
+| `inventory.usp_Inventory_Release` | Cancel (Phase 8) | Give reserved stock back |
+| `sales.usp_SalesOrders_Search` | Search (Phase 10) | Filtered, paged read for the grid |
 
 ### The insert proc (persistence + returns the new id)
 
@@ -257,6 +267,65 @@ BEGIN
         ApprovedUtc = CASE WHEN @Status = 2 THEN SYSUTCDATETIME() ELSE ApprovedUtc END
     WHERE Id = @Id AND RowVersion = @RowVersion;   -- only if nobody changed it since we loaded it
     SELECT @@ROWCOUNT;   -- 0 => stale, someone else changed it first
+END
+```
+
+### Order numbers: a concurrency-safe sequence (not `MAX()+1`)
+
+Human-friendly order numbers (`SO-2026-000123`) must be **unique even when two salespeople create orders
+at the same instant**. A naive `SELECT MAX(...)+1` races — two callers can read the same max and mint the
+same number. SQL Server's `SEQUENCE` object hands out unique values atomically, so use one:
+
+```sql
+CREATE SEQUENCE sales.SalesOrderNumberSeq AS BIGINT START WITH 1 INCREMENT BY 1;
+
+CREATE OR ALTER PROCEDURE sales.usp_SalesOrder_NextNumber
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DECLARE @n BIGINT = NEXT VALUE FOR sales.SalesOrderNumberSeq;   -- atomic; no two callers get the same @n
+    SELECT CONCAT('SO-', FORMAT(SYSUTCDATETIME(), 'yyyy'), '-', FORMAT(@n, '000000'));
+END
+```
+
+`ISalesOrderRepository.NextOrderNumberAsync` ([Phase 6](06-create-order.md)) just calls this proc. Same
+"the database owns concurrency-safe operations" idea as the atomic reservation — a sequence is the right
+tool for "give me a unique number under concurrency."
+
+### The balance adjustment proc (signed delta — add on approve, reverse on cancel)
+
+```sql
+CREATE OR ALTER PROCEDURE sales.usp_Customer_AdjustBalance
+    @CustomerId BIGINT,
+    @Delta      DECIMAL(18,2)   -- + on approval (they now owe), − when an approved order is cancelled
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE sales.Customer
+    SET OutstandingBalance = OutstandingBalance + @Delta
+    WHERE Id = @CustomerId;
+    -- The CK_Customer_Balance CHECK (>= 0) is the backstop: reversing can't drive the balance negative.
+END
+```
+
+> 🔑 **Why a signed `DECIMAL`, not `Money`?** The domain's `Money` value object forbids negatives — good
+> for a *price*, wrong for a *delta* that must go both ways. Approval passes `+total`; cancelling an
+> approved order passes `−total` ([Phase 8](08-approval-cancellation.md)). Matching every "charge" with a
+> "reverse" is what keeps `OutstandingBalance` honest.
+
+### The reservation-release proc (the matched pair for reserve)
+
+```sql
+CREATE OR ALTER PROCEDURE inventory.usp_Inventory_Release
+    @ItemId BIGINT,
+    @Qty    INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    -- Never let Reserved go below 0, even if a buggy caller over-releases (the CHECK also backstops this).
+    UPDATE inventory.Inventory
+    SET Reserved = CASE WHEN Reserved - @Qty < 0 THEN 0 ELSE Reserved - @Qty END
+    WHERE ItemId = @ItemId;
 END
 ```
 
@@ -323,6 +392,32 @@ sqlcmd -S "(localdb)\MSSQLLocalDB" -d Erp -i src/Modules/Sales/Infrastructure/Sq
 The *same* scripts set up the test database in [Phase 12](12-testing.md). One source of truth per module
 for schema, procs, seed — used by dev, test, and prod. That's the "migrations without EF" approach from
 [beginner Phase 8](../plan-beginner-friendly/09-phase-8-testing.md), and it's genuinely production-grade.
+
+### A concrete runner (DbUp) so scripts apply once, in order, and are tracked
+
+Running `sqlcmd` by hand is fine to see it work, but for a repeatable deploy you want something that
+**remembers which scripts already ran** so re-running is safe (idempotent). The free **DbUp** library does
+exactly this — it records every applied script in a `SchemaVersions` table it manages, and skips ones
+already run:
+
+```csharp
+// A tiny console tool (or a startup step) — points at each module's Sql/ folder, applies new scripts only.
+var upgrader = DeployChanges.To
+    .SqlDatabase(connectionString)
+    .WithScriptsFromFileSystem("src/Modules/Sales/Infrastructure/Sql")       // 001_schema, 002_procedures, 003_seed…
+    .WithScriptsFromFileSystem("src/Modules/Inventory/Infrastructure/Sql")   // inventory scripts (Phase 7)
+    .JournalToSqlTable("dbo", "SchemaVersions")   // DbUp creates/uses this to track what ran
+    .LogToConsole()
+    .Build();
+
+var result = upgrader.PerformUpgrade();
+if (!result.Successful) { /* log result.Error and stop the deploy */ }
+```
+
+Because scripts run **in filename order** and each runs **once**, name them with ordered prefixes
+(`001_`, `002_`…) and treat applied scripts as immutable — add a *new* script to change the schema, don't
+edit an old one. That "append-only, tracked" habit is what makes the same folder safe for dev, test, and
+prod. (`CREATE OR ALTER PROCEDURE`, below, is the one friendly exception — proc scripts you *can* re-run.)
 
 ## 8. Common mistakes & best practices
 

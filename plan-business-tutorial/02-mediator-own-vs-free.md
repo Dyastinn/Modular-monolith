@@ -240,9 +240,19 @@ If you prefer the library, you **do not write `Sender.cs` at all**. Instead:
    builder.Services.AddMediator();   // provided by the library; source-generates the dispatch
    ```
 
-Everything else in this tutorial — every handler, validator, endpoint — is **identical**, because we
-only ever call `sender.Send(...)` and implement `IRequestHandler<,>`. That's the payoff of coding to the
-interface: the engine underneath is swappable.
+Your **call sites are identical** — every endpoint still just does `sender.Send(...)` — which is the
+real payoff of coding to the interface. But be precise about what *does* change with Option B, so you're
+not surprised:
+
+- Handlers implement **the library's** `IRequestHandler<,>` and return **`ValueTask<T>`**, not `Task<T>`.
+  (A one-word change per handler signature; the bodies are the same.)
+- Pipeline behaviors match **the library's** `IPipelineBehavior` signature (also `ValueTask`-based), not
+  the one we define in §3.
+- You use **their** `IRequest`/`ISender`, keeping only our `ICommand`/`IQuery` markers (extending theirs).
+
+So "swap the engine, keep the code" is true for your *endpoints and orchestration logic*, but the handler
+and behavior **signatures** follow whichever engine you picked. Everything conceptual — the flow in §5, the
+validator, the domain — is unchanged. Pick one engine and stay on it; don't mix.
 
 > ⚠️ **Honest caveats of the library** (from its own docs — verify current state): performance can
 > degrade past ~500 message types (being addressed), no generic requests/notifications, and handlers

@@ -22,7 +22,8 @@ the payoff from [beginner Phase 3](../plan-beginner-friendly/04-phase-3-domain.m
 - Only a **Draft** order can have lines added/changed.
 - An order's **total** is always the sum of its lines (computed, never drifts).
 - **Status transitions** follow a strict state machine (Draft → PendingApproval → Approved, etc.).
-- Whether an order **requires approval** (over a threshold) is the order's own knowledge.
+- Whether an order is **high-value** (over a threshold, `RequiresApproval`) is the order's own knowledge —
+  surfaced as a flag (see the ⚠️ note in §8 for exactly what it does in this tutorial).
 - **Category quantity limits** and **role restrictions** are checked as lines go on.
 
 Two rules that *cannot* be safely done in memory — **credit limit** (needs the customer's live balance)
@@ -95,6 +96,29 @@ Cancelled        → (final)
 Rejected         → (final)
 ```
 
+Drawn as a map (follow the arrows; there's no way back out of the two shaded end states):
+
+```
+                 submit                approve
+   ┌─────────┐  ────────► ┌──────────────────┐  ────────► ┌──────────┐
+   │  Draft  │            │  PendingApproval │            │ Approved │
+   └────┬────┘            └───┬──────────┬───┘            └────┬─────┘
+        │                     │  reject  │                     │
+        │ cancel              │          │ cancel              │ cancel
+        │                     ▼          │                     │
+        │              ┌────────────┐    │                     │
+        │              │  Rejected  │◄───┘                     │
+        │              │  (final)   │                          │
+        │              └────────────┘                          │
+        ▼                                                      ▼
+   ┌───────────────────────────  Cancelled (final)  ◄──────────┘
+   └──────────────────────────────────────────────┘
+```
+
+*Reserved stock is released on the way into `Cancelled`/`Rejected`; the balance charged at `Approved` is
+reversed if an approved order is later cancelled. The diagram is the "what's legal"; the handlers
+([Phases 7–8](07-submit-reserve-concurrency.md)) attach the side effects to each arrow.*
+
 ```csharp
 public static class SalesOrderStatusRules
 {
@@ -166,6 +190,7 @@ public sealed class SalesOrder : AggregateRoot<SalesOrderId>
     public CustomerId CustomerId { get; private set; }
     public SalesOrderStatus Status { get; private set; }
     public UserId CreatedBy { get; private set; }
+    public UserId? ApprovedBy { get; private set; }   // set when a manager approves (used by the repo on update)
     public byte[] RowVersion { get; private set; } = Array.Empty<byte>();  // set by repo on load
 
     // Total is COMPUTED — it can never disagree with the lines.
@@ -208,15 +233,18 @@ public sealed class SalesOrder : AggregateRoot<SalesOrderId>
 
     public void Submit()
     {
-        Transition(SalesOrderStatus.PendingApproval);
+        // Guards FIRST — never mutate state until every check has passed.
         if (_lines.Count == 0)
             throw new DomainException("Cannot submit an order with no lines.");
+        // Transition throws (before changing Status) if the move is illegal, e.g. not a Draft.
+        Transition(SalesOrderStatus.PendingApproval);
         Raise(new SalesOrderSubmitted(Id, CustomerId, Total));
     }
 
     public void Approve(UserId approver)
     {
         Transition(SalesOrderStatus.Approved);
+        ApprovedBy = approver;
         Raise(new SalesOrderApproved(Id, CustomerId, Total, approver));
     }
 
@@ -247,16 +275,20 @@ public sealed class SalesOrder : AggregateRoot<SalesOrderId>
 ```csharp
 public void Submit()
 {
-    Transition(SalesOrderStatus.PendingApproval);  // (a) legal move? Draft→PendingApproval only.
-    if (_lines.Count == 0)                          // (b) an empty order makes no sense to submit
+    if (_lines.Count == 0)                          // (a) an empty order makes no sense to submit
         throw new DomainException("Cannot submit an order with no lines.");
+    Transition(SalesOrderStatus.PendingApproval);  // (b) legal move? Draft→PendingApproval only — mutates last.
     Raise(new SalesOrderSubmitted(Id, CustomerId, Total));  // (c) announce it happened
 }
 ```
 
-- **(a)** The very first thing: is this transition even legal? If the order is already Approved or
-  Cancelled, `Transition` throws and nothing else happens. The order defends itself.
-- **(b)** A business truth — you can't submit nothing.
+- **(a)** Check the non-state rule *before* touching any state — you can't submit nothing. Doing this
+  first means a failed submit leaves the order exactly as it was (still `Draft`), never half-mutated.
+- **(b)** Only now the guarded transition: is this move even legal? If the order is already Approved or
+  Cancelled, `Transition` throws *before* assigning `Status`, and nothing changes. The order defends
+  itself. **Guards before mutation** is the discipline from
+  [beginner Phase 3](../plan-beginner-friendly/04-phase-3-domain.md) — validate everything, *then* change
+  state, so a throw can never leave the object in a broken in-between state.
 - **(c)** Record the fact. The *inventory reservation* is **not** done here — that's an
   atomicity-under-concurrency concern the handler + SQL own (Phase 7). The domain *expresses* "this got
   submitted"; it does not reach into a database. Keep that boundary sharp.
@@ -329,7 +361,8 @@ public sealed class Customer
 ## 8. Domain events and the approval policy
 
 ```csharp
-public interface IDomainEvent { }
+// IDomainEvent already lives in Erp.Shared.BuildingBlocks (Phase 1), next to Entity/AggregateRoot —
+// every module's events reuse it. We do NOT redeclare it here; we just implement it.
 public sealed record SalesOrderCreated(SalesOrderId Id, CustomerId CustomerId, UserId CreatedBy) : IDomainEvent;
 public sealed record SalesOrderSubmitted(SalesOrderId Id, CustomerId CustomerId, Money Total) : IDomainEvent;
 public sealed record SalesOrderApproved(SalesOrderId Id, CustomerId CustomerId, Money Total, UserId Approver) : IDomainEvent;
@@ -338,9 +371,27 @@ public sealed record SalesOrderCancelled(SalesOrderId Id) : IDomainEvent;
 
 public static class ApprovalPolicy
 {
-    public static readonly Money Threshold = new(10_000m);  // orders over $10k need a manager
+    public static readonly Money Threshold = new(10_000m);  // orders over $10k are flagged high-value
 }
 ```
+
+> ⚠️ **What the approval threshold does — and doesn't — do in this tutorial (read this).** In *this*
+> build, **every** submitted order routes through a manager: `Submit()` always moves `Draft →
+> PendingApproval`, and a manager `Approve`s it ([Phase 8](08-approval-cancellation.md)). The
+> `RequiresApproval` flag (`Total > Threshold`) is a **surfaced business fact**, not a workflow branch —
+> it's there so a manager UI can highlight *high-value* orders for extra scrutiny, and it's unit-tested as
+> a *property*. We deliberately did **not** wire it to auto-approve small orders, because that would spread
+> the approval + balance logic across two slices and muddy a beginner's first pass. **Making small orders
+> auto-approve on submit is the [Phase 13](13-wrap-up-checklist.md) extension exercise** — a great next
+> step once the uniform flow is clear. (If your company genuinely wants "all orders need sign-off," the
+> uniform flow is also a perfectly valid real policy.)
+
+> 📎 **Two courses model approval differently — on purpose.** The
+> [beginner plan](../plan-beginner-friendly/04-phase-3-domain.md) folds approval into `Submit(bool
+> approvalGranted)` — the caller *asserts* approval as it submits, to keep that course to a single write
+> path. This tutorial splits it into a **dedicated manager `Approve` step** with its own role-gated
+> endpoint, which is the more realistic ERP shape. Same threshold idea, different workflow granularity;
+> neither contradicts the other.
 
 ## 9. Why each class exists
 
@@ -373,11 +424,11 @@ public void Cannot_add_lines_to_a_submitted_order()
 }
 
 [Fact]
-public void Order_over_threshold_requires_approval()
+public void Order_over_threshold_is_flagged_as_high_value()   // tests the FLAG, not a workflow branch
 {
     var order = SalesOrder.Create("SO-2", new CustomerId(1), new UserId(1));
     order.AddLine(new ItemId(1), new Quantity(1), new Money(15_000));
-    Assert.True(order.RequiresApproval);
+    Assert.True(order.RequiresApproval);   // surfaced so a manager UI can prioritise; see the ⚠️ note above
 }
 
 [Fact]

@@ -82,8 +82,10 @@ as "in production." Here's the honest gap list, grouped, so you know what a real
 - [ ] Every multi-step write is in a transaction — ✅ you did this. Double-check no new feature skips it.
 - [ ] Register the Dapper `TypeHandler`s for strongly-typed IDs at startup — a forgotten one fails at
       runtime.
-- [ ] A real order-number generator that's safe under concurrency (a sequence or a dedicated table), not
-      a naive `MAX()+1`.
+- [x] A concurrency-safe order-number generator — ✅ done via a SQL `SEQUENCE` +
+      `sales.usp_SalesOrder_NextNumber` ([Phase 3](03-database-schema.md)), not a naive `MAX()+1`.
+- [x] Matched money/stock pairs — ✅ approval charges the balance and cancellation of an approved order
+      reverses it ([Phase 8](08-approval-cancellation.md)); reserve is matched by release.
 - [ ] Decide the reservation policy edge cases: what happens to reservations if an approved order is
       never fulfilled? (A background "expire stale reservations" job — out of scope, but real.)
 
@@ -94,6 +96,12 @@ as "in production." Here's the honest gap list, grouped, so you know what a real
 - [ ] Each module's `Infrastructure/Sql/` scripts run automatically on deploy (DbUp or a simple runner),
       tracked in a `SchemaVersions` table.
 - [ ] Configuration validated at startup (fail fast if the connection string or signing key is missing).
+
+### Authorization depth
+- [ ] **Row-level authorization** on reads/writes — a SalesRep should see/act on only their own customers'
+      orders, a Manager on all. It's a *data-dependent* rule, so it lives in the handler/query
+      ([Phase 10](10-queries-search.md) flags this), not an endpoint attribute. The first thing to add for
+      a real multi-user deployment.
 
 ### API quality
 - [ ] Consistent error envelope — ✅ [Phase 11](11-cross-cutting.md) gave you this.
@@ -125,15 +133,20 @@ you adopt them for reasons, not fashion:
 
 Stay within the stack; each reinforces a pattern:
 
-1. **Reject an order** — a `RejectSalesOrderCommand` (Manager only) that releases reservations, like
+1. **Auto-approve small orders** — branch on `order.RequiresApproval` at submit: over the threshold →
+   `PendingApproval` (wait for a manager); at/under it → straight to `Approved` (adjust the balance in the
+   same transaction). This turns the high-value *flag* into a real workflow fork. (Reinforces: where a
+   policy decision lives, and keeping the balance change atomic — mind the matched pair from Phase 8.)
+2. **Reject an order** — a `RejectSalesOrderCommand` (Manager only) that releases reservations, like
    cancel. (Reinforces: state machine, release pair, role gate.)
-2. **Partial shipment / fulfillment** — an `Approved → Fulfilled` transition that *deducts* `OnHand`
+3. **Partial shipment / fulfillment** — an `Approved → Fulfilled` transition that *deducts* `OnHand`
    (converting the reservation to a real stock reduction). (Reinforces: reserve→deduct lifecycle.)
-3. **Customer statement query** — a read that lists a customer's orders with running credit used.
+4. **Customer statement query** — a read that lists a customer's orders with running credit used.
    (Reinforces: CQRS-lite reads.)
-4. **"Only the creator or a manager can cancel"** — a data-dependent authorization rule in the handler
-   using `ICurrentUser`. (Reinforces: endpoint vs. handler authorization.)
-5. **Audit trail table** — a domain-event handler that writes every status change to an `OrderAudit`
+5. **"Only the creator or a manager can cancel"** — a data-dependent authorization rule in the handler
+   using `ICurrentUser`. (Reinforces: endpoint vs. handler authorization; the same shape as row-level read
+   auth.)
+6. **Audit trail table** — a domain-event handler that writes every status change to an `OrderAudit`
    table. (Reinforces: after-commit event dispatch.)
 
 Try one *before* reading how; struggling first is where the learning is.

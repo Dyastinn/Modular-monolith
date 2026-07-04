@@ -54,7 +54,7 @@ public sealed class GetSalesOrderHandler(IDbConnectionFactory factory)
     {
         using var conn = factory.Create();
         using var multi = await conn.QueryMultipleAsync(new CommandDefinition(
-            "usp_SalesOrder_GetDetail", new { q.OrderId },
+            "sales.usp_SalesOrder_GetDetail", new { q.OrderId },
             commandType: CommandType.StoredProcedure, cancellationToken: ct));
 
         var header = await multi.ReadSingleOrDefaultAsync<SalesOrderHeaderRow>();
@@ -104,8 +104,15 @@ public sealed class SearchSalesOrdersHandler(IDbConnectionFactory factory)
     public async Task<PagedResult<SalesOrderSummaryDto>> Handle(SearchSalesOrdersQuery q, CancellationToken ct)
     {
         // Translate a status name to its number for the proc (null = no filter).
-        int? statusNum = q.Status is null ? null
-            : (int)Enum.Parse<SalesOrderStatus>(q.Status, ignoreCase: true);
+        // TryParse, not Parse: an unknown ?status=Foo is bad *input*, so throw a ValidationException
+        // (→ 400 via the global handler, Phase 11), never an unhandled 500.
+        int? statusNum = null;
+        if (q.Status is not null)
+        {
+            if (!Enum.TryParse<SalesOrderStatus>(q.Status, ignoreCase: true, out var parsed))
+                throw new ValidationException($"Unknown status '{q.Status}'.");
+            statusNum = (int)parsed;
+        }
 
         using var conn = factory.Create();
         using var multi = await conn.QueryMultipleAsync(new CommandDefinition(
@@ -191,6 +198,21 @@ public sealed class SearchSalesOrdersEndpoint : ICarterModule
 
 `.RequireAuthorization()` with no role means "any authenticated user" — reads aren't role-gated here,
 but they *do* require a valid token.
+
+> 🔒 **Row-level authorization (a real ERP gap to be aware of).** As written, *any* logged-in user can read
+> *every* order. In a real ERP a SalesRep usually sees only their own customers' orders, while a Manager
+> sees all. That's a **data-dependent** rule (it depends on *who* is asking and *what* they're asking for),
+> so — per [Phase 4 §9](04-jwt-auth.md) — it belongs in the handler/query, not an endpoint attribute: pass
+> `ICurrentUser.UserId`/`Role` into the query and add a `CreatedByUserId = @CallerId` filter for
+> non-managers. We keep it open here to stay focused on CQRS-lite shape, but flag it as the first thing
+> you'd add for production. ([Phase 13](13-wrap-up-checklist.md) lists it.)
+
+> ⚡ **Paging at scale: `OFFSET/FETCH` vs. keyset.** `OFFSET (@Page-1)*@PageSize` is perfect for a few
+> hundred pages, but it gets slower the *deeper* you page — the database still scans and discards all the
+> skipped rows. For very large tables the production-grade answer is **keyset (a.k.a. "seek") pagination**:
+> instead of "skip 10,000 rows," you say "give me the next 20 *after* this `CreatedUtc`/`Id`." It needs a
+> stable sort key and a cursor instead of a page number. Overkill for this tutorial's data volumes — but
+> know the term, because a slow "page 500" is a real complaint you'll eventually field.
 
 ## 7. How a search request flows
 

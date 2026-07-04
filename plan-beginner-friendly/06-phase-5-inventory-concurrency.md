@@ -17,7 +17,19 @@ approval-threshold flow.
 > This phase is the payoff for the whole project. If any single thing teaches "where does logic go?", it's
 > inventory reservation. Spend real time on Step 3 — and on Step 1, which is the modular-monolith heart.
 
+> 🧭 **This is the biggest phase — so do it in two sittings.** It bundles two genuinely separate lessons.
+> Don't try to swallow both at once:
+> - **Part A — a second module + the wall between them (Steps 1–2).** Build the Inventory module and the
+>   `IStockReservation` contract. *Stop at the Part A checkpoint, make it compile, take a break.*
+> - **Part B — concurrency: doing it safely when two people act at once (Steps 3–6).** The atomic SQL
+>   reservation, `rowversion`, and the submit flow that ties it together.
+>
+> Each part is about a 6-out-of-10 in difficulty on its own; mashed together they feel like a 9. Splitting
+> them is the trick to not drowning.
+
 ---
+
+# ── PART A — A Second Module and the Wall Between Them ──
 
 ## Step 1 — Inventory is its own module (and Sales may NOT reach into it)
 
@@ -93,6 +105,21 @@ public interface IPricingService
 > 🧭 **A note for later:** in a full ERP, product catalog and pricing might themselves be a module. We keep
 > `IPricingService` inside Sales here to keep the phase focused on *one* new module (Inventory). Introducing
 > a second cross-module contract is left as an exercise once the pattern clicks.
+
+> ### ✋ Part A checkpoint — stop here and breathe
+>
+> Before touching concurrency, make sure Part A stands on its own:
+> - The **Inventory module** exists as its own project, with its own `inventory` schema.
+> - `IStockReservation` lives in **Shared**, Inventory **implements** it, and Sales depends only on the
+>   *interface* — neither module references the other (the compiler enforces it).
+> - You can explain, out loud, *why* the contract goes in Shared and not in the Inventory project.
+>
+> If those hold, you've already learned the modular-monolith heart of this phase. **Part B is a different
+> lesson** — what "safe" means when two people click at the same instant. Come back to it fresh.
+
+---
+
+# ── PART B — Doing It Safely When Two People Act at Once ──
 
 ## Step 3 — Inventory reservation: THE concurrency lesson (the important one)
 

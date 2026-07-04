@@ -60,8 +60,11 @@ plans trained. We'll enforce, and you'll learn exactly where each rule belongs:
    from [beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md)).
 6. **Item category restrictions** — some categories (e.g. "Controlled") are limited to certain roles,
    and each category caps how many units can go on a single order.
-7. **Approval workflow** — orders over an amount threshold require a manager's approval before they're
-   Approved; the status moves through a proper **state machine**.
+7. **Approval workflow** — every submitted order goes to a manager for approval before it becomes
+   Approved, moving through a proper **state machine**; orders over a value threshold are additionally
+   **flagged as high-value** (`RequiresApproval`) so managers can prioritise scrutiny. *(Auto-approving
+   small orders is a deliberate [extension exercise](13-wrap-up-checklist.md), not the base flow — see the
+   ⚠️ note in [Phase 5 §8](05-domain-model.md).)*
 8. **Cancellation rules** — only certain statuses can be cancelled, and cancelling *releases* any
    reservation so stock isn't lost forever.
 9. **Transaction rollback on failure** — every multi-step write (reserve 5 lines + change status) is

@@ -84,7 +84,9 @@ public interface ISalesOrderRepository
 public interface ICustomerRepository
 {
     Task<Customer?> GetAsync(CustomerId id, CancellationToken ct);
-    Task AdjustBalanceAsync(CustomerId id, Money delta, IDbTransaction tx, CancellationToken ct);
+    // delta is a SIGNED decimal, not Money: approval adds the total (+), cancelling an approved order
+    // reverses it (−). Money forbids negatives, so a balance *delta* can't be a Money. (Phase 8)
+    Task AdjustBalanceAsync(CustomerId id, decimal delta, IDbTransaction tx, CancellationToken ct);
 }
 
 public interface IItemRepository
@@ -195,7 +197,7 @@ public sealed class SalesOrderRepository(IDbConnectionFactory factory) : ISalesO
 
         // Insert the header, get the new id back.
         var newId = await conn.ExecuteScalarAsync<long>(new CommandDefinition(
-            "usp_SalesOrder_Insert",
+            "sales.usp_SalesOrder_Insert",
             new
             {
                 order.OrderNumber,
@@ -209,7 +211,7 @@ public sealed class SalesOrderRepository(IDbConnectionFactory factory) : ISalesO
         // Insert each line, tied to the new order id.
         foreach (var line in order.Lines)
             await conn.ExecuteAsync(new CommandDefinition(
-                "usp_SalesOrderLine_Insert",
+                "sales.usp_SalesOrderLine_Insert",
                 new
                 {
                     SalesOrderId = newId,
@@ -355,6 +357,9 @@ business outcome** — because the rules live in the right places.
   across all lines (a customer could split a restricted item across two lines to dodge a per-line cap).
 - ❌ **Forgetting to pass the transaction to the repository**, so inserts run outside it and can't roll
   back together. ✅ Thread `tx.Transaction` through.
+- ❌ **A naive `MAX(Id)+1` order number** — two concurrent creates can produce the same number. ✅
+  `NextOrderNumberAsync` calls `sales.usp_SalesOrder_NextNumber`, backed by a SQL `SEQUENCE`
+  ([Phase 3 §3](03-database-schema.md)), which hands out unique values safely under concurrency.
 - ✅ **Best practice: fail fast, before opening the transaction.** Notice most checks run *before*
   `BeginAsync`. Don't hold a database transaction open while doing validation you could have done first.
 

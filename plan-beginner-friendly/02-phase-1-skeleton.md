@@ -58,8 +58,8 @@ Erp.slnx                              <- the "solution" (ties all projects toget
 Open a terminal in an empty folder and run these one at a time, using the `dotnet` command-line tool:
 
 ```bash
-# 1) Create the solution file
-dotnet new sln -n Erp
+# 1) Create the solution file (--format slnx gives the newer XML "Erp.slnx"; omit it for a classic "Erp.sln")
+dotnet new sln -n Erp --format slnx
 
 # 2) Shared kernel — four small class libraries
 dotnet new classlib -n Erp.Shared.BuildingBlocks  -o src/Shared/Erp.Shared.BuildingBlocks

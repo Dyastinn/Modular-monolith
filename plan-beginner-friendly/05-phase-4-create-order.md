@@ -81,7 +81,7 @@ public sealed class CreateSalesOrderValidator : AbstractValidator<CreateSalesOrd
 public sealed class CreateSalesOrderHandler(
     ICustomerRepository customers,
     ISalesOrderRepository orders,
-    IPricingService pricing,
+    IPricingService pricing,          // ← introduced properly in Phase 5; for now: "give me an item's price"
     IUnitOfWork uow)
     : ICommandHandler<CreateSalesOrderCommand, CreateSalesOrderResult>
 {
@@ -111,6 +111,11 @@ public sealed class CreateSalesOrderHandler(
 
 (`ICommandHandler<,>` is just `IRequestHandler<,>` narrowed to commands — a one-line marker in
 `Shared.Messaging`, same idea as `ICommand`.)
+
+> ℹ️ **About `IPricingService`:** it's a small interface — "given a `ProductId`, give me its `Money` unit
+> price." We *use* it here but only *justify* it properly in [Phase 5](06-phase-5-inventory-concurrency.md)
+> (it's our first genuine "domain service," because pricing needs data the order itself doesn't own). For
+> Phase 4, read it as a simple price lookup; a stub that returns a fixed price is fine to get this running.
 
 ### File 2 — `CreateSalesOrderEndpoint.cs` (the web edge, via Carter)
 
@@ -267,18 +272,18 @@ public sealed class SalesOrderRepository(IDbConnectionFactory factory) : ISalesO
     {
         using var conn = factory.Create();
         var orderId = await conn.ExecuteScalarAsync<long>(new CommandDefinition(
-            "usp_SalesOrder_Insert",
+            "sales.usp_SalesOrder_Insert",   // always schema-qualify: the proc lives in the sales schema
             new { order.CustomerId /* mapped via a TypeHandler */, Status = (int)order.Status },
             commandType: CommandType.StoredProcedure, cancellationToken: ct));
 
         foreach (var line in order.Lines)
             await conn.ExecuteAsync(new CommandDefinition(
-                "usp_SalesOrderLine_Insert",
+                "sales.usp_SalesOrderLine_Insert",
                 new { SalesOrderId = orderId, line.ProductId, Quantity = line.Quantity.Value,
                       UnitPrice = line.UnitPrice.Amount },
                 commandType: CommandType.StoredProcedure, cancellationToken: ct));
     }
-    // GetAsync: call usp_SalesOrder_Get + usp_SalesOrderLine_GetByOrder, rebuild via the private constructor.
+    // GetAsync: call sales.usp_SalesOrder_Get + sales.usp_SalesOrderLine_GetByOrder, rebuild via the private constructor.
 }
 ```
 
@@ -303,7 +308,7 @@ public sealed class SalesOrderIdTypeHandler : SqlMapper.TypeHandler<SalesOrderId
 `usp_SalesOrder_Insert` does **saving and data-integrity**, *not* business policy:
 
 ```sql
-CREATE PROCEDURE usp_SalesOrder_Insert
+CREATE PROCEDURE sales.usp_SalesOrder_Insert   -- created IN the sales schema; call it as "sales.usp_SalesOrder_Insert"
     @CustomerId BIGINT,
     @Status     INT
 AS

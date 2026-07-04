@@ -57,7 +57,7 @@ public sealed class ApproveSalesOrderHandler(
         await orders.UpdateStatusAsync(order, tx.Transaction, ct);
 
         // The customer now owes this money — add it to their outstanding balance, same transaction.
-        await customers.AdjustBalanceAsync(order.CustomerId, order.Total, tx.Transaction, ct);
+        await customers.AdjustBalanceAsync(order.CustomerId, +order.Total.Amount, tx.Transaction, ct);
 
         await tx.CommitAsync(ct);
 
@@ -83,7 +83,7 @@ it with the order and passes it back on update:
 public async Task UpdateStatusAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct)
 {
     var rows = await tx.Connection!.ExecuteScalarAsync<int>(new CommandDefinition(
-        "usp_SalesOrder_UpdateStatus",
+        "sales.usp_SalesOrder_UpdateStatus",
         new
         {
             Id = order.Id.Value,
@@ -124,6 +124,7 @@ public sealed record CancelSalesOrderCommand(long OrderId) : ICommand<Unit>;
 
 public sealed class CancelSalesOrderHandler(
     ISalesOrderRepository orders,
+    ICustomerRepository customers,  // needed to reverse the balance if the order was already Approved
     IStockReservation stock,        // the Inventory contract — release goes back across the wall
     IUnitOfWork uow,
     IDomainEventDispatcher events) : IRequestHandler<CancelSalesOrderCommand, Unit>
@@ -133,7 +134,12 @@ public sealed class CancelSalesOrderHandler(
         var order = await orders.GetAsync(new SalesOrderId(cmd.OrderId), ct)
             ?? throw new NotFoundException($"Sales order {cmd.OrderId} not found.");
 
+        // Capture what we must undo BEFORE we change the status.
         var hadReservation = order.Status is SalesOrderStatus.PendingApproval or SalesOrderStatus.Approved;
+        // An APPROVED order already added its total to the customer's balance (see Approve above).
+        // Cancelling it must give that credit back, or the customer "owes" a cancelled order forever.
+        var wasApproved = order.Status == SalesOrderStatus.Approved;
+        var total = order.Total;
 
         // DOMAIN: is cancelling legal from the current status? Throws if not (e.g. already Cancelled).
         order.Cancel();
@@ -144,6 +150,10 @@ public sealed class CancelSalesOrderHandler(
         if (hadReservation)
             foreach (var line in order.Lines)
                 await stock.ReleaseAsync(line.ItemId.Value, line.Quantity.Value, tx.Transaction, ct);
+
+        // If we had already charged the customer at approval, reverse it now (a matched debit/credit pair).
+        if (wasApproved)
+            await customers.AdjustBalanceAsync(order.CustomerId, -total.Amount, tx.Transaction, ct);
 
         await orders.UpdateStatusAsync(order, tx.Transaction, ct);
         await tx.CommitAsync(ct);
@@ -159,6 +169,14 @@ public sealed class CancelSalesOrderHandler(
 > that was never removed. We only release if the order actually held a reservation
 > (PendingApproval/Approved). Getting this wrong is a classic bug: cancelling a draft "creates" phantom
 > stock. Model reserve/release as a matched pair, always.
+
+> 🔑 **The balance is a matched pair too.** We add to `OutstandingBalance` at *approval* and subtract it
+> at *cancellation of an approved order* — in the **same transaction** as the status change, so status and
+> balance can never disagree. Forgetting the reversal is exactly as broken as forgetting to release stock:
+> the customer would keep "owing" money for an order that no longer exists, silently eating into their
+> credit limit for future orders. Whenever a write *adds* something (stock reserved, money owed), find the
+> command that *undoes* it and make sure the opposite write is there. (Rejection from `PendingApproval`
+> needs no reversal — we hadn't charged the balance yet; the charge only happens at approval.)
 
 ## 6. Domain event dispatch after commit
 
@@ -275,6 +293,8 @@ If a SalesRep had tried, they'd never reach step 3 — the 403 stops them at ste
   trust the client.
 - ❌ **Releasing stock on cancelling a Draft.** ✅ Only release if the order actually reserved
   (PendingApproval/Approved).
+- ❌ **Cancelling an *approved* order without reversing the customer balance.** ✅ If approval charged the
+  balance, cancellation must credit it back — same transaction, a matched pair.
 - ❌ **Relying on the transaction alone for concurrent edits.** ✅ Add the `RowVersion` check for lost
   updates — transactions and optimistic concurrency solve *different* problems.
 - ❌ **Dispatching events before commit.** ✅ After commit only, so you don't react to a rolled-back

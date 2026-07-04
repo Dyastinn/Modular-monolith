@@ -142,6 +142,13 @@ public sealed class JwtTokenService(IConfiguration config) : IJwtTokenService
 The key line for authorization is `new Claim(ClaimTypes.Role, role)` — it stamps the user's role into
 the wristband. Later, `[Authorize(Roles = "SalesManager")]` reads exactly this.
 
+> ℹ️ **A note on the API surface.** `JwtSecurityToken`/`JwtSecurityTokenHandler` (from
+> `System.IdentityModel.Tokens.Jwt`) is the long-standing, fully-supported way to create tokens and is
+> perfectly fine here. The *newer* recommended type is `JsonWebTokenHandler` (from
+> `Microsoft.IdentityModel.JsonWebTokens`), which is faster and the direction Microsoft is steering. If you
+> start a fresh project, prefer it; we use the classic handler because it reads more simply for a first
+> encounter. Either way, the `MapInboundClaims = false` fix below still applies.
+
 ## 5. Step 3 — The Login use case (a vertical slice)
 
 Login is a **query-ish command** — it reads a user and returns a token. We model it as a command since it
@@ -218,18 +225,36 @@ var jwt = builder.Configuration.GetSection("Jwt");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
+        // CRITICAL: keep JWT claim names as-is. By default the handler *renames* inbound claims
+        // (e.g. "sub" → ClaimTypes.NameIdentifier), which would make our CurrentUser.UserId lookup of
+        // "sub" return null and blow up at runtime. Turning mapping off keeps "sub" as "sub". (See note.)
+        options.MapInboundClaims = false;
+
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,   ValidIssuer = jwt["Issuer"],
             ValidateAudience = true, ValidAudience = jwt["Audience"],
             ValidateLifetime = true,                     // reject expired tokens
             ValidateIssuerSigningKey = true,             // reject forged tokens
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt["SigningKey"]!))
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt["SigningKey"]!)),
+            // We emit roles as ClaimTypes.Role and the name as ClaimTypes.Name (see JwtTokenService),
+            // so tell the validator to read those types back for IsInRole / RequireRole to work.
+            RoleClaimType = ClaimTypes.Role,
+            NameClaimType = ClaimTypes.Name
         };
     });
 
 builder.Services.AddAuthorization();
 ```
+
+> ⚠️ **The single most common JWT gotcha — don't skip this.** ASP.NET's JWT handler ships with a legacy
+> *inbound claim map* that silently rewrites short JWT claim names to long WS-* URIs — most notably `sub`
+> becomes `ClaimTypes.NameIdentifier`. So if you *write* `sub` (as `JwtTokenService` does) but later *read*
+> `sub` (as `CurrentUser.UserId` does), the read returns **null** and `long.Parse(null)` throws on the
+> first authenticated request — a baffling bug with a clean token. Setting `options.MapInboundClaims =
+> false` keeps claim names exactly as issued, so `sub` reads back as `sub`. (An alternative is to read
+> `ClaimTypes.NameIdentifier` instead — but turning mapping off is clearer and keeps token and reader in
+> agreement.) We pair it with explicit `RoleClaimType`/`NameClaimType` so role checks still work.
 
 And the middleware, **in this exact order** (order matters a lot):
 
