@@ -103,15 +103,44 @@ teardown. *(Analogy: set the table, eat, then reset it exactly as it was.)*
 ```csharp
 public sealed class SubmitSalesOrderTests : IClassFixture<TestDatabaseFixture>
 {
+    private readonly TestDatabaseFixture _fx;
+    public SubmitSalesOrderTests(TestDatabaseFixture fx) => _fx = fx;
+
     [Fact]
     public async Task Reserving_more_than_available_fails_atomically()
     {
-        // Arrange: seed inventory.Stock OnHand=5, Reserved=0 for a product.
-        // Act: two CONCURRENT reservations of 5 through IStockReservation (must COMMIT — see caveat).
-        // Assert: exactly one succeeds; (OnHand - Reserved) never goes negative.
+        // Arrange: seed the product with OnHand=5, Reserved=0 in the test database.
+
+        // Act: fire TWO reservations of 5 at (nearly) the same time. The key: each runs in — and COMMITS —
+        // its OWN transaction, so this is a real race, not a rollback (see the caveat below).
+        var a = ReserveInOwnCommittedTransaction(productId: 1, qty: 5);
+        var b = ReserveInOwnCommittedTransaction(productId: 1, qty: 5);
+        bool[] results = await Task.WhenAll(a, b);
+
+        // Assert: exactly one won; the other saw "not enough stock".
+        Assert.Equal(1, results.Count(won => won));
+        Assert.Equal(5, await GetReserved(productId: 1));   // never 10 — the atomic UPDATE held the line
     }
+
+    // A tiny test helper: open a real connection, reserve through the REAL contract, and COMMIT.
+    private async Task<bool> ReserveInOwnCommittedTransaction(long productId, int qty)
+    {
+        await using var conn = new SqlConnection(_fx.ConnectionString);
+        await conn.OpenAsync();
+        await using var tx = (SqlTransaction)await conn.BeginTransactionAsync();
+        var stock = new StockReservationService();                // the real Phase 5 implementation
+        var reserved = await stock.TryReserveAsync(productId, qty, tx, default);
+        await tx.CommitAsync();                                    // COMMIT so the race is observable
+        return reserved;
+    }
+    // GetReserved(productId): a one-line Dapper SELECT of the Reserved column. (Body omitted.)
 }
 ```
+
+> 💡 Why the real `StockReservationService` and not a fake? **A fake can't have a race condition**, so it
+> would prove nothing. This test only means something against the actual database and the actual atomic
+> proc. (The business tutorial's [Phase 12](../plan-business-tutorial/12-testing.md) shows the same test
+> fully fleshed out.)
 
 > 🌟 **That concurrency test is the single highest-value test in the whole suite.** It proves Phase 5's
 > atomic SQL guard works — a bug unit tests *structurally cannot* catch (they have no concurrency). It also

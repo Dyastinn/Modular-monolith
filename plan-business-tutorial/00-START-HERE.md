@@ -38,13 +38,19 @@ warehouse can fulfill it. Concretely, by the end you'll have working, secured HT
 | Endpoint | Who can call it | What it does |
 |---|---|---|
 | `POST /auth/login` | anyone | Log in, get a JWT token |
-| `POST /sales-orders` | SalesRep, Manager | Create a draft order (with all the create-time checks) |
-| `PUT /sales-orders/{id}` | SalesRep, Manager | Edit a *draft* order's lines |
-| `POST /sales-orders/{id}/submit` | SalesRep, Manager | Submit for approval + **reserve inventory** |
-| `POST /sales-orders/{id}/approve` | **Manager only** | Approve a submitted order |
-| `POST /sales-orders/{id}/cancel` | SalesRep, Manager | Cancel + **release reservations** |
+| `POST /sales-orders` | SalesRep, SalesManager | Create a draft order (with all the create-time checks) |
+| `PUT /sales-orders/{id}` | SalesRep, SalesManager | Edit a *draft* order's lines |
+| `POST /sales-orders/{id}/submit` | SalesRep, SalesManager | Submit for approval + **reserve inventory** |
+| `POST /sales-orders/{id}/approve` | **SalesManager only** | Approve a submitted order |
+| `POST /sales-orders/{id}/cancel` | SalesRep, SalesManager | Cancel + **release reservations** |
 | `GET /sales-orders/{id}` | any logged-in user | Get one order's full detail |
 | `GET /sales-orders` | any logged-in user | Search/filter/page through orders |
+
+> 📝 **A note on role names.** There are exactly three roles in this system, and these are their *literal*
+> strings — the same text stored in the database and baked into the JWT: **`SalesRep`**, **`SalesManager`**,
+> and **`Admin`**. When this tutorial says "a manager" in plain English, the actual role string is always
+> **`SalesManager`** (never just `"Manager"`). We use the exact strings everywhere in code so a typo can't
+> silently break an authorization check.
 
 ## The real business rules we'll enforce (this is the whole point)
 
@@ -52,7 +58,7 @@ These are *not* CRUD. Each one is a decision about "where does this logic live?"
 plans trained. We'll enforce, and you'll learn exactly where each rule belongs:
 
 1. **JWT authentication** — you must log in to touch any sales-order endpoint.
-2. **Role-based authorization** — only a **Manager** can approve orders.
+2. **Role-based authorization** — only a **SalesManager** can approve orders.
 3. **Customer blocking** — you cannot create or submit an order for a *blocked* customer.
 4. **Credit limit** — an order can't push the customer's balance past their credit limit.
 5. **Inventory availability & reservation** — you can only submit if stock is available, and submitting

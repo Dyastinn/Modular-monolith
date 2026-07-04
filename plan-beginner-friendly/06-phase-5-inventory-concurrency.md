@@ -43,7 +43,7 @@ Shared kernel, that Inventory *implements* and Sales *calls*:
 
 ```csharp
 // Erp.Shared.Common/Contracts/IStockReservation.cs  (the ONLY thing Sales may use to touch stock)
-namespace Erp.Shared.Contracts;
+namespace Erp.Shared.Common.Contracts;   // namespace matches the folder: Erp.Shared.Common → .Contracts
 
 public interface IStockReservation
 {
@@ -65,9 +65,15 @@ payoff:
 
 - **The wall is real.** Sales physically cannot bypass the contract to poke Inventory's tables — there's no
   reference and no `using` that would compile.
-- **Split-later stays cheap.** The day Inventory becomes its own service, you swap
-  `StockReservationService` for an HTTP/queue client behind the *same* `IStockReservation` interface. Sales
-  doesn't change.
+- **Split-later stays cheap** — *cheaper*, honestly, not free. The day Inventory becomes its own service,
+  Sales still reserves stock through a small interface it doesn't implement, and its *call site* barely
+  moves. But be precise about what changes: our `IStockReservation` takes an `IDbTransaction` so the two
+  can share **one** database transaction (fine inside a single-database monolith). You **cannot send a
+  database transaction over a network**, so once Inventory has its own database, that parameter has to go,
+  and "reserve in the same transaction" becomes "reserve as a separate step, and *release* if the rest
+  fails" — a **saga** with compensation. So extraction reshapes the *contract* and adds saga logic; what it
+  *doesn't* do is force you to untangle Sales from Inventory's tables and types, because those walls were
+  never crossed. That's the real, still-large payoff. (The next note, and Phase 9, go deeper.)
 
 > ❓ **"Why put the contract in Shared instead of in the Inventory module?"** Because if Sales referenced the
 > Inventory *project* to get the interface, it could also see Inventory's internals — the wall would leak.

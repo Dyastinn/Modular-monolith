@@ -133,6 +133,14 @@ dotnet add src/Erp.Api package Swashbuckle.AspNetCore
 # dotnet add src/Modules/Sales package Mediator.Abstractions
 ```
 
+> ℹ️ **A note on Swagger in .NET 10.** Since .NET 9, the built-in template ships Microsoft's own
+> **`Microsoft.AspNetCore.OpenApi`** package (`builder.Services.AddOpenApi()` / `app.MapOpenApi()`) as the
+> default way to produce an OpenAPI document, and **Swashbuckle is now a third-party package** rather than
+> the built-in default. We use Swashbuckle here purely because its `SwaggerUI` gives you a clickable
+> in-browser "try it out" page out of the box, which is friendlier while learning. Either is fine; if you
+> want to stay on Microsoft's built-in path, use `AddOpenApi()` and pair it with a UI of your choice. Not
+> a correctness issue — just so ".NET 10" and "Swashbuckle" together don't look out of date to you.
+
 **Test projects:** `dotnet add tests/Erp.Modules.Sales.UnitTests package FluentAssertions`.
 
 > ❓ **"JWT and Carter are new packages — didn't we say no new tech?"** JWT was in the required stack for

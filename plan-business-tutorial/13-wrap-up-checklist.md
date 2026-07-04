@@ -57,9 +57,11 @@ explain five things. Here they are, grounded in what you just built:
 5. **What would it take to split this into its own service?** You already *proved* the module wall: when
    Sales needed stock, it couldn't reach into Inventory — it went through the `IStockReservation` contract
    ([Phase 7](07-submit-reserve-concurrency.md)). Because everything went through `ISender` and the
-   contract, and each module owns its own schema, extracting the Inventory module (or the `Identity`/Login
-   concern) is mechanical — the path from
-   [beginner Phase 9](../plan-beginner-friendly/10-phase-9-modularity.md) applies unchanged.
+   contract, and each module owns its own schema, extraction is *largely* mechanical — with **one honest
+   exception**: the contract's `IDbTransaction` parameter can't cross a network, so the shared-transaction
+   reserve becomes a **saga** (reserve, and release to compensate on failure). Your code doesn't need
+   untangling; that one seam does need reshaping. The path — and that caveat — are in
+   [beginner Phase 9](../plan-beginner-friendly/10-phase-9-modularity.md).
 
 ## 3. Production-readiness checklist (honest about what's still missing)
 
@@ -86,6 +88,16 @@ as "in production." Here's the honest gap list, grouped, so you know what a real
       `sales.usp_SalesOrder_NextNumber` ([Phase 3](03-database-schema.md)), not a naive `MAX()+1`.
 - [x] Matched money/stock pairs — ✅ approval charges the balance and cancellation of an approved order
       reverses it ([Phase 8](08-approval-cancellation.md)); reserve is matched by release.
+- [ ] **Credit limit counts in-flight orders, not just approved ones.** As built, the credit check weighs
+      one order against the *committed* balance, which only moves at approval — so a customer's stack of
+      draft/pending orders doesn't yet count (see the ⚠️ note in [Phase 5 §7](05-domain-model.md)). For real
+      use, track **committed + pending exposure** (a `ReservedCredit` column adjusted at submit and released
+      on cancel/reject — a matched pair like inventory, or a sum-of-open-orders query). This is the first
+      *correctness* upgrade a real deployment needs.
+- [ ] **Fulfillment actually ships stock.** As built, submitting *reserves* `Reserved` but nothing ever
+      reduces `OnHand` — the warehouse never "ships." A real flow adds an `Approved → Fulfilled` transition
+      that atomically *deducts* `OnHand` and clears the matching `Reserved` (see extension exercise #3
+      below). Until then, reserved stock is held indefinitely.
 - [ ] Decide the reservation policy edge cases: what happens to reservations if an approved order is
       never fulfilled? (A background "expire stale reservations" job — out of scope, but real.)
 
@@ -139,8 +151,26 @@ Stay within the stack; each reinforces a pattern:
    policy decision lives, and keeping the balance change atomic — mind the matched pair from Phase 8.)
 2. **Reject an order** — a `RejectSalesOrderCommand` (Manager only) that releases reservations, like
    cancel. (Reinforces: state machine, release pair, role gate.)
-3. **Partial shipment / fulfillment** — an `Approved → Fulfilled` transition that *deducts* `OnHand`
-   (converting the reservation to a real stock reduction). (Reinforces: reserve→deduct lifecycle.)
+3. **Shipment / fulfillment (closes the inventory loop)** — as built, stock is *reserved* but `OnHand`
+   never drops, so nothing ever truly "ships." Add an `Approved → Fulfilled` transition (new status `5`) that
+   **atomically** converts the reservation into a real reduction — both counters move in *one* statement, the
+   same safety trick as reserve:
+   ```sql
+   CREATE OR ALTER PROCEDURE inventory.usp_Inventory_Deduct
+       @ItemId BIGINT, @Qty INT
+   AS
+   BEGIN
+       SET NOCOUNT ON;
+       UPDATE inventory.Inventory
+       SET OnHand = OnHand - @Qty, Reserved = Reserved - @Qty   -- ship: leaves the shelf AND frees the hold
+       WHERE ItemId = @ItemId AND Reserved >= @Qty AND OnHand >= @Qty;
+       SELECT @@ROWCOUNT;   -- 0 = something's off (nothing reserved to ship); 1 = shipped
+   END
+   ```
+   Add `IStockReservation.DeductAsync`, a `SalesOrder.Fulfill()` domain method (guarded `Approved →
+   Fulfilled`), a manager-gated `POST /sales-orders/{id}/fulfill` slice, and the `CK_Inventory_NotOver`
+   constraint keeps you honest throughout. (Reinforces: the reserve→deduct lifecycle, and why *every* stock
+   move is a single atomic statement.)
 4. **Customer statement query** — a read that lists a customer's orders with running credit used.
    (Reinforces: CQRS-lite reads.)
 5. **"Only the creator or a manager can cancel"** — a data-dependent authorization rule in the handler

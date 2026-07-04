@@ -136,6 +136,15 @@ CREATE TABLE inventory.Inventory (
 > [Phase 7](07-submit-reserve-concurrency.md), but this constraint means "oversold" is impossible at the
 > data level. **Belt and suspenders — this is what production code looks like.**
 
+> ⚠️ **What this tutorial does *not* do with `OnHand` (know the boundary).** In the flow we build, submitting
+> **reserves** stock (`Reserved` goes up) and cancelling **releases** it (`Reserved` goes down) — but
+> **`OnHand` never decreases.** There is no "ship it" step in the base build, so reserved stock is a *hold*,
+> not a shipment. That's a deliberate scope cut to keep the lifecycle focused on the two rules that teach
+> concurrency (reserve/release). Closing the loop — an `Approved → Fulfilled` transition that atomically
+> *deducts* `OnHand` and clears the matching `Reserved` — is the fully-worked
+> [Phase 13 extension exercise #3](13-wrap-up-checklist.md). Mentioning it now so "why does OnHand just sit
+> there?" has an answer.
+
 ### Sales orders and lines
 
 ```sql

@@ -358,6 +358,25 @@ public sealed class Customer
 > business risk, not a correctness bug. So credit = domain rule; inventory reservation = SQL atomic
 > guard. Different tools for different risks.
 
+> ⚠️ **Important limitation — read this so you're not surprised later.** `OutstandingBalance` only counts
+> what the customer *already owes on approved orders*. In this tutorial we bump it at **approval**
+> ([Phase 8](08-approval-cancellation.md)) — **not** when an order is merely created or submitted. That
+> keeps the flow simple, but it has a real consequence: **draft and pending orders don't yet count against
+> the credit limit.** So a customer with $500 of credit left could, in theory, create *ten* separate
+> orders that each individually fit under $500 — because none of them has been approved yet, so none has
+> touched the balance. Each order passes its own check; together they'd blow the limit.
+>
+> Is that a bug? For a *learning* build, it's an acceptable simplification (and a real company might even
+> accept the risk). For a *real* ERP it usually isn't — you'd want the limit to consider "already owed **+**
+> value of orders currently in flight." The clean way to do that is a **committed-plus-pending exposure**
+> figure: either a query that sums the customer's non-cancelled orders, or a dedicated `ReservedCredit`
+> column adjusted at submit and released on cancel/reject (a *matched pair*, exactly like inventory
+> reserve/release). We flag it here, list it on the [Phase 13 checklist](13-wrap-up-checklist.md), and leave
+> it as the first correctness upgrade you'd make — done properly it's a great exercise in the same "reserve
+> now, release on the reverse transition" muscle you build for stock. **The point for now: know that
+> `EnsureWithinCreditLimit` guards against a *single* order's total, not the customer's whole in-flight
+> pipeline.**
+
 ## 8. Domain events and the approval policy
 
 ```csharp

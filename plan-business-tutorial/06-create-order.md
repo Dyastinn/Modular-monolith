@@ -184,6 +184,13 @@ Look at what the handler *does* vs. what it *decides*:
 > stop. That belongs as `customer.EnsureNotBlocked()` in the domain. The handler asking a question is
 > fine; the handler *knowing the answer's logic* is the smell.
 
+> ⚠️ **Scope note on the credit check.** `EnsureWithinCreditLimit(order.Total)` compares *this one order's*
+> total against the customer's already-owed balance. It does **not** account for the customer's other
+> *draft/pending* orders (their balance only changes at approval — [Phase 8](08-approval-cancellation.md)).
+> That's a deliberate simplification, explained in full in the ⚠️ note in
+> [Phase 5 §7](05-domain-model.md) and listed on the [Phase 13 checklist](13-wrap-up-checklist.md). For now
+> just know the boundary: one order at a time, not the whole in-flight pipeline.
+
 ## 6. The Dapper repository (the module's Infrastructure)
 
 `Modules/Sales/Infrastructure/SalesOrderRepository.cs` (abbreviated to the create path):
@@ -360,6 +367,10 @@ business outcome** — because the rules live in the right places.
 - ❌ **A naive `MAX(Id)+1` order number** — two concurrent creates can produce the same number. ✅
   `NextOrderNumberAsync` calls `sales.usp_SalesOrder_NextNumber`, backed by a SQL `SEQUENCE`
   ([Phase 3 §3](03-database-schema.md)), which hands out unique values safely under concurrency.
+  *(Note: we ask for the number **before** the credit check, so an order that gets rejected still "uses up"
+  a sequence value — leaving small gaps like `SO-2026-000123` then `-000125`. That's expected and harmless:
+  sequences guarantee **uniqueness**, not **gapless** numbering. If your business genuinely needs
+  gapless numbers, that's a separate, harder problem — don't try to solve it with a sequence.)*
 - ✅ **Best practice: fail fast, before opening the transaction.** Notice most checks run *before*
   `BeginAsync`. Don't hold a database transaction open while doing validation you could have done first.
 

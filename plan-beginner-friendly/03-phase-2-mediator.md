@@ -154,27 +154,65 @@ There are two ways. **We build the first (recommended):**
   behaviors, and remembers it in a dictionary. Fast after the first call. (This is how MediatR does it.)
 - **Approach B — use `dynamic`.** Shorter code, but errors hide until runtime and it's slightly slower.
 
-The core of Approach A:
+Here's the whole thing — *all* of it, so it actually compiles if you type it in. It's longer than the
+`Send` method alone because it needs two tiny helper classes underneath; don't worry, you write this once
+and basically never touch it again:
 
 ```csharp
+// needs: using System.Collections.Concurrent;  using Microsoft.Extensions.DependencyInjection;
 public sealed class Sender(IServiceProvider provider) : ISender
 {
-    private static readonly ConcurrentDictionary<Type, RequestHandlerBase> _wrappers = new();
+    // A cache: one small "wrapper" per request type, so we only do the tricky reflection once per type.
+    private static readonly ConcurrentDictionary<Type, RequestHandlerWrapper> _wrappers = new();
 
     public Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken ct = default)
     {
-        var wrapper = (RequestHandlerWrapper<TResponse>)_wrappers.GetOrAdd(
+        var wrapper = _wrappers.GetOrAdd(
             request.GetType(),
-            static t => (RequestHandlerBase)Activator.CreateInstance(
-                typeof(RequestHandlerWrapperImpl<,>).MakeGenericType(t, typeof(TResponse)))!);
+            static requestType =>
+            {
+                var wrapperType = typeof(RequestHandlerWrapperImpl<,>)
+                    .MakeGenericType(requestType, typeof(TResponse));
+                return (RequestHandlerWrapper)Activator.CreateInstance(wrapperType)!;
+            });
 
-        return wrapper.Handle(request, provider, ct);
+        return ((RequestHandlerWrapperImpl<TResponse>)wrapper).Handle(request, provider, ct);
+    }
+}
+
+// Two small helper base classes so we can keep differently-typed wrappers in one dictionary.
+internal abstract class RequestHandlerWrapper { }
+
+internal abstract class RequestHandlerWrapperImpl<TResponse> : RequestHandlerWrapper
+{
+    public abstract Task<TResponse> Handle(IRequest<TResponse> request, IServiceProvider sp, CancellationToken ct);
+}
+
+internal sealed class RequestHandlerWrapperImpl<TRequest, TResponse>
+    : RequestHandlerWrapperImpl<TResponse>
+    where TRequest : IRequest<TResponse>
+{
+    public override Task<TResponse> Handle(IRequest<TResponse> request, IServiceProvider sp, CancellationToken ct)
+    {
+        // 1) find the ONE handler registered for this request type
+        var handler = sp.GetRequiredService<IRequestHandler<TRequest, TResponse>>();
+        // 2) the innermost step is the handler itself
+        RequestHandlerDelegate<TResponse> pipeline = () => handler.Handle((TRequest)request, ct);
+        // 3) wrap it in the behaviors (reversed, so the FIRST-registered ends up OUTERMOST)
+        foreach (var behavior in sp.GetServices<IPipelineBehavior<TRequest, TResponse>>().Reverse())
+        {
+            var next = pipeline;
+            pipeline = () => behavior.Handle((TRequest)request, next, ct);
+        }
+        // 4) run the whole nested chain and return its result
+        return pipeline();
     }
 }
 ```
 
 Don't panic if this looks dense — it's the *one* genuinely fiddly file in the project. You write it once
-and rarely touch it. All it does is: find the handler, wrap it in the behaviors, run it.
+and rarely touch it. All it does is the four numbered steps in the comments: find the handler, make it the
+innermost call, wrap it in the behaviors, run it.
 
 In plain words:
 - `_wrappers` is a **cache** — a memory of work we've already figured out. The first time a

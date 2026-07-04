@@ -68,7 +68,11 @@ public interface IPasswordHasher
 
 public sealed class PasswordHasher : IPasswordHasher
 {
-    private const int SaltSize = 16, KeySize = 32, Iterations = 100_000;
+    // Iterations = the "work factor": how many times PBKDF2 re-hashes. Higher = slower to crack (and to
+    // check). 600,000 is the current OWASP floor for PBKDF2-HMAC-SHA256 (as of 2025) — tune it up over time
+    // as hardware gets faster. Because we store the iteration count *inside* each hash (see Hash below),
+    // raising this later doesn't break existing passwords: old hashes still verify with their old count.
+    private const int SaltSize = 16, KeySize = 32, Iterations = 600_000;
 
     public string Hash(string password)
     {

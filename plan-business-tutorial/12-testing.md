@@ -155,23 +155,45 @@ public class InventoryReservationTests : IClassFixture<TestDatabaseFixture>
     public async Task Two_concurrent_reservations_for_the_last_units_only_one_wins()
     {
         // Arrange: item 3 has OnHand=8, Reserved=0 (from seed). Two callers each want 5.
-        var service = new InventoryService();
 
-        // Act: fire both reservations at (nearly) the same time. NOTE: these must COMMIT
-        // (real concurrency), not roll back — see the caveat below.
-        var a = ReserveInOwnTransaction(itemId: 3, qty: 5);
-        var b = ReserveInOwnTransaction(itemId: 3, qty: 5);
+        // Act: fire both reservations at (nearly) the same time. NOTE: each opens and COMMITS its own
+        // transaction (real concurrency), NOT rolls back — see the caveat below.
+        var a = ReserveInOwnCommittedTransaction(itemId: 3, qty: 5);
+        var b = ReserveInOwnCommittedTransaction(itemId: 3, qty: 5);
         bool[] results = await Task.WhenAll(a, b);
 
         // Assert: exactly one succeeded; the other saw insufficient stock.
         results.Count(r => r).Should().Be(1);
 
         // And the invariant held: Reserved never exceeded OnHand.
-        var reserved = await GetReserved(itemId: 3);
-        reserved.Should().Be(5);   // one winner reserved 5; 3 remain available
+        (await GetReserved(itemId: 3)).Should().Be(5);   // one winner reserved 5; 3 remain available
+
+        await ResetReservation(itemId: 3);   // manual cleanup — we committed, so there's nothing to roll back
     }
+
+    // --- test helpers: each opens a real connection + a COMMITTED transaction against the test DB ---
+    private async Task<bool> ReserveInOwnCommittedTransaction(long itemId, int qty)
+    {
+        await using var conn = new SqlConnection(_fx.ConnectionString);
+        await conn.OpenAsync();
+        await using var tx = (SqlTransaction)await conn.BeginTransactionAsync();
+        var service = new StockReservationService();          // the REAL Inventory implementation (Phase 7)
+        var reserved = await service.TryReserveAsync(itemId, qty, tx, default);
+        await tx.CommitAsync();                                // COMMIT — so the race is actually observable
+        return reserved;
+    }
+
+    // Bodies elided for brevity — each is a one-line Dapper query on a fresh connection:
+    private Task<int> GetReserved(long itemId) => /* SELECT Reserved FROM inventory.Inventory WHERE ItemId=@itemId */ ;
+    private Task ResetReservation(long itemId) => /* UPDATE inventory.Inventory SET Reserved = 0 WHERE ItemId=@itemId */ ;
 }
 ```
+
+> 🧪 **Note:** `ReserveInOwnCommittedTransaction`, `GetReserved`, and `ResetReservation` are little **test
+> helpers** you write once in this class (their bodies are trivial Dapper calls on the fixture's connection
+> string). The star is `new StockReservationService()` — the *actual* Inventory implementation from
+> [Phase 7](07-submit-reserve-concurrency.md), calling the *actual* atomic proc. We use the real thing on
+> purpose: **a fake can't have a race condition, so a fake would prove nothing here.**
 
 > ⚠️ **Caveat (from [beginner Phase 8 §3](../plan-beginner-friendly/09-phase-8-testing.md)):** most
 > integration tests wrap each test in a transaction they *roll back* for isolation. But this one must
@@ -214,9 +236,25 @@ public async Task Cancelling_an_approved_order_restores_the_customer_balance()
 HTTP. (Recall the `public partial class Program {}` we added in [Phase 1](01-solution-setup.md) — this
 is why.)
 
+`CustomWebAppFactory` is a tiny subclass of `WebApplicationFactory<Program>` that overrides configuration
+to point the app at the **test** database (the same `Erp_Test` connection string as the fixture), so the
+booted API reads/writes test data, never dev data:
+
+```csharp
+public sealed class CustomWebAppFactory : WebApplicationFactory<Program>
+{
+    protected override void ConfigureWebHost(IWebHostBuilder builder) =>
+        builder.UseSetting("ConnectionStrings:ErpDb",
+            "Server=(localdb)\\MSSQLLocalDB;Database=Erp_Test;Trusted_Connection=True;TrustServerCertificate=True");
+}
+```
+
 ```csharp
 public class SalesOrderWorkflowTests : IClassFixture<CustomWebAppFactory>
 {
+    private readonly CustomWebAppFactory _factory;
+    public SalesOrderWorkflowTests(CustomWebAppFactory factory) => _factory = factory;
+
     [Fact]
     public async Task Create_submit_approve_happy_path()
     {

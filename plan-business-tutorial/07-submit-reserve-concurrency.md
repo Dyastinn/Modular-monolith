@@ -56,6 +56,17 @@ public interface IStockReservation
 The **Inventory module** implements it by calling its atomic proc from [Phase 3](03-database-schema.md);
 Sales depends only on the interface, so neither module references the other. The Api wires them together.
 
+> ⚠️ **Honest note on the `IDbTransaction tx` in this contract.** Passing a database transaction across the
+> contract lets Sales and Inventory share **one** transaction — perfect and correct *inside a single-database
+> monolith*, which is exactly what we have. But it's worth naming what that means for the "you could extract
+> Inventory into its own service later" story you'll hear in [Phase 13](13-wrap-up-checklist.md): you
+> **can't send a database transaction over a network**, so if Inventory ever moved to its own database, this
+> `tx` parameter would have to disappear and the "reserve in the same transaction" step would become a
+> **saga** (reserve as a separate call, and *release* to compensate if the rest fails). So extraction reshapes
+> *this contract* and adds saga logic — it does **not** force you to untangle Sales from Inventory's tables,
+> because those were never shared. The wall still buys you most of the payoff; just don't picture the swap as
+> "same interface, zero changes." (Full version: [beginner Phase 9](../plan-beginner-friendly/10-phase-9-modularity.md).)
+
 ```csharp
 // Modules/Inventory/Infrastructure/StockReservationService.cs  (Inventory owns this)
 public sealed class StockReservationService : IStockReservation
@@ -222,7 +233,9 @@ public sealed class SubmitSalesOrderEndpoint : ICarterModule
 - ❌ **Reserving inside the domain method `Submit()`.** ✅ Domain stays pure; the handler + SQL reserve.
 - ❌ **Ignoring the reservation rowcount** and assuming success. ✅ `rows == 1` or it didn't happen.
 - ❌ **Not re-checking blocked/credit at submit** because you checked at create. ✅ State drifts;
-  re-validate at the moment it matters.
+  re-validate at the moment it matters. *(Caveat: like at create, this credit check still only weighs
+  **this** order against the committed balance — not the customer's other in-flight orders. See the ⚠️ note
+  in [Phase 5 §7](05-domain-model.md) for why, and the fix, if you want true pipeline-wide credit.)*
 - ✅ **Best practice: keep the transaction short.** Do read-only validation *before* `BeginAsync`; only
   the writes (reserve + status) live inside the transaction, minimizing how long rows are locked.
 

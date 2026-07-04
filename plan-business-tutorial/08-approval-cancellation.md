@@ -10,7 +10,7 @@
 
 Two commands that complete the order lifecycle:
 
-- `POST /sales-orders/{id}/approve` — **Manager only.** Moves PendingApproval → Approved, and adds the
+- `POST /sales-orders/{id}/approve` — **SalesManager only** (role string `"SalesManager"`). Moves PendingApproval → Approved, and adds the
   order total to the customer's outstanding balance (they now owe it).
 - `POST /sales-orders/{id}/cancel` — Moves an order to Cancelled and **releases** any inventory it had
   reserved, so the stock returns to available.

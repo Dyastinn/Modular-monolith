@@ -51,13 +51,17 @@ To promote `Inventory` from an in-process module into a standalone service somed
    the `IStockReservation` contract in Shared), nothing else depends on its types.
 2. **It already has its own schema** (`inventory`). The tables/procs move with it — painless *because* no
    other module queried them directly.
-3. **Replace the in-process contract implementation with a network client.** `StockReservationService`
-   (which ran SQL locally) becomes an HTTP/gRPC client behind the *same* `IStockReservation` interface.
-   Sales doesn't change.
-4. **Replace in-process integration events with real messaging** for cross-module reactions (Step 4).
-5. **Handle transactional consistency across the boundary** — the submit→reserve that shared one
-   transaction now becomes a saga with compensation (reserve, and release on failure). This is the real cost
-   of the split, named honestly.
+3. **Replace the in-process contract implementation with a network client** — and adjust the contract's
+   *shape*. `StockReservationService` (which ran SQL locally) becomes an HTTP/gRPC client. Sales still
+   depends on an `IStockReservation`-shaped interface and its *call site* barely changes — but the interface
+   itself must lose the `IDbTransaction tx` parameter, because a database transaction can't travel across a
+   network. That's not a footnote; it's the crux of the next point.
+4. **Turn the shared-transaction reserve into a saga.** Today submit *reserves stock and changes status in
+   one transaction* — all-or-nothing for free. Across a service boundary you can't share that transaction,
+   so "reserve" becomes a separate call, and if the rest of submit fails you must **compensate** by
+   *releasing* what you reserved. This reserve→(commit | release) dance is the saga, and it's the real cost
+   of the split — named honestly.
+5. **Replace in-process integration events with real messaging** for cross-module reactions (Step 4).
 
 > 💬 **The seams you already built pay off here.** Sales calls `IStockReservation` and speaks to the mediator
 > in *messages*. Swapping the transport under those seams is localized — Sales' code barely changes. If Sales

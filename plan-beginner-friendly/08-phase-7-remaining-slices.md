@@ -143,6 +143,32 @@ event *is* the contract.
 - **Integration event** (`SalesOrderCancelled` → Inventory handler): use when the reaction can happen
   *just after*, best-effort, and you want the modules maximally decoupled.
 
+Here's the whole decision on one screen — when a module needs to talk to another, ask these in order:
+
+```
+                       Must it succeed/fail in the SAME transaction as my change?
+                                          │
+                        ┌─────────── YES ─┴─ NO ───────────┐
+                        ▼                                   ▼
+             SYNCHRONOUS CONTRACT               Is it OK if it happens a moment later,
+             (IStockReservation)                 and OK if it occasionally fails?
+             e.g. submit MUST reserve                        │
+             or the submit is off                ┌──── YES ──┴─ NO ─────────────┐
+                                                 ▼                              ▼
+                                       INTEGRATION EVENT            You need a transactional
+                                       (publish; others react)      OUTBOX (reliable delivery)
+                                       e.g. audit, notify           — a Phase 9 signpost, not
+                                                                     built here
+```
+
+| You want… | Use | Coupling | Fails how? |
+|---|---|---|---|
+| "reserve, or don't submit" (atomic together) | **Synchronous contract** | tight, on purpose | the whole operation rolls back |
+| "react afterwards" (audit, notify) | **Integration event** | loose | best-effort; reaction may be lost |
+| "react afterwards, and it must *never* be lost" | **Outbox** (later) | loose + reliable | retried until delivered |
+
+*Picking the right doorway for the coupling you actually have is the whole lesson of this section.*
+
 For this project we release synchronously on cancel (it belongs in the same transaction), and use
 integration events for genuine "react afterwards" side effects (audit, notifications). Knowing *which tool
 for which coupling* is the lesson.

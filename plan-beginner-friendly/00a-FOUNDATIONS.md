@@ -184,6 +184,18 @@ When you see `<TRequest, TResponse>` or `<T>`, read it as "this is a fill-in-the
 CreateOrderCommand that gives back an OrderId." You don't need to write generic code in this project
 much — you mostly *fill in the blanks*.
 
+**The `<T>` you'll see most is a *collection* — a list of things:**
+
+- **`List<SalesOrderLine>`** = "a list of order lines you can add to and remove from." (A `List<T>` is the
+  everyday resizable list.)
+- **`IReadOnlyList<SalesOrderLine>`** = "a list you can *look at* but not change." The `SalesOrder` exposes
+  its lines as `IReadOnlyList<...>` on purpose: outside code can read the lines, but can only *add* one by
+  calling `AddLine(...)` — which checks the rules first. It's the same "protect your own data" idea as
+  `private set` from §2, applied to a list. When you see `IReadOnlyList<T>`, read it as "a look-but-don't-
+  touch list."
+
+You won't build these types; you'll just *read* and *loop over* them (`foreach (var line in order.Lines)`).
+
 ---
 
 ## 7. `record`, `struct`, `class` — three ways to make a type
