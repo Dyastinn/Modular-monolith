@@ -288,13 +288,80 @@ does the real work.
 
 ### 4d. Registration — shared mediator, per-module handlers
 
-Registration splits along the module boundary, and this split is the whole point of a modular monolith:
+Registration splits along the module boundary, and this split is the whole point of a modular monolith.
 
-- **In `Erp.Shared.Infrastructure`**, an `AddMessaging()` helper registers `ISender` → `Sender` and the
-  shared behaviors **in the order they should wrap**. `AddSharedInfrastructure()` calls it.
-- **In each module's `DependencyInjection.cs`**, `AddSalesModule()` scans *its own assembly*
-  (`Erp.Modules.Sales`) for the handlers *it* defines and registers them. Inventory's module later scans
-  its own assembly. No module registers another's handlers — the registration respects the walls.
+**In `Erp.Shared.Infrastructure`**, an `AddMessaging()` helper registers `ISender` → `Sender` and the
+shared behaviors **in the order they should wrap**; `AddSharedInfrastructure()` calls it (and, from Phase 4
+on, also registers the DB plumbing and `AddCarter()`):
+
+```csharp
+// Erp.Shared.Infrastructure/DependencyInjection.cs
+using Carter;
+using Erp.Shared.Messaging;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Erp.Shared.Infrastructure;
+
+public static class DependencyInjection
+{
+    public static IServiceCollection AddSharedInfrastructure(this IServiceCollection services, IConfiguration config)
+    {
+        services.AddMessaging();
+        services.AddCarter();                 // Carter's own services, so app.MapCarter() works
+        // (Phase 4 adds the DB connection factory + unit of work here too)
+        return services;
+    }
+
+    public static IServiceCollection AddMessaging(this IServiceCollection services)
+    {
+        services.AddScoped<ISender, Sender>();
+        // Behaviors wrap in registration order — FIRST registered is OUTERMOST.
+        services.AddScoped(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));    // outermost
+        // (Phase 4 registers ValidationBehavior<,> here, just inside Logging)
+        return services;
+    }
+}
+```
+
+`services.AddScoped(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>))` registers an **open generic**
+— one line covers `IPipelineBehavior<PingQuery,string>`, `IPipelineBehavior<CreateSalesOrderCommand,…>`, and
+every future request type, so you never touch this again.
+
+**In each module's `DependencyInjection.cs`**, `AddSalesModule()` scans *its own assembly* for the handlers
+*it* defines and registers each one. Inventory later scans its own assembly; no module registers another's —
+the registration respects the walls:
+
+```csharp
+// Modules/Sales/DependencyInjection.cs
+using Erp.Shared.Messaging;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Erp.Modules.Sales;
+
+public static class DependencyInjection
+{
+    public static IServiceCollection AddSalesModule(this IServiceCollection services, IConfiguration config)
+    {
+        var assembly = typeof(DependencyInjection).Assembly;   // THIS module's assembly
+
+        // Find every class that implements IRequestHandler<,> and register it against that interface.
+        foreach (var type in assembly.GetTypes().Where(t => t is { IsAbstract: false, IsInterface: false }))
+            foreach (var handlerInterface in type.GetInterfaces()
+                .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IRequestHandler<,>)))
+                services.AddScoped(handlerInterface, type);
+
+        // (Phase 4 also registers this module's validators, repositories, and Dapper type handlers here.)
+        return services;
+    }
+}
+```
+
+> ❓ **"Why scan by reflection instead of registering each handler by hand?"** Because a new feature should
+> be *one folder*, not "one folder plus a line you have to remember to add to a registration list." The scan
+> means dropping in a `PingHandler` (or `CreateSalesOrderHandler`) is enough — it's found automatically. The
+> cost is the missing-handler-is-a-runtime-error trade-off we named in Step 5.
 
 **Order matters** — the first behavior registered is the *outermost* wrapper.
 

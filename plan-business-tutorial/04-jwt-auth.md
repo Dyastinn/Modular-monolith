@@ -193,6 +193,14 @@ public sealed class LoginHandler(
 }
 ```
 
+> ℹ️ **What are `IUserRepository` and `AppUser`?** Just like the Sales repositories, the Login handler
+> declares the small port it needs and lets Infrastructure implement it. `IUserRepository` is one method —
+> `Task<AppUser?> GetByUsernameAsync(string username, CancellationToken ct);` — implemented in
+> `Shared.Infrastructure` with Dapper calling `identity.usp_AppUser_GetByUsername` from
+> [Phase 3](03-database-schema.md). `AppUser` is a plain read shape carrying `Id, Username, PasswordHash,
+> Role, IsActive` — deliberately *not* a rich domain aggregate, because authentication is a platform
+> concern, not a Sales business rule. Register it in the composition root ([Phase 11 §7](11-cross-cutting.md)).
+
 > ❓ **You might be wondering: "Why one vague error for both 'no such user' and 'wrong password'?"**
 > Security. If you said "no such user" vs "wrong password," an attacker could probe which usernames
 > exist. A single generic message ("Invalid username or password") leaks nothing. Small detail, real

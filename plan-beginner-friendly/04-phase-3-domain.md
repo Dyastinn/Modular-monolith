@@ -107,7 +107,7 @@ public abstract class Entity<TId> where TId : struct   // TId is the strongly-ty
     public TId Id { get; protected set; }
 }
 
-public abstract class AggregateRoot<TId> : Entity<TId>
+public abstract class AggregateRoot<TId> : Entity<TId> where TId : struct   // repeat the constraint the base requires
 {
     private readonly List<IDomainEvent> _events = new();
     public IReadOnlyList<IDomainEvent> DomainEvents => _events;
@@ -119,6 +119,12 @@ public interface IDomainEvent { }   // a marker; the actual events are records
 
 public sealed class DomainException(string message) : Exception(message);
 ```
+
+> ⚠️ **Don't drop the `where TId : struct` on `AggregateRoot`.** `Entity<TId>` requires `TId` to be a value
+> type (`struct`), and a derived class must *repeat* any constraint its base declares. Leave it off
+> `AggregateRoot<TId>` and the compiler stops you cold with
+> *`CS0453: The type 'TId' must be a non-nullable value type`* — an easy one to hit, since it's tempting to
+> write just `: Entity<TId>`.
 
 > ❓ **"Why put these in a shared project instead of the Sales module?"** Because they're not about Sales —
 > they're the generic scaffolding *any* aggregate uses. When the Inventory module arrives in Phase 5, its
@@ -155,7 +161,7 @@ public sealed class SalesOrder : AggregateRoot<SalesOrderId>
     public static SalesOrder Create(CustomerId customerId)
     {
         var order = new SalesOrder { CustomerId = customerId, Status = SalesOrderStatus.Draft };
-        order.Raise(new SalesOrderCreated(order.Id, customerId));
+        order.Raise(new SalesOrderCreated(customerId));   // no id yet — see the ⚠️ note below
         return order;
     }
 
@@ -189,6 +195,49 @@ public sealed class SalesOrder : AggregateRoot<SalesOrderId>
     // The approval threshold is a BUSINESS RULE, so it lives here — not in a handler.
     public bool RequiresApproval => Total > ApprovalPolicy.Threshold;
 }
+```
+
+### The three small pieces `SalesOrder` leans on
+
+The class above mentions a **line**, an **approval threshold**, and three **events** we haven't written yet.
+They're tiny, so here they are in full (all in `Sales/Domain/`, alongside `SalesOrder`):
+
+```csharp
+namespace Erp.Modules.Sales.Domain;
+
+// One line of the order. Its total is COMPUTED (price × quantity) — never stored, so it can't drift.
+// (Money and Quantity are the value objects from Step 7; the * operator is defined there.)
+public sealed class SalesOrderLine
+{
+    public ProductId ProductId { get; }
+    public Quantity  Quantity  { get; }
+    public Money     UnitPrice { get; }
+    public Money LineTotal => UnitPrice * Quantity.Value;   // used by SalesOrder.Total
+
+    public SalesOrderLine(ProductId productId, Quantity quantity, Money unitPrice)
+    {
+        ProductId = productId;
+        Quantity  = quantity;
+        UnitPrice = unitPrice;
+    }
+}
+
+// The approval threshold is a business constant, so it gets ONE home. RequiresApproval reads it.
+public static class ApprovalPolicy
+{
+    public static readonly Money Threshold = new(50_000m);
+}
+```
+
+The three domain events are just records that state *what happened* — each implements the `IDomainEvent`
+marker from `Erp.Shared.BuildingBlocks` (Step 4):
+
+```csharp
+namespace Erp.Modules.Sales.Domain;
+
+public sealed record SalesOrderCreated(CustomerId CustomerId) : IDomainEvent;                    // no id yet (see ⚠️ below)
+public sealed record SalesOrderSubmitted(SalesOrderId Id, CustomerId CustomerId, Money Total) : IDomainEvent;
+public sealed record SalesOrderCancelled(SalesOrderId Id) : IDomainEvent;
 ```
 
 ### Let's walk through the `Submit` method line by line
@@ -227,13 +276,14 @@ The payoff: the handler in Phase 4/5 will just call `order.Submit(approved)` and
 this — because the `SalesOrder` already guarantees it.
 
 > ⚠️ **A subtlety about the id inside `SalesOrderCreated`.** A brand-new order hasn't been saved yet, so the
-> database hasn't assigned its identity — `order.Id` is still the default `SalesOrderId(0)` at the moment
-> `Create()` raises `SalesOrderCreated(order.Id, …)`. That event id is therefore **provisional**. Two clean
-> ways to handle it, both fine for this project: (1) **don't put the id in the "created" event at all** — a
-> `SalesOrderCreated(CustomerId)` is enough, since the real id only becomes meaningful after insert; or (2)
-> let the **repository stamp `Id`** on the aggregate right after the `INSERT` returns `SCOPE_IDENTITY()`, and
-> dispatch events *after* save (which we do anyway — Phase 7 dispatches after commit), so any handler reads
-> the real id. The trap to avoid is *assuming* `SalesOrderCreated.Id` is usable before the order is persisted.
+> database hasn't assigned its identity — `order.Id` is still the default `SalesOrderId(0)` when `Create()`
+> runs. That's exactly why the event above is `SalesOrderCreated(CustomerId)` with **no id**: the real id
+> only becomes meaningful *after* the insert, so we don't pretend to have it yet. (The other clean option is
+> to let the **repository stamp `Id`** on the aggregate right after the `INSERT` returns `SCOPE_IDENTITY()`
+> and dispatch events *after* commit — which we do anyway in Phase 7 — so a handler could read the real id.
+> We take the simpler route here.) The trap to avoid is *assuming* an id is usable before the order is
+> persisted. Later events like `SalesOrderSubmitted` *do* carry the id, because by then the order was loaded
+> from the database with its real id.
 
 > ❓ **"Why throw an exception instead of returning false or an error code?"** Because submitting a
 > non-draft order isn't a normal outcome to politely report — it's a *rule violation that should never
@@ -296,9 +346,32 @@ Cancelled → (nowhere — it's final)
 Completed → (nowhere — it's final)
 ```
 
-We implement a small `CanTransitionTo` lookup so illegal moves are *impossible*, not merely frowned upon.
-*(Analogy: a board game where pieces physically can't move to illegal squares.)* Phase 7 exercises the full
-machine, and the business tutorial adds an explicit manager `Approved` state on top of this.
+We turn that table into a small `CanTransitionTo` lookup so illegal moves are *impossible*, not merely
+frowned upon — this is exactly what `Cancel()` above calls. (An extension method must live in a `static`
+class, so we give it one.)
+
+```csharp
+namespace Erp.Modules.Sales.Domain;
+
+public static class SalesOrderStatusRules
+{
+    private static readonly Dictionary<SalesOrderStatus, SalesOrderStatus[]> _allowed = new()
+    {
+        [SalesOrderStatus.Draft]     = new[] { SalesOrderStatus.Submitted, SalesOrderStatus.Cancelled },
+        [SalesOrderStatus.Submitted] = new[] { SalesOrderStatus.Completed, SalesOrderStatus.Cancelled },
+        [SalesOrderStatus.Cancelled] = Array.Empty<SalesOrderStatus>(),   // final — nowhere to go
+        [SalesOrderStatus.Completed] = Array.Empty<SalesOrderStatus>(),   // final — nowhere to go
+    };
+
+    // An extension method, so you can write the readable `Status.CanTransitionTo(Cancelled)`.
+    public static bool CanTransitionTo(this SalesOrderStatus from, SalesOrderStatus to) =>
+        _allowed[from].Contains(to);
+}
+```
+
+*(Analogy: a board game where pieces physically can't move to illegal squares.)*
+[Phase 7](08-phase-7-remaining-slices.md) puts this same table to work when it wires up cancel/complete for
+real, and the business tutorial adds an explicit manager `Approved` state on top of this.
 
 ## Step 7 — Value objects: making bad values impossible
 

@@ -329,8 +329,19 @@ END
 ```
 
 Rowcount `0` → the repository throws a `ConcurrencyException` → the handler lets it bubble up (the caller
-reloads and retries). The domain doesn't manage the `rowversion` — that's a persistence detail the
-repository loads with the order and passes back on update.
+reloads and retries). The domain doesn't *manage* the `rowversion` — but the aggregate has to *carry* it
+between the load and the update, so add one plainly-persistence property to `SalesOrder` that the repository
+fills in on load and reads back on save:
+
+```csharp
+// on SalesOrder (set by the repository during rehydrate; never touched by business methods)
+public byte[]? RowVersion { get; private set; }
+```
+
+`GetAsync` reads the `RowVersion` column into it; `UpdateAsync` passes `order.RowVersion` back to the proc as
+`@RowVersion`. It's the one honest concession where a persistence detail rides along on the aggregate — keep
+it out of every *business* method and it stays harmless. (`ConcurrencyException` is a small custom exception
+like `NotFoundException`, in `Erp.Shared.Common`.)
 
 > 🔑 **The honest boundary:** the concurrency *token* (`rowversion`) is infrastructure, but the *decision to
 > fail on conflict* is a business choice surfaced as a meaningful exception. *(Contract analogy: "I'll only

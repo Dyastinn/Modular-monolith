@@ -47,6 +47,12 @@ public sealed record SalesOrderDetailDto(
 
 public sealed record SalesOrderLineDto(long ItemId, string ItemName, int Quantity, decimal UnitPrice, decimal LineTotal);
 
+// The flat "row" shapes Dapper reads from the proc's two result sets — plain DB shapes, not the API DTO.
+// (Status comes back as its stored int; the handler converts it to a readable name below.)
+public sealed record SalesOrderHeaderRow(
+    long Id, string OrderNumber, long CustomerId, string CustomerName, int Status, decimal Total, DateTime CreatedUtc);
+public sealed record SalesOrderLineRow(long ItemId, string ItemName, int Quantity, decimal UnitPrice);
+
 public sealed class GetSalesOrderHandler(IDbConnectionFactory factory)
     : IQueryHandler<GetSalesOrderQuery, SalesOrderDetailDto?>   // query marker (Phase 2)
 {

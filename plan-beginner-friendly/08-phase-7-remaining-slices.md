@@ -25,7 +25,7 @@ reserved stock (through Inventory's contract), cancelling must *release* it — 
 public sealed record CancelSalesOrderCommand(long SalesOrderId) : ICommand<Unit>;
 
 public sealed class CancelSalesOrderHandler(
-    ISalesOrderRepository orders, IStockReservation stock, IUnitOfWork uow)
+    ISalesOrderRepository orders, IStockReservation stock, IUnitOfWork uow, IPublisher publisher)
     : ICommandHandler<CancelSalesOrderCommand, Unit>
 {
     public async Task<Unit> Handle(CancelSalesOrderCommand cmd, CancellationToken ct)
@@ -42,7 +42,12 @@ public sealed class CancelSalesOrderHandler(
         await orders.UpdateAsync(order, tx.Inner, ct);   // version-checked status update, on the same transaction
         await tx.CommitAsync(ct);
 
-        return Unit.Value;   // SalesOrderCancelled event dispatched after commit (Step 3)
+        // Dispatch the domain events AFTER commit (Step 3) — hence IPublisher is injected above.
+        // (Events implement both IDomainEvent and INotification — see the ⚠️ note in Step 3.)
+        foreach (var e in order.DomainEvents) await publisher.Publish((INotification)e, ct);
+        order.ClearEvents();
+
+        return Unit.Value;
     }
 }
 ```
@@ -54,23 +59,18 @@ and the transaction.
 > 💡 By now the handler should look *repetitive* — same shape as `SubmitSalesOrder`. **That repetition is the
 > win.** Every command reads the same way, so any developer can predict what a new one looks like.
 
-**Enforce the transition table** so illegal moves are impossible (in `Sales/Domain/`):
+**The transition table does the enforcing** — you already built it in
+[Phase 3 §6](04-phase-3-domain.md) as `SalesOrderStatusRules.CanTransitionTo` (in `Sales/Domain/`):
 
-```csharp
-private static readonly Dictionary<SalesOrderStatus, SalesOrderStatus[]> _allowed = new()
-{
-    [SalesOrderStatus.Draft]     = new[] { SalesOrderStatus.Submitted, SalesOrderStatus.Cancelled },
-    [SalesOrderStatus.Submitted] = new[] { SalesOrderStatus.Completed, SalesOrderStatus.Cancelled },
-    [SalesOrderStatus.Cancelled] = Array.Empty<SalesOrderStatus>(),
-    [SalesOrderStatus.Completed] = Array.Empty<SalesOrderStatus>(),
-};
-public static bool CanTransitionTo(this SalesOrderStatus from, SalesOrderStatus to) =>
-    _allowed[from].Contains(to);
+```
+Draft     → Submitted, Cancelled          Cancelled → (final — nowhere)
+Submitted → Completed, Cancelled          Completed → (final — nowhere)
 ```
 
-The `Dictionary` is a lookup table — "from this status, here are the statuses you may move to." `Cancelled`
-and `Completed` have `Array.Empty` — final, dead-end states. So `order.Cancel()` on a `Completed` order
-returns `false` and throws. The illegal move is *impossible*, not just discouraged.
+That lookup is a table — "from this status, here are the statuses you may move to." `Cancelled` and
+`Completed` map to `Array.Empty` — dead-end states. So `order.Cancel()` on a `Completed` order asks
+`CanTransitionTo(Cancelled)`, gets `false`, and throws. Cancel and complete are simply the transitions that
+finally *exercise* that table — the illegal move is *impossible*, not just discouraged.
 
 > ❓ **"Why a lookup table instead of a bunch of `if`s?"** Two wins: (1) all the rules sit in *one readable
 > place* — you can hand the whole state machine to a non-programmer; (2) adding a status means adding one
@@ -122,8 +122,22 @@ public interface INotificationHandler<in T> where T : INotification
 { Task Handle(T notification, CancellationToken ct); }
 ```
 
-`IPublisher.Publish(e)` finds all `INotificationHandler<T>` for that event and runs them. Example: a
-`SalesOrderSubmittedHandler` that writes an audit row — a *side effect*, kept out of the domain.
+`IPublisher.Publish(e)` finds all `INotificationHandler<T>` for that event and runs them — the same
+resolve-by-type reflection as the `Sender` from [Phase 2 §4b](03-phase-2-mediator.md), so build `Publisher`
+by mirroring `Sender` (loop the handlers instead of wrapping one). It lives beside `Sender` in
+`Shared.Messaging` and is registered in `AddMessaging`. Example: a `SalesOrderSubmittedHandler` that writes
+an audit row — a *side effect*, kept out of the domain.
+
+> ⚠️ **Mind the two markers — `IDomainEvent` vs `INotification`.** The aggregate records events as
+> `IDomainEvent` (from `BuildingBlocks`, which references *nothing*), but publishing uses `INotification`
+> (from `Messaging`). Because those two projects don't reference each other, they can't be the *same*
+> interface. The clean resolution: **your concrete event records implement both markers** — e.g.
+> `public sealed record SalesOrderCancelled(SalesOrderId Id) : IDomainEvent, INotification;` — since the
+> Sales module references both projects. Then the after-commit loop publishes each recorded event as a
+> notification (`await publisher.Publish((INotification)e, ct)`), and `INotificationHandler<SalesOrderCancelled>`
+> handlers fire. (If that double-marker feels redundant, it is a little — it's the price of keeping
+> `BuildingBlocks` dependency-free. The business tutorial sidesteps it by using a single `IDomainEvent`
+> vocabulary throughout; see the naming table just below.)
 
 > 🔗 **Same idea, two names — don't let it trip you.** The [business tutorial](../plan-business-tutorial/08-approval-cancellation.md)
 > builds this exact mechanism but names it after the *domain-event* vocabulary. The mapping is one-to-one:

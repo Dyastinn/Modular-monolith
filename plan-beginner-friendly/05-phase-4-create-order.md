@@ -112,13 +112,19 @@ public sealed class CreateSalesOrderHandler(
         }
 
         await using var tx = await uow.BeginAsync(ct);   // transaction boundary — kept visible (Step 7)
-        await orders.AddAsync(order, tx.Inner, ct);        // save ON the handler's transaction (Step 7)
+        var newId = await orders.AddAsync(order, tx.Inner, ct);   // AddAsync returns the DB-assigned id (Step 5)
         await tx.CommitAsync(ct);
 
-        return new CreateSalesOrderResult(order.Id.Value);
+        return new CreateSalesOrderResult(newId.Value);
     }
 }
 ```
+
+> ⚠️ **Why `newId` and not `order.Id`?** The database assigns the id on `INSERT` — but `order.Id` is a
+> `{ get; protected set; }` on `Entity` (Phase 3), so the repository (which isn't a subclass of `SalesOrder`)
+> *can't* write it back onto the aggregate. The clean fix is for `AddAsync` to **return** the new id (see the
+> interface in Step 5) and the handler to use that. Returning `order.Id.Value` here would hand back `0`, since
+> the in-memory order never learned its real id.
 
 > ℹ️ **About `IPricingService`:** it's a small interface — "given a `ProductId`, give me its `Money` unit
 > price." Be precise about what it *is*: because it fetches data from a price list, it's really a **read port
@@ -126,6 +132,37 @@ public sealed class CreateSalesOrderHandler(
 > a "domain service." (A *true* domain service holds stateless domain *logic* that spans several aggregates
 > and does **no** I/O — see the corrected note in [Phase 5 §2](06-phase-5-inventory-concurrency.md).) For
 > Phase 4, read it as a simple price lookup; a stub that returns a fixed price is fine to get this running.
+
+> ℹ️ **About `NotFoundException`:** a tiny custom exception the handler throws when something it loaded
+> doesn't exist (`?? throw new NotFoundException(...)`). Define it once, next to the `DomainException` from
+> [Phase 3 §4](04-phase-3-domain.md):
+> `public sealed class NotFoundException(string message) : Exception(message);` — put it in
+> `Erp.Shared.Common` so every module's handlers can throw it.
+
+> ℹ️ **About `Customer` and `EnsureCanOrder()`:** `Customer` is a small domain entity in `Sales/Domain/`
+> (loaded by `ICustomerRepository`, implemented in Infrastructure like `SalesOrderRepository`). The business
+> question "can this customer order?" is a rule about the customer, so it lives *on* the customer:
+> ```csharp
+> public sealed class Customer : Entity<CustomerId>
+> {
+>     public bool IsActive     { get; private set; }
+>     public bool OnCreditHold { get; private set; }
+>     public void EnsureCanOrder()
+>     {
+>         if (!IsActive)     throw new DomainException("Customer is inactive.");
+>         if (OnCreditHold)  throw new DomainException("Customer is on credit hold.");
+>     }
+> }
+> ```
+> The handler *asks* (`customer.EnsureCanOrder()`); the customer *decides*. Same split as `SalesOrder.Submit`.
+
+> ⚠️ **Where do these exceptions turn into HTTP status codes? (Honest gap.)** Right now they don't — an
+> unhandled `DomainException` / `NotFoundException` / `ValidationException` bubbles out as an HTTP **500**
+> with a stack trace. That's fine while you're learning the *happy path*, but a real API maps them to `400`
+> / `404` / `409`. The clean way is a single global exception handler (ASP.NET's `IExceptionHandler`). We
+> deliberately don't build it in this course to stay focused; the
+> [business tutorial does it in Phase 11](../plan-business-tutorial/11-cross-cutting.md), and wiring one up
+> here is a great small exercise. Just don't be surprised when a blocked customer returns a 500 for now.
 
 ### File 2 — `CreateSalesOrderEndpoint.cs` (the web edge, via Carter)
 
@@ -242,7 +279,7 @@ Build the order *through the domain*. `AddLine` itself enforces "only drafts can
 
 ```csharp
 await using var tx = await uow.BeginAsync(ct);
-await orders.AddAsync(order, ct);
+await orders.AddAsync(order, tx.Inner, ct);
 await tx.CommitAsync(ct);
 ```
 Open a transaction (Step 7), save the whole order, commit. If the header saved but a line failed, the commit
@@ -265,7 +302,7 @@ rules). **If you ever catch a business `if` sneaking into a handler, stop: it be
 ```csharp
 public interface ISalesOrderRepository
 {
-    Task AddAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct);      // writes run on the handler's tx
+    Task<SalesOrderId> AddAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct);  // returns the DB-assigned id
     Task<SalesOrder?> GetAsync(SalesOrderId id, CancellationToken ct);             // a read — opens its own connection
     Task UpdateAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct);   // used in Phase 5/7
 }
@@ -278,7 +315,7 @@ all the lines:
 ```csharp
 public sealed class SalesOrderRepository(IDbConnectionFactory factory) : ISalesOrderRepository
 {
-    public async Task AddAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct)
+    public async Task<SalesOrderId> AddAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct)
     {
         var conn = tx.Connection!;   // reuse the handler's transaction's connection — do NOT open a new one,
                                      // or the inserts wouldn't be part of the transaction the handler committed.
@@ -293,8 +330,12 @@ public sealed class SalesOrderRepository(IDbConnectionFactory factory) : ISalesO
                 new { SalesOrderId = orderId, line.ProductId, Quantity = line.Quantity.Value,
                       UnitPrice = line.UnitPrice.Amount },
                 transaction: tx, commandType: CommandType.StoredProcedure, cancellationToken: ct));
+
+        return new SalesOrderId(orderId);   // hand the new id back to the handler (it can't be set on the aggregate)
     }
-    // GetAsync: call sales.usp_SalesOrder_Get + sales.usp_SalesOrderLine_GetByOrder, rebuild via the private constructor.
+    // GetAsync: call sales.usp_SalesOrder_Get + sales.usp_SalesOrderLine_GetByOrder, then rebuild the aggregate.
+    // Since the constructor is private and setters aren't public, add a small internal factory on SalesOrder
+    // (e.g. `SalesOrder.Rehydrate(id, customerId, status, lines)`) that the repository uses to reconstruct it.
 }
 ```
 
@@ -307,7 +348,23 @@ public sealed class SalesOrderIdTypeHandler : SqlMapper.TypeHandler<SalesOrderId
     public override SalesOrderId Parse(object value) => new((long)value);
     public override void SetValue(IDbDataParameter p, SalesOrderId value) => p.Value = value.Value;
 }
-// Registered once at startup: SqlMapper.AddTypeHandler(new SalesOrderIdTypeHandler());
+
+// You need ONE per strongly-typed id you ever hand to Dapper. AddAsync passes order.CustomerId and
+// line.ProductId, so those two need handlers as well — without them Dapper throws at runtime.
+public sealed class CustomerIdTypeHandler : SqlMapper.TypeHandler<CustomerId>
+{
+    public override CustomerId Parse(object value) => new((long)value);
+    public override void SetValue(IDbDataParameter p, CustomerId value) => p.Value = value.Value;
+}
+public sealed class ProductIdTypeHandler : SqlMapper.TypeHandler<ProductId>
+{
+    public override ProductId Parse(object value) => new((long)value);
+    public override void SetValue(IDbDataParameter p, ProductId value) => p.Value = value.Value;
+}
+// Registered once at startup, in AddSalesModule:
+//   SqlMapper.AddTypeHandler(new SalesOrderIdTypeHandler());
+//   SqlMapper.AddTypeHandler(new CustomerIdTypeHandler());
+//   SqlMapper.AddTypeHandler(new ProductIdTypeHandler());
 ```
 
 > 📦 **Where does this get registered?** In the module's `DependencyInjection.cs` (`AddSalesModule`): it
@@ -349,10 +406,17 @@ We deliberately keep the transaction boundary **right there in the handler**
   you want while learning where it belongs. For `CreateSalesOrder`, the boundary spans "insert the header +
   all the lines."
 
-Here are the two small interfaces the handler leans on. They live in `Shared.Infrastructure` (with their SQL
-Server implementations); the handler depends only on the *interface*:
+Here are the small interfaces the handler and repositories lean on. They live in `Shared.Infrastructure`
+(with their SQL Server implementations); the callers depend only on the *interface*:
 
 ```csharp
+// Hands out open connections. Query handlers (Phase 6) call Create() directly for read-only work;
+// the unit of work uses it to start a transaction for writes.
+public interface IDbConnectionFactory
+{
+    IDbConnection Create();   // returns an OPEN SqlConnection
+}
+
 public interface IUnitOfWork
 {
     Task<IAppTransaction> BeginAsync(CancellationToken ct);   // opens a connection + starts a transaction
@@ -366,6 +430,53 @@ public interface IAppTransaction : IAsyncDisposable
     // so "throw = rollback" falls out for free. That's why the handler uses `await using var tx = …`.
 }
 ```
+
+The SQL Server implementations are ordinary plumbing — you write them once and rarely look again. The
+connection string comes from configuration (`appsettings.Development.json`, added at the end of this phase):
+
+```csharp
+public sealed class SqlConnectionFactory(IConfiguration config) : IDbConnectionFactory
+{
+    private readonly string _cs = config.GetConnectionString("Erp")
+        ?? throw new InvalidOperationException("Missing connection string 'Erp'.");
+
+    public IDbConnection Create()
+    {
+        var conn = new SqlConnection(_cs);
+        conn.Open();
+        return conn;
+    }
+}
+
+public sealed class UnitOfWork(IDbConnectionFactory factory) : IUnitOfWork
+{
+    public Task<IAppTransaction> BeginAsync(CancellationToken ct)
+    {
+        var conn = (SqlConnection)factory.Create();
+        var tx = conn.BeginTransaction();
+        return Task.FromResult<IAppTransaction>(new AppTransaction(conn, tx));
+    }
+}
+
+internal sealed class AppTransaction(SqlConnection conn, SqlTransaction tx) : IAppTransaction
+{
+    private bool _committed;
+    public IDbTransaction Inner => tx;
+
+    public async Task CommitAsync(CancellationToken ct) { await tx.CommitAsync(ct); _committed = true; }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (!_committed) { try { await tx.RollbackAsync(); } catch { /* already gone */ } }  // throw = rollback
+        await tx.DisposeAsync();
+        await conn.DisposeAsync();
+    }
+}
+```
+
+Register them in `AddSharedInfrastructure` (Phase 2's helper):
+`services.AddScoped<IDbConnectionFactory, SqlConnectionFactory>();` and
+`services.AddScoped<IUnitOfWork, UnitOfWork>();`.
 
 > ℹ️ **Naming heads-up:** the [business tutorial](../plan-business-tutorial/06-create-order.md) calls this
 > same property `Transaction` instead of `Inner`. They're the identical concept — the raw `IDbTransaction` you

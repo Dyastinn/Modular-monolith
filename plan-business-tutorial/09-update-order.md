@@ -112,6 +112,12 @@ public sealed class UpdateSalesOrderHandler(
 
 ## 5. The repository `ReplaceLinesAsync`
 
+> ℹ️ **First add this method to the `ISalesOrderRepository` interface** from
+> [Phase 6 §4](06-create-order.md) — next to `AddAsync`/`GetAsync`/`UpdateStatusAsync`:
+> `Task ReplaceLinesAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct);`. The handler above
+> calls it *through the interface*, so the interface has to declare it before this implementation will
+> satisfy it. It's the one new repository method this slice needs.
+
 ```csharp
 public async Task ReplaceLinesAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct)
 {

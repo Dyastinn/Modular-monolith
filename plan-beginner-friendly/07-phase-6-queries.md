@@ -67,8 +67,19 @@ namespace Erp.Modules.Sales.Features.GetSalesOrder;
 public sealed record GetSalesOrderQuery(long SalesOrderId) : IQuery<SalesOrderDetailsDto?>;
 
 public sealed record SalesOrderDetailsDto(long SalesOrderId, string CustomerName,
-    string Status, decimal Total, IReadOnlyList<SalesOrderLineDto> Lines);
+    string Status, decimal Total, IReadOnlyList<SalesOrderLineDto> Lines)
+{
+    // Map the flat DB rows → the screen DTO. (int status → readable name; note we never rebuild the aggregate.)
+    public static SalesOrderDetailsDto From(SalesOrderHeaderRow h, IReadOnlyList<SalesOrderLineRow> lines) =>
+        new(h.SalesOrderId, h.CustomerName, ((SalesOrderStatus)h.Status).ToString(), h.Total,
+            lines.Select(l => new SalesOrderLineDto(l.ProductId, l.ProductName, l.Quantity, l.UnitPrice)).ToList());
+}
 public sealed record SalesOrderLineDto(long ProductId, string ProductName, int Quantity, decimal UnitPrice);
+
+// The flat "row" shapes Dapper reads from the proc's two result sets — plain DB shapes, not the API DTO.
+// (They only exist to be mapped; that's why they're separate from SalesOrderDetailsDto.)
+public sealed record SalesOrderHeaderRow(long SalesOrderId, string CustomerName, int Status, decimal Total);
+public sealed record SalesOrderLineRow(long ProductId, string ProductName, int Quantity, decimal UnitPrice);
 
 public sealed class GetSalesOrderHandler(IDbConnectionFactory factory)
     : IQueryHandler<GetSalesOrderQuery, SalesOrderDetailsDto?>

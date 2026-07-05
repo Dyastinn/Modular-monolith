@@ -115,6 +115,39 @@ dotnet add src/Modules/Sales/Erp.Modules.Sales.csproj reference src/Shared/Erp.S
 > Inventory, or make a pure building block depend on the database, the project *won't compile*. That
 > compile error is a **feature** — the computer enforces the boundary so a tired human doesn't have to.
 
+### Install the NuGet packages (do this now, or nothing compiles)
+
+The plain `dotnet new` templates don't include Carter, FluentValidation, or Dapper — you add them yourself.
+Install them where they're actually used (the same "who depends on what" discipline as the references):
+
+```bash
+# Carter (web endpoints) — the module declares endpoints, and the host maps them
+dotnet add src/Modules/Sales/Erp.Modules.Sales.csproj                 package Carter
+dotnet add src/Erp.Api/Erp.Api.csproj                                 package Carter
+
+# The mediator lives in Erp.Shared.Messaging and needs the DI + logging abstractions (Phase 2)
+dotnet add src/Shared/Erp.Shared.Messaging/Erp.Shared.Messaging.csproj package Microsoft.Extensions.DependencyInjection.Abstractions
+dotnet add src/Shared/Erp.Shared.Messaging/Erp.Shared.Messaging.csproj package Microsoft.Extensions.Logging.Abstractions
+dotnet add src/Shared/Erp.Shared.Messaging/Erp.Shared.Messaging.csproj package FluentValidation   # ValidationBehavior, Phase 4
+
+# The shared plumbing (mediator registration, DB, Carter services) is wired here (Phase 2 & 4)
+dotnet add src/Shared/Erp.Shared.Infrastructure/Erp.Shared.Infrastructure.csproj package Carter
+dotnet add src/Shared/Erp.Shared.Infrastructure/Erp.Shared.Infrastructure.csproj package Dapper
+dotnet add src/Shared/Erp.Shared.Infrastructure/Erp.Shared.Infrastructure.csproj package Microsoft.Data.SqlClient
+dotnet add src/Shared/Erp.Shared.Infrastructure/Erp.Shared.Infrastructure.csproj package Microsoft.Extensions.Configuration.Abstractions
+dotnet add src/Shared/Erp.Shared.Infrastructure/Erp.Shared.Infrastructure.csproj package Microsoft.Extensions.DependencyInjection.Abstractions
+
+# The Sales module uses FluentValidation (validators) and Dapper (repositories) from Phase 4 on
+dotnet add src/Modules/Sales/Erp.Modules.Sales.csproj package FluentValidation
+dotnet add src/Modules/Sales/Erp.Modules.Sales.csproj package Dapper
+dotnet add src/Modules/Sales/Erp.Modules.Sales.csproj package Microsoft.Extensions.DependencyInjection.Abstractions
+```
+
+> ❓ **"A class library referencing `Carter` — does a non-web project even have `MapGet`/`ICarterModule`?"**
+> Yes. The **Carter** package brings the ASP.NET Core shared framework in transitively, so a plain
+> `classlib` (our Sales module) can host endpoints — which is exactly what VSA-to-the-web-edge needs. You
+> don't add a `<FrameworkReference>` by hand; Carter pulls it in. (Dapper does the same for the DB types.)
+
 ## 2. The folder tree, with every folder justified
 
 Here's the target layout inside the Sales module and the Api. For each folder, ask: *why does it exist,
