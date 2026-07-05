@@ -39,6 +39,144 @@ Every business rule landed in exactly one home:
 If you can explain that table without looking, you have genuinely internalized the architecture. That
 was the whole goal.
 
+## 1a. The complete project structure (everything you built)
+
+Here's the whole solution once all 12 phases are done — every project, and where each piece lives. Notice
+the shape the architecture *forces*: split by **module** (Sales, Inventory) then by **feature** (two files
+each), with a pure `Domain/` and a shared kernel — never by technical layer.
+
+```
+Erp/                                         # repo root
+├── Erp.slnx                                 # the solution (Phase 1)
+├── Directory.Packages.props                 # central NuGet versions — one place (Phase 1 §5b)
+├── src/
+│   ├── Shared/
+│   │   ├── Erp.Shared.BuildingBlocks/        # depends on NOTHING
+│   │   │   └── BuildingBlocks.cs             #   Entity<TId>, AggregateRoot<TId>, IDomainEvent, DomainException
+│   │   ├── Erp.Shared.Common/                # depends on NOTHING
+│   │   │   ├── PagedResult.cs
+│   │   │   ├── Exceptions.cs                 #   NotFoundException, ForbiddenException, ConcurrencyException
+│   │   │   ├── Security/ICurrentUser.cs
+│   │   │   └── Contracts/IStockReservation.cs #   the Sales↔Inventory wall (Phase 7)
+│   │   ├── Erp.Shared.Messaging/             # → Common, BuildingBlocks
+│   │   │   ├── Contracts.cs                  #   IRequest, ICommand, IQuery, Unit, IRequestHandler,
+│   │   │   │                                 #   ICommandHandler, IQueryHandler, IPipelineBehavior, ISender
+│   │   │   ├── Sender.cs                     #   the hand-rolled mediator (Phase 2)
+│   │   │   ├── DomainEvents.cs               #   IDomainEventHandler, IDomainEventDispatcher (Phase 8)
+│   │   │   └── Behaviors/                    #   LoggingBehavior.cs, ValidationBehavior.cs (Phase 11)
+│   │   └── Erp.Shared.Infrastructure/        # → Messaging, Common, BuildingBlocks (+ ASP.NET framework ref)
+│   │       ├── Persistence/                  #   IDbConnectionFactory + SqlConnectionFactory,
+│   │       │                                 #   IUnitOfWork + UnitOfWork + AppTransaction
+│   │       ├── Security/                     #   IPasswordHasher+PasswordHasher, IJwtTokenService+JwtTokenService,
+│   │       │                                 #   CurrentUser (ICurrentUser impl)
+│   │       ├── Messaging/DomainEventDispatcher.cs
+│   │       ├── Identity/UserRepository.cs    #   IUserRepository impl + AppUser read shape (Phase 4)
+│   │       └── DependencyInjection.cs        #   AddSharedInfrastructure() + AddMessaging()
+│   ├── Modules/
+│   │   ├── Sales/  (Erp.Modules.Sales)       # → Shared.{BuildingBlocks, Common, Messaging, Infrastructure}
+│   │   │   ├── Domain/                        #   pure C#, depends only on BuildingBlocks
+│   │   │   │   ├── SalesOrder.cs, SalesOrderLine.cs
+│   │   │   │   ├── Customer.cs, ItemCategory.cs, ItemForOrder.cs
+│   │   │   │   ├── ValueObjects.cs           #   Money, Quantity, the strongly-typed IDs
+│   │   │   │   ├── SalesOrderStatus.cs       #   enum + transition rules
+│   │   │   │   ├── ApprovalPolicy.cs, Events.cs
+│   │   │   │   └── Ports.cs                   #   ISalesOrderRepository, ICustomerRepository, IItemRepository
+│   │   │   ├── Features/                      #   TWO files per feature (Handler + Endpoint)
+│   │   │   │   ├── CreateSalesOrder/          #     (Phase 6)
+│   │   │   │   ├── SubmitSalesOrder/          #     (Phase 7)
+│   │   │   │   ├── ApproveSalesOrder/         #     (Phase 8)
+│   │   │   │   ├── CancelSalesOrder/          #     (Phase 8)
+│   │   │   │   ├── UpdateSalesOrder/          #     (Phase 9)
+│   │   │   │   ├── GetSalesOrder/             #     (Phase 10)
+│   │   │   │   └── SearchSalesOrders/         #     (Phase 10)
+│   │   │   ├── Infrastructure/
+│   │   │   │   ├── SalesOrderRepository.cs, CustomerRepository.cs, ItemRepository.cs
+│   │   │   │   ├── TypeHandlers.cs           #   Dapper handlers: SalesOrderId, CustomerId, ItemId
+│   │   │   │   ├── EventHandlers/            #   e.g. SalesOrderApprovedAuditHandler (Phase 8)
+│   │   │   │   └── Sql/ 001_schema.sql, 002_procedures.sql, 003_seed.sql   # the `sales` + `[identity]` schemas
+│   │   │   └── DependencyInjection.cs         #   AddSalesModule()
+│   │   └── Inventory/  (Erp.Modules.Inventory) # → Shared.{Common, Infrastructure}  (Phase 7)
+│   │       ├── Infrastructure/
+│   │       │   ├── StockReservationService.cs #   implements IStockReservation
+│   │       │   └── Sql/ 001_schema.sql, 002_procedures.sql, 003_seed.sql   # the `inventory` schema
+│   │       └── DependencyInjection.cs         #   AddInventoryModule()
+│   └── Erp.Api/                              # → Modules.{Sales, Inventory}, Shared.Infrastructure
+│       ├── Auth/Login/                        #   LoginHandler.cs + LoginEndpoint.cs (host/platform concern)
+│       ├── GlobalExceptionHandler.cs          #   maps exceptions → HTTP status (Phase 11)
+│       ├── Program.cs                         #   composition root; ends with `public partial class Program {}`
+│       ├── appsettings.json
+│       └── appsettings.Development.json
+└── tests/
+    ├── Erp.Modules.Sales.UnitTests/           #   domain rule tests (fast, the bulk) — Phase 12
+    └── Erp.Integration.Tests/                 #   reservation race, rollback, concurrency, e2e workflow — Phase 12
+```
+
+> ℹ️ The exact file *splits* are yours — small related types (e.g. all the value objects) can share one
+> file, and each two-file feature keeps its Command/Result/Validator/Handler together and its endpoint
+> beside it. What matters is the *shape*: module → feature, a pure domain, and the shared kernel.
+
+## 1b. Expected output — a full run of the finished app
+
+With the database created (each module's `Infrastructure/Sql/` scripts applied) and real password hashes in
+the seed ([Phase 4](04-jwt-auth.md)), `dotnet run --project src/Erp.Api` gives you `Now listening on…`. Here
+is the whole lifecycle against the seed data, with the responses you should get:
+
+```http
+# 1) Log in (anyone) — get a JWT
+POST /auth/login   { "username": "manager", "password": "Password123!" }
+→ 200 OK   { "token": "eyJhbGciOiJI…", "username": "manager", "role": "SalesManager" }
+
+# 2) Create a draft for Acme (customer 1): 2 × Widget (item 1 @ $25).   (Authorization: Bearer <token>)
+POST /sales-orders   { "customerId": 1, "lines": [ { "itemId": 1, "quantity": 2 } ] }
+→ 201 Created   { "id": 1 }          # Location: /sales-orders/1   (a REAL id, not 0)
+
+# 3) Submit → atomically reserves stock, moves Draft → PendingApproval
+POST /sales-orders/1/submit
+→ 204 No Content
+
+# 4) Approve (manager only) → PendingApproval → Approved, +$50 to Acme's outstanding balance
+POST /sales-orders/1/approve
+→ 204 No Content
+
+# 5) Read it back
+GET /sales-orders/1
+→ 200 OK   { "id": 1, "orderNumber": "SO-2026-000001", "customerName": "Acme Corp",
+             "status": "Approved", "total": 50.00, "lines": [ { "itemName": "Widget", … } ] }
+```
+
+And the **rules firing** — the whole point of the module — produce these outcomes:
+
+```http
+# A SalesRep tries to approve → rejected BEFORE the handler runs (endpoint role gate)
+POST /sales-orders/{id}/approve   (Bearer <rep-token>)
+→ 403 Forbidden
+
+# Beta (customer 2) orders 100 × Widget = $2,500, but only has $500 credit left (domain rule)
+POST /sales-orders   { "customerId": 2, "lines": [ { "itemId": 1, "quantity": 100 } ] }
+→ 422 Unprocessable Entity
+   { "title": "Business rule violated", "status": 422,
+     "detail": "Order total $2,500.00 would exceed the credit limit. Available credit: $500.00." }
+
+# An order for BLOCKED Gamma (customer 3) → domain refuses
+POST /sales-orders   { "customerId": 3, "lines": [ { "itemId": 1, "quantity": 1 } ] }
+→ 422   { "detail": "Customer 'Gamma Traders' is blocked and cannot place orders." }
+
+# A SalesRep orders the Controlled item (item 3, requires SalesManager) → domain refuses
+POST /sales-orders   { "customerId": 1, "lines": [ { "itemId": 3, "quantity": 1 } ] }   (Bearer <rep-token>)
+→ 422   { "detail": "Category 'Controlled' requires role 'SalesManager'." }
+
+# Two managers submit orders for the LAST units of item 3 (OnHand 8) at the same instant:
+#   exactly ONE wins; the other's whole submit rolls back and the order stays Draft.
+POST /sales-orders/{A}/submit  → 204 No Content        (reserved)
+POST /sales-orders/{B}/submit  → 422 "Insufficient stock for item 3. Submission cancelled."
+```
+
+If your run produces those status codes and messages, **every rule landed in the right home** — the domain
+rejects blocked/over-credit/wrong-role orders as `422`, the endpoint gate rejects non-managers as `403`
+before any handler runs, the SQL atomic guard makes the concurrency race come out `204`/`422` with no
+overselling, and a created order returns a real id. That mapping from *outcome* to *where the rule lives* is
+the entire skill this tutorial set out to build.
+
 ## 2. The five questions from the beginner plan — answered by real features
 
 [The beginner overview](../plan-beginner-friendly/00-START-HERE.md) said you'd "get it" when you could

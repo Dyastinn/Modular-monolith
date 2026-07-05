@@ -207,9 +207,14 @@ Each **module** registers *its own* handlers and validators by scanning *its own
 `DependencyInjection.cs`:
 
 ```csharp
+// Modules/Sales/DependencyInjection.cs  — a static class in the Erp.Modules.Sales assembly
+public static class DependencyInjection
+{
 public static IServiceCollection AddSalesModule(this IServiceCollection services, IConfiguration config)
 {
-    var assembly = typeof(AddSalesModuleMarker).Assembly;   // the Erp.Modules.Sales assembly
+    // `typeof(DependencyInjection)` is just "some type that lives in THIS module's assembly" — any type
+    // in the module works; we use the class this method is declared in. (No magic marker class needed.)
+    var assembly = typeof(DependencyInjection).Assembly;   // the Erp.Modules.Sales assembly
 
     // Register every IRequestHandler<,> defined in THIS module.
     var handlerTypes = assembly.GetTypes()
@@ -223,7 +228,13 @@ public static IServiceCollection AddSalesModule(this IServiceCollection services
     // ... plus this module's repositories, TypeHandlers, IStockReservation impl (Phase 7), etc.
     return services;
 }
+}
 ```
+
+> ⚠️ **`AddValidatorsFromAssembly` needs an extra package.** That helper lives in
+> **`FluentValidation.DependencyInjectionExtensions`**, *not* the base `FluentValidation` package — so add it
+> to the Sales module (`dotnet add src/Modules/Sales package FluentValidation.DependencyInjectionExtensions`).
+> It's listed in [Phase 1 §5](01-solution-setup.md). Without it, `AddSalesModule` won't compile.
 
 No module registers another's handlers — the DI wiring respects the module walls, exactly like the project
 references do. `Program.cs` calls `AddSharedInfrastructure()` then each `Add*Module()`.

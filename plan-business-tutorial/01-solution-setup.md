@@ -78,15 +78,22 @@ arrives in Phase 7). There is no central `db/` folder — data ownership follows
 **Dependency references** (`dotnet add reference`):
 
 ```
-Erp.Api                   → Erp.Modules.Sales, Erp.Shared.Infrastructure
+Erp.Api                   → Erp.Modules.Sales, Erp.Modules.Inventory, Erp.Shared.Infrastructure
 Erp.Modules.Sales         → Erp.Shared.{BuildingBlocks, Common, Messaging, Infrastructure}
-Erp.Shared.Infrastructure → Erp.Shared.Messaging, Erp.Shared.Common
-Erp.Shared.Messaging      → Erp.Shared.Common
+Erp.Modules.Inventory     → Erp.Shared.{Common, Infrastructure}          (Phase 7)
+Erp.Shared.Infrastructure → Erp.Shared.Messaging, Erp.Shared.Common, Erp.Shared.BuildingBlocks
+Erp.Shared.Messaging      → Erp.Shared.Common, Erp.Shared.BuildingBlocks
 Erp.Shared.BuildingBlocks → (nothing)
 Erp.Shared.Common         → (nothing)
 ```
 
 No module references another module — the compiler enforces the island rule.
+
+> ❓ **"Why does `Erp.Shared.Messaging` reference `BuildingBlocks`?"** The mediator contracts alone don't need
+> it — but the **domain-event dispatch** contracts we add in [Phase 8](08-approval-cancellation.md)
+> (`IDomainEventHandler<TEvent>`, `IDomainEventDispatcher`) mention `IDomainEvent` and `AggregateRoot<TId>`,
+> which live in `BuildingBlocks`. So Messaging references BuildingBlocks from the start. It's a safe edge —
+> `BuildingBlocks` depends on nothing, so no module wall is crossed.
 
 ## 4. Why each folder exists (no mystery folders)
 
@@ -110,6 +117,13 @@ No module references another module — the compiler enforces the island rule.
 
 ## 5. NuGet packages (install these now)
 
+**`Erp.Shared.Messaging`** (the mediator + behaviors need DI, logging, and validation abstractions):
+```bash
+dotnet add src/Shared/Erp.Shared.Messaging package Microsoft.Extensions.DependencyInjection.Abstractions
+dotnet add src/Shared/Erp.Shared.Messaging package Microsoft.Extensions.Logging.Abstractions
+dotnet add src/Shared/Erp.Shared.Messaging package FluentValidation
+```
+
 **`Erp.Shared.Infrastructure`:**
 ```bash
 dotnet add src/Shared/Erp.Shared.Infrastructure package Dapper
@@ -117,12 +131,23 @@ dotnet add src/Shared/Erp.Shared.Infrastructure package Microsoft.Data.SqlClient
 dotnet add src/Shared/Erp.Shared.Infrastructure package Carter
 dotnet add src/Shared/Erp.Shared.Infrastructure package System.IdentityModel.Tokens.Jwt
 dotnet add src/Shared/Erp.Shared.Infrastructure package Microsoft.AspNetCore.Authentication.JwtBearer
+dotnet add src/Shared/Erp.Shared.Infrastructure package Microsoft.Extensions.Configuration.Abstractions
+dotnet add src/Shared/Erp.Shared.Infrastructure package Microsoft.Extensions.DependencyInjection.Abstractions
 ```
 (This project references the ASP.NET Core shared framework — add `<FrameworkReference Include="Microsoft.AspNetCore.App" />` to its `.csproj` — so it can host Carter and auth wiring.)
 
 **`Erp.Modules.Sales`:**
 ```bash
 dotnet add src/Modules/Sales package FluentValidation
+dotnet add src/Modules/Sales package FluentValidation.DependencyInjectionExtensions   # AddValidatorsFromAssembly (Phase 2)
+dotnet add src/Modules/Sales package Dapper
+dotnet add src/Modules/Sales package Microsoft.Extensions.DependencyInjection.Abstractions
+```
+
+**`Erp.Modules.Inventory`** (created in [Phase 7](07-submit-reserve-concurrency.md)):
+```bash
+dotnet add src/Modules/Inventory package Dapper
+dotnet add src/Modules/Inventory package Microsoft.Extensions.DependencyInjection.Abstractions
 ```
 
 **`Erp.Api`:**
@@ -147,6 +172,64 @@ dotnet add src/Erp.Api package Swashbuckle.AspNetCore
 > *this* tutorial, and `JwtBearer` is the built-in ASP.NET way — not a framework like MassTransit. Carter is
 > a thin layer over the minimal APIs you'd use anyway; it just lets each feature own its endpoint. Both are
 > sanctioned "batteries," not architecture we're smuggling in.
+
+### 5b. One version per package everywhere: Central Package Management
+
+With eight-plus projects, the same package (say `Dapper`) gets referenced from several `.csproj` files. If
+each pins its *own* version, they drift — `Dapper 2.1.35` here, `2.1.66` there — and you get subtle runtime
+mismatches and painful upgrades (edit ten files to bump one version). **.NET's Central Package Management
+(CPM)** fixes this: you declare **every package version once**, in a single `Directory.Packages.props` at the
+solution root, and each project references the package **without a version**.
+
+> 💡 **Analogy: one shopping list for the whole household.** Instead of each person keeping their own
+> (conflicting) list of "which brand of milk," there's *one* list on the fridge. Everybody buys from it, so
+> the whole house is always on the same version. To change milk, you edit *one* line.
+
+Create `Directory.Packages.props` next to `Erp.slnx` (the repo already ships one — open it and read along):
+
+```xml
+<Project>
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- one line per package used ANYWHERE in the solution (known-good for .NET 10) -->
+    <PackageVersion Include="Carter" Version="10.0.0" />
+    <PackageVersion Include="Dapper" Version="2.1.79" />
+    <PackageVersion Include="FluentValidation" Version="12.1.1" />
+    <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
+    <PackageVersion Include="Microsoft.Data.SqlClient" Version="7.0.2" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
+    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.19.1" />
+    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.9" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.9" />
+    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.9" />
+    <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.2.3" />
+    <PackageVersion Include="FluentAssertions" Version="8.10.0" />
+    <!-- plus the test-SDK packages (xunit, Microsoft.NET.Test.Sdk, coverlet) — see the repo's file -->
+  </ItemGroup>
+</Project>
+```
+
+With CPM on, a `.csproj` lists the package with **no** `Version` attribute — the version comes from the props:
+
+```xml
+<!-- src/Modules/Sales/Erp.Modules.Sales.csproj -->
+<PackageReference Include="FluentValidation" />          <!-- version resolved from Directory.Packages.props -->
+<PackageReference Include="Dapper" />
+```
+
+> 🔧 **How it interacts with `dotnet add package`.** Once CPM is enabled, `dotnet add ... package Dapper`
+> adds a version-less `<PackageReference Include="Dapper" />` to the `.csproj` **and** a
+> `<PackageVersion Include="Dapper" Version="…" />` to `Directory.Packages.props` (creating the entry if
+> it's missing). So the `dotnet add package` commands in §5 still work — CPM just changes *where the version
+> is written*. If you add a package and get *`NU1008: Projects that use central package version management
+> should not define the version on the PackageReference`*, delete the stray `Version="…"` from that
+> `.csproj` — it belongs in the props file. Pin new versions in one place, forever.
+
+> 📌 **Version numbers drift over time.** The exact versions above are a *known-good set for .NET 10 as of
+> writing*; when you run `dotnet restore` you may be offered newer ones. Bumping them is now a one-file edit —
+> which is the entire point.
 
 ## 6. Configuration: connection string and JWT settings
 

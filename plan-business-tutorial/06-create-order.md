@@ -76,7 +76,7 @@ The `SalesOrder` repository interface belongs to the **module** (it's specific t
 public interface ISalesOrderRepository
 {
     Task<string> NextOrderNumberAsync(CancellationToken ct);
-    Task AddAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct);
+    Task<long> AddAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct);   // returns the DB-assigned id
     Task<SalesOrder?> GetAsync(SalesOrderId id, CancellationToken ct);
     Task UpdateStatusAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct);
 }
@@ -162,13 +162,19 @@ public sealed class CreateSalesOrderHandler(
 
         // 9) Persist in ONE transaction (header + all lines, all-or-nothing).
         await using var tx = await uow.BeginAsync(ct);
-        await orders.AddAsync(order, tx.Transaction, ct);
+        var newId = await orders.AddAsync(order, tx.Transaction, ct);   // AddAsync hands back the DB id
         await tx.CommitAsync(ct);
 
-        return order.Id.Value;
+        return newId;
     }
 }
 ```
+
+> ⚠️ **Return the id from `AddAsync` — don't read `order.Id`.** The database assigns the id on `INSERT`, but
+> `SalesOrder.Id` has a `{ get; protected set; }` ([Phase 5](05-domain-model.md)), so the repository (not a
+> subclass) can't write it back onto the aggregate. If you `return order.Id.Value` here you'd hand back `0`,
+> because the in-memory order never learned its real id. So `AddAsync` **returns** the new id and the handler
+> returns *that*.
 
 ### The division of labor (this is the whole lesson)
 
@@ -198,7 +204,7 @@ Look at what the handler *does* vs. what it *decides*:
 ```csharp
 public sealed class SalesOrderRepository(IDbConnectionFactory factory) : ISalesOrderRepository
 {
-    public async Task AddAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct)
+    public async Task<long> AddAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct)
     {
         var conn = tx.Connection!;
 
@@ -227,6 +233,8 @@ public sealed class SalesOrderRepository(IDbConnectionFactory factory) : ISalesO
                     UnitPrice = line.UnitPrice.Amount
                 },
                 transaction: tx, commandType: CommandType.StoredProcedure, cancellationToken: ct));
+
+        return newId;   // hand the DB-assigned id back to the handler
     }
     // GetAsync, UpdateStatusAsync, NextOrderNumberAsync omitted here — same shape.
 }
@@ -238,9 +246,17 @@ boundary: `order.CustomerId.Value`, `(int)order.Status`, `line.UnitPrice.Amount`
 
 ## 7. The Unit of Work (the transaction boundary)
 
-`IUnitOfWork` gives the handler a visible transaction. Interface in Application, impl in Infrastructure:
+`IUnitOfWork` gives the handler a visible transaction. Interfaces in `Erp.Shared.Infrastructure`, impls too;
+the handler and query handlers depend only on the interfaces. `IDbConnectionFactory` hands out connections —
+query handlers ([Phase 10](10-queries-search.md)) call `Create()` directly for reads; the unit of work uses
+it to start a transaction for writes:
 
 ```csharp
+public interface IDbConnectionFactory
+{
+    IDbConnection Create();   // returns a SqlConnection (opened below before use)
+}
+
 public interface IUnitOfWork
 {
     Task<IAppTransaction> BeginAsync(CancellationToken ct);

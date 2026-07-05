@@ -47,14 +47,24 @@ Two principles carried over from the earlier plans, applied to a real schema:
 
 ## 3. The tables (each module's `Infrastructure/Sql/001_schema.sql`)
 
-First create the schemas (`CREATE SCHEMA sales;`, `CREATE SCHEMA inventory;`, `CREATE SCHEMA identity;`),
+First create the schemas (`CREATE SCHEMA sales;`, `CREATE SCHEMA inventory;`, `CREATE SCHEMA [identity];`),
 each in the owning project's script. Then build the tables. Let's go table by table, explaining the columns
 that encode business meaning.
+
+> ⚠️ **`identity` is a T-SQL reserved keyword — bracket it as `[identity]` everywhere.** Because `IDENTITY`
+> is the keyword for auto-increment columns, SQL Server rejects a bare `identity` used as a schema name:
+> `CREATE SCHEMA identity;` fails with *`Msg 156: Incorrect syntax near the keyword 'identity'`*. Wrap it in
+> square brackets **in every place it appears** — the `CREATE SCHEMA`, the `CREATE TABLE [identity].AppUser`,
+> every `REFERENCES [identity].AppUser(Id)`, the seed `INSERT`, **and every C# stored-proc call string**
+> (`"[identity].usp_AppUser_GetByUsername"`, [Phase 4](04-jwt-auth.md)). A bare `identity.` in a proc name
+> string fails the same way at call time. (Prefer not to bracket things? Rename the schema to something
+> non-reserved like `auth` — but then rename it *consistently* across Phases 3–4. This tutorial keeps
+> `[identity]` because the name is descriptive and bracketing a reserved word is a real skill worth having.)
 
 ### Users (for JWT auth — Phase 4)
 
 ```sql
-CREATE TABLE identity.AppUser (
+CREATE TABLE [identity].AppUser (   -- [identity] bracketed: it's a reserved keyword (see ⚠️ above)
     Id            BIGINT IDENTITY PRIMARY KEY,
     Username      NVARCHAR(100) NOT NULL UNIQUE,
     PasswordHash  NVARCHAR(500) NOT NULL,        -- NEVER store plain passwords
@@ -154,9 +164,9 @@ CREATE TABLE sales.SalesOrder (
     CustomerId     BIGINT NOT NULL REFERENCES sales.Customer(Id),
     Status         INT NOT NULL,                       -- enum: 0 Draft,1 PendingApproval,2 Approved,3 Cancelled,4 Rejected
     TotalAmount    DECIMAL(18,2) NOT NULL DEFAULT 0,   -- persisted snapshot of the total
-    CreatedByUserId BIGINT NOT NULL REFERENCES identity.AppUser(Id),
+    CreatedByUserId BIGINT NOT NULL REFERENCES [identity].AppUser(Id),
     CreatedUtc     DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
-    ApprovedByUserId BIGINT NULL REFERENCES identity.AppUser(Id),
+    ApprovedByUserId BIGINT NULL REFERENCES [identity].AppUser(Id),
     ApprovedUtc    DATETIME2 NULL,
     RowVersion     ROWVERSION,                          -- optimistic concurrency stamp
     CONSTRAINT CK_SalesOrder_Status CHECK (Status BETWEEN 0 AND 4),
@@ -200,7 +210,7 @@ rest follow the same shape.)
 
 | Proc | Used by | Does |
 |---|---|---|
-| `identity.usp_AppUser_GetByUsername` | Login (Phase 4) | Fetch a user + hash for password check |
+| `[identity].usp_AppUser_GetByUsername` | Login (Phase 4) | Fetch a user + hash for password check |
 | `sales.usp_Customer_GetById` | Create/Submit | Load blocking + credit numbers |
 | `sales.usp_Customer_AdjustBalance` | Approve/Cancel (Phase 8) | Add (or reverse) the order total on the customer's balance |
 | `sales.usp_Item_GetByIds` | Create | Load items + category + price for the requested lines |
@@ -344,7 +354,7 @@ So you have something to log in as and order against:
 
 ```sql
 -- Password hashes are placeholders; Phase 4 shows how to generate real ones.
-INSERT INTO identity.AppUser (Username, PasswordHash, Role) VALUES
+INSERT INTO [identity].AppUser (Username, PasswordHash, Role) VALUES
  ('rep',     '<hash-of-Password123!>', 'SalesRep'),
  ('manager', '<hash-of-Password123!>', 'SalesManager'),
  ('admin',   '<hash-of-Password123!>', 'Admin');

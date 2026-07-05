@@ -33,6 +33,7 @@ move between them:
 
 ```
 Erp.slnx
+Directory.Packages.props             one place for every NuGet version (Central Package Management)
 src/
 ├── Shared/                          shared kernel — code every module may use
 │   ├── Erp.Shared.BuildingBlocks/   Entity, AggregateRoot, ValueObject, IDomainEvent, DomainException

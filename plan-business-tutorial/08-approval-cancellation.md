@@ -186,6 +186,13 @@ The domain events raised in [Phase 5](05-domain-model.md) (`SalesOrderApproved`,
 First, the two contracts — a handler for one event type, and the dispatcher that runs them. These belong in
 `Erp.Shared.Messaging` (every module's events reuse them), alongside the other messaging contracts:
 
+> ⚠️ **This adds one project reference: `Erp.Shared.Messaging → Erp.Shared.BuildingBlocks`.** These
+> contracts mention `IDomainEvent` and `AggregateRoot<TId>`, which live in `Erp.Shared.BuildingBlocks` — but
+> the [Phase 1](01-solution-setup.md) reference list didn't give Messaging a reference to BuildingBlocks. Add
+> it now (`dotnet add src/Shared/Erp.Shared.Messaging reference src/Shared/Erp.Shared.BuildingBlocks`), or
+> these types won't resolve. It's a safe reference — `BuildingBlocks` depends on nothing, so no wall is
+> crossed. (The [Phase 1 reference list](01-solution-setup.md) has been updated to include it.)
+
 ```csharp
 // A reaction to a specific domain event. Zero-to-many handlers may exist per event.
 public interface IDomainEventHandler<in TEvent> where TEvent : IDomainEvent

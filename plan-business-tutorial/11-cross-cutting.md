@@ -189,6 +189,12 @@ services.AddSingleton<IPasswordHasher, PasswordHasher>();
 services.AddScoped<IJwtTokenService, JwtTokenService>();
 services.AddScoped<IUserRepository, UserRepository>();          // Login (host/platform concern)
 
+// The Login slice lives in the HOST assembly (Erp.Api/Auth), NOT a module — and the handler scan in
+// AddSalesModule only scans the Sales assembly. So register the host's own handler + validator explicitly,
+// or sender.Send(new LoginCommand(...)) fails at runtime with "no service for IRequestHandler<LoginCommand,…>".
+services.AddScoped<IRequestHandler<LoginCommand, LoginResult>, LoginHandler>();
+services.AddScoped<IValidator<LoginCommand>, LoginValidator>();
+
 // AddSalesModule (Erp.Modules.Sales) — scans this assembly, registers ITS pieces:
 services.AddValidatorsFromAssembly(salesAssembly);
 // + handler scanning (Phase 2)
