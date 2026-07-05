@@ -3,6 +3,8 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Erp.Shared.Messaging;
 
+// The hand-rolled mediator (Phase 2, Option A). Finds the handler for a request type, wraps it in the
+// registered behaviors, and runs it. One wrapper is cached per concrete request type.
 public sealed class Sender(IServiceProvider provider) : ISender
 {
     private static readonly ConcurrentDictionary<Type, RequestHandlerWrapper> _wrappers = new();
@@ -23,6 +25,7 @@ public sealed class Sender(IServiceProvider provider) : ISender
     }
 }
 
+// Non-generic base so we can store different closed types in one dictionary.
 internal abstract class RequestHandlerWrapper { }
 
 internal abstract class RequestHandlerWrapperImpl<TResponse> : RequestHandlerWrapper
@@ -36,14 +39,21 @@ internal sealed class RequestHandlerWrapperImpl<TRequest, TResponse>
 {
     public override Task<TResponse> Handle(IRequest<TResponse> request, IServiceProvider sp, CancellationToken ct)
     {
+        // 1) Resolve the one handler for this request type.
         var handler = sp.GetRequiredService<IRequestHandler<TRequest, TResponse>>();
+
+        // 2) The innermost call is the handler itself.
         RequestHandlerDelegate<TResponse> pipeline = () => handler.Handle((TRequest)request, ct);
+
+        // 3) Wrap it in behaviors, OUTERMOST LAST so the first-registered runs first.
         var behaviors = sp.GetServices<IPipelineBehavior<TRequest, TResponse>>().Reverse();
         foreach (var behavior in behaviors)
         {
             var next = pipeline;
             pipeline = () => behavior.Handle((TRequest)request, next, ct);
         }
+
+        // 4) Run the whole nested chain.
         return pipeline();
     }
 }

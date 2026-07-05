@@ -14,10 +14,13 @@ public sealed class SalesOrder : AggregateRoot<SalesOrderId>
     public UserId? ApprovedBy { get; private set; }
     public byte[] RowVersion { get; private set; } = Array.Empty<byte>();
 
+    // Total is COMPUTED — it can never disagree with the lines.
     public Money Total => _lines.Aggregate(Money.Zero, (sum, l) => sum + l.LineTotal);
+
+    // The approval threshold is the ORDER'S own knowledge (a surfaced high-value flag; see Phase 5 §8).
     public bool RequiresApproval => Total > ApprovalPolicy.Threshold;
 
-    private SalesOrder() { }
+    private SalesOrder() { }   // for the repository to rehydrate from the DB
 
     public static SalesOrder Create(string orderNumber, CustomerId customerId, UserId createdBy)
     {
@@ -29,6 +32,27 @@ public sealed class SalesOrder : AggregateRoot<SalesOrderId>
             Status = SalesOrderStatus.Draft
         };
         order.Raise(new SalesOrderCreated(order.Id, customerId, createdBy));
+        return order;
+    }
+
+    // Rebuild a persisted order from the database (read side of the repository). Sets state directly
+    // WITHOUT raising events — this is loading history, not a new business fact.
+    // (The tutorial leaves GetAsync's body "omitted, same shape"; this is the rehydration seam it implies.)
+    public static SalesOrder Rehydrate(
+        SalesOrderId id, string orderNumber, CustomerId customerId, SalesOrderStatus status,
+        UserId createdBy, UserId? approvedBy, byte[] rowVersion, IEnumerable<SalesOrderLine> lines)
+    {
+        var order = new SalesOrder
+        {
+            Id = id,
+            OrderNumber = orderNumber,
+            CustomerId = customerId,
+            Status = status,
+            CreatedBy = createdBy,
+            ApprovedBy = approvedBy,
+            RowVersion = rowVersion
+        };
+        order._lines.AddRange(lines);
         return order;
     }
 
@@ -75,6 +99,7 @@ public sealed class SalesOrder : AggregateRoot<SalesOrderId>
         Raise(new SalesOrderCancelled(Id));
     }
 
+    // Single guarded gate for EVERY status change.
     private void Transition(SalesOrderStatus to)
     {
         if (!Status.CanTransitionTo(to))
@@ -127,7 +152,7 @@ public sealed class ItemCategory
     public long Id { get; }
     public string Name { get; }
     public int MaxQuantityPerOrder { get; }
-    public string? RequiredRole { get; }
+    public string? RequiredRole { get; }   // null = anyone
 
     public ItemCategory(long id, string name, int maxQuantityPerOrder, string? requiredRole)
     { Id = id; Name = name; MaxQuantityPerOrder = maxQuantityPerOrder; RequiredRole = requiredRole; }
@@ -147,6 +172,7 @@ public sealed class ItemCategory
     }
 }
 
+// Domain events (Phase 5 §8). IDomainEvent lives in BuildingBlocks; we just implement it.
 public sealed record SalesOrderCreated(SalesOrderId Id, CustomerId CustomerId, UserId CreatedBy) : IDomainEvent;
 public sealed record SalesOrderSubmitted(SalesOrderId Id, CustomerId CustomerId, Money Total) : IDomainEvent;
 public sealed record SalesOrderApproved(SalesOrderId Id, CustomerId CustomerId, Money Total, UserId Approver) : IDomainEvent;

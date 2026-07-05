@@ -167,7 +167,7 @@ Within a module, code is organized into folders, and the dependency arrow points
 The **Domain** (your `SalesOrder`, your rules) knows *nothing* about SQL, the web, Carter, or Dapper.
 That's exactly what lets you test it in milliseconds — there's nothing heavy to start up.
 
-Let me make "depends on nothing" concrete. Say you want to test the rule *"an order over $50,000 needs
+Let me make "depends on nothing" concrete. Say you want to test the rule *"an order over ₱50,000 needs
 approval."* Because `SalesOrder` doesn't touch a database or a website, your test is just:
 
 ```csharp
@@ -211,14 +211,14 @@ Here's the translation table from "WebForms brain" to "new brain":
 
 Take this business statement:
 
-> *"An order over $50,000 needs manager approval before it can be submitted."*
+> *"An order over ₱50,000 needs manager approval before it can be submitted."*
 
 Watch how we split it into pieces, each going to a different home:
 
 - *"Is this even a valid request — is the order ID present and well-formed?"*
   → **Validator.**
-- *"Is $50,000 the limit, and does this order cross it?"*
-  → **Domain.** The `SalesOrder` knows its own total; the $50,000 threshold is a business rule. The
+- *"Is ₱50,000 the limit, and does this order cross it?"*
+  → **Domain.** The `SalesOrder` knows its own total; the ₱50,000 threshold is a business rule. The
   `SalesOrder.Submit()` method itself refuses if approval is needed but missing.
 - *"Load the order, call `Submit()`, save it, commit."*
   → **Handler.** Just coordination.
@@ -263,7 +263,7 @@ You understand this phase when you can answer these (try before moving on):
    *(Hint: it keeps related-code-together; it drops glued-to-the-screen.)*
 2. **State the two rules of the modular monolith, and why each exists.**
    *(Hint: modules are islands so you can split later; keep the domain pure so rules are testable.)*
-3. **For the "$50,000 approval" rule, name which piece goes to the validator, the domain, the handler,
+3. **For the "₱50,000 approval" rule, name which piece goes to the validator, the domain, the handler,
    and the stored procedure — and why each.**
 4. **Why is a copy-pasted "customer must be active" check a problem, and where does it live now?**
 5. **Why is a feature two files instead of four separate ones — or one big one?**
@@ -291,10 +291,10 @@ the business rules were glued to a web page, so you couldn't test or reuse them 
   are testable in milliseconds with no database or website. (This is the one good idea kept from Clean
   Architecture — minus the four-project ceremony.)
 
-**3. For the "$50,000 approval" rule, name which piece goes where — and why.**
+**3. For the "₱50,000 approval" rule, name which piece goes where — and why.**
 - **Validator:** "is the request even well-formed — is the order id present and sensible?" (shape of the
   request, checked before real work).
-- **Domain:** "is $50,000 the limit, and does this order cross it?" `SalesOrder` knows its own total, and
+- **Domain:** "is ₱50,000 the limit, and does this order cross it?" `SalesOrder` knows its own total, and
   the threshold is a business rule — so `SalesOrder.Submit()` itself refuses when approval is needed but
   missing.
 - **Handler:** "load the order, call `Submit()`, save, commit." Pure coordination.
@@ -313,5 +313,5 @@ Response, endpoint) is the web edge. Two files means you understand the whole fe
 folder; four files scatter it; one file buries the seam.
 
 > ✅ **You're ready for Phase 1 if:** you can explain "cohesion good, screen-coupling bad," state the two
-> modular-monolith rules and *why*, and split that $50,000 rule across the four homes. If any is fuzzy,
+> modular-monolith rules and *why*, and split that ₱50,000 rule across the four homes. If any is fuzzy,
 > re-read the matching section — this mental model is the foundation for everything after.

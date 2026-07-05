@@ -2,11 +2,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Modules\Sales\Erp.Modules.Sales.csproj" />
+    <ProjectReference Include="..\Modules\Inventory\Erp.Modules.Inventory.csproj" />
     <ProjectReference Include="..\Shared\Erp.Shared.Infrastructure\Erp.Shared.Infrastructure.csproj" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Carter" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Microsoft.Data.SqlClient" />
     <PackageReference Include="Swashbuckle.AspNetCore" />
   </ItemGroup>
 

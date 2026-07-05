@@ -3,13 +3,16 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Erp.Shared.Messaging;
 
-// Phase 8 §6: domain-event dispatch contracts (reference IDomainEvent + AggregateRoot from BuildingBlocks,
-// hence Messaging -> BuildingBlocks reference).
+// Phase 8 §6: domain-event dispatch contracts. They mention IDomainEvent + AggregateRoot from
+// BuildingBlocks, which is why Messaging references BuildingBlocks.
+
+// A reaction to a specific domain event. Zero-to-many handlers may exist per event.
 public interface IDomainEventHandler<in TEvent> where TEvent : IDomainEvent
 {
     Task Handle(TEvent domainEvent, CancellationToken ct);
 }
 
+// Generic TId so the dispatcher works for ANY aggregate, staying inside the module walls.
 public interface IDomainEventDispatcher
 {
     Task DispatchAsync<TId>(AggregateRoot<TId> agg, CancellationToken ct) where TId : struct;

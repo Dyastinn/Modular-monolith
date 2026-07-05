@@ -148,4 +148,13 @@ To make sure nothing is skipped and nothing is assumed, **every phase answers th
 - **Resist scope creep.** If you catch yourself adding a cache or a queue "to be safe," stop — that's
   not this tutorial.
 
+> 🖥️ **You don't have to build a client to test your work.** A **ready-made test console** — a single
+> standalone [`test-console/index.html`](../course-validation/business/test-console/index.html) you just
+> open from disk while the API runs — lets you drive create → submit → approve → cancel from a browser,
+> watching each rule fire, without writing any front-end. There's also Swagger at `/swagger`. A complete,
+> runnable reference implementation of this whole tutorial lives in
+> [`../course-validation/business/`](../course-validation/business/); see the
+> [repo README](../README.md#running-the-reference-build) for the one-command run. Build it yourself first —
+> the console is there to *exercise* what you build, not replace the typing.
+
 Ready. Open [01-solution-setup.md](01-solution-setup.md).

@@ -31,7 +31,11 @@ public readonly record struct Money
 
 public enum SalesOrderStatus
 {
-    Draft = 0, PendingApproval = 1, Approved = 2, Cancelled = 3, Rejected = 4
+    Draft = 0,            // being edited
+    PendingApproval = 1,  // submitted, inventory reserved, awaiting a manager
+    Approved = 2,         // manager approved; will be fulfilled
+    Cancelled = 3,        // cancelled; reservations released
+    Rejected = 4          // manager rejected; reservations released
 }
 
 public static class SalesOrderStatusRules
@@ -51,5 +55,5 @@ public static class SalesOrderStatusRules
 
 public static class ApprovalPolicy
 {
-    public static readonly Money Threshold = new(10_000m);
+    public static readonly Money Threshold = new(10_000m);  // orders over $10k are flagged high-value
 }

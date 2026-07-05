@@ -20,6 +20,7 @@ public interface IRequestHandler<in TRequest, TResponse>
     Task<TResponse> Handle(TRequest request, CancellationToken ct);
 }
 
+// Handler markers that mirror ICommand/IQuery — no behavior, they just read better.
 public interface ICommandHandler<in TCommand, TResponse> : IRequestHandler<TCommand, TResponse>
     where TCommand : ICommand<TResponse> { }
 public interface IQueryHandler<in TQuery, TResponse> : IRequestHandler<TQuery, TResponse>

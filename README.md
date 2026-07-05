@@ -79,10 +79,36 @@ Each feature is **two files**, so a developer understands the whole slice by ope
 
 Do not split every type into its own file. Keep the slice together.
 
-## Running
+## Running the reference build
+
+A complete, working reference implementation of the business tutorial lives in
+[`course-validation/business/`](course-validation/business/). It targets **.NET 10** and **SQL Server
+LocalDB** (`(localdb)\MSSQLLocalDB`).
 
 ```
+cd course-validation/business
 dotnet run --project src/Erp.Api
 ```
 
-`GET /sales/ping` should return `pong`.
+On first start the app **creates the `Erp` database and applies each module's `Infrastructure/Sql/`
+scripts automatically** (a small `DatabaseInitializer` runs the embedded scripts — the "migrations without
+EF" approach), so there is nothing to set up by hand. The API listens on **http://localhost:5264**:
+
+- **`/swagger`** — Swagger UI with an **Authorize** button (paste the token from `POST /auth/login`).
+- **`/health`** — returns `"healthy"`.
+
+**Ready-made test interface (for the student):** the API is *not* coupled to any UI. Instead, a single
+standalone file — [`course-validation/business/test-console/index.html`](course-validation/business/test-console/index.html)
+— can be **opened straight from disk** (double-click) while the API runs. Log in and
+create/submit/approve/cancel orders, watching each business rule fire, without writing a client. (The API
+enables permissive CORS in Development so the file can call it.)
+
+Seed logins (all password `Password123!`): **`rep`** (SalesRep), **`manager`** (SalesManager), **`admin`**
+(Admin). Only a manager/admin can approve.
+
+```
+dotnet test        # 14 domain unit tests + 5 integration/e2e tests (uses a separate Erp_Test database)
+```
+
+> The three `plan-*` folders remain the *teaching* material; `course-validation/business/` is the finished
+> business-tutorial code you can run and read alongside them.

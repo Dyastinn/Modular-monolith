@@ -1,4 +1,11 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- The feature slices host Carter endpoints, so this module needs the ASP.NET shared framework and
+       Carter. (Phase 1 §5's package list omits these from Sales even though the endpoints live here —
+       a small gap in the tutorial; added explicitly.) -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\Shared\Erp.Shared.BuildingBlocks\Erp.Shared.BuildingBlocks.csproj" />
@@ -7,7 +14,14 @@
     <ProjectReference Include="..\..\Shared\Erp.Shared.Infrastructure\Erp.Shared.Infrastructure.csproj" />
   </ItemGroup>
 
+  <!-- Ship each module's SQL as embedded resources so the host's DatabaseInitializer can apply them
+       regardless of the working directory (Phase 3 §7). -->
   <ItemGroup>
+    <EmbeddedResource Include="Infrastructure\Sql\**\*.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Carter" />
     <PackageReference Include="Dapper" />
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
