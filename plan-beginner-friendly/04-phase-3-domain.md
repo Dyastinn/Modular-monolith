@@ -58,7 +58,7 @@ A rich domain model gives us a small vocabulary of object types. Each, with its 
   orders*. Examples: `SalesOrder`, `Customer`. *(Two people named John Smith are still two people.)*
 - **Value object** — defined purely by its values, and never changes after creation. Examples: `Money`,
   `Quantity`. Why bother? A raw `decimal` can't protect itself — but a `Money` type can *refuse* to be
-  negative, and a `Quantity` can *refuse* to be zero. *(Any $10 bill equals any other $10 bill.)*
+  negative, and a `Quantity` can *refuse* to be zero. *(Any ₱10 bill equals any other ₱10 bill.)*
 - **Aggregate** — a group of objects that must stay consistent together. `SalesOrder` + its
   `SalesOrderLine`s are one aggregate; they change as a unit.
 - **Aggregate root** — the single front door to the aggregate. Outside code holds a `SalesOrder`, never
@@ -263,7 +263,7 @@ public void Submit(bool approvalGranted)
   and *stops*. This is the object *defending itself*.
 - **(b) "You can't submit an empty order."** A business truth expressed as plain code — a non-programmer
   could read it and nod.
-- **(c) The approval rule.** `RequiresApproval` is that `Total > $50,000` property. If approval is needed
+- **(c) The approval rule.** `RequiresApproval` is that `Total > ₱50,000` property. If approval is needed
   but wasn't granted, refuse. The order *itself* knows the threshold — the handler doesn't.
 - **(d) Only *after* every check passes** does the status change. If any check threw, we never reach this
   line, so an order can never end up Submitted while breaking a rule. That guarantee is the entire value of
