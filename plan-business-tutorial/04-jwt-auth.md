@@ -36,6 +36,57 @@ it trusts the claims inside *without hitting the database again*.
 > don't re-verify your ID. The signature is what makes it tamper-proof: you can't draw your own
 > wristband because you don't have the festival's special ink (the signing key).
 
+#### Why bother? The problem a token solves
+
+The fastest way to *get* why tokens exist is to try living without them first.
+
+**Attempt 1 — just send the password on every request.** Every click re-sends username + password. Three
+things break:
+
+- 🔓 Your raw password is on the wire over and over — every request is another chance to leak it.
+- 🐌 The server has to run the slow password hash-check (§3) *every single time*. That slowness is a feature
+  when you log in, a tax when it's on every request.
+- 🗄️ The browser has to stash your actual password somewhere to replay it. Now the most sensitive secret you
+  own is sitting in client storage. Yuck.
+
+**Attempt 2 — log in once, carry a token.** You log in **one** time. The server does the slow password check
+**once**, then hands back a small signed token that says *"this is user 42, role SalesRep."* After that, the
+client sends the **token** — not the password — and the server just checks the signature: a fast bit of math,
+no database, no re-hashing.
+
+That's the entire purpose, in one line:
+
+> 🔑 **A token lets the server re-establish *who you are* on every request — fast, and without re-checking
+> your password or touching the database.**
+
+The catch is obvious: if the client is just waving a slip of paper that says "I'm an Admin," what stops
+someone from writing their own? Nothing — *unless* the paper is tamper-proof. That's what the structure below
+buys you.
+
+#### What a token actually looks like (readable, but not forgeable)
+
+A JWT is just **three chunks of text joined by dots** — `header.payload.signature`:
+
+```
+eyJhbGciOiJIUzI1NiJ9  .  eyJzdWIiOiI0MiIsInJvbGUiOiJTYWxlc1JlcCJ9  .  3Rk...signature...
+└──── header ────┘        └──────────── payload (your claims) ─────────┘   └── signature ──┘
+```
+
+- **header** — says how it's signed (e.g. HMAC-SHA256).
+- **payload** — the **claims**: the actual facts, like `sub` (user id) and `role`. Decode it and you'd read
+  `{ "sub": "42", "role": "SalesRep" }`.
+- **signature** — the header + payload run through the secret **signing key**. This is the tamper-proof seal.
+
+Two things surprise people here, and both matter:
+
+1. **A JWT is *not* encrypted — it's only signed.** Anyone can paste the payload into a base64 decoder and
+   read your role and user id. So never put a secret (a password, a credit-card number) in a claim. The
+   payload is public; treat it that way.
+2. **You still can't *forge* one.** Change a single character of the payload — say `SalesRep` → `Admin` — and
+   the signature no longer matches, because the attacker can't recompute it without the server's signing key.
+   The server recomputes the signature on every request (§7) and rejects any token where it doesn't line up.
+   That's the whole security model: *readable, but not changeable.*
+
 Two words people confuse:
 - **Authentication** = "*who are you?*" (login, proving identity). The wristband proves it.
 - **Authorization** = "*are you allowed to do this?*" (does your role permit approving orders?).
@@ -341,6 +392,22 @@ re-typing your password every 15 minutes. The fix is a second, longer-lived cred
 The client keeps it, and when the access token expires, trades it at `POST /auth/refresh` for a new one. No
 re-login.
 
+At this point you're juggling **two** tokens, and beginners mix them up constantly. Here's the whole
+distinction on one screen — the *why* for every row is spelled out in the rest of this section:
+
+| | **Access token** (the JWT) | **Refresh token** |
+|---|---|---|
+| **Its job** | Prove who you are on each request | Get a fresh access token when the old one expires |
+| **Lifetime** | Short — 15 min | Long — days |
+| **Sent with** | *Every* API request (`Authorization: Bearer …`) | *Only* to `POST /auth/refresh` |
+| **Shape** | A signed JWT — claims baked in, readable | An opaque random string — no claims, means nothing on its own |
+| **Server keeps a copy?** | No (stateless — it just checks the signature) | Yes — but only its **hash**, so it can be revoked |
+| **If it's stolen** | Expires in ≤15 min, limited damage | The real prize — defended by rotation + reuse detection (below) |
+
+> 💡 **The short version:** the **access token** is the wristband you flash at every stage. The **refresh
+> token** is the ticket stub you swap at the gate for tomorrow's wristband. You use the access token
+> constantly; you use the refresh token rarely, and guard it far more carefully.
+
 But now the *refresh* token is the juicy target: it's long-lived, and whoever holds it can mint access tokens.
 Two defenses, and you need both:
 
@@ -589,6 +656,30 @@ Authorization happens at **two levels**, and putting each rule at the right one 
 > If the rule depends on the *data* ("this category needs a manager", "you can only cancel your own
 > draft") → it's business logic, put it in the handler/domain. Don't force data-dependent rules into
 > endpoint attributes; you'll contort them.
+
+### Where to add *your own* user & role checks — the cheat-sheet
+
+New checks are the first thing you'll want to add, so here's the full picture in one place. Every check you
+could write about a user or a role has exactly **one** correct home. Putting it in the wrong place is the most
+common way beginners tangle this code — so match your check to the row below before you write it.
+
+| The check you want to add | Where it goes | Concretely |
+|---|---|---|
+| **Is the request well-formed?** (shape only: username not empty, password ≥ 8 chars) | **Validator** (FluentValidation), in the same `…Handler.cs` file | Add a rule to `LoginValidator`: `RuleFor(x => x.Password).MinimumLength(8);` |
+| **Is this login allowed?** (account active? password correct? locked out?) | **Handler** | Extend the existing guard in `LoginHandler`: `if (user is null \|\| !user.IsActive \|\| !hasher.Verify(...)) throw …` |
+| **"This whole endpoint is for role X, full stop."** | **Endpoint**, via `RequireAuthorization` | `app.MapPost("/sales-orders/{id}/approve", …).RequireAuthorization(p => p.RequireRole("SalesManager"));` |
+| **A role rule that depends on the *data*** ("*this item category* needs a Manager", "you can only cancel *your own* draft") | **Handler / domain**, via `ICurrentUser` | Inject `ICurrentUser`, then `if (order.RequiresManager && !currentUser.IsInRole("SalesManager")) throw …` |
+
+> ⚠️ **Never put a business rule in the validator.** A validator answers only *"is the request shaped
+> right?"* — positive ids, non-empty fields, ranges. *"Is this user allowed?"* / *"is the password
+> correct?"* is a **handler/domain** decision that usually needs the database, and a validator must stay
+> unit-testable without one. Mixing the two is treated as a defect in this course — it's the exact skill
+> §10 is teaching you to keep straight.
+
+> ⚠️ **Role strings must be the literal values `SalesRep`, `SalesManager`, `Admin`.** Not `"Manager"`, not
+> `"salesmanager"`, not `"sales_manager"`. A typo doesn't throw an error — the role check simply never
+> matches, so the rule silently does nothing and the wrong people get through. Copy the strings exactly, or
+> better, keep them as `const` values in one place and reference those.
 
 ## 11. How a full authenticated request flows
 
