@@ -378,6 +378,8 @@ Now let's build it.
 // Sender.cs
 using Microsoft.Extensions.DependencyInjection;
 
+namespace Erp.Shared.Messaging;
+
 public sealed class Sender(IServiceProvider provider) : ISender
 {
     // Cache one wrapper per concrete request type so we only reflect once per type.
