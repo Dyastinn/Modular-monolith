@@ -6,6 +6,9 @@
 
 ---
 
+> ⏱️ **Time for this phase:** ~1.5–2 hr. This is the conceptual heart — the aggregate, value objects, and
+> state machine. Pure C# with no database, so it's fast to type but worth reading slowly.
+
 ## 1. What we're building
 
 The business objects at the center of everything: the `SalesOrder` aggregate (with its lines), the

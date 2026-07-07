@@ -112,22 +112,28 @@ plans trained. We'll enforce, and you'll learn exactly where each rule belongs:
 
 ## The roadmap (each file is one phase)
 
-| Phase | File | What you'll build | Builds on |
-|---|---|---|---|
-| 0 | **this file** | The plan and the business rules | — |
-| 1 | [01-solution-setup.md](01-solution-setup.md) | Projects, folders, packages, config | [beginner Phase 1](../plan-beginner-friendly/02-phase-1-skeleton.md) |
-| 2 | [02-mediator-own-vs-free.md](02-mediator-own-vs-free.md) | Your own mediator **vs** the free GitHub one — decide | [beginner Phase 2](../plan-beginner-friendly/03-phase-2-mediator.md) |
-| 3 | [03-database-schema.md](03-database-schema.md) | Tables, stored procedures, seed data | [beginner Phase 4 §6](../plan-beginner-friendly/05-phase-4-create-order.md) |
-| 4 | [04-jwt-auth.md](04-jwt-auth.md) | Login, JWT tokens, roles, securing endpoints | *new topic* |
-| 5 | [05-domain-model.md](05-domain-model.md) | The `SalesOrder` aggregate + business rules | [beginner Phase 3](../plan-beginner-friendly/04-phase-3-domain.md) |
-| 6 | [06-create-order.md](06-create-order.md) | Create-order slice: blocking, credit, category, quantity | [beginner Phase 4](../plan-beginner-friendly/05-phase-4-create-order.md) |
-| 7 | [07-submit-reserve-concurrency.md](07-submit-reserve-concurrency.md) | Submit + atomic inventory reservation + rollback | [beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md) |
-| 8 | [08-approval-cancellation.md](08-approval-cancellation.md) | Approve (manager), cancel (release), state machine | [beginner Phase 7](../plan-beginner-friendly/08-phase-7-remaining-slices.md) |
-| 9 | [09-update-order.md](09-update-order.md) | Update a draft order's lines | [beginner Phase 4](../plan-beginner-friendly/05-phase-4-create-order.md) |
-| 10 | [10-queries-search.md](10-queries-search.md) | Get one + search/filter/page | [beginner Phase 6](../plan-beginner-friendly/07-phase-6-queries.md) |
-| 11 | [11-cross-cutting.md](11-cross-cutting.md) | Validation, global error handling, logging | [beginner Phase 2](../plan-beginner-friendly/03-phase-2-mediator.md) |
-| 12 | [12-testing.md](12-testing.md) | Unit + integration tests for the business rules | [beginner Phase 8](../plan-beginner-friendly/09-phase-8-testing.md) |
-| 13 | [13-wrap-up-checklist.md](13-wrap-up-checklist.md) | Recap + production-readiness checklist | — |
+| Phase | File | What you'll build | ⏱️ Est. time | Builds on |
+|---|---|---|---|---|
+| 0 | **this file** | The plan and the business rules | ~20 min (read) | — |
+| 1 | [01-solution-setup.md](01-solution-setup.md) | Projects, folders, packages, config | ~1 hr | [beginner Phase 1](../plan-beginner-friendly/02-phase-1-skeleton.md) |
+| 2 | [02-mediator-own-vs-free.md](02-mediator-own-vs-free.md) | Your own mediator **vs** the free GitHub one — decide | ~1 hr | [beginner Phase 2](../plan-beginner-friendly/03-phase-2-mediator.md) |
+| 3 | [03-database-schema.md](03-database-schema.md) | Tables, stored procedures, seed data | ~1–1.5 hr | [beginner Phase 4 §6](../plan-beginner-friendly/05-phase-4-create-order.md) |
+| 4 | [04-jwt-auth.md](04-jwt-auth.md) | Login, JWT tokens, roles, securing endpoints | ~2 hr *(new topic)* | *new topic* |
+| 5 | [05-domain-model.md](05-domain-model.md) | The `SalesOrder` aggregate + business rules | ~1.5–2 hr | [beginner Phase 3](../plan-beginner-friendly/04-phase-3-domain.md) |
+| 6 | [06-create-order.md](06-create-order.md) | Create-order slice: blocking, credit, category, quantity | ~2 hr | [beginner Phase 4](../plan-beginner-friendly/05-phase-4-create-order.md) |
+| 7 | [07-submit-reserve-concurrency.md](07-submit-reserve-concurrency.md) | Submit + atomic inventory reservation + rollback | ~1.5–2 hr | [beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md) |
+| 8 | [08-approval-cancellation.md](08-approval-cancellation.md) | Approve (manager), cancel (release), state machine | ~2 hr | [beginner Phase 7](../plan-beginner-friendly/08-phase-7-remaining-slices.md) |
+| 9 | [09-update-order.md](09-update-order.md) | Update a draft order's lines | ~45 min–1 hr | [beginner Phase 4](../plan-beginner-friendly/05-phase-4-create-order.md) |
+| 10 | [10-queries-search.md](10-queries-search.md) | Get one + search/filter/page | ~1–1.5 hr | [beginner Phase 6](../plan-beginner-friendly/07-phase-6-queries.md) |
+| 11 | [11-cross-cutting.md](11-cross-cutting.md) | Validation, global error handling, logging | ~1–1.5 hr | [beginner Phase 2](../plan-beginner-friendly/03-phase-2-mediator.md) |
+| 12 | [12-testing.md](12-testing.md) | Unit + integration tests for the business rules | ~2 hr | [beginner Phase 8](../plan-beginner-friendly/09-phase-8-testing.md) |
+| 13 | [13-wrap-up-checklist.md](13-wrap-up-checklist.md) | Recap + production-readiness checklist | ~30 min (read) | — |
+
+> ⏱️ **Total: roughly 18–22 hours of focused, hands-on time** — think two to three unhurried days, or a
+> couple of evenings a week for a few weeks. These are *typing-and-understanding* estimates for someone
+> comfortable with C#, **not** counting deep debugging detours (which are where a lot of the real learning
+> happens — budget slack). Newer to C#? Add 50–100% and lean on the linked beginner phases. The phases are
+> sized to be **one sitting each**; Phases 4–8 are the meatiest, so start them when you're fresh.
 
 ## Every phase follows the same shape (what you asked for)
 
@@ -150,8 +156,8 @@ To make sure nothing is skipped and nothing is assumed, **every phase answers th
 
 > 🖥️ **You don't have to build a client to test your work.** A **ready-made test console** — a single
 > standalone [`test-console/index.html`](../course-validation/business/test-console/index.html) you just
-> open from disk while the API runs — lets you drive create → submit → approve → cancel from a browser,
-> watching each rule fire, without writing any front-end. There's also Swagger at `/swagger`. A complete,
+> open from disk while the API runs — lets you drive create → edit → submit → approve → cancel from a
+> browser (every one of the 8 endpoints), watching each rule fire, without writing any front-end. There's also Swagger at `/swagger`. A complete,
 > runnable reference implementation of this whole tutorial lives in
 > [`../course-validation/business/`](../course-validation/business/); see the
 > [repo README](../README.md#running-the-reference-build) for the one-command run. Build it yourself first —

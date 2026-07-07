@@ -7,6 +7,9 @@
 
 ---
 
+> ⏱️ **Time for this phase:** ~1–1.5 hr. Two behaviors and one global exception handler, written **once** and
+> applied to all 8 endpoints. High leverage for the effort — this is the mediator paying you back.
+
 ## 1. What we're building
 
 The wrappers that apply to *every* request, written once:

@@ -5,6 +5,9 @@
 
 ---
 
+> ⏱️ **Time for this phase:** ~30 min. Mostly reading and honest self-assessment — trace the lifecycle,
+> tick the production checklist, and pick one extension to try. No new code required.
+
 ## 1. What you built (zoom all the way out)
 
 Trace the full lifecycle of one order and notice how *every* pattern from the earlier plans showed up in

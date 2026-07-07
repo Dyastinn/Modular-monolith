@@ -6,6 +6,9 @@
 
 ---
 
+> ⏱️ **Time for this phase:** ~1–1.5 hr. Two read endpoints plus the search proc. The read side is
+> deliberately simpler than the write side — notice how much *less* machinery a query needs.
+
 ## 1. What we're building
 
 Two read endpoints:

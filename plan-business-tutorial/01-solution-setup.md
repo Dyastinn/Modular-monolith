@@ -5,6 +5,9 @@
 
 ---
 
+> ⏱️ **Time for this phase:** ~1 hr. It's mostly scaffolding — `dotnet new`, project references, packages,
+> config — no business logic yet. Slower the first time you wire up Central Package Management.
+
 ## 1. What we're building
 
 An empty-but-running **modular monolith** solution: a `Shared` kernel, a `Sales` module, the NuGet packages
@@ -138,11 +141,24 @@ dotnet add src/Shared/Erp.Shared.Infrastructure package Microsoft.Extensions.Dep
 
 **`Erp.Modules.Sales`:**
 ```bash
+dotnet add src/Modules/Sales package Carter
 dotnet add src/Modules/Sales package FluentValidation
 dotnet add src/Modules/Sales package FluentValidation.DependencyInjectionExtensions   # AddValidatorsFromAssembly (Phase 2)
 dotnet add src/Modules/Sales package Dapper
 dotnet add src/Modules/Sales package Microsoft.Extensions.DependencyInjection.Abstractions
 ```
+> ⚠️ **The Sales module needs Carter *and* the ASP.NET shared framework.** Each feature's `XxxEndpoint.cs`
+> is a Carter `ICarterModule` that lives *inside this module* (next to its handler — the two-file
+> convention). So the module compiles against `Carter` and against ASP.NET's routing types
+> (`IEndpointRouteBuilder`, `RequireAuthorization`). Carter is the `dotnet add` above; the framework types
+> come from a `FrameworkReference`, which has no `dotnet add` — add it to the `.csproj` by hand:
+> ```xml
+> <ItemGroup>
+>   <FrameworkReference Include="Microsoft.AspNetCore.App" />
+> </ItemGroup>
+> ```
+> Without both, the endpoint files won't compile. (The endpoints stay in `Features/`, never in the pure
+> `Domain/` — the domain must not see Carter or ASP.NET.)
 
 **`Erp.Modules.Inventory`** (created in [Phase 7](07-submit-reserve-concurrency.md)):
 ```bash

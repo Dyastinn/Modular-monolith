@@ -6,6 +6,9 @@
 
 ---
 
+> ⏱️ **Time for this phase:** ~1.5–2 hr. Not much *code*, but the biggest *idea* in the tutorial (atomic
+> reservation under concurrency). Spend the time on the "why," not the typing.
+
 ## 1. What we're building
 
 `POST /sales-orders/{id}/submit`. When a salesperson submits a draft order:

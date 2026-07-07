@@ -7,6 +7,9 @@
 
 ---
 
+> ⏱️ **Time for this phase:** ~1 hr. One real decision (hand-roll vs. library) plus ~150 lines of mediator
+> to type — or a few lines to wire the library. The concepts matter more than the length.
+
 ## 1. What we're building
 
 The mediator that every command and query in this tutorial will flow through, plus the marker

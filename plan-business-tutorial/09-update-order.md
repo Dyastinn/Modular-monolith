@@ -6,6 +6,9 @@
 
 ---
 
+> ⏱️ **Time for this phase:** ~45 min–1 hr. Deliberately short — it's a familiar variation on Create, and
+> that familiarity *is* the point. If it feels quick, the pattern has landed.
+
 ## 1. What we're building
 
 `PUT /sales-orders/{id}` — replace the lines on a **Draft** order. Only drafts can be edited (once

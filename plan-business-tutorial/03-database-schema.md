@@ -7,6 +7,9 @@
 
 ---
 
+> ⏱️ **Time for this phase:** ~1–1.5 hr. Mostly typing SQL (tables, procs, seed) and running the scripts.
+> Add time if installing/configuring SQL Server or LocalDB is new to you.
+
 ## 1. What we're building
 
 The complete SQL Server database for our modules: tables for users, customers, item categories, items,

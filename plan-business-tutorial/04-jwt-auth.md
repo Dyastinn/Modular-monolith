@@ -5,6 +5,9 @@
 
 ---
 
+> ⏱️ **Time for this phase:** ~2 hr. This is a **new topic** — hashing, tokens, claims, middleware order,
+> the `MapInboundClaims` gotcha. Go slow; rushing auth is how subtle security bugs sneak in.
+
 ## 1. What we're building
 
 - A `POST /auth/login` endpoint: give it a username + password, get back a **JWT token**.

@@ -6,6 +6,9 @@
 
 ---
 
+> ⏱️ **Time for this phase:** ~2 hr. This is the **template slice** every later feature copies — endpoint →
+> validator → handler → domain → repository → transaction. Invest here; the rest go faster because of it.
+
 ## 1. What we're building
 
 The `POST /sales-orders` feature, all the way through: endpoint → validation → handler → domain →

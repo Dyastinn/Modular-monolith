@@ -6,6 +6,9 @@
 
 ---
 
+> ⏱️ **Time for this phase:** ~2 hr. The unit tests fly (pure domain); the integration/e2e setup — a test
+> database and the concurrency test — takes the most of it. Worth every minute: this is your safety net.
+
 ## 1. What we're building
 
 Tests at the three levels, aimed at the business rules we built:

@@ -6,6 +6,9 @@
 
 ---
 
+> ⏱️ **Time for this phase:** ~2 hr. Two commands, the role gate, optimistic concurrency, matched
+> release/reversal pairs, and after-commit event dispatch — several distinct ideas in one sitting.
+
 ## 1. What we're building
 
 Two commands that complete the order lifecycle:
