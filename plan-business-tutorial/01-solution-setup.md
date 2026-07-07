@@ -162,27 +162,9 @@ stay auth-agnostic. We don't create that folder now.)*
 
 ## 5. NuGet packages (install what this phase needs)
 
-Right now the only thing that has to run is the **host** returning `GET /health`. The `dotnet new web`
-template already gives us that — so we add exactly **one** package this phase: **Swashbuckle**, so we can
-*browse* the running app in a Swagger UI instead of only curling it.
-
-```bash
-dotnet add src/Erp.Api package Swashbuckle.AspNetCore
-```
-
-> 🔑 **Everything else installs later, in the phase that first uses it** — FluentValidation and Carter when
-> we build the mediator and our first endpoint (Phase 2), Dapper + `Microsoft.Data.SqlClient` when we touch
-> the database (Phase 3), the JWT packages at login (Phase 4), the test packages when we write tests
-> (Phase 12). That way every package in the solution has a visible reason for being there — no up-front dump
-> of things you can't yet connect to anything.
-
-> ℹ️ **A note on Swagger in .NET 10.** Since .NET 9, the built-in template ships Microsoft's own
-> **`Microsoft.AspNetCore.OpenApi`** package (`builder.Services.AddOpenApi()` / `app.MapOpenApi()`) as the
-> default way to produce an OpenAPI document, and **Swashbuckle is now a third-party package** rather than
-> the built-in default. We use Swashbuckle here purely because its `SwaggerUI` gives you a clickable
-> in-browser "try it out" page out of the box, which is friendlier while learning. Either is fine; if you
-> want to stay on Microsoft's built-in path, use `AddOpenApi()` and pair it with a UI of your choice. Not
-> a correctness issue — just so ".NET 10" and "Swashbuckle" together don't look out of date to you.
+Right now the only thing that has to run is the **host**. The `dotnet new web` template already gives us a minimal API with 
+a single endpoint. We'll replace that with a proper `GET /health` endpoint later in this phase. For now, we add exactly 
+**one** package: **Swashbuckle**, so we can *browse* the running app in a Swagger UI instead of only curling it.
 
 ### 5b. One version per package everywhere: Central Package Management
 
@@ -198,8 +180,7 @@ add a line the moment a phase introduces a new package, and never before.
 > (conflicting) list of "which brand of milk," there's *one* list on the fridge. Everybody buys from it, so
 > the whole house is always on the same version. To change milk, you edit *one* line.
 
-Create `Directory.Packages.props` next to `Erp.slnx`. Right now it holds just the one package we've
-installed — it grows by a line each later phase:
+Create `Directory.Packages.props` next to `Erp.slnx`.
 
 ```xml
 <Project>
@@ -214,12 +195,44 @@ installed — it grows by a line each later phase:
 </Project>
 ```
 
-With CPM on, a `.csproj` lists the package with **no** `Version` attribute — the version comes from the props:
+If you're adding CPM to an **existing project** that already has package references with versions, remove the
+`Version="..."` attribute from those `<PackageReference>` entries—the version now belongs in
+`Directory.Packages.props`.
+
+With CPM on, a `.csproj` lists the package with **no** `Version` attribute—the version comes from the props:
 
 ```xml
 <!-- src/Modules/Sales/Erp.Modules.Sales.csproj -->
-<PackageReference Include="FluentValidation" />          <!-- version resolved from Directory.Packages.props -->
+<PackageReference Include="FluentValidation" />
 <PackageReference Include="Dapper" />
+```
+
+Most projects should stop here. They automatically inherit the version defined in
+`Directory.Packages.props`.
+
+> 💡 **Need a different version for one project?** It's uncommon, but sometimes a project needs to stay on
+> an older or newer package version (for example, during a gradual migration). In that case, **don't** add
+> `Version="..."` back to the `PackageReference`. Instead, override the central version:
+
+```xml
+<!-- Directory.Packages.props -->
+<PackageVersion Include="Dapper" Version="2.1.66" />
+```
+
+```xml
+<!-- src/LegacyTool/LegacyTool.csproj -->
+<ItemGroup>
+  <PackageReference Include="Dapper"
+                    VersionOverride="2.1.35" />
+</ItemGroup>
+```
+
+The rest of the solution uses **Dapper 2.1.66**, while `LegacyTool` alone uses **2.1.35**.
+
+Now install the package for this phase:
+
+```bash
+dotnet add src/Erp.Api package Swashbuckle.AspNetCore
 ```
 
 > 🔧 **How it interacts with `dotnet add package`.** Once CPM is enabled, `dotnet add ... package Dapper`
@@ -236,24 +249,26 @@ With CPM on, a `.csproj` lists the package with **no** `Version` attribute — t
 
 ## 6. Configuration
 
-**This phase needs no special configuration** — the `dotnet new web` template's `appsettings.json` (which
-already sets up logging) is enough to run `GET /health`. We add configuration the same way we add packages:
-**only when a phase first needs it.**
+**This phase needs no special configuration** — the `dotnet new web` template's default
+`appsettings.json` is enough to run the application. We add configuration the same way we
+add packages: **only when a phase first needs it.**
 
-- The **database connection string** arrives in [Phase 3](03-database-schema.md), where we first talk to
-  SQL Server.
-- The **JWT settings** (issuer, signing key, token lifetimes) arrive in [Phase 4](04-jwt-auth.md), where we
-  add login.
+- The **database connection string** arrives in [Phase 3](03-database-schema.md), where we first talk to SQL Server.
+- The **JWT settings** (issuer, signing key, token lifetimes) arrive in [Phase 4](04-jwt-auth.md), where we add login.
 
 One thing to know now, so the later phases make sense: there's a **single database** (`Erp`) that will hold
 every module's schema (`sales`, later `inventory`) — this is a *monolith*. The module walls live in the
 *code* and *schemas*, not in separate databases. (That split only happens if you ever extract a module.)
 
+
+
 ## 7. Program.cs — the composition root
 
-The template gives you a `Program.cs`. For this phase it stays tiny — just enough to prove the app runs and
-serve `/health`. The module-wiring lines (`AddSharedInfrastructure`, `AddSalesModule`, `MapCarter`) arrive
-in Phase 2 when there's actually a mediator and an endpoint to wire:
+The template already gives you a `Program.cs` with a minimal API that responds to `GET /`. For this phase we
+make a few small changes: enable Swagger, replace the default endpoint with `GET /health`, and add a
+`public partial Program` for future integration tests. The module-wiring lines
+(`AddSharedInfrastructure`, `AddSalesModule`, `MapCarter`) arrive in Phase 2 when there's actually a
+mediator and an endpoint to wire:
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -263,7 +278,11 @@ builder.Services.AddSwaggerGen();               // Swashbuckle — the browsable
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
+if (app.Environment.IsDevelopment())
+{
+    app.UseSwagger();
+    app.UseSwaggerUI();
+}
 
 app.MapGet("/health", () => Results.Ok("healthy"));
 
@@ -272,13 +291,21 @@ app.Run();
 public partial class Program { }   // lets tests boot the app later (we use this in the testing phase)
 ```
 
+> ❓ **"What's different from the template?"**
+>
+> - Added `AddEndpointsApiExplorer()` so Swagger can discover minimal API endpoints.
+> - Added `AddSwaggerGen()` to generate the OpenAPI document.
+> - Added `UseSwagger()` and `UseSwaggerUI()` in Development.
+> - Replaced the template's `GET /` endpoint with `GET /health`.
+> - Added `public partial class Program { }` for future integration testing.
+
 > ❓ **"What's `public partial class Program { }`?"** It makes the auto-generated `Program` type *public* so
 > that, later, the end-to-end tests can boot the whole app with `WebApplicationFactory<Program>`. Adding this
-> one line now saves editing `Program.cs` again then — it's harmless until then.
+> one line now saves editing `Program.cs` again then—it's harmless until then.
 
-> 🧭 **From WebForms:** `Program.cs` is your `Global.asax` + `web.config` wiring, in one readable place —
-> a *table of contents* for the app, not a junk drawer. Right now the table has one entry; each phase adds a
-> line.
+> 🧭 **From WebForms:** `Program.cs` is your `Global.asax` + `web.config` wiring, in one readable place—a
+> *table of contents* for the app, not a junk drawer. Right now the table has only a handful of entries;
+> each phase adds another.
 
 ## 8. Run it — your first checkpoint ✅
 
@@ -286,14 +313,70 @@ public partial class Program { }   // lets tests boot the app later (we use this
 Browser → GET /health → ASP.NET routing → () => Results.Ok("healthy") → 200 "healthy"
 ```
 
+Run the API:
+
 ```bash
 dotnet run --project src/Erp.Api
 ```
 
-The console prints the URL it's listening on (something like `http://localhost:5xxx`). Then verify **both**:
+By default, `dotnet run` uses the **Debug** configuration.
 
-- **`GET /health`** returns `healthy` — `curl http://localhost:5xxx/health` (or just open it in a browser).
-- **`/swagger`** loads in a browser and lists the `/health` endpoint.
+If you want to run the optimized Release build instead:
+
+```bash
+dotnet run --project src/Erp.Api --configuration Release
+```
+
+> 💡 You'll use `dotnet run --project src/Erp.Api` throughout this tutorial. It always runs the API directly
+> from the project, regardless of which project Visual Studio has marked as the startup project. That makes
+> the commands consistent whether you're using Visual Studio, VS Code, Rider, or just the terminal.
+
+The console prints the URL it's listening on (something like `http://localhost:5234`). Verify **both**:
+
+- **Health check:** `http://localhost:5234/health`
+- **Swagger UI:** `http://localhost:5234/swagger`
+
+You can also test the health endpoint from a terminal:
+
+```bash
+curl http://localhost:5234/health
+```
+
+### Optional: Use a fixed local port
+
+The random `5xxx` port can change between machines and even between projects. If you'd rather always use
+the same address (for example, `http://localhost:8080`), edit
+`src/Erp.Api/Properties/launchSettings.json`.
+
+Find the profile you use (usually **http** or **https**) and change the
+`applicationUrl`:
+
+```json
+{
+  "profiles": {
+    "http": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "launchUrl": "swagger",
+      "applicationUrl": "http://localhost:8080",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
+}
+```
+
+If you also use HTTPS, you can specify both URLs:
+
+```json
+"applicationUrl": "http://localhost:8080;https://localhost:8081"
+```
+
+From then on, your API will consistently be available at:
+
+- `http://localhost:8080/health`
+- `http://localhost:8080/swagger`
 
 If you see `healthy` and the Swagger page renders, **the frame stands** — the projects compile, the module
 walls are in place, and the host runs. That's a complete, working Phase 1. Everything from here just adds
