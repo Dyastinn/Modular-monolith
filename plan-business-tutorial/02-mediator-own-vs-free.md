@@ -14,11 +14,41 @@
 
 ## 1. What we're building
 
-A **mediator** — the single "post office" that every command and query in this tutorial hands its work to,
-so an endpoint never needs to know which class actually does the job. We'll build the shared contracts
-(`ICommand`, `IQuery`, `ISender`, …), pick and wire an implementation, and finish with a live proof: a
-`GET /sales/ping` that travels *endpoint → mediator → handler* and returns `"pong"`. That's the whole
-pipeline working end-to-end — the walking skeleton for every real feature that follows.
+A **mediator** — a single object that sits between your endpoints and your business logic. It's an
+implementation of the **Mediator Pattern**, whose goal is to reduce coupling between parts of your
+application. Instead of one class knowing about and calling many other classes directly, everything sends
+its request to the mediator, and the mediator finds the correct handler to perform the work.
+
+Think of it as a **post office**. You don't need to know who delivers your letter or where they sit. You
+simply hand your letter to the post office, and it routes it to the right destination. In the same way, an
+endpoint doesn't know—or care—which class handles "Create Order" or "Get Customer." It simply hands the
+request to the mediator.
+
+Without a mediator, an endpoint would directly depend on the services it needs:
+
+```
+Endpoint ├──► OrderService
+         ├──► CustomerService
+         ├──► CreditService
+         └──► InventoryService
+```
+
+As features grow, endpoints become coupled to more and more services.
+
+With a mediator, every endpoint depends on **one thing**:
+
+```
+Endpoint ──► Mediator ──► Correct Handler
+```
+
+The endpoint simply says, "Here's a request." The mediator finds the matching handler and executes it. That
+keeps endpoints small, removes knowledge of who performs the work, and gives every request the same
+consistent pipeline.
+
+We'll build the shared contracts (`ICommand`, `IQuery`, `ISender`, …), pick and wire an implementation, and
+finish with a live proof: a `GET /sales/ping` that travels *endpoint → mediator → handler* and returns
+`"pong"`. That's the whole pipeline working end-to-end — the walking skeleton for every real feature that
+follows.
 
 **You have two options for the implementation, and you pick one now:**
 
@@ -27,13 +57,53 @@ pipeline working end-to-end — the walking skeleton for every real feature that
 - **Option B — use the free library `martinothamar/Mediator`:** a MIT-licensed, source-generated NuGet
   package with a MediatR-shaped API. Less to write; a compile-time-checked black box.
 
-The rest of the tutorial's code works with **either**, because both expose the same interface names — §2
-argues the trade-off, then you choose and wire that one.
+The rest of the tutorial's code works with **either**, because both expose the same interface names. §2
+explains the trade-offs so you can choose the implementation that best fits your goals.
 
-## 2. Why this is a real decision (not just ceremony)
+## 2. Wait... isn't this CQRS?
 
-The earlier plan hand-rolled a mediator to *teach the pattern*. For a production module you have a
-genuine choice, and a senior should be able to argue it both ways. Here's the honest comparison:
+Sharp eye—it is, at least partly.
+
+**CQRS** stands for **Command Query Responsibility Segregation**. At its core, it says:
+
+- **Commands** change the system.
+- **Queries** read from the system.
+- Don't mix the two.
+
+That's exactly why this tutorial introduces `ICommand` and `IQuery`.
+
+However, **CQRS is a spectrum, not a switch**. Some teams stop at separating commands from queries in code.
+Others go much further, using separate databases, separate read models, message queues, or even event
+sourcing.
+
+This tutorial uses the **simple end of the spectrum**:
+
+- Commands and queries have different types.
+- They have different handlers.
+- They travel through the same mediator.
+- They use the same database.
+
+We're **not** building the kind of CQRS architecture that duplicates data into separate read stores. This
+is still a **modular monolith**, not a distributed system.
+
+Think of it this way:
+
+- **CQRS** answers: *"Is this request changing data or reading data?"*
+- **Mediator** answers: *"How do I find the correct handler for this request?"*
+
+The two patterns solve different problems, but they work together so well that you'll often see them used
+side by side.
+
+## 3. Why this is a real decision (not just ceremony)
+
+There are two perfectly valid ways to use the Mediator pattern:
+
+- write your own mediator
+- use a well-tested library
+
+Neither is universally "correct." The trade-off is between **understanding** and **writing less infrastructure**.
+
+Since this tutorial is designed to explain how the architecture works—not just how to consume it—we'll compare both approaches before choosing one.
 
 | | **Hand-rolled (own)** | **Free library: `martinothamar/Mediator`** |
 |---|---|---|
@@ -45,10 +115,10 @@ genuine choice, and a senior should be able to argue it both ways. Here's the ho
 | Risk | A bug is *your* bug | Depends on a third party; API caveats (see below) |
 | Control | Total | You bend to their conventions |
 
-> ℹ️ **Why not MediatR (the famous one)?** As the earlier plans noted, MediatR moved to a paid license
-> for larger companies in 2025. It's still free under a revenue threshold, but this tutorial avoids it
-> to keep things unambiguously free and to teach the pattern. `martinothamar/Mediator` is a genuinely
-> free, MIT-licensed, source-generator alternative with a MediatR-shaped API.
+> ℹ️ **Why not MediatR (the famous one)?** MediatR moved to a paid license for larger companies in 2025.
+> It's still free under a revenue threshold, but this tutorial avoids it to keep things unambiguously free
+> while still teaching the Mediator pattern. `martinothamar/Mediator` is a genuinely free, MIT-licensed,
+> source-generated alternative with a MediatR-shaped API.
 
 **My recommendation for *this* tutorial:** **hand-roll it** (Option A). Not because it's better in
 production, but because *understanding what's inside the box* is the entire point of a learning project,
@@ -56,47 +126,139 @@ and our load is tiny. Then in [Phase 13](13-wrap-up-checklist.md) we note exactl
 library. If you'd rather use the library from day one, Option B is fully wired below and nothing else in
 the tutorial changes.
 
-## 3. The shared contracts (both options use these)
+## 4. The shared contracts (both options use these)
 
-> 📦 **Packages for this phase — add these now.** This is the phase that first needs a mediator, cross-cutting
-> behaviors, validation, and web endpoints, so here's where those packages come in (per Phase 1's "install
-> only when needed" rule). Each `dotnet add` also drops a `<PackageVersion>` line into
+Before we build a mediator, we first need to define its **public API**—the set of interfaces that every
+endpoint, handler, and module agrees to use. These contracts describe **what** the mediator can do, not
+**how** it does it.
+
+Whether you hand-roll the mediator or use a library, the rest of the solution depends only on these
+contracts. That's what makes the two implementations interchangeable.
+
+We'll build the mediator in three files:
+
+```text
+Erp.Shared.Messaging
+│
+├── Contracts.cs          // shared interfaces
+├── Sender.cs             // the mediator implementation
+└── Behaviors
+    └── LoggingBehavior.cs
+```
+
+We'll build them one at a time.
+
+### Step 1 — Install the packages
+
+> 📦 **Packages for this phase — add these now.** This is the phase that first needs a mediator,
+> validation, cross-cutting behaviors, and web endpoints, so here's where those packages come in (following
+> Phase 1's "install only when needed" rule). Each `dotnet add` also adds a `<PackageVersion>` entry to
 > `Directory.Packages.props`.
-> ```bash
-> # The mediator contracts + behaviors need DI, logging, and validation abstractions:
-> dotnet add src/Shared/Erp.Shared.Messaging package Microsoft.Extensions.DependencyInjection.Abstractions
-> dotnet add src/Shared/Erp.Shared.Messaging package Microsoft.Extensions.Logging.Abstractions
-> dotnet add src/Shared/Erp.Shared.Messaging package FluentValidation
+
 >
-> # The shared kernel hosts the mediator + Carter wiring:
-> dotnet add src/Shared/Erp.Shared.Infrastructure package Carter
-> dotnet add src/Shared/Erp.Shared.Infrastructure package Microsoft.Extensions.DependencyInjection.Abstractions
 >
-> # The Sales module gets Carter (its endpoints), FluentValidation, and the assembly-scan helper:
-> dotnet add src/Modules/Sales package Carter
-> dotnet add src/Modules/Sales package FluentValidation
-> dotnet add src/Modules/Sales package FluentValidation.DependencyInjectionExtensions   # AddValidatorsFromAssembly
-> dotnet add src/Modules/Sales package Microsoft.Extensions.DependencyInjection.Abstractions
+> - **`Microsoft.Extensions.DependencyInjection.Abstractions`** — provides the dependency injection
+>   interfaces (`IServiceCollection`) that our registration methods extend.
+> - **`Microsoft.Extensions.Logging.Abstractions`** — provides `ILogger<T>` without depending on ASP.NET's
+>   concrete logging implementation.
+> - **`FluentValidation`** — lets us validate commands and queries before they reach their handlers.
+> - **`FluentValidation.DependencyInjectionExtensions`** — adds `AddValidatorsFromAssembly()`, which
+>   automatically registers every validator in a module.
+> - **`Carter`** — lets each feature define its own endpoints as ICarterModule instead of putting all
+>   routes in `Program.cs`.
 >
-> # The host maps every module's Carter endpoints:
-> dotnet add src/Erp.Api package Carter
-> ```
-> ⚠️ **Carter also needs the ASP.NET shared framework.** A feature's `XxxEndpoint.cs` is a Carter
-> `ICarterModule` that lives *inside* the Sales module and compiles against ASP.NET routing types
-> (`IEndpointRouteBuilder` and later `RequireAuthorization`). Those come from a **`FrameworkReference`**,
-> which has no `dotnet add` — add it by hand to **both** `Erp.Modules.Sales.csproj` **and**
-> `Erp.Shared.Infrastructure.csproj`:
-> ```xml
-> <ItemGroup>
->   <FrameworkReference Include="Microsoft.AspNetCore.App" />
-> </ItemGroup>
-> ```
+
+>
+
+Install them where they're first needed:
+
+
+```bash
+# The mediator contracts + behaviors need DI, logging, and validation abstractions:
+dotnet add src/Shared/Erp.Shared.Messaging package Microsoft.Extensions.DependencyInjection.Abstractions
+dotnet add src/Shared/Erp.Shared.Messaging package Microsoft.Extensions.Logging.Abstractions
+dotnet add src/Shared/Erp.Shared.Messaging package FluentValidation
+
+# The shared kernel hosts the mediator + Carter wiring:
+dotnet add src/Shared/Erp.Shared.Infrastructure package Carter
+dotnet add src/Shared/Erp.Shared.Infrastructure package Microsoft.Extensions.DependencyInjection.Abstractions
+
+# The Sales module gets Carter (its endpoints), FluentValidation, and the assembly-scan helper:
+dotnet add src/Modules/Sales package Carter
+dotnet add src/Modules/Sales package FluentValidation
+dotnet add src/Modules/Sales package FluentValidation.DependencyInjectionExtensions
+dotnet add src/Modules/Sales package Microsoft.Extensions.DependencyInjection.Abstractions
+
+# The host maps every module's Carter endpoints:
+dotnet add src/Erp.Api package Carter
+```
+
+> ⚠️ **Carter needs the ASP.NET shared framework.** A feature's `XxxEndpoint.cs` is a Carter
+> `ICarterModule` that lives inside the Sales module and compiles against ASP.NET routing types such as
+> `IEndpointRouteBuilder`. Those come from a `FrameworkReference`, not a NuGet package. Add this manually
+> to both `Erp.Modules.Sales.csproj` and `Erp.Shared.Infrastructure.csproj`:
+
+```xml
+ <ItemGroup>
+   <FrameworkReference Include="Microsoft.AspNetCore.App" />
+ </ItemGroup>
+```
+
 > Without it, the endpoint files won't compile. (Endpoints stay in `Features/`, never in the pure `Domain/`
 > — the domain must not see Carter or ASP.NET.)
 
-Whichever option you pick, define these contracts in `Erp.Shared.Messaging` — in the *shared kernel*, because
-every module sends and handles through the same mediator. Our whole codebase depends on *these names*, not on
-the implementation — that's what makes the two options interchangeable.
+
+### Step 2 — Create `Contracts.cs`
+
+Create a new file named **`Contracts.cs`** in `src/Shared/Erp.Shared.Messaging`.
+
+> 💡 **Why one file?** These contracts are all part of the same concept: the mediator's public API. Keeping
+> them together makes them easier to learn because you can see the entire contract in one place. As the
+> project grows, you may choose to split them into folders like `Commands/`, `Queries/`, and
+> `Abstractions/`, but for this tutorial a single `Contracts.cs` keeps the pattern easy to understand.
+
+They're just **interfaces**—promises about what shape something has, not how it's implemented.
+
+
+
+Let's decode them before writing the code:
+
+> 💡 **New to generics?** `TResponse`, `TRequest`, `TCommand`, and `TQuery` are all **generic type
+> parameters**. A **generic** is simply a placeholder for a type, allowing one interface or class to work
+> with many different types.
+>
+> `T` stands for **Type**, so:
+>
+> - `TResponse` = the type returned by a request.
+> - `TRequest` = the request being handled.
+> - `TCommand` = the command being handled.
+> - `TQuery` = the query being handled.
+>
+> For example, `IRequest<string>` returns a `string`, while `IRequest<SalesOrderDto>` returns a
+> `SalesOrderDto`.
+
+- **`IRequest<TResponse>`** — the foundation of the mediator. It simply means, **"I'm a request that, when
+  handled, produces a `TResponse`."** Every request in the system starts here.
+- **`ICommand<TResponse>`** — extends `IRequest<TResponse>` and represents a request that **changes the
+  system**. It adds no behavior; it simply tells both the reader and the compiler, "this is a command."
+- **`IQuery<TResponse>`** — also extends `IRequest<TResponse>`, but represents a request that **reads
+  data** without changing the system.
+- **`Unit`** — the equivalent of `void` for commands. Since `Task<void>` doesn't exist, commands that don't
+  return meaningful data instead return `Task<Unit>`.
+- **`IRequestHandler<TRequest, TResponse>`** — the foundation for all handlers. It says, **"I know how to
+  handle one specific `IRequest<TResponse>`."** Every request has exactly one handler.
+- **`ICommandHandler<TCommand, TResponse>`** — extends `IRequestHandler` but accepts only commands. It adds
+  no behavior; it simply makes intent obvious and lets us target commands specifically later.
+- **`IQueryHandler<TQuery, TResponse>`** — extends `IRequestHandler` but accepts only queries, giving us
+  the same benefits for read operations.
+- **`RequestHandlerDelegate<TResponse>`** — a `delegate` is simply "a variable that holds a method you can
+  call later." Behaviors use it to invoke the next step in the pipeline.
+- **`IPipelineBehavior<TRequest, TResponse>`** — a wrapper around every request. Logging, validation,
+  transactions, caching, and other cross-cutting concerns plug in here.
+- **`ISender`** — the only interface endpoints use. They simply call `Send(...)`; the mediator finds the
+  correct handler and runs it.
+
+Now add the following code:
 
 ```csharp
 // Marker: "I am a request that produces a TResponse."
@@ -144,12 +306,15 @@ public interface ISender
 }
 ```
 
-> 📎 Line-by-line explanation of each of these interfaces is in
-> [beginner Phase 2 §4a](../plan-beginner-friendly/03-phase-2-mediator.md). We won't repeat it — but
-> note the two additions for this tutorial: `ICommand`/`IQuery` markers and the `Unit` type, both of
-> which our real slices use constantly.
+> 📎 Line-by-line explanation of each of these interfaces is also in [beginner Phase 2 §4a](../plan-beginner-friendly/03-phase-2-mediator.md).
 
-## 4. Why `ICommand` and `IQuery` markers exist
+> ❓ **"Why so many interfaces for something simple?"** Each interface is a *seam*—a clean place where two
+> parts meet without knowing each other's implementation. `ISender` lets endpoints stay ignorant of
+> handlers. `IRequestHandler` lets the mediator execute any request without knowing what it does.
+> `IPipelineBehavior` lets you add logging, validation, transactions, and other cross-cutting concerns
+> without touching a single handler. The interfaces *are* the decoupling.
+
+## 5. Why `ICommand` and `IQuery` markers exist
 
 They carry **zero behavior** — so why bother? Because *intent should be visible at a glance*. When you
 open `Sales/SalesOrders/` and see `SubmitSalesOrderCommand : ICommand<Unit>` next to
@@ -168,10 +333,49 @@ reads — without opening the file. That single word also lets us apply behavior
 
 ### The dispatcher
 
-Put this in `Erp.Shared.Messaging/Sender.cs`. It finds the handler for a request type, wraps it in the
-registered behaviors, and runs it.
+Earlier we defined the **contracts** (`IRequest`, `IRequestHandler`, `ISender`, ...). Those described
+**what** a mediator can do. Now we'll build **how** it does it.
+
+Our mediator has one job:
+
+1. Receive a request.
+2. Find the correct handler.
+3. Let any registered behaviors wrap that handler.
+4. Execute the pipeline.
+5. Return the result.
+
+We'll build all of that in a single file:
+
+```text
+Erp.Shared.Messaging
+└── Sender.cs
+```
+
+The entire flow looks like this:
+
+```
+Endpoint
+    │
+    ▼
+ISender.Send(request)
+    │
+    ▼
+Resolve the correct handler
+    │
+    ▼
+Wrap it in behaviors
+    │
+    ▼
+Execute
+    │
+    ▼
+Return the response
+```
+
+Now let's build it.
 
 ```csharp
+// Sender.cs
 using Microsoft.Extensions.DependencyInjection;
 
 public sealed class Sender(IServiceProvider provider) : ISender
@@ -229,68 +433,309 @@ internal sealed class RequestHandlerWrapperImpl<TRequest, TResponse>
 }
 ```
 
-> 📎 If the `MakeGenericType` / `Activator` lines look like hieroglyphics — that's expected, and
-> [beginner Phase 2 §4b](../plan-beginner-friendly/03-phase-2-mediator.md) gives you explicit permission
-> to copy them and move on. What matters is steps 1–4 in the comments: **resolve handler → make it the
-> innermost call → wrap in behaviors → run.** The "way in / way out" nesting is explained with a diagram
-> in that same beginner phase.
+### Understanding the code
 
-### Registration — shared engine, per-module handlers
+The file is longer than it looks because it contains both the mediator itself and a few helper classes.
+Don't worry about reading it top-to-bottom yet. The important part is understanding **what happens when
+`Send()` is called**.
 
-Registration splits along the module boundary, and that split is the whole point of a modular monolith.
-The **shared** engine (the `Sender`) registers once in `Erp.Shared.Infrastructure`:
+#### Step 1 — A request arrives
+
+Everything starts here:
+
+```csharp
+public Task<TResponse> Send<TResponse>(
+    IRequest<TResponse> request,
+    CancellationToken ct = default)
+```
+
+The endpoint doesn't call a handler directly. Instead it gives the request to the mediator:
+
+```
+CreateOrderCommand
+        │
+        ▼
+Sender.Send(...)
+```
+
+At this point the mediator knows:
+
+- the request object
+- the response type (`TResponse`)
+
+It still doesn't know **which handler** should execute it.
+
+---
+
+#### Step 2 — Find the correct handler
+
+Eventually the mediator reaches this line:
+
+```csharp
+var handler =
+    sp.GetRequiredService<IRequestHandler<TRequest, TResponse>>();
+```
+
+Dependency Injection has already registered every handler.
+
+That means asking for
+
+```
+IRequestHandler<CreateOrderCommand, Unit>
+```
+
+returns
+
+```
+CreateOrderCommandHandler
+```
+
+and asking for
+
+```
+IRequestHandler<GetOrderQuery, OrderDto>
+```
+
+returns
+
+```
+GetOrderQueryHandler
+```
+
+The mediator never hard-codes those classes.
+
+---
+
+#### Step 3 — Build the pipeline
+
+The handler becomes the innermost piece of work:
+
+```csharp
+RequestHandlerDelegate<TResponse> pipeline =
+    () => handler.Handle(...);
+```
+
+Think of `pipeline` as
+
+```
+Handler
+```
+
+Then every registered behavior wraps it.
+
+Suppose we register:
+
+```
+Logging
+Validation
+```
+
+The pipeline becomes
+
+```
+Logging
+    ▼
+Validation
+    ▼
+Handler
+```
+
+Each behavior receives a `next` delegate representing **"everything after me."**
+
+Calling
+
+```csharp
+await next();
+```
+
+moves to the next behavior.
+
+Eventually the handler executes.
+
+---
+
+#### Step 4 — Run the pipeline
+
+Finally:
+
+```csharp
+return pipeline();
+```
+
+Although `pipeline` is just a delegate, it now represents the entire chain:
+
+```
+Logging
+    ▼
+Validation
+    ▼
+Handler
+```
+
+Calling it once executes the entire request.
+
+---
+
+#### What about `MakeGenericType()` and `Activator.CreateInstance()`?
+
+Those lines are **not** the Mediator Pattern itself.
+
+They're simply an optimization that lets one `Sender` work with any request type without writing a huge
+`switch` statement.
+
+The first time a request type is seen, the mediator uses reflection to build a small helper object
+(`RequestHandlerWrapperImpl<TRequest, TResponse>`).
+
+That helper is stored in a `ConcurrentDictionary`, so the reflection only happens **once per request type**.
+
+Every later request reuses the cached helper instead of rebuilding it.
+
+Think of it like this:
+
+```
+First request
+    │
+    ▼
+Reflection
+    │
+    ▼
+Create wrapper
+    │
+    ▼
+Cache it
+
+Later requests
+    │
+    ▼
+Use cached wrapper
+```
+
+The reflection code exists for performance. The mediator algorithm itself is still just:
+
+```
+Resolve handler
+      ▼
+Wrap in behaviors
+      ▼
+Execute
+```
+
+> 💡 The most important part of this file isn't the reflection—it's the **request pipeline**.
+>
+> When `Send()` is called, the mediator does four things:
+>
+> 1. **Resolve** the correct handler from Dependency Injection.
+> 2. **Build** a pipeline with the handler at the center.
+> 3. **Wrap** that handler in every registered behavior (logging, validation, etc.).
+> 4. **Execute** the pipeline and return the response.
+>
+> The `MakeGenericType()` and `Activator.CreateInstance()` calls exist only to build and cache a helper
+> object for each request type. They let one `Sender` work with any request without writing a giant
+> `switch` statement, and the reflection only happens the **first** time each request type is seen. The
+> mediator pattern itself is simply: **resolve handler → wrap in behaviors → run**.
+
+### Registration — teaching the mediator where to find handlers
+
+Our `Sender` can execute requests, but it still needs one piece of information:
+
+> **How does it know which handler belongs to which request?**
+
+The answer is **Dependency Injection (DI)**.
+
+When `Sender` reaches this line:
+
+```csharp
+var handler = sp.GetRequiredService<IRequestHandler<TRequest, TResponse>>();
+```
+
+it asks ASP.NET Core's DI container:
+
+> "Give me the handler for this request."
+
+That only works if we've registered every handler when the application starts.
+
+Registration naturally splits along the module boundary, which is exactly what we want in a modular
+monolith:
+
+- The **shared infrastructure** registers the mediator itself.
+- Each **module** registers its own handlers, validators, and services.
+
+This keeps the module boundaries intact. The Sales module only registers Sales handlers, the Inventory
+module only registers Inventory handlers, and so on. The mediator doesn't know about any of them—it simply
+asks Dependency Injection for the correct handler.
+
+First, register the mediator itself once in `Erp.Shared.Infrastructure`:
 
 ```csharp
 public static IServiceCollection AddMessaging(this IServiceCollection services)
 {
     services.AddScoped<ISender, Sender>();
-    // Cross-cutting behaviors (logging, validation) plug into this same pipeline later, in Phase 11 —
-    // we register them there, when we actually write them. The Sender already supports them today.
+
+    // Cross-cutting behaviors (logging, validation, etc.) plug into this pipeline later.
+    // We don't register any behaviors yet because we haven't built them.
     return services;
 }
+
 // AddSharedInfrastructure() calls AddMessaging().
 ```
 
-> 🔑 **The pipeline is built now; the behaviors come later.** Notice the `Sender` above already wraps a
-> request in whatever `IPipelineBehavior`s are registered — that capability exists from this phase. We just
-> don't register any *concrete* behavior yet, because we haven't needed one. Logging and validation arrive in
-> [Phase 11](11-cross-cutting.md) and slot straight in — no change to the engine.
+> 🔑 **The pipeline is built now; the behaviors come later.** The `Sender` already supports
+> IPipelineBehavior — we simply haven't registered any concrete ones yet. When we add logging,
+> validation, and other cross-cutting concerns in Phase 11, they'll automatically wrap every request
+> without changing the mediator itself.
 
-Each **module** registers *its own* handlers and validators by scanning *its own assembly*, in its
-`DependencyInjection.cs`:
+Next, each module registers its own handlers. Rather than registering every handler manually, we scan the
+module's assembly and automatically register every class that implements `IRequestHandler<,>`.
 
 ```csharp
-// Modules/Sales/DependencyInjection.cs  — a static class in the Erp.Modules.Sales assembly
+// Modules/Sales/DependencyInjection.cs
 public static class DependencyInjection
 {
-public static IServiceCollection AddSalesModule(this IServiceCollection services, IConfiguration config)
-{
-    // `typeof(DependencyInjection)` is just "some type that lives in THIS module's assembly" — any type
-    // in the module works; we use the class this method is declared in. (No magic marker class needed.)
-    var assembly = typeof(DependencyInjection).Assembly;   // the Erp.Modules.Sales assembly
+    public static IServiceCollection AddSalesModule(
+        this IServiceCollection services,
+        IConfiguration config)
+    {
+        // Look only inside the Sales module.
+        var assembly = typeof(DependencyInjection).Assembly;
 
-    // Register every IRequestHandler<,> defined in THIS module.
-    var handlerTypes = assembly.GetTypes()
-        .Where(t => !t.IsAbstract && !t.IsInterface)
-        .SelectMany(t => t.GetInterfaces()
-            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IRequestHandler<,>))
-            .Select(i => new { Implementation = t, Service = i }));
-    foreach (var h in handlerTypes) services.AddTransient(h.Service, h.Implementation);
+        // Register every IRequestHandler<,> defined in this module.
+        var handlerTypes = assembly.GetTypes()
+            .Where(t => !t.IsAbstract && !t.IsInterface)
+            .SelectMany(t => t.GetInterfaces()
+                .Where(i => i.IsGenericType &&
+                            i.GetGenericTypeDefinition() == typeof(IRequestHandler<,>))
+                .Select(i => new
+                {
+                    Implementation = t,
+                    Service = i
+                }));
 
-    services.AddValidatorsFromAssembly(assembly);   // this module's FluentValidation validators
-    // ... plus this module's repositories, TypeHandlers, IStockReservation impl (Phase 7), etc.
-    return services;
-}
+        foreach (var handler in handlerTypes)
+        {
+            services.AddTransient(handler.Service, handler.Implementation);
+        }
+
+        // Register every FluentValidation validator in this module.
+        services.AddValidatorsFromAssembly(assembly);
+
+        // Later phases register repositories, services, etc.
+        return services;
+    }
 }
 ```
 
-> ⚠️ **`AddValidatorsFromAssembly` needs an extra package.** That helper lives in
-> **`FluentValidation.DependencyInjectionExtensions`**, *not* the base `FluentValidation` package — it's one
-> of the installs in §3 above. Without it, `AddSalesModule` won't compile. (There are no validators to find
-> yet; the call harmlessly registers nothing until our first feature adds one.)
+> 💡 **Why `typeof(DependencyInjection).Assembly`?** We need a way to tell .NET, "Scan only this module."
+> Any type declared in the Sales project would work. We use `DependencyInjection` simply because we're
+> already inside that file.
 
-No module registers another's handlers — the DI wiring respects the module walls, exactly like the project
-references do. `Program.cs` calls `AddSharedInfrastructure()` then each `Add*Module()`.
+> ⚠️ **`AddValidatorsFromAssembly()` needs an extra package.** That helper comes from
+> **`FluentValidation.DependencyInjectionExtensions`**, not the base `FluentValidation` package. That's
+> why we installed it earlier in this phase. There are no validators yet, so this call simply registers
+> nothing until we create our first one.
+
+Notice that no module registers another module's handlers. The module boundaries enforced by the project
+references are also enforced by Dependency Injection. Finally, `Program.cs` brings everything together by
+calling `AddSharedInfrastructure()` once, followed by each module's `Add*Module()` method.
 
 ---
 
@@ -334,7 +779,7 @@ validator, the domain — is unchanged. Pick one engine and stay on it; don't mi
 
 ---
 
-## 5. Wire the host, then prove it — your checkpoint ✅
+## 6. Wire the host, then prove it — your checkpoint ✅
 
 The engine exists; now make a request actually travel through it. Two small wiring steps, then a
 one-feature walking skeleton — the same "prove the pipe" move as Phase 1's `/health`, but through the
@@ -371,6 +816,8 @@ public partial class Program { }
 
 ### 2) The `Ping` slice — two files, the shape every feature copies
 
+Every feature sends a **request object** to the mediator. The handler always receives a single request object containing all the data it needs.
+
 `src/Modules/Sales/Features/Ping/PingHandler.cs`:
 
 ```csharp
@@ -385,6 +832,30 @@ public sealed class PingHandler : IRequestHandler<PingRequest, string>
 }
 ```
 
+`PingRequest` uses the **record primary constructor** syntax. It's shorthand for a record with a constructor and a property. The compiler generates those for you.
+
+This:
+
+```csharp
+public sealed record PingRequest(string Name) : IRequest<string>;
+```
+
+is roughly equivalent to:
+
+```csharp
+public sealed record PingRequest : IRequest<string>
+{
+    public string Name { get; init; }
+
+    public PingRequest(string name)
+    {
+        Name = name;
+    }
+}
+```
+
+The endpoint creates a `PingRequest`, and the mediator passes that same object to the handler.
+
 `src/Modules/Sales/Features/Ping/PingEndpoint.cs`:
 
 ```csharp
@@ -395,6 +866,27 @@ public sealed class PingEndpoint : ICarterModule
             Results.Ok(await sender.Send(new PingRequest(name), ct)));
 }
 ```
+
+Conceptually, this is what happens:
+
+```text
+HTTP Request
+      │
+      ▼
+PingEndpoint
+      │
+      │ new PingRequest(name)
+      ▼
+ISender.Send(request)
+      │
+      ▼
+PingHandler.Handle(request, ct)
+      │
+      ▼
+"pong: John"
+```
+
+Although `PingRequest` only has one property here, real requests often contain many properties (such as `CustomerId`, `OrderId`, or `Quantity`). Using a request object keeps the handler signature consistent regardless of how much data is needed.
 
 ### 3) Run and verify
 
@@ -411,7 +903,7 @@ feature from here is just a richer `PingRequest`.
 > no longer holds the logic. It hands a message to the mediator, which routes it to the handler. Swap the
 > engine (Option A ↔ B) and this call site doesn't change.
 
-## 6. How a request flows through the mediator (either option)
+## 7. How a request flows through the mediator (either option)
 
 The ping above flows straight through today, because we haven't added any behaviors yet. Once
 [Phase 11](11-cross-cutting.md) adds logging and validation to the *same* pipeline, a real command — say
@@ -433,7 +925,7 @@ That "way in / way out" nesting is the one genuinely tricky idea. If it's fuzzy,
 [beginner Phase 2](../plan-beginner-friendly/03-phase-2-mediator.md) walkthrough draws it as a U-shaped
 diagram — an *optional* deeper look.
 
-## 7. Why each component exists
+## 8. Why each component exists
 
 | Component | Why it exists |
 |---|---|
@@ -444,7 +936,7 @@ diagram — an *optional* deeper look.
 | `ICommand`/`IQuery` | Visible intent + a hook for command-only behaviors. |
 | `Unit` | Lets commands that change state but return nothing still fit the `IRequest<TResponse>` shape. |
 
-## 8. Common mistakes & best practices
+## 9. Common mistakes & best practices
 
 - ❌ **Forgetting to register a handler.** With the hand-rolled version you'll get a runtime
   "no service for `IRequestHandler<...>`" error. ✅ Each module's `Add*Module` scans its own assembly and
