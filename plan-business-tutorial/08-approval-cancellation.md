@@ -24,7 +24,7 @@ Plus: **optimistic concurrency** so two managers acting on the same order can't 
 ## 2. Why it's designed this way
 
 - **Approval is role-gated at two levels.** Coarse: the endpoint requires the `SalesManager` role. This
-  is the "endpoint-level authorization" from [Phase 4 §9](04-jwt-auth.md) — a Manager-only action, full
+  is the "endpoint-level authorization" from [Phase 4 §10](04-jwt-auth.md) — a Manager-only action, full
   stop, so it belongs on the endpoint.
 - **Cancellation releases reservations.** If we didn't, cancelled orders would hold stock forever —
   "phantom shortages." The reserve→release lifecycle from [Phase 7](07-submit-reserve-concurrency.md)

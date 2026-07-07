@@ -8,12 +8,12 @@ namespace Erp.Shared.Infrastructure;
 
 public interface IJwtTokenService
 {
-    string CreateToken(long userId, string username, string role);
+    string CreateAccessToken(long userId, string username, string role);
 }
 
 public sealed class JwtTokenService(IConfiguration config) : IJwtTokenService
 {
-    public string CreateToken(long userId, string username, string role)
+    public string CreateAccessToken(long userId, string username, string role)
     {
         var jwt = config.GetSection("Jwt");
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt["SigningKey"]!));

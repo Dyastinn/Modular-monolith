@@ -43,7 +43,9 @@ can fulfill it. By the end you'll have secured HTTP endpoints for:
 
 | Endpoint | Who can call it | What it does |
 |---|---|---|
-| `POST /auth/login` | anyone | Log in, get a JWT token |
+| `POST /auth/login` | anyone | Log in, get a short-lived access token + a refresh token |
+| `POST /auth/refresh` | anyone with a valid refresh token | Rotate the refresh token, get a fresh access token |
+| `POST /auth/logout` / `/auth/logout-all` | valid refresh token / any logged-in user | Revoke this session / every session |
 | `POST /sales-orders` | SalesRep, SalesManager | Create a draft order (with all the create-time checks) |
 | `PUT /sales-orders/{id}` | SalesRep, SalesManager | Edit a *draft* order's lines |
 | `POST /sales-orders/{id}/submit` | SalesRep, SalesManager | Submit for approval + **reserve inventory** |
@@ -117,7 +119,7 @@ is the skill the earlier plans trained. You'll learn exactly where each one belo
 | 1 | [01-solution-setup.md](01-solution-setup.md) | Projects, folders, packages, config | ~1 hr | [beginner Phase 1](../plan-beginner-friendly/02-phase-1-skeleton.md) |
 | 2 | [02-mediator-own-vs-free.md](02-mediator-own-vs-free.md) | Your own mediator **vs** the free GitHub one — decide | ~1 hr | [beginner Phase 2](../plan-beginner-friendly/03-phase-2-mediator.md) |
 | 3 | [03-database-schema.md](03-database-schema.md) | Tables, stored procedures, seed data | ~1–1.5 hr | [beginner Phase 4 §6](../plan-beginner-friendly/05-phase-4-create-order.md) |
-| 4 | [04-jwt-auth.md](04-jwt-auth.md) | Login, JWT tokens, roles, securing endpoints | ~2 hr *(new topic)* | *new topic* |
+| 4 | [04-jwt-auth.md](04-jwt-auth.md) | Login, JWT tokens, roles, securing endpoints, rotating refresh tokens | ~2.5–3 hr *(new topic)* | *new topic* |
 | 5 | [05-domain-model.md](05-domain-model.md) | The `SalesOrder` aggregate + business rules | ~1.5–2 hr | [beginner Phase 3](../plan-beginner-friendly/04-phase-3-domain.md) |
 | 6 | [06-create-order.md](06-create-order.md) | Create-order slice: blocking, credit, category, quantity | ~2 hr | [beginner Phase 4](../plan-beginner-friendly/05-phase-4-create-order.md) |
 | 7 | [07-submit-reserve-concurrency.md](07-submit-reserve-concurrency.md) | Submit + atomic inventory reservation + rollback | ~1.5–2 hr | [beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md) |
@@ -156,7 +158,7 @@ Nothing gets skipped and nothing is assumed. **Every phase answers the same five
 > 🖥️ **You don't have to build a client to test your work.** A **ready-made test console** — a single
 > standalone [`test-console/index.html`](../course-validation/business/test-console/index.html) you just
 > open from disk while the API runs — lets you drive create → edit → submit → approve → cancel from a
-> browser (every one of the 8 endpoints), watching each rule fire, without writing any front-end. There's also Swagger at `/swagger`. A complete,
+> browser (every one of the sales-order endpoints), watching each rule fire, without writing any front-end. There's also Swagger at `/swagger`. A complete,
 > runnable reference implementation of this whole tutorial lives in
 > [`../course-validation/business/`](../course-validation/business/); see the
 > [repo README](../README.md#running-the-reference-build) for the one-command run. Build it yourself first —

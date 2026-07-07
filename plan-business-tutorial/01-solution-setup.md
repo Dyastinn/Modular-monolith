@@ -254,7 +254,12 @@ With CPM on, a `.csproj` lists the package with **no** `Version` attribute — t
 ```json
 {
   "ConnectionStrings": { "ErpDb": "" },
-  "Jwt": { "Issuer": "Erp.Api", "Audience": "Erp.Client", "SigningKey": "", "AccessTokenMinutes": 60 },
+  "Jwt": {
+    "Issuer": "Erp.Api", "Audience": "Erp.Client", "SigningKey": "",
+    "AccessTokenMinutes": 15,      // short: a stolen access token dies fast (Phase 4 refresh tokens make this practical)
+    "RefreshSlidingDays": 7,       // inactivity timeout — resets on each use
+    "RefreshAbsoluteDays": 30      // hard cap — an active session still re-logs-in eventually
+  },
   "Logging": { "LogLevel": { "Default": "Information" } }
 }
 ```

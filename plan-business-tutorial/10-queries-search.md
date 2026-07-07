@@ -211,7 +211,7 @@ but they *do* require a valid token.
 > 🔒 **Row-level authorization (a real ERP gap to be aware of).** As written, *any* logged-in user can read
 > *every* order. In a real ERP a SalesRep usually sees only their own customers' orders, while a Manager
 > sees all. That's a **data-dependent** rule (it depends on *who* is asking and *what* they're asking for),
-> so — per [Phase 4 §9](04-jwt-auth.md) — it belongs in the handler/query, not an endpoint attribute: pass
+> so — per [Phase 4 §10](04-jwt-auth.md) — it belongs in the handler/query, not an endpoint attribute: pass
 > `ICurrentUser.UserId`/`Role` into the query and add a `CreatedByUserId = @CallerId` filter for
 > non-managers. We keep it open here to stay focused on CQRS-lite shape, but flag it as the first thing
 > you'd add for production. ([Phase 13](13-wrap-up-checklist.md) lists it.)

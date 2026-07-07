@@ -17,8 +17,8 @@ Tests at the three levels, aimed at the business rules we built:
   status transitions, approval threshold.
 - **Integration tests** (real test database) — the SQL that unit tests *can't* verify: the atomic
   reservation under concurrency, optimistic concurrency, transaction rollback.
-- **End-to-end tests** (whole API) — the critical workflows: create → submit → approve, and create →
-  submit → cancel (stock released).
+- **End-to-end tests** (whole API) — the critical workflows: create → submit → approve, create → submit →
+  cancel (stock released), and login → refresh → replay (reuse detection revokes the session).
 
 ## 2. Why it's designed this way
 
@@ -265,7 +265,7 @@ public class SalesOrderWorkflowTests : IClassFixture<CustomWebAppFactory>
 
         // 1) Log in as a manager to get a token.
         var login = await client.PostAsJsonAsync("/auth/login", new { username = "manager", password = "Password123!" });
-        var token = (await login.Content.ReadFromJsonAsync<LoginResult>())!.Token;
+        var token = (await login.Content.ReadFromJsonAsync<LoginResult>())!.AccessToken;
         client.DefaultRequestHeaders.Authorization = new("Bearer", token);
 
         // 2) Create a draft for Acme (healthy credit).
@@ -293,11 +293,34 @@ public class SalesOrderWorkflowTests : IClassFixture<CustomWebAppFactory>
         var approve = await client.PostAsync($"/sales-orders/{id}/approve", null);
         approve.StatusCode.Should().Be(HttpStatusCode.Forbidden);   // 403 — role gate works end-to-end
     }
+
+    [Fact]
+    public async Task Replaying_a_rotated_refresh_token_revokes_the_whole_session()
+    {
+        var client = _factory.CreateClient();
+        var login = (await (await client.PostAsJsonAsync("/auth/login",
+            new { username = "rep", password = "Password123!" })).Content.ReadFromJsonAsync<LoginResult>())!;
+
+        // Rotate once — the first refresh token is now spent, and we hold a fresh pair.
+        var rotated = await client.PostAsJsonAsync("/auth/refresh", new { refreshToken = login.RefreshToken });
+        rotated.StatusCode.Should().Be(HttpStatusCode.OK);
+        var fresh = (await rotated.Content.ReadFromJsonAsync<LoginResult>())!;
+
+        // Replay the OLD (spent) token → reuse detected → 401, and the entire family is revoked...
+        (await client.PostAsJsonAsync("/auth/refresh", new { refreshToken = login.RefreshToken }))
+            .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+
+        // ...so even the legitimately-rotated token is now dead — the breach burned the lineage.
+        (await client.PostAsJsonAsync("/auth/refresh", new { refreshToken = fresh.RefreshToken }))
+            .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
 }
 ```
 
 The second test is gold: it proves the **role-based authorization** works through the *real* HTTP
-pipeline — a SalesRep genuinely cannot approve, getting a 403 before the handler runs.
+pipeline — a SalesRep genuinely cannot approve, getting a 403 before the handler runs. The third does the
+same for **refresh-token reuse detection** ([Phase 4 §9](04-jwt-auth.md)): a replayed token doesn't just fail,
+it revokes the whole family — the security property that's easy to *claim* and worth a test that *proves* it.
 
 ## 6. What to test where (the decision rule)
 

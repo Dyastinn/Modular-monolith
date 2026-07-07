@@ -8,7 +8,7 @@
 ---
 
 > ⏱️ **Time for this phase:** ~1–1.5 hr. Two behaviors and one global exception handler, written **once** and
-> applied to all 8 endpoints. High leverage for the effort — this is the mediator paying you back.
+> applied to every endpoint. High leverage for the effort — this is the mediator paying you back.
 
 ## 1. What we're building
 
@@ -28,7 +28,7 @@ translate them to the right HTTP status. Doing that in every endpoint would be t
 mediator exists to kill. So it lives in one place.
 
 > 💡 This is the concrete answer to "what does the mediator/pipeline actually *buy* me?" — you write
-> logging, validation, and error handling **once**, and all 8 endpoints get them. Add a 9th endpoint and
+> logging, validation, and error handling **once**, and every endpoint gets them. Add another endpoint and
 > it's covered automatically. That leverage is the payoff of Phase 2.
 
 ## 3. The ValidationBehavior
@@ -188,15 +188,21 @@ services.AddScoped<IDbConnectionFactory>(_ => new SqlConnectionFactory(config.Ge
 services.AddScoped<IUnitOfWork, UnitOfWork>();
 services.AddHttpContextAccessor();
 services.AddScoped<ICurrentUser, CurrentUser>();
+services.AddSingleton<IClock, SystemClock>();                   // UtcNow wrapper — testable time (Phase 4 §9)
 services.AddSingleton<IPasswordHasher, PasswordHasher>();
 services.AddScoped<IJwtTokenService, JwtTokenService>();
-services.AddScoped<IUserRepository, UserRepository>();          // Login (host/platform concern)
+services.AddSingleton<IRefreshTokenService, RefreshTokenService>();  // refresh token generate/hash/expiry (Phase 4 §9)
+services.AddScoped<IUserRepository, UserRepository>();          // Login/refresh (host/platform concern)
+services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 
-// The Login slice lives in the HOST assembly (Erp.Api/Auth), NOT a module — and the handler scan in
-// AddSalesModule only scans the Sales assembly. So register the host's own handler + validator explicitly,
+// The auth slices live in the HOST assembly (Erp.Api/Auth), NOT a module — and the handler scan in
+// AddSalesModule only scans the Sales assembly. So register the host's own handlers + validator explicitly,
 // or sender.Send(new LoginCommand(...)) fails at runtime with "no service for IRequestHandler<LoginCommand,…>".
 services.AddScoped<IRequestHandler<LoginCommand, LoginResult>, LoginHandler>();
 services.AddScoped<IValidator<LoginCommand>, LoginValidator>();
+services.AddScoped<IRequestHandler<RefreshCommand, LoginResult>, RefreshHandler>();      // Phase 4 §9
+services.AddScoped<IRequestHandler<LogoutCommand, Unit>, LogoutHandler>();
+services.AddScoped<IRequestHandler<LogoutAllCommand, Unit>, LogoutAllHandler>();
 
 // AddSalesModule (Erp.Modules.Sales) — scans this assembly, registers ITS pieces:
 services.AddValidatorsFromAssembly(salesAssembly);

@@ -131,7 +131,9 @@ base lessons**; they are called out with ⚠️ notes and listed on the business
 - **`OnHand` never decreases** in the business base build (no shipment step; Phase 13 extension #3).
 - **`RequiresApproval` is a surfaced flag**, not a workflow branch, in the business tutorial (auto-approve
   is Phase 13 extension #1).
-- **No refresh tokens, rate limiting, or HTTPS enforcement** in the base build (Phase 13 checklist).
+- **No rate limiting or HTTPS enforcement** in the base build (Phase 13 checklist). *(Refresh tokens are now
+  built into the base build — business Phase 4 §9: short access tokens + rotating refresh tokens with reuse
+  detection. No longer a deferred simplification.)*
 
 If a change genuinely *implements* one of these, do it as the documented extension and update the
 checklist — don't graft it into the base flow where it would muddy a first read.

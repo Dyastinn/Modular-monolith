@@ -40,9 +40,12 @@ builder.Services.AddSharedInfrastructure(builder.Configuration);   // mediator, 
 builder.Services.AddSalesModule(builder.Configuration);
 builder.Services.AddInventoryModule(builder.Configuration);
 
-// The Login slice lives in the HOST assembly, so the module scans don't see it — register it explicitly.
+// The auth slices live in the HOST assembly, so the module scans don't see them — register them explicitly.
 builder.Services.AddScoped<IRequestHandler<LoginCommand, LoginResult>, LoginHandler>();
 builder.Services.AddScoped<IValidator<LoginCommand>, LoginValidator>();
+builder.Services.AddScoped<IRequestHandler<RefreshCommand, LoginResult>, RefreshHandler>();
+builder.Services.AddScoped<IRequestHandler<LogoutCommand, Unit>, LogoutHandler>();
+builder.Services.AddScoped<IRequestHandler<LogoutAllCommand, Unit>, LogoutAllHandler>();
 
 // JWT token validation (separate from token creation at login).
 var jwt = builder.Configuration.GetSection("Jwt");

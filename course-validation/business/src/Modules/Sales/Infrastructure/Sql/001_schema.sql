@@ -18,6 +18,28 @@ CREATE TABLE [identity].AppUser (
 );
 GO
 
+-- Refresh tokens (rotating login sessions — Phase 4 §9). We store the HASH, never the raw token.
+IF OBJECT_ID('[identity].RefreshToken') IS NULL
+CREATE TABLE [identity].RefreshToken (
+    Id                 BIGINT IDENTITY PRIMARY KEY,
+    TokenHash          NVARCHAR(200) NOT NULL UNIQUE,   -- SHA-256 of the raw token
+    UserId             BIGINT NOT NULL REFERENCES [identity].AppUser(Id),
+    FamilyId           UNIQUEIDENTIFIER NOT NULL,       -- one login lineage; rotation keeps this constant
+    ExpiresUtc         DATETIME2 NOT NULL,              -- sliding: reset every rotation
+    AbsoluteExpiresUtc DATETIME2 NOT NULL,              -- hard cap: set once at login, carried through rotations
+    CreatedUtc         DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    RevokedUtc         DATETIME2 NULL,                  -- set when rotated, logged out, or revoked on breach
+    ReplacedByHash     NVARCHAR(200) NULL,              -- the token that superseded this one (rotation audit chain)
+    CONSTRAINT CK_RefreshToken_Expiry CHECK (AbsoluteExpiresUtc >= ExpiresUtc)
+);
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_RefreshToken_UserId')
+    CREATE INDEX IX_RefreshToken_UserId ON [identity].RefreshToken(UserId);
+GO
+IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = 'IX_RefreshToken_FamilyId')
+    CREATE INDEX IX_RefreshToken_FamilyId ON [identity].RefreshToken(FamilyId);
+GO
+
 -- Customers (blocking + credit limit)
 IF OBJECT_ID('sales.Customer') IS NULL
 CREATE TABLE sales.Customer (

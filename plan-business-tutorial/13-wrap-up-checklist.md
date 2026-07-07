@@ -14,7 +14,7 @@ Trace the full lifecycle of one order and notice how *every* pattern from the ea
 service of a real business need:
 
 ```
-Login (JWT)                          → Phase 4: authentication
+Login (JWT) + refresh / rotation     → Phase 4: authentication, rotating refresh tokens, logout
   POST /sales-orders                 → Phase 6: create — blocking, credit, category, quantity checks
   PUT  /sales-orders/{id}            → Phase 9: edit a draft (domain enforces "draft only")
   POST /sales-orders/{id}/submit     → Phase 7: atomic inventory reservation + transaction rollback
@@ -71,9 +71,10 @@ Erp/                                         # repo root
 │   │       ├── Persistence/                  #   IDbConnectionFactory + SqlConnectionFactory,
 │   │       │                                 #   IUnitOfWork + UnitOfWork + AppTransaction
 │   │       ├── Security/                     #   IPasswordHasher+PasswordHasher, IJwtTokenService+JwtTokenService,
-│   │       │                                 #   CurrentUser (ICurrentUser impl)
+│   │       │                                 #   IRefreshTokenService+RefreshTokenService, CurrentUser (ICurrentUser impl)
 │   │       ├── Messaging/DomainEventDispatcher.cs
-│   │       ├── Identity/UserRepository.cs    #   IUserRepository impl + AppUser read shape (Phase 4)
+│   │       ├── Identity/                     #   UserRepository (IUserRepository + AppUser),
+│   │       │                                 #   RefreshTokenRepository (IRefreshTokenRepository) — Phase 4
 │   │       └── DependencyInjection.cs        #   AddSharedInfrastructure() + AddMessaging()
 │   ├── Modules/
 │   │   ├── Sales/  (Erp.Modules.Sales)       # → Shared.{BuildingBlocks, Common, Messaging, Infrastructure}
@@ -104,7 +105,9 @@ Erp/                                         # repo root
 │   │       │   └── Sql/ 001_schema.sql, 002_procedures.sql, 003_seed.sql   # the `inventory` schema
 │   │       └── DependencyInjection.cs         #   AddInventoryModule()
 │   └── Erp.Api/                              # → Modules.{Sales, Inventory}, Shared.Infrastructure
-│       ├── Auth/Login/                        #   LoginHandler.cs + LoginEndpoint.cs (host/platform concern)
+│       ├── Auth/                              #   host/platform auth slices (NOT a module):
+│       │   ├── Login/                         #     LoginHandler.cs + LoginEndpoint.cs
+│       │   └── Refresh/                       #     Refresh + Logout + Logout-all handlers/endpoint (Phase 4 §9)
 │       ├── GlobalExceptionHandler.cs          #   maps exceptions → HTTP status (Phase 11)
 │       ├── Program.cs                         #   composition root; ends with `public partial class Program {}`
 │       ├── appsettings.json
@@ -125,9 +128,14 @@ the seed ([Phase 4](04-jwt-auth.md)), `dotnet run --project src/Erp.Api` gives y
 is the whole lifecycle against the seed data, with the responses you should get:
 
 ```http
-# 1) Log in (anyone) — get a JWT
+# 1) Log in (anyone) — get a short-lived access token + a refresh token
 POST /auth/login   { "username": "manager", "password": "Password123!" }
-→ 200 OK   { "token": "eyJhbGciOiJI…", "username": "manager", "role": "SalesManager" }
+→ 200 OK   { "accessToken": "eyJhbGciOiJI…", "refreshToken": "N0rQ7w…", "username": "manager", "role": "SalesManager" }
+
+# 1b) Later, when the access token has expired — trade the refresh token for a new pair (rotates it)
+POST /auth/refresh   { "refreshToken": "N0rQ7w…" }
+→ 200 OK   { "accessToken": "eyJhbGciOiJI…", "refreshToken": "8fKp2s…", "username": "manager", "role": "SalesManager" }
+#   Replaying the OLD "N0rQ7w…" now → 401 "reuse detected — session revoked" (the whole family is killed)
 
 # 2) Create a draft for Acme (customer 1): 2 × Widget (item 1 @ $25).   (Authorization: Bearer <token>)
 POST /sales-orders   { "customerId": 1, "lines": [ { "itemId": 1, "quantity": 2 } ] }
@@ -192,7 +200,7 @@ explain five things. Here they are, grounded in what you just built:
 2. **Which rule lives in the domain vs. SQL, and why?** The table above. Credit = domain; reservation =
    SQL; and you can now say *why* (concurrency safety vs. pure policy).
 3. **What did the mediator buy you?** [Phase 11](11-cross-cutting.md): validation, logging, and error
-   handling written *once*, applied to all 8 endpoints. Add a 9th and it's covered free.
+   handling written *once*, applied to every endpoint. Add another and it's covered free.
 4. **Where would you (not) add a service?** You added `IPricingService`-style domain logic only where it
    spanned aggregates; you *didn't* add a `SalesOrderService` god-object. The rules live on the entities.
 5. **What would it take to split this into its own service?** You already *proved* the module wall: when
@@ -218,8 +226,10 @@ as "in production." Here's the honest gap list, grouped, so you know what a real
       build user management.
 - [ ] Rate-limiting on `/auth/login` to slow brute-force attempts (ASP.NET Core has built-in rate
       limiting — no new dependency).
-- [ ] Consider **refresh tokens** so access tokens can be short-lived without users re-logging-in
-      constantly. (A known "next step," not built here.)
+- [x] **Refresh tokens** — ✅ built in [Phase 4 §9](04-jwt-auth.md): short (15 min) access tokens backed by
+      rotating refresh tokens with reuse detection and a revoke-all-sessions endpoint. (Two hardening extras
+      remain, both flagged in that section: delivering the refresh token as an `HttpOnly` cookie for browser
+      clients, and a periodic cleanup of revoked/expired rows.)
 
 ### Correctness & data
 - [ ] Every multi-step write is in a transaction — ✅ you did this. Double-check no new feature skips it.
@@ -321,6 +331,11 @@ Stay within the stack; each reinforces a pattern:
    table. (Reinforces: after-commit event dispatch.)
 
 Try one *before* reading how; struggling first is where the learning is.
+
+> 👉 **Want the production last mile?** [Phase 14 — Going Further](14-going-further.md) is an optional,
+> out-of-scope appendix: how you'd close the checklist above, containerize with Docker, cache with Redis, and
+> more — for when *you* take this to your own project. It stays inside the same discipline (nothing there
+> rewrites the base architecture), so it's safe to read without unlearning anything.
 
 ## 6. Final word from your senior
 

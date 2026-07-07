@@ -140,6 +140,7 @@
 // It talks to the API cross-origin; change this if you run the API on a different port.
 const API = "http://localhost:5264";
 let token = sessionStorage.getItem("erp_token") || null;
+let refreshToken = sessionStorage.getItem("erp_refresh") || null;
 let me = JSON.parse(sessionStorage.getItem("erp_me") || "null");
 
 const ITEMS = { 1:{name:"Widget",price:25}, 2:{name:"Gadget",price:40}, 3:{name:"Restricted Kit",price:500} };
@@ -153,13 +154,17 @@ function toast(title, body, kind){
   setTimeout(()=>el.remove(), 5000);
 }
 
-async function api(method, path, body){
+async function api(method, path, body, _retried){
   const headers={"Content-Type":"application/json"};
   if(token) headers["Authorization"]="Bearer "+token;
   const res=await fetch(API+path,{method,headers,body:body?JSON.stringify(body):undefined});
   const text=await res.text();
   let data=null; try{ data=text?JSON.parse(text):null; }catch{ data=text; }
   if(!res.ok){
+    // The 15-min access token likely expired → rotate the refresh token once and retry transparently.
+    if(res.status===401 && refreshToken && !_retried && !path.startsWith("/auth/")){
+      if(await refresh()) return api(method, path, body, true);
+    }
     const detail = data && data.detail ? data.detail
       : (data && data.errors ? data.errors.join(", ")
       : (typeof data==="string"&&data ? data : res.status+" "+res.statusText));
@@ -168,15 +173,30 @@ async function api(method, path, body){
   return data;
 }
 
+// Trade the refresh token for a new access+refresh pair (rotation). Returns true on success.
+async function refresh(){
+  try{
+    const res=await fetch(API+"/auth/refresh",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({refreshToken})});
+    if(!res.ok){ refreshToken=null; return false; }
+    const r=await res.json();
+    token=r.accessToken; refreshToken=r.refreshToken;
+    sessionStorage.setItem("erp_token",token); sessionStorage.setItem("erp_refresh",refreshToken);
+    return true;
+  }catch{ return false; }
+}
+
 async function login(){
   try{
     const r=await api("POST","/auth/login",{username:document.getElementById("u").value, password:document.getElementById("p").value});
-    token=r.token; me={username:r.username, role:r.role};
-    sessionStorage.setItem("erp_token",token); sessionStorage.setItem("erp_me",JSON.stringify(me));
+    token=r.accessToken; refreshToken=r.refreshToken; me={username:r.username, role:r.role};
+    sessionStorage.setItem("erp_token",token); sessionStorage.setItem("erp_refresh",refreshToken); sessionStorage.setItem("erp_me",JSON.stringify(me));
     showApp(); toast("Welcome, "+me.username, me.role, "ok"); loadOrders();
   }catch(e){ toast("Login failed", e.detail, "err"); }
 }
-function logout(){ token=null; me=null; sessionStorage.clear(); showLogin(); }
+async function logout(){
+  try{ if(refreshToken) await fetch(API+"/auth/logout",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({refreshToken})}); }catch{}
+  token=null; refreshToken=null; me=null; sessionStorage.clear(); showLogin();
+}
 
 function showApp(){
   document.getElementById("loginView").classList.add("hidden");

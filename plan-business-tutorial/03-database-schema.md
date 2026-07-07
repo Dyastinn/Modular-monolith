@@ -80,6 +80,38 @@ CREATE TABLE [identity].AppUser (   -- [identity] bracketed: it's a reserved key
 The `CHECK` on `Role` is integrity: the database itself refuses an unknown role. That's a backstop even
 if buggy code tries to insert `'Wizard'`.
 
+### Refresh tokens (for the rotating login sessions — Phase 4)
+
+Access tokens are short-lived; a **refresh token** is the long-lived credential a client trades for a fresh
+access token ([Phase 4](04-jwt-auth.md)). Each one is stored here so the server can rotate and revoke it:
+
+```sql
+CREATE TABLE [identity].RefreshToken (
+    Id                 BIGINT IDENTITY PRIMARY KEY,
+    TokenHash          NVARCHAR(200) NOT NULL UNIQUE,   -- SHA-256 of the raw token; we NEVER store the raw value
+    UserId             BIGINT NOT NULL REFERENCES [identity].AppUser(Id),
+    FamilyId           UNIQUEIDENTIFIER NOT NULL,       -- one login/device lineage; rotation keeps this constant
+    ExpiresUtc         DATETIME2 NOT NULL,              -- sliding: reset every rotation (inactivity timeout)
+    AbsoluteExpiresUtc DATETIME2 NOT NULL,              -- hard cap: set once at login, carried through rotations
+    CreatedUtc         DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
+    RevokedUtc         DATETIME2 NULL,                  -- set when rotated, logged out, or revoked on breach
+    ReplacedByHash     NVARCHAR(200) NULL,              -- the token that superseded this one (rotation audit chain)
+    CONSTRAINT CK_RefreshToken_Expiry CHECK (AbsoluteExpiresUtc >= ExpiresUtc)
+);
+CREATE INDEX IX_RefreshToken_UserId   ON [identity].RefreshToken(UserId);
+CREATE INDEX IX_RefreshToken_FamilyId ON [identity].RefreshToken(FamilyId);
+```
+
+Three columns carry the security design, and Phase 4 explains each in action:
+- **`TokenHash`, not the token.** Like a password, the raw refresh token is never stored — only its hash. A
+  database leak then hands out no usable tokens. (A plain SHA-256 is enough here; unlike a password, the token
+  is already long and random, so it needs no salt or slow hash.)
+- **`FamilyId`** groups every token descended from one login. Rotation issues a new token in the *same* family;
+  detecting a replayed token revokes the *whole* family in one statement.
+- **`ExpiresUtc` vs `AbsoluteExpiresUtc`** encode two timeouts at once: a *sliding* inactivity window that
+  resets on each use, and an *absolute* cap that doesn't — so an actively-used session still forces a
+  re-login eventually.
+
 ### Customers (blocking + credit limit)
 
 ```sql
@@ -214,6 +246,12 @@ rest follow the same shape.)
 | Proc | Used by | Does |
 |---|---|---|
 | `[identity].usp_AppUser_GetByUsername` | Login (Phase 4) | Fetch a user + hash for password check |
+| `[identity].usp_AppUser_GetById` | Refresh (Phase 4) | Reload a user (role/active) when minting a new access token |
+| `[identity].usp_RefreshToken_Insert` | Login/Refresh (Phase 4) | Store a new refresh token (hash, family, expiries) |
+| `[identity].usp_RefreshToken_GetByHash` | Refresh/Logout (Phase 4) | Look a refresh token up by its hash |
+| `[identity].usp_RefreshToken_Revoke` | Refresh (Phase 4) | Revoke one token, recording its replacement |
+| `[identity].usp_RefreshToken_RevokeFamily` | Refresh/Logout (Phase 4) | Revoke a whole family (rotation breach or logout) |
+| `[identity].usp_RefreshToken_RevokeAllForUser` | Logout-all (Phase 4) | Revoke every token for one user |
 | `sales.usp_Customer_GetById` | Create/Submit | Load blocking + credit numbers |
 | `sales.usp_Customer_AdjustBalance` | Approve/Cancel (Phase 8) | Add (or reverse) the order total on the customer's balance |
 | `sales.usp_Item_GetByIds` | Create | Load items + category + price for the requested lines |
@@ -350,6 +388,64 @@ BEGIN
     WHERE ItemId = @ItemId;
 END
 ```
+
+### The refresh-token procs (rotate & revoke)
+
+Persistence only — the *policy* (is it expired? is this a replay?) is decided in the Phase 4 handler; these
+procs just read and write rows. Each revoke is guarded `AND RevokedUtc IS NULL` so revoking twice is a safe
+no-op:
+
+```sql
+CREATE OR ALTER PROCEDURE [identity].usp_RefreshToken_Insert
+    @TokenHash NVARCHAR(200), @UserId BIGINT, @FamilyId UNIQUEIDENTIFIER,
+    @ExpiresUtc DATETIME2, @AbsoluteExpiresUtc DATETIME2
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO [identity].RefreshToken (TokenHash, UserId, FamilyId, ExpiresUtc, AbsoluteExpiresUtc)
+    VALUES (@TokenHash, @UserId, @FamilyId, @ExpiresUtc, @AbsoluteExpiresUtc);
+END
+
+CREATE OR ALTER PROCEDURE [identity].usp_RefreshToken_GetByHash
+    @TokenHash NVARCHAR(200)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT Id, TokenHash, UserId, FamilyId, ExpiresUtc, AbsoluteExpiresUtc, RevokedUtc
+    FROM [identity].RefreshToken WHERE TokenHash = @TokenHash;
+END
+
+CREATE OR ALTER PROCEDURE [identity].usp_RefreshToken_Revoke
+    @TokenHash NVARCHAR(200), @ReplacedByHash NVARCHAR(200) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE [identity].RefreshToken
+    SET RevokedUtc = SYSUTCDATETIME(), ReplacedByHash = @ReplacedByHash
+    WHERE TokenHash = @TokenHash AND RevokedUtc IS NULL;
+END
+
+CREATE OR ALTER PROCEDURE [identity].usp_RefreshToken_RevokeFamily
+    @FamilyId UNIQUEIDENTIFIER
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE [identity].RefreshToken SET RevokedUtc = SYSUTCDATETIME()
+    WHERE FamilyId = @FamilyId AND RevokedUtc IS NULL;   -- one statement kills the whole lineage
+END
+
+CREATE OR ALTER PROCEDURE [identity].usp_RefreshToken_RevokeAllForUser
+    @UserId BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE [identity].RefreshToken SET RevokedUtc = SYSUTCDATETIME()
+    WHERE UserId = @UserId AND RevokedUtc IS NULL;
+END
+```
+
+(`[identity].usp_AppUser_GetById` is the obvious one-row `SELECT … WHERE Id = @Id` — the same shape as
+`usp_AppUser_GetByUsername`.)
 
 ## 5. Seed data (`Infrastructure/Sql/003_seed.sql`)
 

@@ -10,6 +10,7 @@ public sealed record AppUser(long Id, string Username, string PasswordHash, stri
 public interface IUserRepository
 {
     Task<AppUser?> GetByUsernameAsync(string username, CancellationToken ct);
+    Task<AppUser?> GetByIdAsync(long id, CancellationToken ct);   // used by refresh to reload role/active (Phase 4 §9)
 }
 
 public sealed class UserRepository(IDbConnectionFactory factory) : IUserRepository
@@ -21,6 +22,15 @@ public sealed class UserRepository(IDbConnectionFactory factory) : IUserReposito
         return await conn.QuerySingleOrDefaultAsync<AppUser>(new CommandDefinition(
             "[identity].usp_AppUser_GetByUsername",
             new { Username = username },
+            commandType: CommandType.StoredProcedure, cancellationToken: ct));
+    }
+
+    public async Task<AppUser?> GetByIdAsync(long id, CancellationToken ct)
+    {
+        using var conn = factory.Create();
+        return await conn.QuerySingleOrDefaultAsync<AppUser>(new CommandDefinition(
+            "[identity].usp_AppUser_GetById",
+            new { Id = id },
             commandType: CommandType.StoredProcedure, cancellationToken: ct));
     }
 }

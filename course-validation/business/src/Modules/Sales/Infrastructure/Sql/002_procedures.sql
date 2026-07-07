@@ -12,6 +12,70 @@ BEGIN
 END
 GO
 
+CREATE OR ALTER PROCEDURE [identity].usp_AppUser_GetById
+    @Id BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT Id, Username, PasswordHash, Role, IsActive
+    FROM [identity].AppUser
+    WHERE Id = @Id;
+END
+GO
+
+-- Refresh-token procs (Phase 4 §9). Persistence only — the policy (expired? replayed?) is in the handler.
+CREATE OR ALTER PROCEDURE [identity].usp_RefreshToken_Insert
+    @TokenHash NVARCHAR(200), @UserId BIGINT, @FamilyId UNIQUEIDENTIFIER,
+    @ExpiresUtc DATETIME2, @AbsoluteExpiresUtc DATETIME2
+AS
+BEGIN
+    SET NOCOUNT ON;
+    INSERT INTO [identity].RefreshToken (TokenHash, UserId, FamilyId, ExpiresUtc, AbsoluteExpiresUtc)
+    VALUES (@TokenHash, @UserId, @FamilyId, @ExpiresUtc, @AbsoluteExpiresUtc);
+END
+GO
+
+CREATE OR ALTER PROCEDURE [identity].usp_RefreshToken_GetByHash
+    @TokenHash NVARCHAR(200)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SELECT Id, TokenHash, UserId, FamilyId, ExpiresUtc, AbsoluteExpiresUtc, RevokedUtc
+    FROM [identity].RefreshToken WHERE TokenHash = @TokenHash;
+END
+GO
+
+CREATE OR ALTER PROCEDURE [identity].usp_RefreshToken_Revoke
+    @TokenHash NVARCHAR(200), @ReplacedByHash NVARCHAR(200) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE [identity].RefreshToken
+    SET RevokedUtc = SYSUTCDATETIME(), ReplacedByHash = @ReplacedByHash
+    WHERE TokenHash = @TokenHash AND RevokedUtc IS NULL;
+END
+GO
+
+CREATE OR ALTER PROCEDURE [identity].usp_RefreshToken_RevokeFamily
+    @FamilyId UNIQUEIDENTIFIER
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE [identity].RefreshToken SET RevokedUtc = SYSUTCDATETIME()
+    WHERE FamilyId = @FamilyId AND RevokedUtc IS NULL;   -- one statement kills the whole lineage
+END
+GO
+
+CREATE OR ALTER PROCEDURE [identity].usp_RefreshToken_RevokeAllForUser
+    @UserId BIGINT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE [identity].RefreshToken SET RevokedUtc = SYSUTCDATETIME()
+    WHERE UserId = @UserId AND RevokedUtc IS NULL;
+END
+GO
+
 CREATE OR ALTER PROCEDURE sales.usp_Customer_GetById
     @Id BIGINT
 AS
