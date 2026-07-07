@@ -666,31 +666,71 @@ This keeps the module boundaries intact. The Sales module only registers Sales h
 module only registers Inventory handlers, and so on. The mediator doesn't know about any of them—it simply
 asks Dependency Injection for the correct handler.
 
-First, register the mediator itself once in `Erp.Shared.Infrastructure`:
+#### Shared infrastructure registration
+
+First, create a new file named **`DependencyInjection.cs`** in
+`src/Shared/Erp.Shared.Infrastructure`.
+
+This file becomes the single place where the shared infrastructure registers its services. For now, that
+means registering the mediator:
 
 ```csharp
-public static IServiceCollection AddMessaging(this IServiceCollection services)
+public static class DependencyInjection
 {
-    services.AddScoped<ISender, Sender>();
+    public static IServiceCollection AddSharedInfrastructure(
+        this IServiceCollection services,
+        IConfiguration configuration)
+    {
+        services.AddMessaging();
 
-    // Cross-cutting behaviors (logging, validation, etc.) plug into this pipeline later.
-    // We don't register any behaviors yet because we haven't built them.
-    return services;
+        return services;
+    }
+
+    private static IServiceCollection AddMessaging(
+        this IServiceCollection services)
+    {
+        services.AddScoped<ISender, Sender>();
+
+        // Cross-cutting behaviors (logging, validation, etc.) plug into this pipeline later.
+        // We don't register any behaviors yet because we haven't built them.
+        return services;
+    }
 }
-
-// AddSharedInfrastructure() calls AddMessaging().
 ```
 
+As later phases introduce shared infrastructure (Dapper, JWT, authentication, etc.), we'll keep adding
+those registrations to `AddSharedInfrastructure()`. `Program.cs` only needs to call this one method.
+
 > 🔑 **The pipeline is built now; the behaviors come later.** The `Sender` already supports
-> IPipelineBehavior — we simply haven't registered any concrete ones yet. When we add logging,
+> `IPipelineBehavior`s—we simply haven't registered any concrete ones yet. When we add logging,
 > validation, and other cross-cutting concerns in Phase 11, they'll automatically wrap every request
 > without changing the mediator itself.
 
-Next, each module registers its own handlers. Rather than registering every handler manually, we scan the
-module's assembly and automatically register every class that implements `IRequestHandler<,>`.
+#### Module registration
+
+Next, each module needs its own `DependencyInjection.cs`.
+
+Create a new file named **`DependencyInjection.cs`** in
+`src/Modules/Sales`.
+
+Unlike the shared infrastructure, which is registered once for the entire application, each module is
+responsible for registering its own handlers, validators, repositories, and other services.
+
+We could register every handler manually:
 
 ```csharp
-// Modules/Sales/DependencyInjection.cs
+services.AddTransient<
+    IRequestHandler<SubmitSalesOrderCommand, Unit>,
+    SubmitSalesOrderHandler>();
+```
+
+That works—but every new feature would require another registration line.
+
+Instead, we'll scan the Sales assembly and automatically register every class that implements
+`IRequestHandler<,>`. As the module grows, new handlers are discovered automatically without changing this
+file.
+
+```csharp
 public static class DependencyInjection
 {
     public static IServiceCollection AddSalesModule(
@@ -720,7 +760,7 @@ public static class DependencyInjection
         // Register every FluentValidation validator in this module.
         services.AddValidatorsFromAssembly(assembly);
 
-        // Later phases register repositories, services, etc.
+        // Later phases register repositories, domain services, etc.
         return services;
     }
 }
@@ -730,14 +770,35 @@ public static class DependencyInjection
 > Any type declared in the Sales project would work. We use `DependencyInjection` simply because we're
 > already inside that file.
 
+The reflection code above builds a list that conceptually looks like this:
+
+```text
+IRequestHandler<SubmitSalesOrderCommand, Unit>
+    → SubmitSalesOrderHandler
+
+IRequestHandler<GetSalesOrderQuery, SalesOrderDto>
+    → GetSalesOrderQueryHandler
+```
+
+The `foreach` simply loops over that list and registers each handler with Dependency Injection.
+
 > ⚠️ **`AddValidatorsFromAssembly()` needs an extra package.** That helper comes from
 > **`FluentValidation.DependencyInjectionExtensions`**, not the base `FluentValidation` package. That's
 > why we installed it earlier in this phase. There are no validators yet, so this call simply registers
 > nothing until we create our first one.
 
 Notice that no module registers another module's handlers. The module boundaries enforced by the project
-references are also enforced by Dependency Injection. Finally, `Program.cs` brings everything together by
-calling `AddSharedInfrastructure()` once, followed by each module's `Add*Module()` method.
+references are also enforced by Dependency Injection.
+
+Finally, `Program.cs` brings everything together:
+
+```csharp
+builder.Services.AddSharedInfrastructure(builder.Configuration);
+builder.Services.AddSalesModule(builder.Configuration);
+```
+
+As more modules are added, `Program.cs` simply calls another `Add*Module()` method. The modules remain
+independent, while the host decides which ones are part of the application.
 
 ---
 
@@ -797,6 +858,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
+builder.Services.AddCarter();   // discovers every feature's ICarterModule endpoint
+
+
 builder.Services.AddSharedInfrastructure(builder.Configuration);  // the shared kernel — for now, just calls AddMessaging()
 builder.Services.AddSalesModule(builder.Configuration);           // scans the Sales assembly for handlers (+ validators)
 
@@ -833,6 +897,19 @@ public sealed class PingHandler : IRequestHandler<PingRequest, string>
         => Task.FromResult($"pong: {request.Name}");
 }
 ```
+
+A few things are happening here:
+
+- `PingRequest` is the request object. It contains the data needed by this operation (`Name`).
+- `IRequest<string>` tells the mediator that this request expects a `string` response.
+- `PingHandler` implements `IRequestHandler<PingRequest, string>`, which tells the mediator, "I know how to handle `PingRequest`."
+- Because `PingHandler` implements `IRequestHandler<,>`, our assembly scanning automatically discovers and registers it with dependency injection. We don't have to manually write:
+
+  ```csharp
+  services.AddScoped<IRequestHandler<PingRequest, string>, PingHandler>();
+  ```
+
+Later in the tutorial, we'll replace `IRequestHandler` with our own `ICommandHandler` and `IQueryHandler` interfaces, but the registration mechanism works the same way.
 
 `PingRequest` uses the **record primary constructor** syntax. It's shorthand for a record with a constructor and a property. The compiler generates those for you.
 
