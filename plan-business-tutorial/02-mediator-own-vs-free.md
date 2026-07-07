@@ -925,7 +925,7 @@ That "way in / way out" nesting is the one genuinely tricky idea. If it's fuzzy,
 [beginner Phase 2](../plan-beginner-friendly/03-phase-2-mediator.md) walkthrough draws it as a U-shaped
 diagram — an *optional* deeper look.
 
-## 8. Why each component exists
+<!-- ## 8. Why each component exists
 
 | Component | Why it exists |
 |---|---|
@@ -934,9 +934,9 @@ diagram — an *optional* deeper look.
 | `IPipelineBehavior<,>` | Cross-cutting concerns (logging, validation, later maybe transactions) written **once**, applied to all. |
 | `Sender` (Option A) *or* the library (Option B) | The engine that resolves the handler and composes the behaviors. Interchangeable. |
 | `ICommand`/`IQuery` | Visible intent + a hook for command-only behaviors. |
-| `Unit` | Lets commands that change state but return nothing still fit the `IRequest<TResponse>` shape. |
+| `Unit` | Lets commands that change state but return nothing still fit the `IRequest<TResponse>` shape. | -->
 
-## 9. Common mistakes & best practices
+## 8. Common mistakes & best practices
 
 - ❌ **Forgetting to register a handler.** With the hand-rolled version you'll get a runtime
   "no service for `IRequestHandler<...>`" error. ✅ Each module's `Add*Module` scans its own assembly and
