@@ -1,9 +1,11 @@
 # Phase 2 — Your Own Mediator vs. the Free One on GitHub
 
-> 📎 Slow version of *what a mediator even is*:
-> [beginner Phase 2](../plan-beginner-friendly/03-phase-2-mediator.md). Read it first if "post office"
-> doesn't ring a bell. Here we make a real engineering **decision**: hand-roll it, or use the free
-> library — and we wire up whichever you pick.
+> Everything you need is here — we explain *what a mediator is*, weigh two ways to get one, and build
+> whichever you pick.
+>
+> 📎 *Optional* deeper dive on the "post office" idea, with a U-shaped diagram:
+> [beginner Phase 2](../plan-beginner-friendly/03-phase-2-mediator.md). Nice if the concept is brand new,
+> but this phase stands on its own.
 
 ---
 
@@ -12,12 +14,21 @@
 
 ## 1. What we're building
 
-The mediator that every command and query in this tutorial will flow through, plus the marker
-interfaces (`ICommand`, `IQuery`) that make our slices readable. You'll end this phase able to send a
-message and have the right handler run — the same `/health`-level proof, but for the mediator.
+A **mediator** — the single "post office" that every command and query in this tutorial hands its work to,
+so an endpoint never needs to know which class actually does the job. We'll build the shared contracts
+(`ICommand`, `IQuery`, `ISender`, …), pick and wire an implementation, and finish with a live proof: a
+`GET /sales/ping` that travels *endpoint → mediator → handler* and returns `"pong"`. That's the whole
+pipeline working end-to-end — the walking skeleton for every real feature that follows.
 
-We present **two options** and you choose one. The rest of the tutorial's code works with *either*,
-because they share the same interface names.
+**You have two options for the implementation, and you pick one now:**
+
+- **Option A — hand-roll it (recommended here):** write ~150 lines of your own mediator, so you see exactly
+  how a request finds its handler. High learning value; it's *your* code.
+- **Option B — use the free library `martinothamar/Mediator`:** a MIT-licensed, source-generated NuGet
+  package with a MediatR-shaped API. Less to write; a compile-time-checked black box.
+
+The rest of the tutorial's code works with **either**, because both expose the same interface names — §2
+argues the trade-off, then you choose and wire that one.
 
 ## 2. Why this is a real decision (not just ceremony)
 
@@ -47,9 +58,45 @@ the tutorial changes.
 
 ## 3. The shared contracts (both options use these)
 
-Whichever you pick, define these in `Erp.Shared.Messaging` — in the *shared kernel*, because every module
-sends and handles through the same mediator. Our whole codebase depends on *these names*, not on the
-implementation — that's what makes the two options interchangeable.
+> 📦 **Packages for this phase — add these now.** This is the phase that first needs a mediator, cross-cutting
+> behaviors, validation, and web endpoints, so here's where those packages come in (per Phase 1's "install
+> only when needed" rule). Each `dotnet add` also drops a `<PackageVersion>` line into
+> `Directory.Packages.props`.
+> ```bash
+> # The mediator contracts + behaviors need DI, logging, and validation abstractions:
+> dotnet add src/Shared/Erp.Shared.Messaging package Microsoft.Extensions.DependencyInjection.Abstractions
+> dotnet add src/Shared/Erp.Shared.Messaging package Microsoft.Extensions.Logging.Abstractions
+> dotnet add src/Shared/Erp.Shared.Messaging package FluentValidation
+>
+> # The shared kernel hosts the mediator + Carter wiring:
+> dotnet add src/Shared/Erp.Shared.Infrastructure package Carter
+> dotnet add src/Shared/Erp.Shared.Infrastructure package Microsoft.Extensions.DependencyInjection.Abstractions
+>
+> # The Sales module gets Carter (its endpoints), FluentValidation, and the assembly-scan helper:
+> dotnet add src/Modules/Sales package Carter
+> dotnet add src/Modules/Sales package FluentValidation
+> dotnet add src/Modules/Sales package FluentValidation.DependencyInjectionExtensions   # AddValidatorsFromAssembly
+> dotnet add src/Modules/Sales package Microsoft.Extensions.DependencyInjection.Abstractions
+>
+> # The host maps every module's Carter endpoints:
+> dotnet add src/Erp.Api package Carter
+> ```
+> ⚠️ **Carter also needs the ASP.NET shared framework.** A feature's `XxxEndpoint.cs` is a Carter
+> `ICarterModule` that lives *inside* the Sales module and compiles against ASP.NET routing types
+> (`IEndpointRouteBuilder` and later `RequireAuthorization`). Those come from a **`FrameworkReference`**,
+> which has no `dotnet add` — add it by hand to **both** `Erp.Modules.Sales.csproj` **and**
+> `Erp.Shared.Infrastructure.csproj`:
+> ```xml
+> <ItemGroup>
+>   <FrameworkReference Include="Microsoft.AspNetCore.App" />
+> </ItemGroup>
+> ```
+> Without it, the endpoint files won't compile. (Endpoints stay in `Features/`, never in the pure `Domain/`
+> — the domain must not see Carter or ASP.NET.)
+
+Whichever option you pick, define these contracts in `Erp.Shared.Messaging` — in the *shared kernel*, because
+every module sends and handles through the same mediator. Our whole codebase depends on *these names*, not on
+the implementation — that's what makes the two options interchangeable.
 
 ```csharp
 // Marker: "I am a request that produces a TResponse."
@@ -191,20 +238,23 @@ internal sealed class RequestHandlerWrapperImpl<TRequest, TResponse>
 ### Registration — shared engine, per-module handlers
 
 Registration splits along the module boundary, and that split is the whole point of a modular monolith.
-The **shared** pieces (the `Sender` and the cross-cutting behaviors) register once in
-`Erp.Shared.Infrastructure`:
+The **shared** engine (the `Sender`) registers once in `Erp.Shared.Infrastructure`:
 
 ```csharp
 public static IServiceCollection AddMessaging(this IServiceCollection services)
 {
     services.AddScoped<ISender, Sender>();
-    // Behaviors run in registration order — Logging OUTERMOST, then Validation.
-    services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
-    services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+    // Cross-cutting behaviors (logging, validation) plug into this same pipeline later, in Phase 11 —
+    // we register them there, when we actually write them. The Sender already supports them today.
     return services;
 }
 // AddSharedInfrastructure() calls AddMessaging().
 ```
+
+> 🔑 **The pipeline is built now; the behaviors come later.** Notice the `Sender` above already wraps a
+> request in whatever `IPipelineBehavior`s are registered — that capability exists from this phase. We just
+> don't register any *concrete* behavior yet, because we haven't needed one. Logging and validation arrive in
+> [Phase 11](11-cross-cutting.md) and slot straight in — no change to the engine.
 
 Each **module** registers *its own* handlers and validators by scanning *its own assembly*, in its
 `DependencyInjection.cs`:
@@ -235,9 +285,9 @@ public static IServiceCollection AddSalesModule(this IServiceCollection services
 ```
 
 > ⚠️ **`AddValidatorsFromAssembly` needs an extra package.** That helper lives in
-> **`FluentValidation.DependencyInjectionExtensions`**, *not* the base `FluentValidation` package — so add it
-> to the Sales module (`dotnet add src/Modules/Sales package FluentValidation.DependencyInjectionExtensions`).
-> It's listed in [Phase 1 §5](01-solution-setup.md). Without it, `AddSalesModule` won't compile.
+> **`FluentValidation.DependencyInjectionExtensions`**, *not* the base `FluentValidation` package — it's one
+> of the installs in §3 above. Without it, `AddSalesModule` won't compile. (There are no validators to find
+> yet; the call harmlessly registers nothing until our first feature adds one.)
 
 No module registers another's handlers — the DI wiring respects the module walls, exactly like the project
 references do. `Program.cs` calls `AddSharedInfrastructure()` then each `Add*Module()`.
@@ -248,7 +298,8 @@ references do. `Program.cs` calls `AddSharedInfrastructure()` then each `Add*Mod
 
 If you prefer the library, you **do not write `Sender.cs` at all**. Instead:
 
-1. Install the packages (from [Phase 1 §5](01-solution-setup.md)):
+1. Install the library's packages (instead of the `FluentValidation`/pipeline pieces you'd use for Option A's
+   behaviors — though you still keep `FluentValidation` itself for validators):
    ```bash
    dotnet add src/Shared/Erp.Shared.Messaging package Mediator.Abstractions
    dotnet add src/Erp.Api package Mediator.SourceGenerator
@@ -283,9 +334,88 @@ validator, the domain — is unchanged. Pick one engine and stay on it; don't mi
 
 ---
 
-## 5. How a request flows through the mediator (either option)
+## 5. Wire the host, then prove it — your checkpoint ✅
 
-Using our first real command as an example (built in Phase 6):
+The engine exists; now make a request actually travel through it. Two small wiring steps, then a
+one-feature walking skeleton — the same "prove the pipe" move as Phase 1's `/health`, but through the
+mediator.
+
+### 1) Wire the mediator and the module into `Program.cs`
+
+Building on Phase 1's minimal `Program.cs`, add the two composition lines and `MapCarter()`:
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+
+builder.Services.AddSharedInfrastructure(builder.Configuration);  // the shared kernel — for now, just calls AddMessaging()
+builder.Services.AddSalesModule(builder.Configuration);           // scans the Sales assembly for handlers (+ validators)
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment()) { app.UseSwagger(); app.UseSwaggerUI(); }
+
+app.MapGet("/health", () => Results.Ok("healthy"));
+app.MapCarter();   // discovers every feature's ICarterModule endpoint
+
+app.Run();
+
+public partial class Program { }
+```
+
+> `AddSharedInfrastructure` is the shared kernel's one entry point (`Erp.Shared.Infrastructure`); this phase
+> it just calls `AddMessaging()`. It grows in later phases (Dapper in Phase 3, JWT in Phase 4). `AddSalesModule`
+> is the module's `DependencyInjection.cs` from the registration section above.
+
+### 2) The `Ping` slice — two files, the shape every feature copies
+
+`src/Modules/Sales/Features/Ping/PingHandler.cs`:
+
+```csharp
+public sealed record PingRequest(string Name) : IRequest<string>;
+
+// Demo only: this is the ONE handler that implements IRequestHandler directly. Every real slice from
+// Phase 5 on uses ICommandHandler / IQueryHandler instead — the intent-revealing markers from §4.
+public sealed class PingHandler : IRequestHandler<PingRequest, string>
+{
+    public Task<string> Handle(PingRequest request, CancellationToken ct)
+        => Task.FromResult($"pong: {request.Name}");
+}
+```
+
+`src/Modules/Sales/Features/Ping/PingEndpoint.cs`:
+
+```csharp
+public sealed class PingEndpoint : ICarterModule
+{
+    public void AddRoutes(IEndpointRouteBuilder app) =>
+        app.MapGet("/sales/ping", async (string name, ISender sender, CancellationToken ct) =>
+            Results.Ok(await sender.Send(new PingRequest(name), ct)));
+}
+```
+
+### 3) Run and verify
+
+```bash
+dotnet run --project src/Erp.Api
+curl "http://localhost:5xxx/sales/ping?name=world"     # → "pong: world"
+```
+
+If you get `pong: world`, **the mediator works** — the endpoint knew nothing but `ISender`, yet the request
+found `PingHandler` on its own. That's your Phase 2 checkpoint: the post office is delivering mail. Every real
+feature from here is just a richer `PingRequest`.
+
+> 🧭 **From WebForms:** `/sales/ping` is the `[WebMethod]` you'd have called from jQuery — except the endpoint
+> no longer holds the logic. It hands a message to the mediator, which routes it to the handler. Swap the
+> engine (Option A ↔ B) and this call site doesn't change.
+
+## 6. How a request flows through the mediator (either option)
+
+The ping above flows straight through today, because we haven't added any behaviors yet. Once
+[Phase 11](11-cross-cutting.md) adds logging and validation to the *same* pipeline, a real command — say
+`CreateSalesOrderCommand` from Phase 6 — flows like this, nesting the behaviors around the handler:
 
 ```
 Endpoint: sender.Send(new CreateSalesOrderCommand(...))
@@ -299,10 +429,11 @@ Endpoint: sender.Send(new CreateSalesOrderCommand(...))
    → result (the new order id) returns to the endpoint
 ```
 
-That "way in / way out" nesting is the one genuinely tricky idea; the U-shaped diagram in
-[beginner Phase 2](../plan-beginner-friendly/03-phase-2-mediator.md) is worth re-reading if it's fuzzy.
+That "way in / way out" nesting is the one genuinely tricky idea. If it's fuzzy, the
+[beginner Phase 2](../plan-beginner-friendly/03-phase-2-mediator.md) walkthrough draws it as a U-shaped
+diagram — an *optional* deeper look.
 
-## 6. Why each component exists
+## 7. Why each component exists
 
 | Component | Why it exists |
 |---|---|
@@ -313,13 +444,14 @@ That "way in / way out" nesting is the one genuinely tricky idea; the U-shaped d
 | `ICommand`/`IQuery` | Visible intent + a hook for command-only behaviors. |
 | `Unit` | Lets commands that change state but return nothing still fit the `IRequest<TResponse>` shape. |
 
-## 7. Common mistakes & best practices
+## 8. Common mistakes & best practices
 
 - ❌ **Forgetting to register a handler.** With the hand-rolled version you'll get a runtime
   "no service for `IRequestHandler<...>`" error. ✅ Each module's `Add*Module` scans its own assembly and
   registers its handlers automatically — so as long as your handler lives in that module, it's found.
-- ❌ **Getting behavior order backwards** so validation logs nothing on failure. ✅ Register
-  `LoggingBehavior` before `ValidationBehavior` (Logging outermost) — verify with the flow in §5.
+- ❌ **Getting behavior order backwards** so validation logs nothing on failure. ✅ When you add them in
+  Phase 11, register `LoggingBehavior` before `ValidationBehavior` (Logging outermost) — verify with the flow
+  in §6.
 - ❌ **Endpoints newing-up handlers directly** (`new CreateSalesOrderHandler(...)`). ✅ Always go through
   `sender.Send(...)`; that's the whole point.
 - ✅ **Best practice: code to the interface, decide the engine later.** Because we only use `ISender` and

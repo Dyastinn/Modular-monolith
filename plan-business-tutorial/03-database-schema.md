@@ -1,9 +1,12 @@
 # Phase 3 — The Database: Schema, Stored Procedures, Seed Data
 
-> 📎 Reuses the "integrity in SQL, policy in the domain" split from
-> [beginner Phase 4 §6](../plan-beginner-friendly/05-phase-4-create-order.md) and the
-> "ordered SQL scripts instead of EF migrations" approach from
-> [beginner Phase 8 §6](../plan-beginner-friendly/09-phase-8-testing.md).
+> Self-contained: this phase explains everything it uses. All monetary values are in **Philippine Pesos
+> (₱)** — this ERP is for a company that bills in PHP.
+>
+> 📎 *Optional* deeper reading on two ideas this phase leans on — the "integrity in SQL, policy in the
+> domain" split ([beginner Phase 4 §6](../plan-beginner-friendly/05-phase-4-create-order.md)) and "ordered
+> SQL scripts instead of EF migrations" ([beginner Phase 8 §6](../plan-beginner-friendly/09-phase-8-testing.md)).
+> Both are explained inline below; the links are just the slow version.
 
 ---
 
@@ -35,9 +38,12 @@ Two principles carried over from the earlier plans, applied to a real schema:
 - **Integrity lives in SQL.** Foreign keys, `NOT NULL`, `CHECK` constraints, and unique indexes enforce
   data correctness *no matter what code touches the database*. We don't trust the app to never insert
   garbage — the schema refuses it.
-- **Policy lives in the domain (C#).** "Only draft orders can be edited," "over $10k needs approval" —
-  those are *not* in the database. Putting them there too would create the "split-brain" duplication
-  [beginner Phase 4](../plan-beginner-friendly/05-phase-4-create-order.md) warned about.
+- **Policy lives in the domain (C#).** "Only draft orders can be edited," "over ₱500,000 needs approval" —
+  those are *not* in the database. If you enforced them **both** in the domain *and* in SQL, you'd have the
+  same rule written in two languages that must be kept in perfect sync forever — a **"split-brain"**: change
+  the threshold in C# but forget the `CHECK`, and the two halves now disagree and fight. So each *policy*
+  rule gets exactly **one home**, the domain; the database enforces *integrity* (shapes and relationships),
+  not policy.
 - **One exception, on purpose:** the *atomic inventory guard* (reserve only if available) **is** in SQL,
   because only the database can make it safe under concurrency. That's [Phase 7](07-submit-reserve-concurrency.md)'s
   whole lesson, and its proc lives here.
@@ -50,9 +56,37 @@ Two principles carried over from the earlier plans, applied to a real schema:
 
 ## 3. The tables (each module's `Infrastructure/Sql/001_schema.sql`)
 
-First create the schemas (`CREATE SCHEMA sales;`, `CREATE SCHEMA inventory;`, `CREATE SCHEMA [identity];`),
-each in the owning project's script. Then build the tables. Let's go table by table, explaining the columns
-that encode business meaning.
+### The big picture first (a map, not a memory test)
+
+Before any DDL, here's the whole design at a glance — three schemas, and what each table is *for*. Read this
+as a map; you don't need to memorize it, and you'll meet each table again in the phase that actually uses it:
+
+```
+identity  (host/shared: who can log in)
+  ├─ AppUser         users + hashed password + role            → used at login (Phase 4)
+  └─ RefreshToken    long-lived session tokens (rotate/revoke) → used at login (Phase 4)
+
+sales     (the Sales module: customers, catalogue, orders)
+  ├─ Customer        blocking flag + credit limit + balance    → create/submit checks (Phase 6–8)
+  ├─ ItemCategory    role restriction + per-order qty cap      → create checks (Phase 6)
+  ├─ Item            SKU, price, category                      → create (Phase 6)
+  ├─ SalesOrder      the order header + status + total         → create/submit/approve/cancel (Phase 6–9)
+  └─ SalesOrderLine  one row per item on an order              → create/update (Phase 6, 9)
+
+inventory (the Inventory module: stock levels)
+  └─ Inventory       OnHand / Reserved per item                → reserve on submit (Phase 7)
+```
+
+> 🔑 **You have two equally valid ways to build this.** (1) Create the whole schema now as one foundation —
+> the app's ordered scripts apply it in one go, and you never think about it again; or (2) create each
+> table's script only when you reach the phase that needs it (the scripts are **append-only and applied in
+> order**, so adding `001_schema.sql` now and more later works the same either way). This tutorial writes the
+> full foundation here because it's one file to reason about — but nothing breaks if you'd rather add tables
+> phase-by-phase. Either way, **don't try to hold all of it in your head now**; the map above is enough.
+
+Now, the DDL. First create the schemas (`CREATE SCHEMA sales;`, `CREATE SCHEMA inventory;`,
+`CREATE SCHEMA [identity];`), each in the owning project's script. Then build the tables — going one at a
+time, explaining the columns that encode business meaning.
 
 > ⚠️ **`identity` is a T-SQL reserved keyword — bracket it as `[identity]` everywhere.** Because `IDENTITY`
 > is the keyword for auto-increment columns, SQL Server rejects a bare `identity` used as a schema name:
@@ -459,8 +493,8 @@ INSERT INTO [identity].AppUser (Username, PasswordHash, Role) VALUES
  ('admin',   '<hash-of-Password123!>', 'Admin');
 
 INSERT INTO sales.Customer (Name, IsBlocked, CreditLimit, OutstandingBalance) VALUES
- ('Acme Corp',        0, 50000, 10000),   -- healthy: 40k of headroom
- ('Beta Industries',  0,  5000,  4500),   -- almost maxed: only 500 left
+ ('Acme Corp',        0, 50000, 10000),   -- healthy: ₱40,000 of headroom
+ ('Beta Industries',  0,  5000,  4500),   -- almost maxed: only ₱500 left
  ('Gamma Traders',    1, 20000,     0);   -- BLOCKED
 
 INSERT INTO sales.ItemCategory (Name, MaxQuantityPerOrder, RequiredRole) VALUES
@@ -495,6 +529,27 @@ The domain decides *whether* to write; these tables and procs are *how* it's sto
 constraints are the last line of defense if anything upstream is wrong.
 
 ## 7. Applying the scripts (no EF migrations)
+
+### First, tell the app where its database is (the connection string)
+
+This is the phase that first needs a database, so it's where we add the **connection string** (remember,
+Phase 1 deliberately configured nothing we weren't using yet). One database, `Erp`, holds every module's
+schema. In `appsettings.Development.json` (local dev only):
+
+```json
+{
+  "ConnectionStrings": {
+    "ErpDb": "Server=(localdb)\\MSSQLLocalDB;Database=Erp;Trusted_Connection=True;TrustServerCertificate=True"
+  }
+}
+```
+
+Leave an empty `"ConnectionStrings": { "ErpDb": "" }` in `appsettings.json` so the *shape* is documented but
+no environment-specific value is committed. (The C# packages for querying — Dapper and
+`Microsoft.Data.SqlClient` — arrive in [Phase 6](06-create-order.md) with the first repository; right now we
+just need somewhere to point the scripts.)
+
+### Run the scripts
 
 Run each module's scripts in dependency order against your dev database (create the schemas first, then
 `sales`, then `inventory`, plus `identity`). A tiny runner, or the free **DbUp** library, discovers each
@@ -536,6 +591,22 @@ Because scripts run **in filename order** and each runs **once**, name them with
 (`001_`, `002_`…) and treat applied scripts as immutable — add a *new* script to change the schema, don't
 edit an old one. That "append-only, tracked" habit is what makes the same folder safe for dev, test, and
 prod. (`CREATE OR ALTER PROCEDURE`, below, is the one friendly exception — proc scripts you *can* re-run.)
+
+### Checkpoint — the database is real and seeded ✅
+
+After the scripts run, verify the foundation actually exists. Query the seed users:
+
+```sql
+sqlcmd -S "(localdb)\MSSQLLocalDB" -d Erp -Q "SELECT Username, Role FROM [identity].AppUser;"
+```
+
+You should see three rows — `rep` / `SalesRep`, `manager` / `SalesManager`, `admin` / `Admin`. A couple more
+quick checks: `SELECT Name, IsBlocked FROM sales.Customer;` shows Gamma Traders blocked, and
+`SELECT ItemId, OnHand FROM inventory.Inventory;` shows the restricted kit with only 8 on hand.
+
+If those queries return the seed rows, **Phase 3 is done and verifiable**: the schemas exist, integrity
+constraints are in force, the procs are compiled, and there's data to log in as and order against. Phase 4
+builds login on top of exactly these `[identity]` tables.
 
 ## 8. Common mistakes & best practices
 

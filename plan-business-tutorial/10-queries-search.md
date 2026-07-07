@@ -1,8 +1,7 @@
 # Phase 10 — Queries: Get One & Search With Paging (CQRS-lite Read Side)
 
-> 📎 Slow version of "why reads are shaped differently from writes":
-> [beginner Phase 6](../plan-beginner-friendly/07-phase-6-queries.md). Here we build a real search grid
-> with filters and paging.
+> Self-contained: the read side is explained fully here. *Optional* slow version of "why reads are shaped
+> differently from writes": [beginner Phase 6](../plan-beginner-friendly/07-phase-6-queries.md).
 
 ---
 
@@ -35,6 +34,33 @@ Read side:  Query   → Handler → Dapper → read proc → DTO           (no d
 > why it's *not* — is answered in
 > [beginner Phase 6 §4](../plan-beginner-friendly/07-phase-6-queries.md). Short version: the domain's
 > total *decides* things (credit, approval); the read total merely *displays*. Different jobs.
+
+### Queries use the connection factory; commands use the unit of work — and why
+
+You'll notice every query handler here injects **`IDbConnectionFactory`** and just calls `factory.Create()`,
+while the command handlers in Phases 6–9 all went through **`IUnitOfWork` / `BeginAsync`**. That's a
+deliberate, consistent split (the rule was introduced in [Phase 6 §7](06-create-order.md)); here's the full
+reasoning, since it's the kind of thing that looks inconsistent until you see *why*:
+
+- **Why queries intentionally avoid the unit of work.** A query only *reads*. There's nothing to make
+  atomic and nothing to roll back, so a transaction would add pure cost: it holds locks for the duration and
+  can block writers, all to protect an operation that changes nothing. Grabbing a connection, running the
+  read, and releasing it is simpler *and* friendlier to concurrency. Fewer moving parts, by design.
+- **Why commands use the unit of work.** A command usually makes *several* writes that must succeed or fail
+  **together** (insert header + N lines; reserve stock + change status; update status + adjust balance). The
+  transaction is what makes that all-or-nothing. A read has no such requirement, so it needs no such tool.
+- **Is there any danger in "mixing" them?** Not in *using both* — that's exactly right, each for its job.
+  The danger is using the **wrong** one: doing multi-step **writes** on a bare `factory.Create()` connection
+  (no transaction → a mid-way failure leaves half-written data), or wrapping plain **reads** in a transaction
+  for no reason (needless locking). Match the tool to the intent — read vs. atomic-write — and you're fine.
+- **When *would* a query participate in a transaction?** Rarely, and always because it's part of a bigger
+  *write* operation, not a standalone read. The classic case is a **read-modify-write** inside a command:
+  you must read the current value *on the same transaction* you're about to write on, so you see a
+  consistent snapshot and hold the row against concurrent writers (our version of that is the atomic
+  `usp_Inventory_Reserve` in [Phase 7](07-submit-reserve-concurrency.md) — the "read" and the "write" are
+  fused into one statement *inside* the transaction). A second, rarer case is a multi-statement **report**
+  that must be internally consistent, where you'd open a read-only transaction (or snapshot isolation). But
+  the standalone screen queries in *this* phase are none of those — so they stay transaction-free.
 
 ## 3. Get one order
 
@@ -229,7 +255,7 @@ but they *do* require a valid token.
 GET /sales-orders?status=PendingApproval&page=1&pageSize=20   (valid token)
 1. Auth ok.
 2. Endpoint builds SearchSalesOrdersQuery(null, "PendingApproval", 1, 20).
-3. ValidationBehavior: page 1 > 0 ✓, pageSize 20 in [1,100] ✓.
+3. (Once wired in Phase 11) ValidationBehavior: page 1 > 0 ✓, pageSize 20 in [1,100] ✓.
 4. Handler converts "PendingApproval" → 1, calls sales.usp_SalesOrders_Search.
 5. Proc returns 20 rows + a total count (say 43).
 6. Handler wraps them in PagedResult { Items, Page=1, PageSize=20, TotalCount=43, TotalPages=3 }.
@@ -237,7 +263,23 @@ GET /sales-orders?status=PendingApproval&page=1&pageSize=20   (valid token)
 ```
 
 No domain object was built anywhere in that flow — just SQL → DTO. Compare the effort to the create
-flow; the asymmetry is the whole point of CQRS-lite.
+flow; the asymmetry is the whole point of CQRS-lite. (The `ValidationBehavior` and the global handler that
+turns an unknown `?status=` into a clean `400` are wired in [Phase 11](11-cross-cutting.md); until then the
+query still runs, it just won't pre-validate paging inputs automatically.)
+
+## 7b. Checkpoint — read one and search ✅
+
+With some orders created (Phases 6–8), fetch one and list them (any valid token works):
+
+```bash
+curl http://localhost:5xxx/sales-orders/{id} -H "Authorization: Bearer $TOKEN"                       # → 200 detail JSON
+curl "http://localhost:5xxx/sales-orders?status=PendingApproval&page=1&pageSize=20" -H "Authorization: Bearer $TOKEN"
+# → 200 { items: [...], page: 1, pageSize: 20, totalCount: N, totalPages: ... }
+```
+
+If the detail endpoint returns one order with its lines and names, and the search returns a paged envelope
+that respects `?status=` / `?customerId=` filters, **Phase 10 is done and verifiable** — and notice how much
+less machinery a read needed than a write.
 
 ## 8. Why each component exists
 

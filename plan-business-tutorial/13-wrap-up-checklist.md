@@ -2,6 +2,7 @@
 
 > 🎉 You built a real, secured, rule-enforcing Sales Order module — not a CRUD toy. This final phase
 > ties the threads together, gives you an honest production checklist, and points at what to learn next.
+> (Money throughout is **Philippine Pesos (₱)**.)
 
 ---
 
@@ -137,7 +138,7 @@ POST /auth/refresh   { "refreshToken": "N0rQ7w…" }
 → 200 OK   { "accessToken": "eyJhbGciOiJI…", "refreshToken": "8fKp2s…", "username": "manager", "role": "SalesManager" }
 #   Replaying the OLD "N0rQ7w…" now → 401 "reuse detected — session revoked" (the whole family is killed)
 
-# 2) Create a draft for Acme (customer 1): 2 × Widget (item 1 @ $25).   (Authorization: Bearer <token>)
+# 2) Create a draft for Acme (customer 1): 2 × Widget (item 1 @ ₱25).   (Authorization: Bearer <token>)
 POST /sales-orders   { "customerId": 1, "lines": [ { "itemId": 1, "quantity": 2 } ] }
 → 201 Created   { "id": 1 }          # Location: /sales-orders/1   (a REAL id, not 0)
 
@@ -145,7 +146,7 @@ POST /sales-orders   { "customerId": 1, "lines": [ { "itemId": 1, "quantity": 2 
 POST /sales-orders/1/submit
 → 204 No Content
 
-# 4) Approve (manager only) → PendingApproval → Approved, +$50 to Acme's outstanding balance
+# 4) Approve (manager only) → PendingApproval → Approved, +₱50 to Acme's outstanding balance
 POST /sales-orders/1/approve
 → 204 No Content
 
@@ -162,11 +163,11 @@ And the **rules firing** — the whole point of the module — produce these out
 POST /sales-orders/{id}/approve   (Bearer <rep-token>)
 → 403 Forbidden
 
-# Beta (customer 2) orders 100 × Widget = $2,500, but only has $500 credit left (domain rule)
+# Beta (customer 2) orders 100 × Widget = ₱2,500, but only has ₱500 credit left (domain rule)
 POST /sales-orders   { "customerId": 2, "lines": [ { "itemId": 1, "quantity": 100 } ] }
 → 422 Unprocessable Entity
    { "title": "Business rule violated", "status": 422,
-     "detail": "Order total $2,500.00 would exceed the credit limit. Available credit: $500.00." }
+     "detail": "Order total ₱2,500.00 would exceed the credit limit. Available credit: ₱500.00." }
 
 # An order for BLOCKED Gamma (customer 3) → domain refuses
 POST /sales-orders   { "customerId": 3, "lines": [ { "itemId": 1, "quantity": 1 } ] }

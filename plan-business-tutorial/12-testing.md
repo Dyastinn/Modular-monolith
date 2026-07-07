@@ -1,8 +1,12 @@
 # Phase 12 — Testing the Business Rules
 
-> 📎 Slow version of "what each test level is *for*":
-> [beginner Phase 8](../plan-beginner-friendly/09-phase-8-testing.md), including the line-by-line read of
-> an xUnit test. Here we test the *real* Sales rules.
+> Self-contained. You already started unit-testing the domain back in [Phase 5](05-domain-model.md) (that's
+> where the `Erp.Modules.Sales.UnitTests` project was created) — this phase **rounds out** the suite and adds
+> the two harder levels: integration and end-to-end. Money is in **Philippine Pesos (₱)**.
+>
+> 📎 *Optional* slow version of "what each test level is *for*":
+> [beginner Phase 8](../plan-beginner-friendly/09-phase-8-testing.md), including a line-by-line read of an
+> xUnit test.
 
 ---
 
@@ -32,7 +36,8 @@ reservation, concurrency, rollback) need integration tests — and those are exa
 
 ## 3. Unit tests — the business rules (fast, the bulk)
 
-`Erp.Modules.Sales.UnitTests`. No mocks, no database — just objects.
+`Erp.Modules.Sales.UnitTests` (the project you created in [Phase 5](05-domain-model.md)). No mocks, no
+database — just objects. Add these alongside the first tests you wrote there:
 
 ```csharp
 public class CustomerRuleTests
@@ -109,7 +114,7 @@ public class SalesOrderStateTests
     public void Order_over_threshold_is_flagged_high_value()   // tests the FLAG, not a workflow branch
     {
         var order = SalesOrder.Create("SO-1", new CustomerId(1), new UserId(1));
-        order.AddLine(new ItemId(1), new Quantity(1), new Money(12_000));  // > $10k threshold
+        order.AddLine(new ItemId(1), new Quantity(1), new Money(60_000));  // > ₱50,000 threshold
         order.RequiresApproval.Should().BeTrue();   // surfaced for a manager UI; see Phase 5 §8 ⚠️ note
     }
 }
@@ -126,7 +131,19 @@ the rules in the domain. **These should be the bulk of your tests.**
 
 ## 4. Integration tests — what unit tests can't catch
 
-`Erp.Integration.Tests`, against a **separate test database** (never your dev DB). A fixture applies each
+> 📦 **Create the integration project now (this is the first phase that needs it):**
+> ```bash
+> dotnet new xunit -n Erp.Integration.Tests -o tests/Erp.Integration.Tests
+> dotnet sln add tests/Erp.Integration.Tests
+> dotnet add tests/Erp.Integration.Tests reference src/Erp.Api/Erp.Api.csproj
+> dotnet add tests/Erp.Integration.Tests package FluentAssertions
+> dotnet add tests/Erp.Integration.Tests package Microsoft.AspNetCore.Mvc.Testing   # WebApplicationFactory (§5)
+> dotnet add tests/Erp.Integration.Tests package Microsoft.Data.SqlClient
+> ```
+> (Referencing `Erp.Api` transitively brings in the modules, so the tests can call the real
+> `StockReservationService` and boot the real host. CPM adds the `<PackageVersion>` lines.)
+
+`Erp.Integration.Tests` runs against a **separate test database** (never your dev DB). A fixture applies each
 module's `Infrastructure/Sql/` scripts before the run — the same scripts from
 [Phase 3](03-database-schema.md), which is why they double as your migration story.
 
@@ -224,7 +241,7 @@ public async Task Cancelling_an_approved_order_restores_the_customer_balance()
     var before = await GetOutstandingBalance(customerId: 1);
 
     // Act: create → submit → approve (balance += total) → cancel (balance -= total, stock released).
-    var id = await CreateSubmitApprove(customerId: 1, itemId: 1, qty: 2);   // 2 × $25 = $50
+    var id = await CreateSubmitApprove(customerId: 1, itemId: 1, qty: 2);   // 2 × ₱25 = ₱50
     await Cancel(id);
 
     // Assert: balance is back where it started, and nothing is left reserved for those lines.
@@ -349,6 +366,20 @@ it revokes the whole family — the security property that's easy to *claim* and
   tests catch real holes.
 - ✅ **Best practice: the pyramid.** Many unit tests, fewer integration, a handful of e2e. If you're
   writing lots of slow tests to cover business rules, your rules probably leaked out of the domain.
+
+## 9. Checkpoint — the whole suite goes green ✅
+
+Run everything:
+
+```bash
+dotnet test
+```
+
+You should see the fast domain **unit tests** (from Phase 5 + §3), the **integration tests** (the reservation
+race, rollback, optimistic concurrency, balance-reversal — against `Erp_Test`), and the **e2e tests**
+(create→submit→approve, the `403` role gate, refresh-token reuse detection) all pass. If the suite is green —
+especially the concurrency test that *commits* — **Phase 12 is done and verifiable**: you have a safety net
+that catches the bugs unit tests can't, and proof the architecture holds end to end.
 
 ---
 

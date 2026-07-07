@@ -1,8 +1,10 @@
 # Phase 5 — The Domain Model: A `SalesOrder` That Knows Its Own Rules
 
-> 📎 Slow version of *why* rich domain objects beat dumb data bags:
-> [beginner Phase 3](../plan-beginner-friendly/04-phase-3-domain.md). Here we apply that exact pattern to
-> a realistic sales order with many rules.
+> Self-contained: every rule is explained here. Money is in **Philippine Pesos (₱)**.
+>
+> 📎 *Optional* slow version of *why* rich domain objects beat dumb data bags:
+> [beginner Phase 3](../plan-beginner-friendly/04-phase-3-domain.md). The reasoning is inline below; the
+> link is just the analogy-rich take.
 
 ---
 
@@ -34,12 +36,35 @@ and **inventory reservation** (needs atomic DB guarding) — are *expressed* her
 handler/SQL level. We'll be explicit about that boundary; it's the "policy vs. atomicity" split from
 [beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md).
 
-## 3. Strongly-typed IDs and value objects
+## 3. Where every file in this phase goes
 
-Base types live in `Erp.Shared.BuildingBlocks`; the `SalesOrder` aggregate and its IDs/value objects live
-in `Modules/Sales/Domain` (this module owns them — no other module references them):
+Everything in this phase is **pure C# in the Sales module's `Domain/` folder** (plus the shared base types
+you already have). Nothing here references a database or the web. Here's the map — each code block below
+names its file in a top comment, so you always know where it belongs:
+
+```
+src/Modules/Sales/Domain/
+├── SalesOrderId.cs, CustomerId.cs, ItemId.cs, UserId.cs   # strongly-typed IDs (§3)
+├── ValueObjects/
+│   ├── Money.cs                                           # §3
+│   └── Quantity.cs                                        # §3
+├── SalesOrderStatus.cs  +  SalesOrderStatusRules.cs       # the state machine (§4)
+├── ItemCategory.cs                                        # §5
+├── Customer.cs                                            # §7
+├── SalesOrder.cs  +  SalesOrderLine.cs                    # the aggregate (§6)
+├── SalesOrderEvents.cs                                    # domain events (§8)
+└── ApprovalPolicy.cs                                      # the threshold constant (§8)
+```
+
+The base types the domain builds on — `AggregateRoot<TId>`, `Entity`, `IDomainEvent`, `DomainException` —
+already live in `Erp.Shared.BuildingBlocks` (you created that project in Phase 1). The domain uses those and
+nothing else. (Folder names like `ValueObjects/` are just organisation; put files wherever reads clearly —
+what matters is that they're all under the module's `Domain/`.)
+
+## 3a. Strongly-typed IDs and value objects
 
 ```csharp
+// src/Modules/Sales/Domain/SalesOrderId.cs (one small file each, or group them — your call)
 public readonly record struct SalesOrderId(long Value);
 public readonly record struct CustomerId(long Value);
 public readonly record struct ItemId(long Value);
@@ -50,9 +75,10 @@ public readonly record struct UserId(long Value);
 > `SalesOrderId`) — [beginner Phase 3 §3](../plan-beginner-friendly/04-phase-3-domain.md). Cost: a small
 > Dapper `TypeHandler` per ID, added in the repository.
 
-Value objects that make invalid states impossible:
+Value objects that make invalid states impossible (`Domain/ValueObjects/`):
 
 ```csharp
+// src/Modules/Sales/Domain/ValueObjects/Quantity.cs
 public readonly record struct Quantity
 {
     public int Value { get; }
@@ -60,6 +86,7 @@ public readonly record struct Quantity
         Value = value > 0 ? value : throw new DomainException("Quantity must be greater than zero.");
 }
 
+// src/Modules/Sales/Domain/ValueObjects/Money.cs   (₱ — a plain non-negative amount)
 public readonly record struct Money
 {
     public decimal Amount { get; }
@@ -79,6 +106,7 @@ public readonly record struct Money
 ## 4. The status state machine
 
 ```csharp
+// src/Modules/Sales/Domain/SalesOrderStatus.cs
 public enum SalesOrderStatus
 {
     Draft = 0,            // being edited
@@ -123,6 +151,7 @@ reversed if an approved order is later cancelled. The diagram is the "what's leg
 ([Phases 7–8](07-submit-reserve-concurrency.md)) attach the side effects to each arrow.*
 
 ```csharp
+// src/Modules/Sales/Domain/SalesOrderStatusRules.cs
 public static class SalesOrderStatusRules
 {
     private static readonly Dictionary<SalesOrderStatus, SalesOrderStatus[]> _allowed = new()
@@ -147,6 +176,7 @@ public static class SalesOrderStatusRules
 A small domain type carrying the category rules from the schema:
 
 ```csharp
+// src/Modules/Sales/Domain/ItemCategory.cs
 public sealed class ItemCategory
 {
     public long Id { get; }
@@ -184,6 +214,7 @@ the beginner plan.
 This is the centerpiece. Read the comments — every design choice is deliberate.
 
 ```csharp
+// src/Modules/Sales/Domain/SalesOrder.cs
 public sealed class SalesOrder : AggregateRoot<SalesOrderId>
 {
     private readonly List<SalesOrderLine> _lines = new();
@@ -317,6 +348,7 @@ public void Submit()
 ### The `SalesOrderLine`
 
 ```csharp
+// src/Modules/Sales/Domain/SalesOrderLine.cs
 public sealed class SalesOrderLine
 {
     public ItemId ItemId { get; }
@@ -334,6 +366,7 @@ public sealed class SalesOrderLine
 ## 7. The `Customer` domain type (blocking + credit)
 
 ```csharp
+// src/Modules/Sales/Domain/Customer.cs
 public sealed class Customer
 {
     public CustomerId Id { get; }
@@ -355,8 +388,8 @@ public sealed class Customer
     {
         if (OutstandingBalance + orderTotal > CreditLimit)
             throw new DomainException(
-                $"Order total {orderTotal.Amount:C} would exceed the credit limit. " +
-                $"Available credit: {(CreditLimit.Amount - OutstandingBalance.Amount):C}.");
+                $"Order total ₱{orderTotal.Amount:N2} would exceed the credit limit. " +
+                $"Available credit: ₱{(CreditLimit.Amount - OutstandingBalance.Amount):N2}.");
     }
 }
 ```
@@ -374,8 +407,8 @@ public sealed class Customer
 > what the customer *already owes on approved orders*. In this tutorial we bump it at **approval**
 > ([Phase 8](08-approval-cancellation.md)) — **not** when an order is merely created or submitted. That
 > keeps the flow simple, but it has a real consequence: **draft and pending orders don't yet count against
-> the credit limit.** So a customer with $500 of credit left could, in theory, create *ten* separate
-> orders that each individually fit under $500 — because none of them has been approved yet, so none has
+> the credit limit.** So a customer with ₱500 of credit left could, in theory, create *ten* separate
+> orders that each individually fit under ₱500 — because none of them has been approved yet, so none has
 > touched the balance. Each order passes its own check; together they'd blow the limit.
 >
 > Is that a bug? For a *learning* build, it's an acceptable simplification (and a real company might even
@@ -392,6 +425,7 @@ public sealed class Customer
 ## 8. Domain events and the approval policy
 
 ```csharp
+// src/Modules/Sales/Domain/SalesOrderEvents.cs
 // IDomainEvent already lives in Erp.Shared.BuildingBlocks (Phase 1), next to Entity/AggregateRoot —
 // every module's events reuse it. We do NOT redeclare it here; we just implement it.
 public sealed record SalesOrderCreated(SalesOrderId Id, CustomerId CustomerId, UserId CreatedBy) : IDomainEvent;
@@ -399,10 +433,13 @@ public sealed record SalesOrderSubmitted(SalesOrderId Id, CustomerId CustomerId,
 public sealed record SalesOrderApproved(SalesOrderId Id, CustomerId CustomerId, Money Total, UserId Approver) : IDomainEvent;
 public sealed record SalesOrderRejected(SalesOrderId Id) : IDomainEvent;
 public sealed record SalesOrderCancelled(SalesOrderId Id) : IDomainEvent;
+```
 
+```csharp
+// src/Modules/Sales/Domain/ApprovalPolicy.cs
 public static class ApprovalPolicy
 {
-    public static readonly Money Threshold = new(10_000m);  // orders over $10k are flagged high-value
+    public static readonly Money Threshold = new(50_000m);  // orders over ₱50,000 are flagged high-value
 }
 ```
 
@@ -438,37 +475,73 @@ public static class ApprovalPolicy
 | Domain events | Record business facts for after-commit reactions (Phase 8), without wiring side effects into the domain. |
 | `ApprovalPolicy` | One place for the approval threshold constant. |
 
-## 10. Unit tests (write these now — they're free proof)
+## 10. Unit tests — write them *now*, alongside the model
 
-Because the domain touches nothing, testing is just objects (see [Phase 12](12-testing.md) for the full
-suite). A taste:
+Here's the payoff of a pure domain: **you can test every rule right now, with zero infrastructure.** No
+database, no web host, no mocks — just `new` up an object and assert. This is the ideal moment to start
+testing, while the rules are fresh, so we do it here rather than saving all testing for the end.
+
+### Create the test project and install the tools
+
+This is the first phase that needs a test project, so it's where we create it and add the test packages
+(the "install only when needed" rule from Phase 1):
+
+```bash
+dotnet new xunit -n Erp.Modules.Sales.UnitTests -o tests/Erp.Modules.Sales.UnitTests
+dotnet sln add tests/Erp.Modules.Sales.UnitTests
+dotnet add tests/Erp.Modules.Sales.UnitTests reference src/Modules/Sales/Erp.Modules.Sales.csproj
+dotnet add tests/Erp.Modules.Sales.UnitTests package FluentAssertions
+```
+
+(The `dotnet new xunit` template already pulls in xUnit + the test SDK. CPM adds a `<PackageVersion>` line
+for `FluentAssertions`, and — because the test project references the *module*, not the other way around —
+the module's Domain stays free of any test dependency.)
+
+### The tests (`tests/Erp.Modules.Sales.UnitTests/SalesOrderTests.cs`)
 
 ```csharp
-[Fact]
-public void Cannot_add_lines_to_a_submitted_order()
+public class SalesOrderTests
 {
-    var order = SalesOrder.Create("SO-1", new CustomerId(1), new UserId(1));
-    order.AddLine(new ItemId(1), new Quantity(1), new Money(25));
-    order.Submit();
-    Assert.Throws<DomainException>(() =>
-        order.AddLine(new ItemId(2), new Quantity(1), new Money(40)));
-}
+    [Fact]
+    public void Cannot_add_lines_to_a_submitted_order()
+    {
+        var order = SalesOrder.Create("SO-1", new CustomerId(1), new UserId(1));
+        order.AddLine(new ItemId(1), new Quantity(1), new Money(25));
+        order.Submit();
+        Assert.Throws<DomainException>(() =>
+            order.AddLine(new ItemId(2), new Quantity(1), new Money(40)));
+    }
 
-[Fact]
-public void Order_over_threshold_is_flagged_as_high_value()   // tests the FLAG, not a workflow branch
-{
-    var order = SalesOrder.Create("SO-2", new CustomerId(1), new UserId(1));
-    order.AddLine(new ItemId(1), new Quantity(1), new Money(15_000));
-    Assert.True(order.RequiresApproval);   // surfaced so a manager UI can prioritise; see the ⚠️ note above
-}
+    [Fact]
+    public void Order_over_threshold_is_flagged_as_high_value()   // tests the FLAG, not a workflow branch
+    {
+        var order = SalesOrder.Create("SO-2", new CustomerId(1), new UserId(1));
+        order.AddLine(new ItemId(1), new Quantity(1), new Money(60_000));   // > ₱50,000 threshold
+        Assert.True(order.RequiresApproval);   // surfaced so a manager UI can prioritise; see the ⚠️ note above
+    }
 
-[Fact]
-public void Blocked_customer_is_rejected()
-{
-    var c = new Customer(new CustomerId(3), "Gamma", isBlocked: true, new Money(20_000), Money.Zero);
-    Assert.Throws<DomainException>(() => c.EnsureNotBlocked());
+    [Fact]
+    public void Blocked_customer_is_rejected()
+    {
+        var c = new Customer(new CustomerId(3), "Gamma", isBlocked: true, new Money(20_000), Money.Zero);
+        Assert.Throws<DomainException>(() => c.EnsureNotBlocked());
+    }
 }
 ```
+
+> 💡 Try adding one yourself: assert that `Draft → Approved` (skipping submit) throws, or that `Total`
+> equals the sum of two lines. Each is three lines and needs no setup — that ease *is* the reward for a pure
+> domain.
+
+### Checkpoint — green tests prove the rules ✅
+
+```bash
+dotnet test tests/Erp.Modules.Sales.UnitTests
+```
+
+All tests pass? Then **Phase 5 is done and verifiable**: the aggregate defends its own invariants, and you
+have executable proof of it. (Phase 12 later adds *integration* tests that go through the real HTTP + SQL
+pipeline — a different level. These pure-domain tests are the fast, foundational layer.)
 
 ## 11. Common mistakes & best practices
 

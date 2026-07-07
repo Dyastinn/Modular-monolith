@@ -1,17 +1,24 @@
-# 00 — Start Here (Read This First)
+# 00 — Start Here (the Optional Theory Companion)
 
-Welcome. This folder's job is to make you **understand the concepts really well** — *what problem* each
-piece solves and *how* it works — in plain English, with everyday analogies and lots of "here's *why*." You
-build a small teaching slice as you go, but the goal here is **understanding**, not shipping the finished
-product. Once the ideas click, the companion folders are where you *do* it.
+Welcome. This folder is the **optional companion** to the main course over in
+[`../plan-business-tutorial/`](../plan-business-tutorial/). Its one job is to make you **understand the
+concepts really well** — *what problem* each piece solves and *how* it works — in plain English, with
+everyday analogies and lots of "here's *why*." It's written to be **read**, the way you'd read on a bus or
+over coffee: you *mentally* build the system rather than type it. There's a small teaching slice to make
+ideas concrete, but the goal here is **understanding**, not shipping the product. When you actually build
+it, that's the business tutorial.
 
-> **Three folders, same architecture, three different jobs:**
-> - **This folder (`plan-beginner-friendly`) — Understand it.** Get the ideas cold: the problem, the fix,
->   the trade-offs, with analogies and answer keys.
-> - [`../plan-business-tutorial/`](../plan-business-tutorial/) — **Build it for real.** Implement the full,
->   secured Sales Order module end-to-end with your own hands (JWT, roles, credit limits, concurrency). Also
->   written for someone coming from **ASP.NET WebForms** (`.aspx.vb` + jQuery AJAX / `[WebMethod]`) — it
->   explains each decision by contrast with what you already know.
+> **You don't have to read this folder to take the course.** The business tutorial is self-contained and
+> explains every concept as it builds it. Reach for this companion when a concept there feels abstract and
+> you want the slow, analogy-rich version — or read it first if you simply like the *why* before the *how*.
+
+> **Three folders, same architecture, different jobs:**
+> - [`../plan-business-tutorial/`](../plan-business-tutorial/) — **The main course: build it for real.**
+>   Implement the full, secured Sales Order module end-to-end with your own hands (JWT, roles, credit limits,
+>   concurrency). Self-contained. Also written for someone coming from **ASP.NET WebForms** (`.aspx.vb` +
+>   jQuery AJAX / `[WebMethod]`) — it explains each decision by contrast with what you already know.
+> - **This folder (`plan-beginner-friendly`) — Understand it (optional companion).** Get the ideas cold: the
+>   problem, the fix, the trade-offs, with analogies and answer keys. Light on typing, heavy on *why*.
 > - [`../plan-Opus/`](../plan-Opus/) — **Let AI build it.** A terse, AI-ready spec: hand a phase to a coding
 >   agent (e.g. Claude Code), have it implement exactly that phase, and watch the architecture come together
 >   — then read the real code against what you learned here. Same phase numbers line up.

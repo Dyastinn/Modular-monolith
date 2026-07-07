@@ -1,37 +1,35 @@
 # 00 — Start Here: Build a Real ERP Sales Order Module
 
-> 👨‍🏫 **From your senior:** The two earlier plans taught the *architecture* on a deliberately tidy
-> example. Here we build the real thing — a **production-shaped Sales Order module** for an ERP, with the
-> messy business rules actual companies have: credit limits, blocked customers, inventory reservation,
-> approval workflows, role-based security. Same stack, same architecture, nothing new to install. This is
-> where you apply what you already learned.
+> 👨‍🏫 **From your senior:** This is the real thing — a **production-shaped Sales Order module** for an ERP,
+> with the messy business rules actual companies have: credit limits, blocked customers, inventory
+> reservation, approval workflows, role-based security. We build it end-to-end, and **everything you need is
+> right here** — every command, every explanation. No prior reading required; we explain each idea as we use
+> it.
 
 ---
 
-## How this tutorial relates to the other two folders
+## This is the main course — and it stands on its own
 
-Three folders, same architecture, **three different jobs** — this one is **"build it for real."** You're
-doing the implementation yourself, applying concepts the other folders frame differently:
+This folder is **the course**: you build the whole module yourself, and every step you need lives here.
+It doesn't send you to another folder to create the solution or to understand a concept before you can
+continue — when we introduce a mediator, a value object, an atomic SQL guard, or a validation behavior, we
+explain it right where we use it and then show it playing out in a real business feature.
 
-- [`../plan-beginner-friendly/`](../plan-beginner-friendly/) — **Understand it.** The gentle, plain-English
-  explanation of *what problem* each pattern solves and *how* it works (mediator, domain, CQRS, vertical
-  slices, testing). If a *concept* here confuses you, the matching phase there explains it slowly with
-  analogies. Read it first if you haven't; start with
-  [00a-FOUNDATIONS.md](../plan-beginner-friendly/00a-FOUNDATIONS.md) if C# itself is new.
-- [`../plan-Opus/`](../plan-Opus/) — **Let AI build it.** The terse, AI-ready spec of the same phases. If
-  you'd rather *watch* the module get built than type it, hand a phase to a coding agent (e.g. Claude Code),
-  let it implement exactly that phase, then compare the result to what you'd have written here.
+Two **optional** companions cover the *same* architecture from other angles. You never *need* them, but
+they're there when you want a different view:
 
-A good rhythm: build a slice yourself here, then hand the next one to an AI from `plan-Opus` and review
-what it produces. You see the same idea twice, from two directions.
-
-**This folder does not repeat or change that architecture.** When we use a mediator, a value object, an
-atomic SQL guard, or a validation behavior, we link back instead of re-explaining from scratch — then we
-show how it plays out in a real business feature. Think of it as the **capstone project** for the other
-two courses.
+- [`../plan-beginner-friendly/`](../plan-beginner-friendly/) — **Understand it (optional, theory-first).**
+  A lightweight, analogy-rich read on *what problem* each pattern solves — mediator, domain, CQRS, vertical
+  slices, testing. Great on a commute, and the place to go if a concept here feels abstract and you want the
+  slow version. New to C# itself? [00a-FOUNDATIONS.md](../plan-beginner-friendly/00a-FOUNDATIONS.md) there is
+  a gentle on-ramp.
+- [`../plan-Opus/`](../plan-Opus/) — **Let AI build it (optional).** The terse, AI-ready spec of the same
+  phases. If you'd rather *watch* a phase get built than type it, hand it to a coding agent (e.g. Claude
+  Code), then compare the result to what you'd have written here.
 
 > 📎 Whenever you see a 📎 link like [beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md),
-> that's "go here if you want the slow version of this idea."
+> that's a purely **optional** "go here if you want the slow, analogy-rich version of this idea" — never a
+> step you must complete first.
 
 ---
 
@@ -113,7 +111,10 @@ is the skill the earlier plans trained. You'll learn exactly where each one belo
 
 ## The roadmap (each file is one phase)
 
-| Phase | File | What you'll build | ⏱️ Est. time | Builds on |
+Everything below is self-contained — the last column is just **optional** companion reading for anyone who
+wants the slow, analogy-rich take on a concept, never a prerequisite.
+
+| Phase | File | What you'll build | ⏱️ Est. time | Optional deeper reading |
 |---|---|---|---|---|
 | 0 | **this file** | The plan and the business rules | ~20 min (read) | — |
 | 1 | [01-solution-setup.md](01-solution-setup.md) | Projects, folders, packages, config | ~1 hr | [beginner Phase 1](../plan-beginner-friendly/02-phase-1-skeleton.md) |

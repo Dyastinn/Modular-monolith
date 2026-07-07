@@ -1,8 +1,9 @@
 # Phase 6 — Create Sales Order (End to End, With Real Checks)
 
-> 📎 Slow version of "the anatomy of a command slice":
-> [beginner Phase 4](../plan-beginner-friendly/05-phase-4-create-order.md). Here we build a *real* one
-> with customer blocking, category role/quantity restrictions, and a credit-limit check.
+> Self-contained: every rule and every layer is explained here. Money is in **Philippine Pesos (₱)**.
+>
+> 📎 *Optional* slow version of "the anatomy of a command slice":
+> [beginner Phase 4](../plan-beginner-friendly/05-phase-4-create-order.md). The reasoning is inline below.
 
 ---
 
@@ -202,6 +203,17 @@ Look at what the handler *does* vs. what it *decides*:
 
 ## 6. The Dapper repository (the module's Infrastructure)
 
+> 📦 **Packages for this phase — add these now.** This is the first phase that runs SQL from C#, so it's
+> where Dapper and the SQL Server driver come in (the connection string was set up in Phase 3):
+> ```bash
+> dotnet add src/Modules/Sales package Dapper
+> dotnet add src/Shared/Erp.Shared.Infrastructure package Dapper
+> dotnet add src/Shared/Erp.Shared.Infrastructure package Microsoft.Data.SqlClient
+> ```
+> (`Microsoft.Data.SqlClient` lives in `Shared.Infrastructure`, where the connection factory / unit of work
+> that create `SqlConnection`s live; the modules just use Dapper against the `IDbConnection` those hand out.
+> CPM adds the `<PackageVersion>` lines.)
+
 `Modules/Sales/Infrastructure/SalesOrderRepository.cs` (abbreviated to the create path):
 
 ```csharp
@@ -248,6 +260,20 @@ contains **no business rules** — pure persistence. Note it converts domain typ
 boundary: `order.CustomerId.Value`, `(int)order.Status`, `line.UnitPrice.Amount`.
 
 ## 7. The Unit of Work (the transaction boundary)
+
+> 🔑 **Two data-access paths — and the rule for choosing.** Not every database call needs a transaction.
+> This tutorial uses **exactly two** paths, and picking the right one is a real skill:
+>
+> | | **Read-only** (one or more `SELECT`s, no mutation) | **Write** (one or more mutations that must be all-or-nothing) |
+> |---|---|---|
+> | Use | `IDbConnectionFactory.Create()` **directly** — open, query, done | `IUnitOfWork.BeginAsync()` → run writes on `tx.Transaction` → `CommitAsync` |
+> | Transaction? | **No.** | **Yes** — the whole unit commits or rolls back together. |
+> | Why | A single read has nothing to roll back, and wrapping it in a transaction just holds locks and adds overhead for no benefit. | The insert of the header **and** every line must succeed together, or none of them should exist. That atomicity is the entire point of a transaction. |
+>
+> So in *this* handler, notice: **all the reads happen first, with no transaction open** (`customers.GetAsync`,
+> `items.GetForOrderAsync`, `NextOrderNumberAsync` each just grab a connection, read, and release it). Only
+> the **write** — `AddAsync` (header + lines) — runs inside `BeginAsync`/`CommitAsync`. The query slices in
+> [Phase 10](10-queries-search.md) are *pure* reads, so they never touch the unit of work at all.
 
 `IUnitOfWork` gives the handler a visible transaction. Interfaces in `Erp.Shared.Infrastructure`, impls too;
 the handler and query handlers depend only on the interfaces. `IDbConnectionFactory` hands out connections —
@@ -330,6 +356,15 @@ central route list.
 
 ## 9. How a real request flows (with sample data)
 
+> ℹ️ **Heads-up on validation & error formatting.** Two cross-cutting pieces the trace below mentions —
+> the `ValidationBehavior` that auto-runs the validator, and the global handler that turns a thrown
+> `DomainException` into a clean HTTP `422` — are built in [Phase 11](11-cross-cutting.md) (that's the
+> cross-cutting phase; the pipeline was designed for them back in Phase 2). If you're building strictly in
+> order, the **happy path fully works now** (a valid order returns `201`), and a *rule violation* still
+> correctly **blocks the write** (the transaction never commits) — it just surfaces as a raw `500` until you
+> wire Phase 11's behaviors, which then make it a tidy `422`. Nothing here is broken; the polish is one phase
+> away.
+
 A SalesRep logged in as `rep` sends:
 
 ```http
@@ -337,28 +372,45 @@ POST /sales-orders     Authorization: Bearer <token>
 { "customerId": 2, "lines": [ { "itemId": 1, "quantity": 100 } ] }
 ```
 
-Customer 2 is *Beta Industries* — credit limit 5000, already owes 4500, so only **500** of credit left.
-Item 1 is *Widget* at $25. 100 × $25 = **$2,500**. Watch:
+Customer 2 is *Beta Industries* — credit limit ₱5,000, already owes ₱4,500, so only **₱500** of credit left.
+Item 1 is *Widget* at ₱25. 100 × ₱25 = **₱2,500**. Watch:
 
 ```
 1. Auth middleware validates the token → caller is 'rep', role SalesRep.
 2. Endpoint builds CreateSalesOrderCommand, calls sender.Send.
-3. LoggingBehavior logs "Handling CreateSalesOrderCommand".
-4. ValidationBehavior: customerId 2 > 0 ✓, 1 line ✓, qty 100 > 0 ✓ → passes.
+3. (Once wired in Phase 11) LoggingBehavior logs "Handling CreateSalesOrderCommand".
+4. (Once wired in Phase 11) ValidationBehavior: customerId 2 > 0 ✓, 1 line ✓, qty 100 > 0 ✓ → passes.
 5. Handler loads Customer 2 → exists.
 6. customer.EnsureNotBlocked() → Beta is not blocked ✓.
 7. Loads Item 1 (Widget, General category, no role restriction, cap 1000).
 8. Category.EnsureRoleAllowed("SalesRep") → General has no RequiredRole ✓.
 9. Running qty for General = 100; EnsureQuantityAllowed(100) → 100 <= 1000 ✓.
-10. order.AddLine(...) → order Total becomes $2,500.
-11. customer.EnsureWithinCreditLimit($2,500) → 4500 + 2500 = 7000 > 5000 limit → THROWS ❌
+10. order.AddLine(...) → order Total becomes ₱2,500.
+11. customer.EnsureWithinCreditLimit(₱2,500) → 4500 + 2500 = 7000 > 5000 limit → THROWS ❌
 12. Handler exits via exception; the transaction was never opened (or if opened, disposes → rollback).
-13. The exception becomes an HTTP 422/400 with "would exceed the credit limit" (Phase 11 formats it).
+13. The exception becomes an HTTP 422 with "would exceed the credit limit" once Phase 11 formats it.
 ```
 
-Change the quantity to `1` (total $25): step 11 passes (4500 + 25 = 4525 ≤ 5000), the transaction
+Change the quantity to `1` (total ₱25): step 11 passes (4500 + 25 = 4525 ≤ 5000), the transaction
 commits, and the endpoint returns `201 Created { id: ... }`. **Same code, different data, correct
 business outcome** — because the rules live in the right places.
+
+### Checkpoint — create a real order ✅
+
+Log in as `rep` (Phase 4), then create a valid order:
+
+```bash
+TOKEN=... # accessToken from POST /auth/login
+curl -X POST http://localhost:5xxx/sales-orders -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"customerId":1,"lines":[{"itemId":1,"quantity":2}]}'      # Acme, 2 Widgets → 201 Created { id }
+```
+
+Verify it landed: `SELECT OrderNumber, Status, TotalAmount FROM sales.SalesOrder;` shows one `Draft`
+(Status 0) order totalling ₱50. Try the blocked customer (`"customerId":3`, Gamma) or an over-limit order
+(Beta with quantity 100) and confirm **no** row is written — the rule blocked the transaction. If a valid
+order returns `201` and a rule-breaking one writes nothing, **Phase 6 is done and verifiable** (the clean
+`422` body for the rejection arrives with Phase 11).
 
 ## 10. Why each component exists
 

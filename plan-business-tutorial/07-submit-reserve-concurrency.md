@@ -1,6 +1,8 @@
 # Phase 7 — Submit for Approval: Atomic Inventory Reservation & Rollback
 
-> 📎 The concurrency lesson in slow motion, with timelines:
+> Self-contained, including creating the second module. Money is in **Philippine Pesos (₱)**.
+>
+> 📎 *Optional* slow-motion version of the concurrency lesson, with timelines:
 > [beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md). This is the phase
 > where the whole architecture earns its keep — the one bug clean C# *cannot* fix on its own.
 
@@ -45,6 +47,23 @@ Reserving stock is **Inventory's** job, not Sales'. So Inventory is its own modu
 (`Erp.Modules.Inventory`) with its own `inventory` schema, and Sales must *not* reference it or touch
 `inventory.*` directly. The only channel is a **published contract** in the shared kernel — the modular
 monolith's core move ([beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md)):
+
+> 📦 **Create the second module now (Phase 1 deliberately deferred it — here's where we need it):**
+> ```bash
+> dotnet new classlib -n Erp.Modules.Inventory -o src/Modules/Inventory
+> dotnet sln add src/Modules/Inventory
+> # Inventory needs only the shared kernel — NOT Sales (the wall stays up):
+> dotnet add src/Modules/Inventory/Erp.Modules.Inventory.csproj reference src/Shared/Erp.Shared.Common/Erp.Shared.Common.csproj src/Shared/Erp.Shared.Infrastructure/Erp.Shared.Infrastructure.csproj
+> # The host references the new module so it can register it:
+> dotnet add src/Erp.Api/Erp.Api.csproj reference src/Modules/Inventory/Erp.Modules.Inventory.csproj
+> # Inventory runs Dapper against SQL Server, same as Sales:
+> dotnet add src/Modules/Inventory package Dapper
+> dotnet add src/Modules/Inventory package Microsoft.Extensions.DependencyInjection.Abstractions
+> ```
+> Give it a `DependencyInjection.cs` with `AddInventoryModule()` (registering `IStockReservation` →
+> `StockReservationService`), and add `builder.Services.AddInventoryModule(builder.Configuration);` next to
+> `AddSalesModule` in `Program.cs`. Notice Sales still has **no** reference to Inventory — they meet only at
+> the `IStockReservation` contract below.
 
 ```csharp
 // Erp.Shared.Common/Contracts/IStockReservation.cs  (the ONLY way Sales touches stock)
@@ -241,6 +260,28 @@ public sealed class SubmitSalesOrderEndpoint : ICarterModule
   in [Phase 5 §7](05-domain-model.md) for why, and the fix, if you want true pipeline-wide credit.)*
 - ✅ **Best practice: keep the transaction short.** Do read-only validation *before* `BeginAsync`; only
   the writes (reserve + status) live inside the transaction, minimizing how long rows are locked.
+
+## 9. Checkpoint — submit reserves stock, over-submit rolls back ✅
+
+Create a draft order (Phase 6), note its id, then submit it:
+
+```bash
+curl -X POST http://localhost:5xxx/sales-orders/{id}/submit -H "Authorization: Bearer $TOKEN"   # → 204 No Content
+```
+
+Verify the reservation actually happened — the order is now `PendingApproval` and stock moved from `OnHand`
+into `Reserved`:
+
+```sql
+SELECT Status FROM sales.SalesOrder WHERE Id = {id};          -- 1 = PendingApproval
+SELECT OnHand, Reserved FROM inventory.Inventory WHERE ItemId = 1;   -- Reserved went up by the ordered qty
+```
+
+Now prove the guard: order more of the *Restricted Kit* (item 3, only 8 on hand) than is available and
+submit — you get a `422` "Insufficient stock", and `SELECT Reserved FROM inventory.Inventory WHERE ItemId = 3`
+is **unchanged** (the whole submit rolled back). If a good submit reserves and a greedy one leaves stock
+untouched, **Phase 7 is done and verifiable** — you've watched the atomic guard do the one job clean C#
+couldn't.
 
 ---
 

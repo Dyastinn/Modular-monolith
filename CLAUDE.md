@@ -13,19 +13,27 @@
 
 A course that teaches how to build a **Sales Order module** for a fictional ERP as a **Modular Monolith
 with Vertical Slice Architecture (VSA)**. The deliverable is mostly **Markdown lessons** (plus `Erp.slnx`
-and a `src/` skeleton). Three companion folders teach the *same* architecture with **three distinct jobs** —
-this framing is deliberate; preserve it in any edit:
+and a `src/` skeleton). **`plan-business-tutorial/` is the primary course**; the other two folders teach the
+*same* architecture with **different, supporting jobs**. This framing is deliberate; preserve it in any edit:
 
 | Folder | Job (its purpose — keep this) | Structure |
 |---|---|---|
-| `plan-beginner-friendly/` | **Understand it.** Concept-first, plain-English: what problem each pattern solves and how the pieces fit. Analogies, answer keys, a small teaching slice. (Also WebForms-migrant friendly.) | Phases 0–9 + `00a-FOUNDATIONS.md`, `GLOSSARY.md`, `LEARNING-RESOURCES.md` |
-| `plan-business-tutorial/` | **Build it for real.** Hands-on, production-*shaped* implementation: JWT, roles, credit limits, concurrency — the reader does it themselves. | Phases 0–13 |
+| `plan-business-tutorial/` | **The primary course — build it for real, self-contained.** Hands-on, production-*shaped* implementation: JWT, roles, credit limits, concurrency — the reader does it themselves, and **every required step lives here**. Explains concepts thoroughly as it builds them; no sibling folder is a prerequisite. | Phases 0–13 |
+| `plan-beginner-friendly/` | **Optional theory companion — understand it.** Lightweight, concept-first, plain-English reading you can do on a commute: *mentally* build the system (what problem each pattern solves, how the pieces fit) without touching code. Analogies, answer keys, a small teaching slice. (Also WebForms-migrant friendly.) A reader can complete the course without it. | Phases 0–9 + `00a-FOUNDATIONS.md`, `GLOSSARY.md`, `LEARNING-RESOURCES.md` |
 | `plan-Opus/` | **Let AI build it.** A terse, unambiguous, AI-ready spec: hand a phase to a coding agent to implement exactly, so the learner sees it come together and reviews real code against the plan. | Phases 0–9 |
+
+**The business tutorial must stand alone.** It never sends the reader to a sibling folder for a *required*
+step (creating the solution, understanding a concept needed to proceed) — links to beginner/Opus are always
+**optional deeper reading**. Prefer explaining a concept where it's used over forward-referencing a later
+phase, and **each phase should end in a runnable, verifiable result** the reader can see working before
+moving on. The beginner folder, by contrast, stays lightweight and theory-first — don't grow it into a
+second hands-on build.
 
 **Phase numbers line up across folders.** A change to a concept in one folder usually needs a matching
 look at the sibling folders. Respect each folder's *job*: don't turn the beginner concepts into a terse
-spec, don't strip the "why" out of it to match Opus, and keep Opus tight and implementable (no meandering
-prose). `README.md` is the front door; keep it in sync with any structural change.
+spec, don't strip the "why" out of it to match Opus, keep Opus tight and implementable (no meandering
+prose), and keep the business tutorial self-contained. `README.md` is the front door; keep it in sync with
+any structural change.
 
 ---
 

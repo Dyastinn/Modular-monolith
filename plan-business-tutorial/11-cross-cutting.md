@@ -1,9 +1,12 @@
 # Phase 11 — Cross-Cutting Concerns: Validation, Error Handling, Logging
 
-> 📎 Builds directly on the pipeline behaviors from
-> [beginner Phase 2](../plan-beginner-friendly/03-phase-2-mediator.md) and the validation split from
-> [beginner Phase 4](../plan-beginner-friendly/05-phase-4-create-order.md). This is where we make the app
-> behave *professionally* — consistent errors, useful logs, no leaked stack traces.
+> Self-contained: this phase completes the pipeline the earlier phases were designed around — it's where the
+> `ValidationBehavior`, `LoggingBehavior`, and global error handling you kept seeing "arrives in Phase 11"
+> notes for actually get built and wired. Money is in **Philippine Pesos (₱)**.
+>
+> 📎 *Optional* deeper reading: pipeline behaviors
+> ([beginner Phase 2](../plan-beginner-friendly/03-phase-2-mediator.md)) and the validation split
+> ([beginner Phase 4](../plan-beginner-friendly/05-phase-4-create-order.md)).
 
 ---
 
@@ -19,13 +22,29 @@ The wrappers that apply to *every* request, written once:
 - A **global exception handler** that turns our domain exceptions into clean, consistent HTTP responses
   (400/403/404/409/422) instead of raw 500s with stack traces.
 
-## 2. Why it's designed this way
+## 2. Why it's designed this way (the problem, before any code)
 
-Throughout this tutorial the handlers have thrown meaningful exceptions — `DomainException`,
-`NotFoundException`, `ConcurrencyException`, `ValidationException`. That was deliberate: handlers stay
-focused on the happy path and *throw* when a rule is broken. **Something central** must catch those and
-translate them to the right HTTP status. Doing that in every endpoint would be the copy-paste sprawl the
-mediator exists to kill. So it lives in one place.
+Before we write a line, be clear on *what problem* each of these three pieces solves — that's why we build
+them at all:
+
+- **The problem error handling solves.** Throughout this tutorial the handlers have thrown meaningful
+  exceptions — `DomainException`, `NotFoundException`, `ConcurrencyException`, `ValidationException`. That
+  was deliberate: a handler stays focused on the happy path and simply *throws* when a rule is broken,
+  instead of cluttering itself with "and now build the right HTTP response." But a thrown exception, left
+  alone, becomes an ugly **500 with a stack trace** — useless to the client and a security leak. So
+  **something central** must catch each exception and translate it to the *right* status (a blocked customer
+  is a `422`, not a `500`). Doing that in every endpoint would be the copy-paste sprawl the mediator exists
+  to kill — so it lives in **one** global handler.
+- **The problem validation-as-a-behavior solves.** We want every command's input checked *before* its
+  handler runs, without each handler remembering to call its validator. A pipeline behavior does it for all
+  of them, once.
+- **The problem logging-as-a-behavior solves.** We want a timed record of every request (and every failure)
+  without pasting `log.LogInformation` into every handler.
+
+This is also the phase that **completes the pipeline** the whole course was built around: back in Phase 2
+the mediator was designed to wrap handlers in behaviors, but we registered none yet; the feature phases threw
+exceptions that nothing formatted. Now, having *seen* the need across real features, we build the machinery —
+which is exactly when it makes sense, not before.
 
 > 💡 This is the concrete answer to "what does the mediator/pipeline actually *buy* me?" — you write
 > logging, validation, and error handling **once**, and every endpoint gets them. Add another endpoint and
@@ -33,8 +52,23 @@ mediator exists to kill. So it lives in one place.
 
 ## 3. The ValidationBehavior
 
-Cross-cutting behaviors are shared by *every* module, so they live in `Erp.Shared.Messaging` (registered
-once by `AddSharedInfrastructure` → `AddMessaging`). `Erp.Shared.Messaging/Behaviors/ValidationBehavior.cs`:
+Cross-cutting behaviors are shared by *every* module, so they live in `Erp.Shared.Messaging`. Back in
+[Phase 2](02-mediator-own-vs-free.md), `AddMessaging()` registered only the `ISender` and left a note that
+the behaviors would join here — so now we write them and add the two registration lines to `AddMessaging`:
+
+```csharp
+// Erp.Shared.Infrastructure — extend the AddMessaging() stub from Phase 2:
+public static IServiceCollection AddMessaging(this IServiceCollection services)
+{
+    services.AddScoped<ISender, Sender>();
+    // NEW this phase — order matters: Logging OUTERMOST, then Validation (see §4).
+    services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+    services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>));
+    return services;
+}
+```
+
+`Erp.Shared.Messaging/Behaviors/ValidationBehavior.cs`:
 
 ```csharp
 public sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValidator<TRequest>> validators)
@@ -104,7 +138,9 @@ We map each exception type to an HTTP status, in one place, using ASP.NET Core's
 `Erp.Api/GlobalExceptionHandler.cs`:
 
 ```csharp
-public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> log) : IExceptionHandler
+public sealed class GlobalExceptionHandler(
+    ILogger<GlobalExceptionHandler> log,
+    IHostEnvironment env) : IExceptionHandler          // IHostEnvironment tells us Development vs Production
 {
     public async ValueTask<bool> TryHandleAsync(HttpContext ctx, Exception ex, CancellationToken ct)
     {
@@ -119,15 +155,27 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> log) 
             _                              => (StatusCodes.Status500InternalServerError, "Unexpected error")
         };
 
-        // Log full detail server-side; return a clean message client-side.
+        // Always log full detail server-side, regardless of environment.
         if (status == StatusCodes.Status500InternalServerError)
             log.LogError(ex, "Unhandled exception");
+
+        // The 500 "detail" is the ONLY environment-sensitive bit:
+        //  • Development → show the real message + stack trace, so you can debug without digging in logs.
+        //  • Production  → a bland message, so we never leak internals (table names, paths, stack traces).
+        // Known business errors (422/404/409/…) are safe to show verbatim in BOTH environments — their
+        // messages are meant for the user ("Customer is blocked").
+        string? detail = status switch
+        {
+            StatusCodes.Status500InternalServerError when env.IsDevelopment() => ex.ToString(), // full stack trace
+            StatusCodes.Status500InternalServerError                          => "An unexpected error occurred.",
+            _                                                                 => ex.Message
+        };
 
         var problem = new
         {
             title,
             status,
-            detail = status == 500 ? "An unexpected error occurred." : ex.Message,   // don't leak internals on 500
+            detail,
             errors = ex is ValidationException v ? v.Errors.Select(e => e.ErrorMessage) : null
         };
 
@@ -146,6 +194,17 @@ builder.Services.AddProblemDetails();
 // ...
 app.UseExceptionHandler();   // early in the pipeline
 ```
+
+> 🔍 **Why show the real error in Development but hide it in Production?** While *you're building*, an
+> unexpected `500` is something you need to **debug** — the exception message and stack trace tell you which
+> line blew up, and having them right there in the HTTP response (or Swagger) saves you round-trips to the
+> log. But that exact same detail, shown to a *real user in production*, is a **security leak**: a stack
+> trace can reveal table names, file paths, library versions, even connection details — a map an attacker
+> would love. So we key it off `IHostEnvironment`: full detail in `Development`, a bland "An unexpected error
+> occurred." in `Production` (with the full detail still written to the server log, where only operators can
+> see it). ASP.NET Core knows which environment it's in from the `ASPNETCORE_ENVIRONMENT` variable
+> (`Development` locally, `Production` when unset). **Same code, safe in both places** — you get debuggability
+> where you need it and discretion where it matters.
 
 > 🔑 **The status-code mapping *is* the design.** Each exception type carries business meaning, and the
 > handler translates it to the HTTP language clients understand:
@@ -181,9 +240,7 @@ By now `Program.cs` composes the shared kernel and each module — registration 
 
 ```csharp
 // AddSharedInfrastructure (Erp.Shared.Infrastructure) — the platform every module uses:
-services.AddScoped<ISender, Sender>();
-services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));    // outermost
-services.AddTransient(typeof(IPipelineBehavior<,>), typeof(ValidationBehavior<,>)); // inner
+services.AddMessaging();   // ISender + the LoggingBehavior/ValidationBehavior we added to it in §3 above
 services.AddScoped<IDbConnectionFactory>(_ => new SqlConnectionFactory(config.GetConnectionString("ErpDb")!));
 services.AddScoped<IUnitOfWork, UnitOfWork>();
 services.AddHttpContextAccessor();
@@ -222,16 +279,39 @@ services.AddScoped<IStockReservation, StockReservationService>();   // the contr
 Recall Beta Industries ordering 100 Widgets ([Phase 6](06-create-order.md)) — it broke the credit limit:
 
 ```
-... handler calls customer.EnsureWithinCreditLimit($2,500)
+... handler calls customer.EnsureWithinCreditLimit(₱2,500)
     → throws DomainException("Order total ... would exceed the credit limit ...")
 → LoggingBehavior catches, logs "✗ CreateSalesOrderCommand failed", rethrows
 → GlobalExceptionHandler maps DomainException → 422 Unprocessable Entity
 → client receives: { "title": "Business rule violated", "status": 422,
-                     "detail": "Order total $2,500.00 would exceed the credit limit. Available credit: $500.00." }
+                     "detail": "Order total ₱2,500.00 would exceed the credit limit. Available credit: ₱500.00." }
 ```
 
 Clean, consistent, informative — and the salesperson sees exactly why. No stack trace, no 500, no
 special code in the endpoint. That's the cross-cutting machinery doing its job.
+
+## 8b. Checkpoint — errors are now clean and consistent ✅
+
+This is the phase that makes every earlier feature's *unhappy* path tidy. Re-run the rejections you saw
+earlier and confirm they now come back as proper HTTP problems, not raw 500s:
+
+```bash
+# Business rule → 422 (Phase 6's over-limit order): Beta ordering 100 Widgets
+curl -X POST http://localhost:5xxx/sales-orders -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" -d '{"customerId":2,"lines":[{"itemId":1,"quantity":100}]}'
+# → 422 { "title": "Business rule violated", "detail": "Order total ₱2,500.00 would exceed..." }
+
+# Malformed input → 400 with field errors (empty lines)
+curl -X POST http://localhost:5xxx/sales-orders -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" -d '{"customerId":2,"lines":[]}'
+# → 400 { "title": "Validation failed", "errors": ["An order needs at least one line."] }
+```
+
+Then confirm the dev-vs-prod switch: run with `ASPNETCORE_ENVIRONMENT=Development` and force an unexpected
+error — the `500` response includes the stack trace. Run again with `ASPNETCORE_ENVIRONMENT=Production` and
+the same error returns only `"An unexpected error occurred."` (the detail is in the server log). If business
+errors return `422`, bad input returns `400` with field messages, and `500`s reveal detail only in
+Development, **Phase 11 is done and verifiable** — the app now behaves professionally on every path.
 
 ## 9. Why each component exists
 

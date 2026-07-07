@@ -1,8 +1,8 @@
 # Phase 9 — Updating a Draft Order's Lines
 
-> 📎 A variation on the create slice ([Phase 6](06-create-order.md)); reuses the same validation split
-> and repository pattern. This phase is deliberately shorter — by now the shape should feel familiar,
-> and *that familiarity is the maintainability win* ([beginner Phase 7](../plan-beginner-friendly/08-phase-7-remaining-slices.md)).
+> Self-contained: a familiar variation on the create slice ([Phase 6](06-create-order.md)), which you've
+> already built. Money is in **Philippine Pesos (₱)**. *Optional* deeper reading on why the repeated shape
+> is a maintainability win: [beginner Phase 7](../plan-beginner-friendly/08-phase-7-remaining-slices.md).
 
 ---
 
@@ -181,10 +181,24 @@ A SalesRep edits draft order #7, changing it to 3 Widgets:
 3. Load order #7. order.ClearLines() → it's a Draft, so allowed.
    (If #7 were PendingApproval, ClearLines throws → 422 "Lines can only be changed on a draft order".)
 4. Re-run checks: not blocked ✓, category role ✓, category cap ✓.
-5. AddLine ×1 → total $75. EnsureWithinCreditLimit ✓.
+5. AddLine ×1 → total ₱75. EnsureWithinCreditLimit ✓.
 6. BEGIN TRAN → delete old lines, insert new line, update total → COMMIT.
 7. 204 No Content.
 ```
+
+## 7b. Checkpoint — edit a draft, and prove a non-draft refuses ✅
+
+Take a **Draft** order (from Phase 6), then change its lines:
+
+```bash
+curl -X PUT http://localhost:5xxx/sales-orders/{draftId} -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" -d '{"lines":[{"itemId":1,"quantity":3}]}'   # → 204
+```
+
+`SELECT TotalAmount FROM sales.SalesOrder WHERE Id = {draftId};` now reads ₱75 (3 × ₱25). Then try the same
+`PUT` against a **submitted** order and confirm it's refused with `422` "Lines can only be changed on a draft
+order" — with its lines untouched. If a draft re-lines cleanly and a submitted order rejects the edit,
+**Phase 9 is done and verifiable** — the domain, not the handler, is enforcing "draft only."
 
 ## 8. Why each component exists
 

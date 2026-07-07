@@ -1,8 +1,11 @@
 # Phase 8 — Approval & Cancellation (Roles, State Machine, Release, Concurrency)
 
-> 📎 Builds on the state machine and domain-event ideas from
-> [beginner Phase 7](../plan-beginner-friendly/08-phase-7-remaining-slices.md) and the optimistic
-> concurrency guard from [beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md).
+> Self-contained: the state machine, optimistic concurrency, and event dispatch are all explained here.
+> Money is in **Philippine Pesos (₱)**.
+>
+> 📎 *Optional* deeper reading: the state machine and domain-event ideas
+> ([beginner Phase 7](../plan-beginner-friendly/08-phase-7-remaining-slices.md)) and the optimistic
+> concurrency guard ([beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md)).
 
 ---
 
@@ -189,12 +192,11 @@ The domain events raised in [Phase 5](05-domain-model.md) (`SalesOrderApproved`,
 First, the two contracts — a handler for one event type, and the dispatcher that runs them. These belong in
 `Erp.Shared.Messaging` (every module's events reuse them), alongside the other messaging contracts:
 
-> ⚠️ **This adds one project reference: `Erp.Shared.Messaging → Erp.Shared.BuildingBlocks`.** These
-> contracts mention `IDomainEvent` and `AggregateRoot<TId>`, which live in `Erp.Shared.BuildingBlocks` — but
-> the [Phase 1](01-solution-setup.md) reference list didn't give Messaging a reference to BuildingBlocks. Add
-> it now (`dotnet add src/Shared/Erp.Shared.Messaging reference src/Shared/Erp.Shared.BuildingBlocks`), or
-> these types won't resolve. It's a safe reference — `BuildingBlocks` depends on nothing, so no wall is
-> crossed. (The [Phase 1 reference list](01-solution-setup.md) has been updated to include it.)
+> ✅ **No new reference needed here.** These contracts mention `IDomainEvent` and `AggregateRoot<TId>`, which
+> live in `Erp.Shared.BuildingBlocks` — and you already gave `Erp.Shared.Messaging` a reference to
+> `BuildingBlocks` back in [Phase 1](01-solution-setup.md) (that's the edge we set up precisely so the
+> mediator could carry base domain-event types). So they resolve as-is. Safe edge, too: `BuildingBlocks`
+> depends on nothing, so no module wall is crossed.
 
 ```csharp
 // A reaction to a specific domain event. Zero-to-many handlers may exist per event.
@@ -240,7 +242,7 @@ public sealed class SalesOrderApprovedAuditHandler(ILogger<SalesOrderApprovedAud
 {
     public Task Handle(SalesOrderApproved e, CancellationToken ct)
     {
-        log.LogInformation("Order {Id} approved by user {Approver} for {Total:C}",
+        log.LogInformation("Order {Id} approved by user {Approver} for ₱{Total:N2}",
             e.Id.Value, e.Approver.Value, e.Total.Amount);
         return Task.CompletedTask;
     }
@@ -303,7 +305,7 @@ right home for a blanket "managers only" rule.
 
 ## 8. How the approval request flows
 
-Manager logged in as `manager` approves order #12 (PendingApproval, total $12,000, customer Acme):
+Manager logged in as `manager` approves order #12 (PendingApproval, total ₱12,000, customer Acme):
 
 ```
 1. Auth: token valid, role SalesManager.
@@ -312,7 +314,7 @@ Manager logged in as `manager` approves order #12 (PendingApproval, total $12,00
 4. order.Approve(managerId) → state machine allows PendingApproval→Approved ✓; raises SalesOrderApproved.
 5. BEGIN TRAN.
 6. UpdateStatus with RowVersion → nobody else touched it → rowcount 1 ✓.
-7. AdjustBalance(Acme, +$12,000) → Acme now owes 22,000 of their 50,000 limit.
+7. AdjustBalance(Acme, +₱12,000) → Acme now owes ₱22,000 of their ₱50,000 limit.
 8. COMMIT — status + balance change durable together.
 9. After commit: dispatch SalesOrderApproved → audit log writes "Order 12 approved...".
 10. Endpoint returns 204 No Content.
@@ -347,6 +349,34 @@ If a SalesRep had tried, they'd never reach step 3 — the 403 stops them at ste
   and in the same transaction as the status change.
 - ✅ **Best practice: surface `ConcurrencyException` as a 409 Conflict** (Phase 11) so clients know to
   reload and retry.
+
+## 11. Checkpoint — approve (manager-only) and cancel (releases) ✅
+
+Take a `PendingApproval` order from Phase 7. First prove the role gate — with a **`rep`** token:
+
+```bash
+curl -X POST http://localhost:5xxx/sales-orders/{id}/approve -H "Authorization: Bearer $REP_TOKEN"   # → 403 Forbidden
+```
+
+Now approve it as **`manager`**, and confirm the balance moved:
+
+```bash
+curl -X POST http://localhost:5xxx/sales-orders/{id}/approve -H "Authorization: Bearer $MANAGER_TOKEN"  # → 204
+```
+```sql
+SELECT Status FROM sales.SalesOrder WHERE Id = {id};                  -- 2 = Approved
+SELECT OutstandingBalance FROM sales.Customer WHERE Id = {customerId};-- rose by the order total
+```
+
+Finally, cancel it and watch the reversals — stock released **and** the balance credited back:
+
+```bash
+curl -X POST http://localhost:5xxx/sales-orders/{id}/cancel -H "Authorization: Bearer $MANAGER_TOKEN"   # → 204
+```
+
+`Reserved` on the ordered items drops, and `OutstandingBalance` returns to where it was. If a rep gets `403`,
+a manager can approve, and cancelling undoes both the stock hold and the balance, **Phase 8 is done and
+verifiable** — the full order lifecycle now works end to end.
 
 ---
 

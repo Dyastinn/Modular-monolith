@@ -166,9 +166,40 @@ paste the results into `003_seed.sql`.
 
 ## 4. Step 2 — Creating the access token (`IJwtTokenService`)
 
-This mints the **access token** — the short-lived one (15 minutes, [Phase 1](01-solution-setup.md) config)
-that the client sends on every request. It's deliberately brief because a stolen access token then expires
-fast; §9's refresh token is what keeps the user from re-typing a password every 15 minutes.
+> 📦 **Packages & config for this phase — add these first.** JWT is where these are first used, so (per the
+> "install only when needed" rule from [Phase 1](01-solution-setup.md)) this is where we add them:
+> ```bash
+> dotnet add src/Shared/Erp.Shared.Infrastructure package System.IdentityModel.Tokens.Jwt
+> dotnet add src/Erp.Api package Microsoft.AspNetCore.Authentication.JwtBearer
+> ```
+> With Central Package Management on, each `dotnet add` also writes a `<PackageVersion>` line into
+> `Directory.Packages.props` (known-good for .NET 10: `System.IdentityModel.Tokens.Jwt` `8.19.1`,
+> `Microsoft.AspNetCore.Authentication.JwtBearer` `10.0.9`).
+>
+> Now add the **`Jwt` settings** these read. In `appsettings.json` (no secrets committed):
+> ```json
+> {
+>   "Jwt": {
+>     "Issuer": "Erp.Api",
+>     "Audience": "Erp.Client",
+>     "SigningKey": "",
+>     "AccessTokenMinutes": 15,   // short: a stolen access token dies fast (§9's refresh tokens make this practical)
+>     "RefreshSlidingDays": 7,    // inactivity timeout — resets on each use
+>     "RefreshAbsoluteDays": 30   // hard cap — an active session still re-logs-in eventually
+>   }
+> }
+> ```
+> And in `appsettings.Development.json` (local dev only — the real key is never committed):
+> ```json
+> { "Jwt": { "SigningKey": "dev-only-super-secret-key-change-me-32chars-min" } }
+> ```
+> 🔐 The `SigningKey` is a secret: **user-secrets** in dev
+> (`dotnet user-secrets set "Jwt:SigningKey" "..."`), env vars / a vault in prod. Committing one is a real
+> incident. Minimum 32 characters for the signing algorithm.
+
+This mints the **access token** — the short-lived one (15 minutes, from the `Jwt:AccessTokenMinutes` setting
+above) that the client sends on every request. It's deliberately brief because a stolen access token then
+expires fast; §9's refresh token is what keeps the user from re-typing a password every 15 minutes.
 `Erp.Shared.Infrastructure/Security/JwtTokenService.cs`:
 
 ```csharp
@@ -695,6 +726,38 @@ common way beginners tangle this code — so match your check to the row below b
 5. POST /auth/refresh {refreshToken}  → RefreshHandler rotates it → returns a new { accessToken, refreshToken }
      → client swaps in the new pair and retries. No re-login.
 ```
+
+## 11b. Checkpoint — log in, get a token, prove it protects ✅
+
+Run the app and verify auth works end-to-end. First, log in as the seed user `rep` (password
+`Password123!`):
+
+```bash
+curl -X POST http://localhost:5xxx/auth/login \
+     -H "Content-Type: application/json" \
+     -d '{"username":"rep","password":"Password123!"}'
+# → { "accessToken": "eyJ...", "refreshToken": "..." }
+```
+
+Now prove the token actually *gates* access. Add `.RequireAuthorization()` to the `/sales/ping` endpoint
+from Phase 2, then:
+
+```bash
+curl http://localhost:5xxx/sales/ping?name=world                       # → 401 Unauthorized (no token)
+curl http://localhost:5xxx/sales/ping?name=world -H "Authorization: Bearer eyJ..."   # → 200 "pong: world"
+```
+
+Finally, trade the refresh token for a fresh pair:
+
+```bash
+curl -X POST http://localhost:5xxx/auth/refresh -H "Content-Type: application/json" \
+     -d '{"refreshToken":"<the refresh token above>"}'                 # → a NEW accessToken + refreshToken
+```
+
+If a bad/missing token gives 401, a valid one gives 200, and refresh returns a *different* token pair,
+**Phase 4 is done and verifiable.** From Phase 6 on, every sales-order endpoint sits behind exactly this
+gate. (You can also paste the access token into Swagger's **Authorize** box and call endpoints from the
+browser.)
 
 ## 12. Common mistakes & best practices
 

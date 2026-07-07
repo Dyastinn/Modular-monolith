@@ -10,24 +10,26 @@ those are the traps this project deliberately avoids.
 
 ## Where to start
 
-Three companion guides — **same architecture, three different jobs.** They share phase numbers, so you can
-move between them:
+**Start with [`plan-business-tutorial/`](plan-business-tutorial/) — this is the main course.** Two companion
+guides teach the *same* architecture with supporting jobs. All three share phase numbers, so you can move
+between them:
 
-- **[`plan-beginner-friendly/`](plan-beginner-friendly/) — Understand it.** Concept-first and plain-English:
-  *what problem* each pattern solves and *how* the pieces fit, with analogies, answer keys, and a small slice
-  you build to make the ideas click. Read this to **get the concepts cold.** (Also written to help a
-  developer coming from **ASP.NET WebForms**.)
-- **[`plan-business-tutorial/`](plan-business-tutorial/) — Build it for real.** Roll up your sleeves and
-  implement the full, secured Sales Order module end-to-end — JWT, roles, credit limits, inventory
-  reservation, concurrency — applying the concepts **with your own hands.**
+- **[`plan-business-tutorial/`](plan-business-tutorial/) — Build it for real (start here).** Roll up your
+  sleeves and implement the full, secured Sales Order module end-to-end — JWT, roles, credit limits,
+  inventory reservation, concurrency — applying the concepts **with your own hands.** It's **self-contained**:
+  every step you need is in this folder, and it explains each concept as it builds it.
+- **[`plan-beginner-friendly/`](plan-beginner-friendly/) — Understand it (optional companion).** A
+  lightweight, concept-first, plain-English read: *what problem* each pattern solves and *how* the pieces
+  fit, with analogies and answer keys. Perfect for a commute — you **mentally build** the system before (or
+  alongside) writing any code. Reach for it when a concept in the tutorial feels shaky, or read it first if
+  you like the *why* before the *how*. (Also written to help a developer coming from **ASP.NET WebForms**.)
 - **[`plan-Opus/`](plan-Opus/) — Let AI build it.** A terse, unambiguous, **AI-ready spec.** Hand a phase to
   a coding agent (e.g. Claude Code) and have it implement exactly that phase — so you **see the architecture
   come together first-hand** and review real code against the plan.
 
-> **Suggested path:** read `plan-beginner-friendly` to understand *why*, then either build it yourself with
-> `plan-business-tutorial` **or** drive an AI through `plan-Opus` and watch it materialize — then read the
-> result back against the concepts. Doing both (build one slice by hand, let AI do the next) is the fastest
-> way to internalize it.
+> **Suggested path:** work through `plan-business-tutorial` end-to-end — that's the course. Keep
+> `plan-beginner-friendly` open as a companion for the *why* behind anything that feels abstract, and use
+> `plan-Opus` when you'd rather watch an AI implement a phase and review its code against the plan.
 
 ## Solution layout
 
