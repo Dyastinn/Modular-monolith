@@ -1,10 +1,10 @@
 # 00 — Start Here: Build a Real ERP Sales Order Module
 
-> 👨‍🏫 **From your senior:** The two earlier plans taught you the *architecture* using a deliberately
-> tidy example. This tutorial is different — here we build a **real, production-shaped Sales Order
-> module** for an ERP, with the messy business rules that actual companies have: credit limits, blocked
-> customers, inventory reservation, approval workflows, role-based security. Same stack, same
-> architecture, nothing new to install. We're *applying* what you learned, not relearning it.
+> 👨‍🏫 **From your senior:** The two earlier plans taught the *architecture* on a deliberately tidy
+> example. Here we build the real thing — a **production-shaped Sales Order module** for an ERP, with the
+> messy business rules actual companies have: credit limits, blocked customers, inventory reservation,
+> approval workflows, role-based security. Same stack, same architecture, nothing new to install. This is
+> where you apply what you already learned.
 
 ---
 
@@ -22,9 +22,8 @@ doing the implementation yourself, applying concepts the other folders frame dif
   you'd rather *watch* the module get built than type it, hand a phase to a coding agent (e.g. Claude Code),
   let it implement exactly that phase, then compare the result to what you'd have written here.
 
-So: **understand** in `plan-beginner-friendly`, **build by hand** here, and optionally **let an AI build**
-from `plan-Opus` to see it a second way. A great rhythm is to build a slice yourself here, then have the AI
-do the next one from Opus and review its work.
+A good rhythm: build a slice yourself here, then hand the next one to an AI from `plan-Opus` and review
+what it produces. You see the same idea twice, from two directions.
 
 **This folder does not repeat or change that architecture.** When we use a mediator, a value object, an
 atomic SQL guard, or a validation behavior, we link back instead of re-explaining from scratch — then we
@@ -36,11 +35,11 @@ two courses.
 
 ---
 
-## What we're actually building
+## What we're building
 
 A **Sales Order module** — the part of an ERP where a salesperson creates an order for a customer, it
-gets checked against real business rules, a manager approves it, and inventory is reserved so the
-warehouse can fulfill it. Concretely, by the end you'll have working, secured HTTP endpoints for:
+gets checked against the business rules, a manager approves it, and inventory is reserved so the warehouse
+can fulfill it. By the end you'll have secured HTTP endpoints for:
 
 | Endpoint | Who can call it | What it does |
 |---|---|---|
@@ -59,10 +58,10 @@ warehouse can fulfill it. Concretely, by the end you'll have working, secured HT
 > **`SalesManager`** (never just `"Manager"`). We use the exact strings everywhere in code so a typo can't
 > silently break an authorization check.
 
-## The real business rules we'll enforce (this is the whole point)
+## The business rules we'll enforce
 
-These are *not* CRUD. Each one is a decision about "where does this logic live?" — the skill the earlier
-plans trained. We'll enforce, and you'll learn exactly where each rule belongs:
+This is the whole point — none of it is CRUD. Each rule is a decision about *where the logic lives*, which
+is the skill the earlier plans trained. You'll learn exactly where each one belongs:
 
 1. **JWT authentication** — you must log in to touch any sales-order endpoint.
 2. **Role-based authorization** — only a **SalesManager** can approve orders.
@@ -135,9 +134,9 @@ plans trained. We'll enforce, and you'll learn exactly where each rule belongs:
 > happens — budget slack). Newer to C#? Add 50–100% and lean on the linked beginner phases. The phases are
 > sized to be **one sitting each**; Phases 4–8 are the meatiest, so start them when you're fresh.
 
-## Every phase follows the same shape (what you asked for)
+## Every phase follows the same shape
 
-To make sure nothing is skipped and nothing is assumed, **every phase answers these five questions**:
+Nothing gets skipped and nothing is assumed. **Every phase answers the same five questions:**
 
 1. **What we're building** — the concrete deliverable of this phase.
 2. **Why it's designed this way** — the reasoning, linking back to the pattern's home in the other plans.

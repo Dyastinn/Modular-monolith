@@ -310,7 +310,7 @@ stamp `CreatedByUserId`, and in [Phase 8](08-approval-cancellation.md) to check 
 
 ## 9. Two ways to authorize (endpoint vs. domain)
 
-There are **two levels** of authorization, and using each correctly is a key lesson:
+Authorization happens at **two levels**, and putting each rule at the right one is most of the skill:
 
 1. **Coarse, at the endpoint** — "you must be a Manager to even call approve." Declared on the endpoint:
    ```csharp
