@@ -108,7 +108,7 @@ text. That was structured logging the whole time; a sink just makes it searchabl
 
 ### Refresh tokens — already in the base course
 
-> ✅ **Now built in [Phase 4 §9](04-jwt-auth.md).** Short access tokens backed by rotating refresh tokens, with
+> ✅ **Now built in [Phase 4 §10](04c-jwt-refresh-apikey.md).** Short access tokens backed by rotating refresh tokens, with
 > reuse detection and revoke-all-sessions. Two hardening extras were left as flagged follow-ups: delivering the
 > refresh token as an `HttpOnly` cookie for browser clients (versus the response body), and a periodic cleanup
 > of revoked/expired rows (exercise #7 below).
@@ -221,7 +221,7 @@ output caching across instances.
 [Phase 13 §5](13-wrap-up-checklist.md) had six. Here are more, ordered roughly by how far they push past the
 base build. Same rule: try it *before* reading how.
 
-7. **Refresh-token hardening** — the two follow-ups [Phase 4 §9](04-jwt-auth.md) flagged: deliver the refresh
+7. **Refresh-token hardening** — the two follow-ups [Phase 4 §10](04c-jwt-refresh-apikey.md) flagged: deliver the refresh
    token to a browser client as an `HttpOnly; Secure; SameSite` cookie instead of the response body, and add a
    scheduled cleanup (`DELETE … WHERE RevokedUtc < …`) so revoked/expired rows don't accumulate. (Reinforces:
    the XSS threat model, and that housekeeping is separate from correctness.)

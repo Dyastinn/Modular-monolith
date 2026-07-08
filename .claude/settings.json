@@ -4,7 +4,8 @@
       "Bash(dotnet build *)",
       "Bash(openssl rand *)",
       "Bash(echo \"mobile:  $\\(openssl rand -base64 32\\)\")",
-      "Bash(echo \"desktop: $\\(openssl rand -base64 32\\)\")"
+      "Bash(echo \"desktop: $\\(openssl rand -base64 32\\)\")",
+      "Bash(python -)"
     ]
   }
 }

@@ -168,7 +168,7 @@ services.AddScoped<IUnitOfWork, UnitOfWork>();
 
 > ℹ️ `config.GetConnectionString("ErpDb")` reads the `ConnectionStrings:ErpDb` value you set in
 > [Phase 3](03-database-schema.md) — through the same `IConfiguration` pipeline detailed in
-> [Phase 4 §7](04-jwt-auth.md), so it comes from `appsettings.Development.json` locally and an environment
+> [Phase 4 §7](04b-jwt-login.md), so it comes from `appsettings.Development.json` locally and an environment
 > variable in production, with no code change.
 
 ## 8. Checkpoint — prove C# can reach the database ✅

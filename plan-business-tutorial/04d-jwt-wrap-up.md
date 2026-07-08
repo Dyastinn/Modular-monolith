@@ -1,0 +1,104 @@
+# Phase 4 (Part 4 of 4) — Request Flow, Checkpoint & Common Mistakes
+
+> **Phase 4 is split into four parts** — do them in order:
+> 1. [Passwords & access tokens](04-jwt-auth.md)
+> 2. [Login, validation & authorization](04b-jwt-login.md)
+> 3. [Refresh tokens & the API-key gate](04c-jwt-refresh-apikey.md)
+> 4. **Request flow, checkpoint & common mistakes** ← you are here
+
+> Builds on Parts [1](04-jwt-auth.md)–[3](04c-jwt-refresh-apikey.md). Everything is now in place: passwords, tokens, login, validation, `ICurrentUser`, authorization, refresh tokens, and the API-key gate. This part traces how they combine on a real request, gives you a checkpoint to prove it works, and collects the pitfalls.
+
+---
+
+## 12. How a full authenticated request flows
+
+```
+0. EVERY request carries  X-Api-Key: <key>  → ApiKeyMiddleware checks it FIRST; unknown client → 401
+     before anything else runs (yes, even /auth/login). Below, assume it's present and valid.
+1. POST /auth/login {rep, Password123!}  → LoginHandler verifies hash → returns { accessToken, refreshToken }
+2. Client stores both: the access token for requests, the refresh token for later.
+3. POST /sales-orders   X-Api-Key: <key>   Authorization: Bearer <accessToken>
+     → ApiKeyMiddleware OKs the client → UseAuthentication validates signature+expiry → HttpContext.User claims
+     → UseAuthorization checks the endpoint's role requirement (here: SalesRep or Manager — ok)
+     → endpoint calls sender.Send(command)
+     → handler injects ICurrentUser → reads UserId to stamp CreatedByUserId
+4. ...15 minutes pass; the access token expires → the next request gets 401.
+5. POST /auth/refresh {refreshToken}  → RefreshHandler rotates it → returns a new { accessToken, refreshToken }
+     → client swaps in the new pair and retries. No re-login.
+```
+
+## 13. Checkpoint — log in, get a token, prove it protects ✅
+
+Run the app and verify auth works end-to-end. First, log in as the seed user `rep` (password
+`Password123!`):
+
+```bash
+curl -X POST http://localhost:5xxx/auth/login \
+     -H "Content-Type: application/json" \
+     -d '{"username":"rep","password":"Password123!"}'
+# → { "accessToken": "eyJ...", "refreshToken": "..." }
+```
+
+Now prove the token actually *gates* access. Add `.RequireAuthorization()` to the `/sales/ping` endpoint
+from Phase 2, then:
+
+```bash
+curl http://localhost:5xxx/sales/ping?name=world                       # → 401 Unauthorized (no token)
+curl http://localhost:5xxx/sales/ping?name=world -H "Authorization: Bearer eyJ..."   # → 200 "pong: world"
+```
+
+Finally, trade the refresh token for a fresh pair:
+
+```bash
+curl -X POST http://localhost:5xxx/auth/refresh -H "Content-Type: application/json" \
+     -d '{"refreshToken":"<the refresh token above>"}'                 # → a NEW accessToken + refreshToken
+```
+
+If a bad/missing token gives 401, a valid one gives 200, and refresh returns a *different* token pair,
+**Phase 4 is done and verifiable.** From Phase 6 on, every sales-order endpoint sits behind exactly this
+gate. (You can also paste the access token into Swagger's **Authorize** box and call endpoints from the
+browser.)
+
+## 14. Common mistakes & best practices
+
+- ❌ **Storing plain passwords / weak hashing (MD5, SHA1 alone).** ✅ Salted PBKDF2 (or bcrypt/Argon2).
+- ❌ **Committing the signing key.** ✅ user-secrets/env vars; the key ≥ 32 chars.
+- ❌ **Different login errors for "no user" vs "bad password."** ✅ One generic message.
+- ❌ **Forgetting `.AllowAnonymous()` on login**, then wondering why you can't log in (you'd need a
+  token to get a token). ✅ Login is always anonymous.
+- ❌ **Middleware in the wrong order** (`UseAuthorization` before `UseAuthentication`). ✅ Authenticate,
+  then authorize.
+- ❌ **Making handlers depend on `HttpContext`.** ✅ Depend on `ICurrentUser`; keep the Application layer
+  framework-free and unit-testable (you can fake `ICurrentUser` in tests).
+- ❌ **Storing the raw refresh token in the database.** ✅ Store its hash; a DB leak then yields no usable
+  tokens (§10).
+- ❌ **Refreshing without rotating** (handing back the same refresh token). ✅ Rotate every time — that's
+  what makes reuse detectable.
+- ❌ **A long-lived access token "to save round-trips."** ✅ Keep the access token short (15 min) and lean on
+  the refresh token; a stolen short-lived token expires before it's useful.
+- ✅ **Best practice: reload the user on refresh.** It's your chance to honor a role change or a deactivation
+  since login, instead of trusting stale claims for days.
+- ❌ **Treating a browser-shipped API key as a real secret, or letting it replace user auth.** ✅ Use it as a
+  coarse *outer* gate — block anonymous traffic off the login door, tell clients apart, rate-limit/revoke one.
+  Keep JWT + the §9 checks as the real security. An API key is a genuine secret only for
+  server-to-server/partner clients (§11).
+- ❌ **Putting the API key gate *after* `UseAuthentication`.** ✅ Wire it *first* — reject unknown clients
+  before you spend cycles validating tokens, and so it can guard the anonymous `/auth/login` too.
+
+---
+
+## ✅ Check Yourself
+
+1. In one sentence each: what's authentication vs. authorization?
+2. Why does the Application layer talk to `ICurrentUser` instead of `HttpContext`?
+3. Why must `UseAuthentication` come before `UseAuthorization`?
+4. Give an authorization rule that belongs on the *endpoint*, and one that belongs in the *handler* —
+   and say why.
+5. Why does rotating the refresh token on every use make a *stolen* one detectable — and what does the
+   server do the moment it detects reuse?
+6. Why store only the *hash* of a refresh token, yet a plain SHA-256 is fine here where a password needs
+   PBKDF2?
+7. What question does an API key answer that a JWT doesn't — why must its gate run *before* authentication,
+   and why can't a browser SPA treat its API key as a true secret?
+
+> 👉 Next: [Phase 5 — The SalesOrder domain model and its business rules](05-domain-model.md).

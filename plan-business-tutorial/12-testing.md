@@ -336,7 +336,7 @@ public class SalesOrderWorkflowTests : IClassFixture<CustomWebAppFactory>
 
 The second test is gold: it proves the **role-based authorization** works through the *real* HTTP
 pipeline — a SalesRep genuinely cannot approve, getting a 403 before the handler runs. The third does the
-same for **refresh-token reuse detection** ([Phase 4 §9](04-jwt-auth.md)): a replayed token doesn't just fail,
+same for **refresh-token reuse detection** ([Phase 4 §10](04c-jwt-refresh-apikey.md)): a replayed token doesn't just fail,
 it revokes the whole family — the security property that's easy to *claim* and worth a test that *proves* it.
 
 ## 6. What to test where (the decision rule)

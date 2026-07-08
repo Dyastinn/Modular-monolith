@@ -108,7 +108,7 @@ Erp/                                         # repo root
 │   └── Erp.Api/                              # → Modules.{Sales, Inventory}, Shared.Infrastructure
 │       ├── Auth/                              #   host/platform auth slices (NOT a module):
 │       │   ├── Login/                         #     LoginHandler.cs + LoginEndpoint.cs
-│       │   └── Refresh/                       #     Refresh + Logout + Logout-all handlers/endpoint (Phase 4 §9)
+│       │   └── Refresh/                       #     Refresh + Logout + Logout-all handlers/endpoint (Phase 4 §10)
 │       ├── GlobalExceptionHandler.cs          #   maps exceptions → HTTP status (Phase 11)
 │       ├── Program.cs                         #   composition root; ends with `public partial class Program {}`
 │       ├── appsettings.json
@@ -227,7 +227,7 @@ as "in production." Here's the honest gap list, grouped, so you know what a real
       build user management.
 - [ ] Rate-limiting on `/auth/login` to slow brute-force attempts (ASP.NET Core has built-in rate
       limiting — no new dependency).
-- [x] **Refresh tokens** — ✅ built in [Phase 4 §9](04-jwt-auth.md): short (15 min) access tokens backed by
+- [x] **Refresh tokens** — ✅ built in [Phase 4 §10](04c-jwt-refresh-apikey.md): short (15 min) access tokens backed by
       rotating refresh tokens with reuse detection and a revoke-all-sessions endpoint. (Two hardening extras
       remain, both flagged in that section: delivering the refresh token as an `HttpOnly` cookie for browser
       clients, and a periodic cleanup of revoked/expired rows.)

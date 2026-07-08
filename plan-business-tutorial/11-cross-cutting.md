@@ -245,10 +245,10 @@ services.AddScoped<IDbConnectionFactory>(_ => new SqlConnectionFactory(config.Ge
 services.AddScoped<IUnitOfWork, UnitOfWork>();                  // transaction boundary (Phase 3b)
 services.AddHttpContextAccessor();
 services.AddScoped<ICurrentUser, CurrentUser>();
-services.AddSingleton<IClock, SystemClock>();                   // UtcNow wrapper — testable time (Phase 4 §9)
+services.AddSingleton<IClock, SystemClock>();                   // UtcNow wrapper — testable time (Phase 4 §10)
 services.AddSingleton<IPasswordHasher, PasswordHasher>();
 services.AddScoped<IJwtTokenService, JwtTokenService>();
-services.AddSingleton<IRefreshTokenService, RefreshTokenService>();  // refresh token generate/hash/expiry (Phase 4 §9)
+services.AddSingleton<IRefreshTokenService, RefreshTokenService>();  // refresh token generate/hash/expiry (Phase 4 §10)
 services.AddScoped<IUserRepository, UserRepository>();          // Login/refresh (host/platform concern)
 services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 
@@ -257,7 +257,7 @@ services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 // or sender.Send(new LoginCommand(...)) fails at runtime with "no service for IRequestHandler<LoginCommand,…>".
 services.AddScoped<IRequestHandler<LoginCommand, LoginResult>, LoginHandler>();
 services.AddScoped<IValidator<LoginCommand>, LoginValidator>();
-services.AddScoped<IRequestHandler<RefreshCommand, LoginResult>, RefreshHandler>();      // Phase 4 §9
+services.AddScoped<IRequestHandler<RefreshCommand, LoginResult>, RefreshHandler>();      // Phase 4 §10
 services.AddScoped<IRequestHandler<LogoutCommand, Unit>, LogoutHandler>();
 services.AddScoped<IRequestHandler<LogoutAllCommand, Unit>, LogoutAllHandler>();
 
