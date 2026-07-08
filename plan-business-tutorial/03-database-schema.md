@@ -592,6 +592,47 @@ Because scripts run **in filename order** and each runs **once**, name them with
 edit an old one. That "append-only, tracked" habit is what makes the same folder safe for dev, test, and
 prod. (`CREATE OR ALTER PROCEDURE`, below, is the one friendly exception — proc scripts you *can* re-run.)
 
+### If you're *not* using DbUp: fully guarded scripts + an audit log
+
+DbUp is optional. If you'd rather redeploy with plain `sqlcmd`, a batch file, or a CI step that just
+re-runs the folder, you don't have a runner tracking what already ran — so each *statement* has to be safe
+to run again on its own. The companion folder **[03a-database-queries/](03a-database-queries/README.md)**
+holds exactly that: every block from this phase, extracted into runnable `.sql` files where **every
+statement is guarded** —
+
+- schemas → `IF SCHEMA_ID('sales') IS NULL EXEC('CREATE SCHEMA sales;')`
+- tables / sequences → `IF OBJECT_ID('sales.Customer','U') IS NULL CREATE TABLE …`
+- indexes → `IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE …) CREATE INDEX …`
+- procs → `CREATE OR ALTER` (already re-runnable)
+- seed → `IF NOT EXISTS (SELECT 1 FROM <table>) BEGIN INSERT … END`
+
+> 🔑 **Two places to put "safe to re-run."** DbUp puts it in the **runner** (it records applied scripts and
+> skips them); the `03a` scripts put it in each **statement** (the `IF … IS NULL` guards). Same outcome —
+> pick the one that matches your deploy. Don't stack both on the same script: with DbUp, the guards are
+> just noise; without it, they're the whole safety net.
+
+**The `03a` scripts also add one thing this base schema doesn't: an audit trigger on every table.** Each
+schema gets a `ChangeLog` table, and each real table gets one `AFTER INSERT, UPDATE, DELETE` trigger that
+writes a row saying *which table, which key, insert/update/delete, when, and which DB login*.
+
+> ⚠️ **A trigger — in a course that's told you all logic belongs in the domain? Read the boundary
+> carefully, because it's exactly where "no hidden DB logic" gets precise.** The rule this course actually
+> protects is **no hidden *business* logic in the database**: no approval `IF`, no credit check, no status
+> rule where the app can't see it. These triggers break none of that. They hold **zero** business logic —
+> no policy, no validation, no writes to business tables. All they do is append a log row: the database
+> recording its *own* changes, the way a file server logs access. That doesn't change what the application
+> *does*, so it isn't business behavior — it's an **audit trail for the DBA**, a safety net for "who
+> touched this row, and when?" That's why it's a *good* example to see: you can have full auditing
+> **without** smuggling a single decision into SQL.
+>
+> ❓ **"Isn't 'react after a change' supposed to be a domain event?"** For *business* facts, yes — "order
+> approved by user 42, because…" is a domain event ([Phase 8](08-approval-cancellation.md)); it carries the
+> app user and the intent. A trigger captures something different and complementary: the **raw row change
+> as the database saw it**, including writes that never went through your app (a DBA hot-fix, a bulk
+> `UPDATE`). Events record *intent*; triggers record *what physically changed*. Note `ChangedBy` is the
+> **database login**, not the app user — a trigger can't read your JWT. App-user attribution stays the
+> event's job. Keep the two straight and neither one leaks business rules into the database.
+
 ### Checkpoint — the database is real and seeded ✅
 
 After the scripts run, verify the foundation actually exists. Query the seed users:
