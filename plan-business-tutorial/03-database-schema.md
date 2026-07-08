@@ -546,8 +546,8 @@ schema. In `appsettings.Development.json` (local dev only):
 
 Leave an empty `"ConnectionStrings": { "ErpDb": "" }` in `appsettings.json` so the *shape* is documented but
 no environment-specific value is committed. (The C# packages for querying — Dapper and
-`Microsoft.Data.SqlClient` — arrive in [Phase 6](06-create-order.md) with the first repository; right now we
-just need somewhere to point the scripts.)
+`Microsoft.Data.SqlClient` — arrive in the very next phase, [Phase 3b](03b-data-access.md), where we build
+the connection factory and unit of work; right now we just need somewhere to point the scripts.)
 
 ### Run the scripts
 
@@ -646,8 +646,9 @@ quick checks: `SELECT Name, IsBlocked FROM sales.Customer;` shows Gamma Traders 
 `SELECT ItemId, OnHand FROM inventory.Inventory;` shows the restricted kit with only 8 on hand.
 
 If those queries return the seed rows, **Phase 3 is done and verifiable**: the schemas exist, integrity
-constraints are in force, the procs are compiled, and there's data to log in as and order against. Phase 4
-builds login on top of exactly these `[identity]` tables.
+constraints are in force, the procs are compiled, and there's data to log in as and order against. Next,
+[Phase 3b](03b-data-access.md) wires up how C# *connects* to this database; then Phase 4 builds login on top
+of exactly these `[identity]` tables.
 
 ## 8. Common mistakes & best practices
 
@@ -673,4 +674,4 @@ builds login on top of exactly these `[identity]` tables.
 3. Why do we copy `UnitPrice` onto the order line instead of always reading it from `Item`?
 4. Name two `CHECK` constraints and the bad data each one makes impossible.
 
-> 👉 Next: [Phase 4 — JWT authentication & authorization](04-jwt-auth.md).
+> 👉 Next: [Phase 3b — Data Access: Connections & Transactions](03b-data-access.md).

@@ -541,17 +541,232 @@ the wristband. Later, `[Authorize(Roles = "SalesManager")]` reads exactly this.
 
 ## 5. Step 3 — The Login use case (a vertical slice)
 
-Login is a **query-ish command** — it reads a user and returns a token. We model it as a command since it
-"produces" a credential. Because authentication is a host/platform concern (not a business module), the
-Login slice lives with the host: `Erp.Api/Auth/Login/` — two files, same convention as every feature
-(`LoginHandler.cs` holds the command + result + validator + handler; `LoginEndpoint.cs` holds the Carter
-endpoint). `LoginHandler.cs`:
+Now that we can **hash passwords** (§3) and **create JWTs** (§4), we have everything needed to build a real
+login feature.
+
+A login has one simple responsibility:
+
+1. Find the user.
+2. Verify the account is allowed to log in.
+3. Verify the supplied password.
+4. Issue a JWT access token.
+5. Return that token to the client.
+
+We'll implement that entire flow as a **vertical slice**.
+
+### Why is Login a command?
+
+At first glance, login looks like a query because it reads a user from the database.
+
+However, the real purpose of login isn't to retrieve user information—it's to **issue a new authentication
+credential** (the JWT). Since it creates something new rather than simply returning existing data, we model
+it as a **command**.
+
+### Why does Login live in `Erp.Api`?
+
+Authentication is a **host/platform concern**, not a business concern.
+
+Business modules such as Sales, Purchasing, Inventory, or Accounting contain business rules. Login doesn't
+belong to any of those modules—it simply identifies **who** is calling the API before any business logic is
+allowed to run.
+
+For that reason, the Login slice lives with the host application:
+
+```text
+Erp.Api/
+└── Auth/
+    └── Login/
+        ├── LoginHandler.cs
+        └── LoginEndpoint.cs
+```
+
+Just like every other feature:
+
+- `LoginHandler.cs` contains the command, result, validator, and handler.
+- `LoginEndpoint.cs` exposes the HTTP endpoint using Carter.
+
+---
+
+## First pass: access token only
+
+We'll build login in **two passes**.
+
+In this section, the handler issues **only an access token**.
+
+That's already enough for a complete, working authentication system. A client can log in, receive a JWT, and
+authenticate future API requests.
+
+Later, in **§9**, we'll extend this exact feature to also issue a **refresh token**.
+
+Keeping refresh tokens out of this section avoids introducing several new concepts all at once:
+
+- refresh token generation
+- refresh token storage
+- refresh token expiry
+- refresh token rotation
+
+That lets us focus on understanding the login flow first.
+
+Before we build the handler, let's look at the services it depends on.
+
+| Dependency | Responsibility |
+|------------|----------------|
+| `IUserRepository` | Loads users from the database |
+| `IPasswordHasher` | Verifies passwords |
+| `IJwtTokenService` | Creates signed JWTs |
+
+`IPasswordHasher` and `IJwtTokenService` were built in the previous sections.
+
+The only missing piece is `IUserRepository`.
+
+---
+
+## Building `IUserRepository`
+
+The handler needs a way to load users from the database, but it shouldn't know **how** the data is stored.
+
+Instead, it depends on an abstraction:
+
+```text
+LoginHandler
+      │
+      ▼
+IUserRepository
+      │
+      ▼
+UserRepository
+      │
+      ▼
+SQL Server
+```
+
+This follows the Dependency Inversion Principle.
+
+The handler depends only on the interface, while Infrastructure provides the implementation.
+
+### The read model
+
+Authentication isn't enforcing business rules.
+
+It simply needs enough information to determine whether someone can log in.
+
+For that reason, we don't build a rich domain aggregate here. A simple read model is enough.
+
+`Erp.Shared.Common/Security/IUserRepository.cs`
 
 ```csharp
-public sealed record LoginCommand(string Username, string Password) : ICommand<LoginResult>;
+public sealed record AppUser(
+    long Id,
+    string Username,
+    string PasswordHash,
+    string Role,
+    bool IsActive);
 
-// Returned by BOTH login and refresh (§9): a fresh access token + the refresh token to store for next time.
-public sealed record LoginResult(string AccessToken, string RefreshToken, string Username, string Role);
+public interface IUserRepository
+{
+    Task<AppUser?> GetByUsernameAsync(string username, CancellationToken ct);
+    Task<AppUser?> GetByIdAsync(long id, CancellationToken ct);
+}
+```
+
+Notice how `AppUser` contains only the fields authentication needs:
+
+- Id
+- Username
+- PasswordHash
+- Role
+- IsActive
+
+Nothing more.
+
+The repository exposes two read methods.
+
+| Method | Used by |
+|---------|---------|
+| `GetByUsernameAsync()` | Login (this section) |
+| `GetByIdAsync()` | Refresh tokens (§9) |
+
+Although only one method is used today, adding the second one now avoids changing the interface later when we
+build refresh tokens.
+
+---
+
+## Implementing `UserRepository`
+
+Both repository methods are **pure reads**.
+
+As discussed in **Phase 3b**, read-only operations don't need transactions, so they create their own database
+connection directly.
+
+`Erp.Shared.Infrastructure/Security/UserRepository.cs`
+
+```csharp
+public sealed class UserRepository(IDbConnectionFactory factory) : IUserRepository
+{
+    public async Task<AppUser?> GetByUsernameAsync(string username, CancellationToken ct)
+    {
+        using var conn = factory.Create();
+
+        return await conn.QuerySingleOrDefaultAsync<AppUser>(
+            new CommandDefinition(
+                "[identity].usp_AppUser_GetByUsername",
+                new { Username = username },
+                commandType: CommandType.StoredProcedure,
+                cancellationToken: ct));
+    }
+
+    public async Task<AppUser?> GetByIdAsync(long id, CancellationToken ct)
+    {
+        using var conn = factory.Create();
+
+        return await conn.QuerySingleOrDefaultAsync<AppUser>(
+            new CommandDefinition(
+                "[identity].usp_AppUser_GetById",
+                new { Id = id },
+                commandType: CommandType.StoredProcedure,
+                cancellationToken: ct));
+    }
+}
+```
+
+These stored procedures were created earlier in **Phase 3**.
+
+- `[identity].usp_AppUser_GetByUsername`
+- `[identity].usp_AppUser_GetById`
+
+Notice the brackets around `identity`. They're required because `IDENTITY` is a reserved SQL keyword.
+
+Finally, register the repository in the composition root:
+
+```csharp
+services.AddScoped<IUserRepository, UserRepository>();
+```
+
+With that in place, every dependency required by the login handler now exists.
+
+---
+
+## Building the Login handler
+
+The login slice consists of four pieces:
+
+- the command
+- the result
+- the validator
+- the handler
+
+`LoginHandler.cs`
+
+```csharp
+public sealed record LoginCommand(string Username, string Password)
+    : ICommand<LoginResult>;
+
+// First pass: just the access token.
+// §9 extends this record to also include a refresh token.
+public sealed record LoginResult(
+    string AccessToken,
+    string Username,
+    string Role);
 
 public sealed class LoginValidator : AbstractValidator<LoginCommand>
 {
@@ -565,50 +780,146 @@ public sealed class LoginValidator : AbstractValidator<LoginCommand>
 public sealed class LoginHandler(
     IUserRepository users,
     IPasswordHasher hasher,
-    IJwtTokenService jwt,
-    IRefreshTokenService refreshTokens,     // generates + hashes the random refresh token (§9)
-    IRefreshTokenRepository store,          // persists it
-    IUnitOfWork uow,
-    IClock clock) : ICommandHandler<LoginCommand, LoginResult>
+    IJwtTokenService jwt)
+    : ICommandHandler<LoginCommand, LoginResult>
 {
     public async Task<LoginResult> Handle(LoginCommand cmd, CancellationToken ct)
     {
         var user = await users.GetByUsernameAsync(cmd.Username, ct);
 
-        // Same generic error whether the user is missing OR the password is wrong.
-        if (user is null || !user.IsActive || !hasher.Verify(cmd.Password, user.PasswordHash))
+        if (user is null ||
+            !user.IsActive ||
+            !hasher.Verify(cmd.Password, user.PasswordHash))
+        {
             throw new AuthenticationException("Invalid username or password.");
+        }
 
-        var access = jwt.CreateAccessToken(user.Id, user.Username, user.Role);
+        var access = jwt.CreateAccessToken(
+            user.Id,
+            user.Username,
+            user.Role);
 
-        // Start a NEW token family for this login, storing the refresh token's HASH (never the raw value).
-        var (rawRefresh, refreshHash) = refreshTokens.Generate();
-        var now = clock.UtcNow;
-        await using var tx = await uow.BeginAsync(ct);
-        await store.AddAsync(refreshHash, user.Id, familyId: Guid.NewGuid(),
-            expiresUtc: refreshTokens.SlidingExpiry(now), absoluteExpiresUtc: refreshTokens.AbsoluteExpiry(now),
-            tx.Transaction, ct);
-        await tx.CommitAsync(ct);
-
-        return new LoginResult(access, rawRefresh, user.Username, user.Role);   // client keeps the RAW refresh token
+        return new LoginResult(
+            access,
+            user.Username,
+            user.Role);
     }
 }
 ```
 
-> ℹ️ **What are `IUserRepository` and `AppUser`?** Just like the Sales repositories, the Login handler
-> declares the small port it needs and lets Infrastructure implement it. `IUserRepository` has two methods —
-> `Task<AppUser?> GetByUsernameAsync(string username, CancellationToken ct);` (login) and
-> `Task<AppUser?> GetByIdAsync(long id, CancellationToken ct);` (used by refresh in §9 to reload the user) —
-> implemented in `Shared.Infrastructure` with Dapper calling `"[identity].usp_AppUser_GetByUsername"` /
-> `"[identity].usp_AppUser_GetById"` (bracketed — reserved keyword, [Phase 3](03-database-schema.md)).
-> `AppUser` is a plain read shape carrying `Id, Username, PasswordHash, Role, IsActive` — deliberately *not* a
-> rich domain aggregate, because authentication is a platform concern, not a Sales business rule. Register it
-> in the composition root ([Phase 11 §7](11-cross-cutting.md)).
+---
 
-> ❓ **You might be wondering: "Why one vague error for both 'no such user' and 'wrong password'?"**
-> Security. If you said "no such user" vs "wrong password," an attacker could probe which usernames
-> exist. A single generic message ("Invalid username or password") leaks nothing. Small detail, real
-> best practice.
+## Walking through the handler
+
+Although the handler performs authentication, it actually does very little itself.
+
+Each dependency is responsible for one piece of work.
+
+### Step A — Load the user
+
+```csharp
+var user = await users.GetByUsernameAsync(cmd.Username, ct);
+```
+
+The repository looks up the user by username.
+
+If no matching user exists, it returns `null`.
+
+---
+
+### Step B — Validate the login
+
+```csharp
+if (user is null ||
+    !user.IsActive ||
+    !hasher.Verify(cmd.Password, user.PasswordHash))
+{
+    throw new AuthenticationException("Invalid username or password.");
+}
+```
+
+Three checks happen here.
+
+- Does the user exist?
+- Is the account active?
+- Does the supplied password match the stored hash?
+
+If any answer is "no", authentication stops immediately.
+
+Notice that we never compare plain-text passwords.
+
+`IPasswordHasher.Verify()` hashes the supplied password and compares it against the stored hash.
+
+---
+
+### Why use one generic error?
+
+You might expect different messages like:
+
+- User does not exist
+- Wrong password
+
+Returning different errors would reveal which usernames exist in the system.
+
+Instead, every authentication failure returns exactly the same message:
+
+> Invalid username or password.
+
+Whether the username is wrong, the password is wrong, or the account is inactive, the client receives the
+same response.
+
+This prevents attackers from discovering valid usernames.
+
+---
+
+### Step C — Create the JWT
+
+```csharp
+var access = jwt.CreateAccessToken(
+    user.Id,
+    user.Username,
+    user.Role);
+```
+
+Once authentication succeeds, the handler asks `IJwtTokenService` to generate a signed JWT.
+
+Notice that the handler doesn't know anything about JWT internals.
+
+It doesn't know how the claims are created.
+
+It doesn't know how the token is signed.
+
+It simply delegates that responsibility to `IJwtTokenService`.
+
+---
+
+### Step D — Return the result
+
+```csharp
+return new LoginResult(
+    access,
+    user.Username,
+    user.Role);
+```
+
+Finally, the handler packages the response that the client needs.
+
+For now, that consists of:
+
+- the access token
+- the username
+- the user's role
+
+In **§9**, we'll extend this response to also include a refresh token.
+
+At this point, the login feature is complete.
+
+A client can:
+
+1. Submit a username and password.
+2. Have the password verified securely.
+3. Receive a signed JWT.
+4. Use that JWT to authenticate future API requests.
 
 ## 6. Step 4 — The endpoint (a Carter module)
 
@@ -1097,6 +1408,70 @@ public interface IRefreshTokenRepository
 Each method is a one-line Dapper call to its matching `usp_RefreshToken_*` proc — the same shape as every
 other repository in this course, so the bodies are elided. `GetByHashAsync` reads on `IDbConnectionFactory`
 (no transaction); the writes take the handler's transaction, so a rotation is atomic.
+
+### Reminder — the transaction handle
+
+Refresh tokens are where the [Phase 3b](03b-data-access.md) unit of work earns its keep. A refresh writes
+*two* rows in one breath — add the new token, revoke the old — and they must land **both or neither**, so the
+login and refresh handlers wrap their writes in the transaction you already built, the same three moves:
+
+```csharp
+await using var tx = await uow.BeginAsync(ct);   // 1) open
+await store.AddAsync(..., tx.Transaction, ct);   // 2) run each write ON that transaction
+await tx.CommitAsync(ct);                          // 3) seal it
+```
+
+Remember **throw = rollback**: if a guard throws before `CommitAsync`, disposing `tx` rolls everything back
+automatically — you never call `Rollback` yourself ([Phase 3b §6](03b-data-access.md)).
+
+### Back to login — now issue a refresh token
+
+Remember the access-token-only `LoginHandler` from §5? Every piece it was waiting on now exists — the
+service, the store, `IClock`, and the transaction — so we return and finish it. Two changes: `LoginResult`
+grows a `RefreshToken`, and the handler generates one, stores its **hash** in a brand-new token family, and
+hands the **raw** token back to the client:
+
+```csharp
+// Extended from §5: now carries the refresh token too. Returned by BOTH login and refresh.
+public sealed record LoginResult(string AccessToken, string RefreshToken, string Username, string Role);
+
+public sealed class LoginHandler(
+    IUserRepository users,
+    IPasswordHasher hasher,
+    IJwtTokenService jwt,
+    IRefreshTokenService refreshTokens,   // generates + hashes the random refresh token
+    IRefreshTokenRepository store,        // persists it
+    IUnitOfWork uow,
+    IClock clock) : ICommandHandler<LoginCommand, LoginResult>
+{
+    public async Task<LoginResult> Handle(LoginCommand cmd, CancellationToken ct)
+    {
+        var user = await users.GetByUsernameAsync(cmd.Username, ct);
+
+        // Same generic error whether the user is missing OR the password is wrong.
+        if (user is null || !user.IsActive || !hasher.Verify(cmd.Password, user.PasswordHash))
+            throw new AuthenticationException("Invalid username or password.");
+
+        var access = jwt.CreateAccessToken(user.Id, user.Username, user.Role);
+
+        // Start a NEW token family for this login, storing the refresh token's HASH (never the raw value).
+        var (rawRefresh, refreshHash) = refreshTokens.Generate();
+        var now = clock.UtcNow;
+        await using var tx = await uow.BeginAsync(ct);
+        await store.AddAsync(refreshHash, user.Id, familyId: Guid.NewGuid(),
+            expiresUtc: refreshTokens.SlidingExpiry(now), absoluteExpiresUtc: refreshTokens.AbsoluteExpiry(now),
+            tx.Transaction, ct);
+        await tx.CommitAsync(ct);
+
+        return new LoginResult(access, rawRefresh, user.Username, user.Role);   // client keeps the RAW refresh token
+    }
+}
+```
+
+Now every dependency traces back to something already built: `IUserRepository` (§5), `IPasswordHasher` (§3),
+`IJwtTokenService` (§4), `IRefreshTokenService` + `IRefreshTokenRepository` (this section), `IClock` (recalled
+earlier in this section), and `IUnitOfWork` (from [Phase 3b](03b-data-access.md), recalled just above). No
+forward references — every piece was defined before it's used here.
 
 ### `POST /auth/refresh` — rotate, and catch the thief
 

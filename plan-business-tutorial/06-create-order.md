@@ -203,16 +203,15 @@ Look at what the handler *does* vs. what it *decides*:
 
 ## 6. The Dapper repository (the module's Infrastructure)
 
-> 📦 **Packages for this phase — add these now.** This is the first phase that runs SQL from C#, so it's
-> where Dapper and the SQL Server driver come in (the connection string was set up in Phase 3):
+> 📦 **Package for this phase — add this now.** This is the first phase that runs SQL from a *module*, so the
+> Sales module gets its own Dapper reference:
 > ```bash
 > dotnet add src/Modules/Sales package Dapper
-> dotnet add src/Shared/Erp.Shared.Infrastructure package Dapper
-> dotnet add src/Shared/Erp.Shared.Infrastructure package Microsoft.Data.SqlClient
 > ```
-> (`Microsoft.Data.SqlClient` lives in `Shared.Infrastructure`, where the connection factory / unit of work
-> that create `SqlConnection`s live; the modules just use Dapper against the `IDbConnection` those hand out.
-> CPM adds the `<PackageVersion>` lines.)
+> (The shared data-access packages — `Dapper` and `Microsoft.Data.SqlClient` in `Shared.Infrastructure`, where
+> the connection factory / unit of work create `SqlConnection`s — were added back in
+> [Phase 3b](03b-data-access.md). The module just uses Dapper against the `IDbConnection` the factory hands
+> out. CPM adds the `<PackageVersion>` line.)
 
 `Modules/Sales/Infrastructure/SalesOrderRepository.cs` (abbreviated to the create path):
 
@@ -259,74 +258,33 @@ The repository maps the aggregate to proc parameters and runs them **on the pass
 contains **no business rules** — pure persistence. Note it converts domain types to primitives at the
 boundary: `order.CustomerId.Value`, `(int)order.Status`, `line.UnitPrice.Amount`.
 
-## 7. The Unit of Work (the transaction boundary)
+## 7. Wrapping the write in a transaction
 
-> 🔑 **Two data-access paths — and the rule for choosing.** Not every database call needs a transaction.
-> This tutorial uses **exactly two** paths, and picking the right one is a real skill:
->
-> | | **Read-only** (one or more `SELECT`s, no mutation) | **Write** (one or more mutations that must be all-or-nothing) |
-> |---|---|---|
-> | Use | `IDbConnectionFactory.Create()` **directly** — open, query, done | `IUnitOfWork.BeginAsync()` → run writes on `tx.Transaction` → `CommitAsync` |
-> | Transaction? | **No.** | **Yes** — the whole unit commits or rolls back together. |
-> | Why | A single read has nothing to roll back, and wrapping it in a transaction just holds locks and adds overhead for no benefit. | The insert of the header **and** every line must succeed together, or none of them should exist. That atomicity is the entire point of a transaction. |
->
-> So in *this* handler, notice: **all the reads happen first, with no transaction open** (`customers.GetAsync`,
-> `items.GetForOrderAsync`, `NextOrderNumberAsync` each just grab a connection, read, and release it). Only
-> the **write** — `AddAsync` (header + lines) — runs inside `BeginAsync`/`CommitAsync`. The query slices in
-> [Phase 10](10-queries-search.md) are *pure* reads, so they never touch the unit of work at all.
+This is your first Sales-order **write**, so it's where the unit of work you built in
+[Phase 3b](03b-data-access.md) earns its keep. Recall the one rule from there: *reads* grab a connection
+directly; a *write that must be all-or-nothing* goes through `IUnitOfWork`. A create is the textbook case — an
+order is a header **plus** its lines, several `INSERT`s that have to land together or not at all.
 
-`IUnitOfWork` gives the handler a visible transaction. Interfaces in `Erp.Shared.Infrastructure`, impls too;
-the handler and query handlers depend only on the interfaces. `IDbConnectionFactory` hands out connections —
-query handlers ([Phase 10](10-queries-search.md)) call `Create()` directly for reads; the unit of work uses
-it to start a transaction for writes:
+Look back at how the two paths split in `CreateSalesOrderHandler` above:
+
+- **All the reads happen first, with no transaction open.** `customers.GetAsync`, `items.GetForOrderAsync`,
+  and `NextOrderNumberAsync` each grab a connection, read, and release it. Every read-only check — blocked
+  customer, category rules, `EnsureWithinCreditLimit` — runs here, *before* any transaction exists, so you
+  never hold locks while deciding. (The query slices in [Phase 10](10-queries-search.md) are *pure* reads, so
+  they never touch the unit of work at all.)
+- **Only the write is wrapped.** `AddAsync` (header + every line) runs inside the transaction, on
+  `tx.Transaction`:
 
 ```csharp
-public interface IDbConnectionFactory
-{
-    IDbConnection Create();   // returns a SqlConnection (opened below before use)
-}
-
-public interface IUnitOfWork
-{
-    Task<IAppTransaction> BeginAsync(CancellationToken ct);
-}
-public interface IAppTransaction : IAsyncDisposable
-{
-    IDbTransaction Transaction { get; }
-    Task CommitAsync(CancellationToken ct);
-}
+await using var tx = await uow.BeginAsync(ct);
+var newId = await orders.AddAsync(order, tx.Transaction, ct);   // header + lines, atomically
+await tx.CommitAsync(ct);
 ```
 
-```csharp
-// Infrastructure
-public sealed class UnitOfWork(IDbConnectionFactory factory) : IUnitOfWork
-{
-    public async Task<IAppTransaction> BeginAsync(CancellationToken ct)
-    {
-        var conn = factory.Create();
-        await ((SqlConnection)conn).OpenAsync(ct);
-        var tx = conn.BeginTransaction();
-        return new AppTransaction(conn, tx);
-    }
-}
-public sealed class AppTransaction(IDbConnection conn, IDbTransaction tx) : IAppTransaction
-{
-    public IDbTransaction Transaction => tx;
-    public Task CommitAsync(CancellationToken ct) { tx.Commit(); return Task.CompletedTask; }
-    public async ValueTask DisposeAsync()   // if we never committed, this rolls back
-    {
-        tx.Dispose();
-        if (conn is SqlConnection sc) await sc.DisposeAsync(); else conn.Dispose();
-    }
-}
-```
-
-> ❓ **You might be wondering: "How does a failure roll back? I don't see a `Rollback` call."** The
-> `await using var tx = ...` line means "dispose `tx` when the handler exits." If we reach
-> `tx.CommitAsync`, the changes are saved. But if a domain rule throws *before* the commit (say,
-> `EnsureWithinCreditLimit` fails), the handler exits early via the exception, `DisposeAsync` runs, and
-> because we never committed, disposing the transaction **rolls it back automatically**. So "throw =
-> rollback" falls out naturally. We'll lean on this hard in [Phase 7](07-submit-reserve-concurrency.md).
+And thanks to **throw = rollback** ([Phase 3b §6](03b-data-access.md)), if any guard throws before
+`CommitAsync`, disposing `tx` discards the half-written order automatically — no `Rollback` call, no orphaned
+header. We lean on this hard in [Phase 7](07-submit-reserve-concurrency.md), where a submit reserves stock
+across several rows in one transaction.
 
 ## 8. The endpoint (a Carter module, in the feature folder)
 
