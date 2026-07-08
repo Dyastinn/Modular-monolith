@@ -238,7 +238,7 @@ The login slice consists of four pieces:
 - the validator
 - the handler
 
-`LoginHandler.cs`
+`Erp.Api/Auth/Login/LoginHandler.cs`
 
 ```csharp
 public sealed record LoginCommand(string Username, string Password)
@@ -778,7 +778,18 @@ Business code now depends only on the `ICurrentUser` abstraction, never on ASP.N
 
 ---
 
-### Implementing `CurrentUser`
+### Implementing `CurrentUser` and `ICurrentUser`
+
+Create `Erp.Shared.Common/Security/CurrentUser.cs`:
+
+```csharp
+public interface ICurrentUser {
+    long UserId { get; }
+    string Username { get; }
+    string Role { get; }
+    bool IsInRole(string role);
+}
+```
 
 Create `Erp.Shared.Infrastructure/Security/CurrentUser.cs`:
 
@@ -817,12 +828,20 @@ Its only responsibility is reading information that the authentication middlewar
 #### Step A — Access the authenticated user
 
 ```csharp
-private ClaimsPrincipal User => accessor.HttpContext?.User;
+private ClaimsPrincipal User =>
+    accessor.HttpContext?.User
+        ?? throw new InvalidOperationException("No HTTP context.");
 ```
 
-`IHttpContextAccessor` gives Infrastructure access to the current HTTP request.
+`IHttpContextAccessor` gives us access to the current request's `HttpContext`.
 
-From there we obtain the authenticated `ClaimsPrincipal`.
+Earlier in the request pipeline, `UseAuthentication()` validated the JWT access token and stored the authenticated `ClaimsPrincipal` in:
+
+```csharp
+HttpContext.User
+```
+
+This property simply returns that `ClaimsPrincipal`.
 
 If no HTTP request exists, we throw an exception because there is no authenticated user to read.
 
@@ -840,7 +859,9 @@ During login we created the `sub` claim:
 new Claim(JwtRegisteredClaimNames.Sub, userId.ToString())
 ```
 
-Now we simply read it back.
+After the JWT was validated, ASP.NET Core reconstructed those claims and placed them into the `ClaimsPrincipal`.
+
+`FindFirstValue()` simply searches those claims and returns the value of the `sub` claim.
 
 ---
 
@@ -850,7 +871,7 @@ Now we simply read it back.
 User.FindFirstValue(ClaimTypes.Name)
 ```
 
-This returns the username that was placed into the JWT when the user logged in.
+This returns the value of the `Name` claim that was reconstructed from the validated JWT.
 
 ---
 
