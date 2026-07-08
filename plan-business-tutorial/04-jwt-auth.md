@@ -191,7 +191,7 @@ public sealed class PasswordHasher : IPasswordHasher
 
         if (parts.Length != 3)
             return false;
-            
+
         // Explicit version:
         // int iterations = 0;
         // bool parsed = int.TryParse(parts[0], out iterations);
@@ -273,15 +273,18 @@ paste the results into `003_seed.sql`.
 
 > 📦 **Packages & config for this phase — add these first.** JWT is where these are first used, so (per the
 > "install only when needed" rule from [Phase 1](01-solution-setup.md)) this is where we add them:
+>
 > ```bash
 > dotnet add src/Shared/Erp.Shared.Infrastructure package System.IdentityModel.Tokens.Jwt
 > dotnet add src/Erp.Api package Microsoft.AspNetCore.Authentication.JwtBearer
 > ```
+>
 > With Central Package Management on, each `dotnet add` also writes a `<PackageVersion>` line into
 > `Directory.Packages.props` (known-good for .NET 10: `System.IdentityModel.Tokens.Jwt` `8.19.1`,
 > `Microsoft.AspNetCore.Authentication.JwtBearer` `10.0.9`).
 >
-> Now add the **`Jwt` settings** these read. In `appsettings.json` (no secrets committed):
+> Now add the **`Jwt` settings** these read. Put the **non-secret configuration** in `appsettings.json`:
+>
 > ```json
 > {
 >   "Jwt": {
@@ -294,13 +297,128 @@ paste the results into `003_seed.sql`.
 >   }
 > }
 > ```
-> And in `appsettings.Development.json` (local dev only — the real key is never committed):
+>
+> For **local development**, you can place a temporary key in `appsettings.Development.json` while learning:
+>
 > ```json
-> { "Jwt": { "SigningKey": "dev-only-super-secret-key-change-me-32chars-min" } }
+> {
+>   "Jwt": {
+>     "SigningKey": "dev-only-super-secret-key-change-me-32chars-min"
+>   }
+> }
 > ```
-> 🔐 The `SigningKey` is a secret: **user-secrets** in dev
-> (`dotnet user-secrets set "Jwt:SigningKey" "..."`), env vars / a vault in prod. Committing one is a real
-> incident. Minimum 32 characters for the signing algorithm.
+>
+> That development key should never leave your machine.
+>
+> ### 🔐 Where should the `SigningKey` actually live?
+>
+> The JWT signing key is one of your application's **secrets**. Anyone who knows it can generate JWTs that
+> your API will trust, so **it must never be committed to source control**.
+>
+> A good rule of thumb is:
+>
+> | Environment | Where the signing key belongs |
+> |------------|-------------------------------|
+> | Local development | **User Secrets** (recommended) or `appsettings.Development.json` for small tutorials |
+> | Test / Staging | Environment variable or your organization's secret manager |
+> | Production | Environment variable or a dedicated secret manager |
+>
+> During development, the recommended approach is **User Secrets**:
+>
+> ```bash
+> dotnet user-secrets init
+> dotnet user-secrets set "Jwt:SigningKey" "your-random-secret"
+> ```
+>
+> `dotnet user-secrets` stores the value **outside your project**, so it never appears in Git.
+>
+> For production, **environment variables** are the simplest and most common solution.
+> ASP.NET Core automatically reads them into `IConfiguration`.
+>
+> For the configuration key:
+>
+> ```text
+> Jwt:SigningKey
+> ```
+>
+> the corresponding environment variable is:
+>
+> ```text
+> Jwt__SigningKey
+> ```
+>
+> Notice the **double underscore (`__`)**. In environment variables, `__` maps to `:`.
+>
+> You can set it differently depending on where your application runs:
+>
+> **Windows (PowerShell):**
+>
+> ```powershell
+> $env:Jwt__SigningKey="your-random-secret"
+> ```
+>
+> **Windows (persist across reboots):**
+>
+> ```powershell
+> setx Jwt__SigningKey "your-random-secret"
+> ```
+>
+> **Linux:**
+>
+> ```bash
+> export Jwt__SigningKey="your-random-secret"
+> ```
+>
+> or permanently:
+>
+> ```bash
+> echo 'export Jwt__SigningKey="your-random-secret"' >> ~/.bashrc
+> source ~/.bashrc
+> ```
+>
+> If you're hosting your application on a cloud platform, you normally don't create environment variables
+> manually. Instead, you configure them through the hosting service:
+>
+> - **Azure App Service** → Application Settings
+> - **Docker** → `-e Jwt__SigningKey=...`
+> - **Kubernetes** → Secrets
+> - **IIS** → Environment Variables or `web.config`
+>
+> Many organizations go one step further and use a **secret manager** such as:
+>
+> - Azure Key Vault
+> - AWS Secrets Manager
+> - Google Secret Manager
+> - HashiCorp Vault
+>
+> These services securely store secrets, control who may access them, provide auditing, and often support
+> automatic secret rotation. Each service has its own setup process, so follow its official documentation when
+> deploying there.
+>
+> The nice part is that **your code doesn't change**. Whether the signing key comes from `appsettings.json`,
+> User Secrets, an environment variable, or a secret manager, ASP.NET Core exposes it through the same
+> `IConfiguration` API:
+>
+> ```csharp
+> config["Jwt:SigningKey"]
+> ```
+>
+> The rest of your application doesn't need to know where the value came from.
+>
+> 🔑 **How large should the signing key be?**
+>
+> Generate at least **32 random bytes (256 bits)** using a cryptographically secure random generator. For
+> example:
+>
+> ```bash
+> openssl rand -base64 32
+> ```
+>
+> This produces a strong random key suitable for HS256 JWT signing.
+>
+> ⚠️ **If the signing key is ever exposed** (for example, committed to GitHub or accidentally shared), generate
+> a brand-new random key and replace the old one. This is called **rotating the signing key**. After rotation,
+> every JWT signed with the old key immediately becomes invalid, requiring users to authenticate again.
 
 This mints the **access token** — the short-lived one (15 minutes, from the `Jwt:AccessTokenMinutes` setting
 above) that the client sends on every request. It's deliberately brief because a stolen access token then
@@ -354,10 +472,10 @@ the wristband. Later, `[Authorize(Roles = "SalesManager")]` reads exactly this.
 > {
 >   "sub": "42",
 >   "name": "rep",
->   "role": ["SalesRep", "SalesManager"],                                 // more than one role at once
->   "permissions": ["orders:read", "orders:approve", "customers:read"],   // fine-grained, not just a role
->   "tenant": "acme-corp",                                                // which org this user belongs to
->   "region": "APAC"                                                      // scope a user to a slice of data
+>   "role": ["SalesRep", "SalesManager"],
+>   "permissions": ["orders:read", "orders:approve", "customers:read"],
+>   "tenant": "acme-corp",
+>   "region": "APAC"
 > }
 > ```
 >
@@ -384,13 +502,13 @@ the wristband. Later, `[Authorize(Roles = "SalesManager")]` reads exactly this.
 >   "access": [
 >     {
 >       "moduleId": "SALES",
->       "views":   ["orders", "customers"],          // screens this user may open
->       "buttons": ["order:create", "order:cancel"]  // actions this user may click
+>       "views":   ["orders", "customers"],
+>       "buttons": ["order:create", "order:cancel"]
 >     },
 >     {
 >       "moduleId": "INVENTORY",
 >       "views":   ["stock"],
->       "buttons": []                                 // read-only: may view, no actions
+>       "buttons": []
 >     }
 >   ]
 > }
@@ -513,7 +631,14 @@ public sealed class LoginEndpoint : ICarterModule
 
 ## 7. Step 5 — Wiring token *validation* into the app
 
-Creating tokens (login) is separate from *validating* them on every other request. In `Program.cs`:
+Creating tokens (login) is separate from *validating* them on every other request.
+
+Just like `JwtTokenService`, we don't care **where** the JWT settings come from. We simply ask
+`builder.Configuration` for them. ASP.NET Core's configuration system figures out where each value
+comes from (for example `appsettings.json`, User Secrets, environment variables, or a secret
+manager).
+
+In `Program.cs`:
 
 ```csharp
 var jwt = builder.Configuration.GetSection("Jwt");
@@ -528,11 +653,18 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
         options.TokenValidationParameters = new TokenValidationParameters
         {
-            ValidateIssuer = true,   ValidIssuer = jwt["Issuer"],
-            ValidateAudience = true, ValidAudience = jwt["Audience"],
-            ValidateLifetime = true,                     // reject expired tokens
-            ValidateIssuerSigningKey = true,             // reject forged tokens
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt["SigningKey"]!)),
+            ValidateIssuer = true,
+            ValidIssuer = jwt["Issuer"],
+
+            ValidateAudience = true,
+            ValidAudience = jwt["Audience"],
+
+            ValidateLifetime = true,         // reject expired tokens
+            ValidateIssuerSigningKey = true, // reject forged tokens
+
+            IssuerSigningKey = new SymmetricSecurityKey(
+                Encoding.UTF8.GetBytes(jwt["SigningKey"]!)),
+
             // We emit roles as ClaimTypes.Role and the name as ClaimTypes.Name (see JwtTokenService),
             // so tell the validator to read those types back for IsInRole / RequireRole to work.
             RoleClaimType = ClaimTypes.Role,
@@ -542,6 +674,272 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
 builder.Services.AddAuthorization();
 ```
+
+### 🧭 Where does `builder.Configuration` actually get its values?
+
+You may have noticed that we keep writing code like this:
+
+```csharp
+var jwt = builder.Configuration.GetSection("Jwt");
+```
+
+But nowhere do we tell it:
+
+- "Read `appsettings.json`."
+- "Read `appsettings.Development.json`."
+- "Read User Secrets."
+- "Read an environment variable."
+
+So how does it know?
+
+The answer is that **`builder.Configuration` isn't a single file**. It's a **configuration system**
+made up of multiple **configuration providers**.
+
+Think of it as one big dictionary that ASP.NET Core assembles when the application starts.
+
+```
+                    ASP.NET Core starts
+                             │
+                             ▼
+                 Builds IConfiguration
+                             │
+        ┌────────────────────┼─────────────────────┐
+        │                    │                     │
+        ▼                    ▼                     ▼
+ appsettings.json   appsettings.{Environment}.json User Secrets*
+        │                    │                     │
+        └────────────────────┼─────────────────────┘
+                             │
+                             ▼
+                 Environment Variables
+                             │
+                             ▼
+                 Command-line Arguments
+                             │
+                             ▼
+                builder.Configuration
+
+* User Secrets are only loaded in Development.
+```
+
+Each provider contributes configuration values.
+
+If two providers contain the **same key**, the provider loaded **later** overrides the earlier one.
+
+The default priority is roughly:
+
+```
+Lowest priority
+
+appsettings.json
+        │
+        ▼
+appsettings.{Environment}.json
+        │
+        ▼
+User Secrets (Development only)
+        │
+        ▼
+Environment Variables
+        │
+        ▼
+Command-line Arguments
+
+Highest priority
+```
+
+This means the configuration system always keeps the **last value it sees**.
+
+---
+
+### Example 1 — Running locally
+
+Suppose you're developing on your own machine.
+
+Your environment is:
+
+```text
+ASPNETCORE_ENVIRONMENT=Development
+```
+
+Your files contain:
+
+**appsettings.json**
+
+```json
+{
+  "Jwt": {
+    "Issuer": "Erp.Api",
+    "Audience": "Erp.Client",
+    "SigningKey": "",
+    "AccessTokenMinutes": 15
+  }
+}
+```
+
+**appsettings.Development.json**
+
+```json
+{
+  "Jwt": {
+    "SigningKey": "temporary-dev-key"
+  }
+}
+```
+
+or perhaps you've stored the key in User Secrets instead:
+
+```text
+Jwt:SigningKey = my-local-secret
+```
+
+When the application starts, the configuration pipeline looks like this:
+
+```
+appsettings.json
+        │
+        ▼
+appsettings.Development.json
+        │
+        ▼
+User Secrets
+        │
+        ▼
+builder.Configuration
+```
+
+Now your code executes:
+
+```csharp
+var jwt = builder.Configuration.GetSection("Jwt");
+```
+
+The resulting values are effectively:
+
+```
+Issuer = Erp.Api
+Audience = Erp.Client
+AccessTokenMinutes = 15
+SigningKey = my-local-secret
+```
+
+Notice that `SigningKey` came from the **highest-priority provider**.
+
+`JwtTokenService` has no idea where it came from.
+
+---
+
+### Example 2 — Running in production
+
+Now imagine you deploy the exact same application to a production server.
+
+There is:
+
+- no `appsettings.Development.json`
+- no User Secrets
+
+Instead, the server is configured with:
+
+```text
+Jwt__SigningKey=Vq4Hd1bXr8n2Lm5...
+```
+
+The configuration pipeline now looks like this:
+
+```
+appsettings.json
+        │
+        ▼
+Environment Variables
+        │
+        ▼
+builder.Configuration
+```
+
+When this line executes:
+
+```csharp
+var jwt = builder.Configuration.GetSection("Jwt");
+```
+
+ASP.NET Core returns:
+
+```
+Issuer = Erp.Api
+Audience = Erp.Client
+AccessTokenMinutes = 15
+SigningKey = Vq4Hd1bXr8n2Lm5...
+```
+
+Again, the JWT code never changes.
+
+The only thing that changed was **where the server stored the secret**.
+
+---
+
+### Why doesn't the code check whether it's Development or Production?
+
+Notice that nowhere do we write:
+
+```csharp
+if (builder.Environment.IsDevelopment())
+{
+    // Read appsettings.Development.json
+}
+else
+{
+    // Read environment variables
+}
+```
+
+That logic already exists inside ASP.NET Core's configuration system.
+
+Instead, every part of the application simply asks for the configuration it needs:
+
+```csharp
+config["Jwt:SigningKey"]
+```
+
+or
+
+```csharp
+config["Jwt:Issuer"]
+```
+
+The configuration system returns the correct value for the current environment.
+
+This is why the same application can run:
+
+- on your laptop
+- on IIS
+- inside Docker
+- inside Kubernetes
+- on Azure
+- on AWS
+
+without changing a single line of JWT code.
+
+The application depends only on **`IConfiguration`**, not on where the values are stored.
+
+```
+                    JwtTokenService
+                           │
+                           ▼
+                  IConfiguration
+                           │
+          "Give me Jwt:SigningKey"
+                           │
+        ┌──────────────────┼──────────────────┐
+        │                  │                  │
+        ▼                  ▼                  ▼
+ appsettings.json   User Secrets   Environment Variables
+                                            │
+                                            ▼
+                                  Secret Manager (optional)
+```
+
+This separation is intentional. It keeps infrastructure concerns (where configuration is stored)
+separate from application code (how the configuration is used).
 
 > ⚠️ **The single most common JWT gotcha — don't skip this.** ASP.NET's JWT handler ships with a legacy
 > *inbound claim map* that silently rewrites short JWT claim names to long WS-* URIs — most notably `sub`
