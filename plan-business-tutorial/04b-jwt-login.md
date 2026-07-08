@@ -6,7 +6,18 @@
 > 3. [Refresh tokens & the API-key gate](04c-jwt-refresh-apikey.md)
 > 4. [Request flow, checkpoint & common mistakes](04d-jwt-wrap-up.md)
 
-> Builds on [Part 1](04-jwt-auth.md), which gave us the password hasher (§3) and the access-token service (§4). Here we assemble them into a login slice, wire token *validation* into ASP.NET Core, expose the caller through `ICurrentUser`, and use roles to decide who may do what.
+> In [Part 1](04-jwt-auth.md), we learned how passwords are securely hashed and how a JWT access token is
+> created.
+>
+> In this part, we'll put those building blocks together into a complete authentication system.
+>
+> We'll build a real login feature, validate JWTs on incoming requests, understand how ASP.NET Core
+> reconstructs the authenticated user from the token, expose that user through `ICurrentUser`, and finally
+> protect endpoints with role-based authorization.
+>
+> By the end of this part, users will be able to log in, receive a JWT, call protected endpoints, and you'll
+> understand the complete authentication pipeline—from `POST /auth/login` to authorization inside your
+> handlers.
 
 ---
 
@@ -58,7 +69,7 @@ Just like every other feature:
 
 ---
 
-## First pass: access token only
+### First pass: access token only
 
 We'll build login in **two passes**.
 
@@ -93,7 +104,7 @@ The only missing piece is `IUserRepository`.
 
 ---
 
-## Building `IUserRepository`
+### Building `IUserRepository`
 
 The handler needs a way to load users from the database, but it shouldn't know **how** the data is stored.
 
@@ -163,7 +174,7 @@ build refresh tokens.
 
 ---
 
-## Implementing `UserRepository`
+### Implementing `UserRepository`
 
 Both repository methods are **pure reads**.
 
@@ -218,7 +229,7 @@ With that in place, every dependency required by the login handler now exists.
 
 ---
 
-## Building the Login handler
+### Building the Login handler
 
 The login slice consists of four pieces:
 
@@ -281,13 +292,13 @@ public sealed class LoginHandler(
 
 ---
 
-## Walking through the handler
+### Walking through the handler
 
 Although the handler performs authentication, it actually does very little itself.
 
 Each dependency is responsible for one piece of work.
 
-### Step A — Load the user
+#### Step A — Load the user
 
 ```csharp
 var user = await users.GetByUsernameAsync(cmd.Username, ct);
@@ -299,7 +310,7 @@ If no matching user exists, it returns `null`.
 
 ---
 
-### Step B — Validate the login
+#### Step B — Validate the login
 
 ```csharp
 if (user is null ||
@@ -324,7 +335,7 @@ Notice that we never compare plain-text passwords.
 
 ---
 
-### Why use one generic error?
+##### Why use one generic error?
 
 You might expect different messages like:
 
@@ -344,7 +355,7 @@ This prevents attackers from discovering valid usernames.
 
 ---
 
-### Step C — Create the JWT
+#### Step C — Create the JWT
 
 ```csharp
 var access = jwt.CreateAccessToken(
@@ -365,7 +376,7 @@ It simply delegates that responsibility to `IJwtTokenService`.
 
 ---
 
-### Step D — Return the result
+#### Step D — Return the result
 
 ```csharp
 return new LoginResult(
@@ -414,14 +425,44 @@ public sealed class LoginEndpoint : ICarterModule
 > and token creation moved into a handler, and the endpoint is a two-line adapter. A `[WebMethod]` you used
 > to call from jQuery is now this Carter `MapPost`.
 
-## 7. Step 5 — Wiring token *validation* into the app
+## 7. Step 5 — Wiring token validation into the app
 
-Creating tokens (login) is separate from *validating* them on every other request.
+Creating an access token during login is only half of the authentication story.
 
-Just like `JwtTokenService`, we don't care **where** the JWT settings come from. We simply ask
-`builder.Configuration` for them. ASP.NET Core's configuration system figures out where each value
-comes from (for example `appsettings.json`, User Secrets, environment variables, or a secret
-manager).
+Once a client has a JWT, it sends that token on every future request:
+
+```
+Authorization: Bearer eyJhbGciOi...
+```
+
+Something now has to answer an important question:
+
+> **"Can this token be trusted?"**
+
+That is the job of ASP.NET Core's JWT authentication middleware.
+
+On every authenticated request it automatically:
+
+- reads the JWT from the `Authorization` header,
+- verifies the digital signature,
+- checks that the token hasn't expired,
+- validates the issuer and audience,
+- and, if everything is valid, reconstructs the authenticated user.
+
+The result is an authenticated `ClaimsPrincipal` stored in `HttpContext.User`.
+
+We'll use that in the next step when we build `ICurrentUser`.
+
+---
+
+### Configuring JWT validation
+
+Just like `JwtTokenService`, we don't care **where** the JWT settings come from.
+
+We simply ask `builder.Configuration` for them.
+
+ASP.NET Core's configuration system figures out whether each value came from
+`appsettings.json`, User Secrets, environment variables, or another configuration provider.
 
 In `Program.cs`:
 
@@ -431,9 +472,6 @@ var jwt = builder.Configuration.GetSection("Jwt");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        // CRITICAL: keep JWT claim names as-is. By default the handler *renames* inbound claims
-        // (e.g. "sub" → ClaimTypes.NameIdentifier), which would make our CurrentUser.UserId lookup of
-        // "sub" return null and blow up at runtime. Turning mapping off keeps "sub" as "sub". (See note.)
         options.MapInboundClaims = false;
 
         options.TokenValidationParameters = new TokenValidationParameters
@@ -444,14 +482,13 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateAudience = true,
             ValidAudience = jwt["Audience"],
 
-            ValidateLifetime = true,         // reject expired tokens
-            ValidateIssuerSigningKey = true, // reject forged tokens
+            ValidateLifetime = true,
+
+            ValidateIssuerSigningKey = true,
 
             IssuerSigningKey = new SymmetricSecurityKey(
                 Encoding.UTF8.GetBytes(jwt["SigningKey"]!)),
 
-            // We emit roles as ClaimTypes.Role and the name as ClaimTypes.Name (see JwtTokenService),
-            // so tell the validator to read those types back for IsInRole / RequireRole to work.
             RoleClaimType = ClaimTypes.Role,
             NameClaimType = ClaimTypes.Name
         };
@@ -460,27 +497,175 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 builder.Services.AddAuthorization();
 ```
 
-### 🧭 Where does `builder.Configuration` actually get its values?
+---
 
-You may have noticed that we keep writing code like this:
+### Walking through the configuration
+
+Each validation option protects against a different kind of problem.
+
+#### Validate the issuer
+
+```csharp
+ValidateIssuer = true
+```
+
+Only tokens created by **our own API** should be accepted.
+
+If another application generates a JWT, it should be rejected.
+
+---
+
+#### Validate the audience
+
+```csharp
+ValidateAudience = true
+```
+
+A token intended for one application shouldn't automatically work for another.
+
+The audience tells the server which application the token was created for.
+
+---
+
+#### Validate the lifetime
+
+```csharp
+ValidateLifetime = true
+```
+
+Expired tokens are rejected automatically.
+
+This is why access tokens can safely be short-lived.
+
+---
+
+#### Validate the signing key
+
+```csharp
+ValidateIssuerSigningKey = true
+```
+
+This verifies the JWT's digital signature.
+
+If anyone changes even a single character inside the token, the signature no longer matches and the request is rejected.
+
+---
+
+#### Configure the signing key
+
+```csharp
+IssuerSigningKey = ...
+```
+
+The same signing key used to create the JWT must also be used to validate it.
+
+Think of it like signing a document.
+
+The server signs the JWT during login.
+
+Later, it verifies that same signature on every request.
+
+---
+
+### A very common JWT gotcha
+
+```csharp
+options.MapInboundClaims = false;
+```
+
+This line is easy to overlook but prevents a very confusing bug.
+
+By default, ASP.NET Core silently renames several standard JWT claims.
+
+For example:
+
+```
+sub
+```
+
+becomes
+
+```
+ClaimTypes.NameIdentifier
+```
+
+Later in this course we'll read the user's ID directly from the `sub` claim.
+
+Without
+
+```csharp
+MapInboundClaims = false
+```
+
+that claim no longer exists under the name `sub`, causing `CurrentUser` to fail when it tries to read it.
+
+Turning claim mapping off keeps every claim exactly as it appears inside the JWT.
+
+---
+
+### Middleware order matters
+
+Authentication must always run before authorization.
+
+```csharp
+app.UseAuthentication();
+app.UseAuthorization();
+```
+
+The request pipeline now looks like this:
+
+```
+Incoming Request
+        │
+Authorization: Bearer eyJ...
+        │
+        ▼
+UseAuthentication()
+        │
+        ▼
+JWT Middleware
+        │
+        ▼
+Validate Signature
+Validate Expiration
+Validate Issuer
+Validate Audience
+        │
+        ▼
+Create ClaimsPrincipal
+        │
+        ▼
+HttpContext.User
+        │
+        ▼
+UseAuthorization()
+```
+
+Notice that authorization happens **after** authentication.
+
+The framework cannot decide whether someone is allowed to perform an action until it first knows who they are.
+
+---
+
+### Where did these JWT settings come from?
+
+Throughout this chapter we've written code like:
 
 ```csharp
 var jwt = builder.Configuration.GetSection("Jwt");
 ```
 
-But nowhere do we tell it:
+Notice that we never tell ASP.NET Core:
 
 - "Read `appsettings.json`."
-- "Read `appsettings.Development.json`."
 - "Read User Secrets."
 - "Read an environment variable."
 
-So how does it know?
+Instead, we simply ask for the `Jwt` section.
 
-The answer is that **`builder.Configuration` isn't a single file**. It's a **configuration system**
-made up of multiple **configuration providers**.
+The reason this works is because `builder.Configuration` is **not a single configuration file**.
 
-Think of it as one big dictionary that ASP.NET Core assembles when the application starts.
+It is a configuration system built from multiple **configuration providers**.
 
 ```
                     ASP.NET Core starts
@@ -509,9 +694,9 @@ Think of it as one big dictionary that ASP.NET Core assembles when the applicati
 
 Each provider contributes configuration values.
 
-If two providers contain the **same key**, the provider loaded **later** overrides the earlier one.
+If multiple providers define the same key, the one loaded later wins.
 
-The default priority is roughly:
+The default precedence is:
 
 ```
 Lowest priority
@@ -522,7 +707,7 @@ appsettings.json
 appsettings.{Environment}.json
         │
         ▼
-User Secrets (Development only)
+User Secrets
         │
         ▼
 Environment Variables
@@ -533,321 +718,375 @@ Command-line Arguments
 Highest priority
 ```
 
-This means the configuration system always keeps the **last value it sees**.
+This means your JWT code never changes.
+
+Whether the signing key comes from:
+
+- `appsettings.Development.json`,
+- User Secrets,
+- an environment variable,
+- Azure Key Vault,
+- Docker,
+- Kubernetes,
+
+`builder.Configuration` always exposes it through the same API.
+
+We'll use that same abstraction throughout the rest of the application.
+
+## 8. Step 6 — Accessing the authenticated user (`ICurrentUser`)
+
+In the previous step, ASP.NET Core validated the JWT and created a
+`ClaimsPrincipal` representing the authenticated user.
+
+That `ClaimsPrincipal` is available through:
+
+```csharp
+HttpContext.User
+```
+
+So why don't our handlers simply use `HttpContext.User` directly?
+
+### Why an `ICurrentUser`?
+
+Remember one of the architectural rules from earlier phases:
+
+> **The Application layer should not depend on ASP.NET Core.**
+
+`HttpContext` is part of ASP.NET Core.
+
+If our handlers accessed it directly, they would become tied to the web framework.
+
+Instead, we use the same pattern we've used throughout this course:
+
+- The Application layer defines **what it needs**.
+- Infrastructure provides **how it's implemented**.
+
+```
+Application
+      │
+      ▼
+ICurrentUser
+      ▲
+      │
+CurrentUser
+      │
+      ▼
+HttpContext.User
+```
+
+Business code now depends only on the `ICurrentUser` abstraction, never on ASP.NET Core itself.
 
 ---
 
-### Example 1 — Running locally
+### Implementing `CurrentUser`
 
-Suppose you're developing on your own machine.
-
-Your environment is:
-
-```text
-ASPNETCORE_ENVIRONMENT=Development
-```
-
-Your files contain:
-
-**appsettings.json**
-
-```json
-{
-  "Jwt": {
-    "Issuer": "Erp.Api",
-    "Audience": "Erp.Client",
-    "SigningKey": "",
-    "AccessTokenMinutes": 15
-  }
-}
-```
-
-**appsettings.Development.json**
-
-```json
-{
-  "Jwt": {
-    "SigningKey": "temporary-dev-key"
-  }
-}
-```
-
-or perhaps you've stored the key in User Secrets instead:
-
-```text
-Jwt:SigningKey = my-local-secret
-```
-
-When the application starts, the configuration pipeline looks like this:
-
-```
-appsettings.json
-        │
-        ▼
-appsettings.Development.json
-        │
-        ▼
-User Secrets
-        │
-        ▼
-builder.Configuration
-```
-
-Now your code executes:
+Create `Erp.Shared.Infrastructure/Security/CurrentUser.cs`:
 
 ```csharp
-var jwt = builder.Configuration.GetSection("Jwt");
-```
-
-The resulting values are effectively:
-
-```
-Issuer = Erp.Api
-Audience = Erp.Client
-AccessTokenMinutes = 15
-SigningKey = my-local-secret
-```
-
-Notice that `SigningKey` came from the **highest-priority provider**.
-
-`JwtTokenService` has no idea where it came from.
-
----
-
-### Example 2 — Running in production
-
-Now imagine you deploy the exact same application to a production server.
-
-There is:
-
-- no `appsettings.Development.json`
-- no User Secrets
-
-Instead, the server is configured with:
-
-```text
-Jwt__SigningKey=Vq4Hd1bXr8n2Lm5...
-```
-
-The configuration pipeline now looks like this:
-
-```
-appsettings.json
-        │
-        ▼
-Environment Variables
-        │
-        ▼
-builder.Configuration
-```
-
-When this line executes:
-
-```csharp
-var jwt = builder.Configuration.GetSection("Jwt");
-```
-
-ASP.NET Core returns:
-
-```
-Issuer = Erp.Api
-Audience = Erp.Client
-AccessTokenMinutes = 15
-SigningKey = Vq4Hd1bXr8n2Lm5...
-```
-
-Again, the JWT code never changes.
-
-The only thing that changed was **where the server stored the secret**.
-
----
-
-### Why doesn't the code check whether it's Development or Production?
-
-Notice that nowhere do we write:
-
-```csharp
-if (builder.Environment.IsDevelopment())
-{
-    // Read appsettings.Development.json
-}
-else
-{
-    // Read environment variables
-}
-```
-
-That logic already exists inside ASP.NET Core's configuration system.
-
-Instead, every part of the application simply asks for the configuration it needs:
-
-```csharp
-config["Jwt:SigningKey"]
-```
-
-or
-
-```csharp
-config["Jwt:Issuer"]
-```
-
-The configuration system returns the correct value for the current environment.
-
-This is why the same application can run:
-
-- on your laptop
-- on IIS
-- inside Docker
-- inside Kubernetes
-- on Azure
-- on AWS
-
-without changing a single line of JWT code.
-
-The application depends only on **`IConfiguration`**, not on where the values are stored.
-
-```
-                    JwtTokenService
-                           │
-                           ▼
-                  IConfiguration
-                           │
-          "Give me Jwt:SigningKey"
-                           │
-        ┌──────────────────┼──────────────────┐
-        │                  │                  │
-        ▼                  ▼                  ▼
- appsettings.json   User Secrets   Environment Variables
-                                            │
-                                            ▼
-                                  Secret Manager (optional)
-```
-
-This separation is intentional. It keeps infrastructure concerns (where configuration is stored)
-separate from application code (how the configuration is used).
-
-### 🔐 Where the signing key belongs — and how to set it in each environment
-
-Of all the `Jwt` values, the `SigningKey` is the one real **secret**: anyone who knows it can mint tokens your
-API will trust, so it must **never** be committed to source control. The pipeline above explains *how* a value
-is resolved; here is *where to actually put the key* per environment:
-
-| Environment | Where the signing key belongs |
-|------------|-------------------------------|
-| Local development | **User Secrets** (recommended) or `appsettings.Development.json` for small tutorials |
-| Test / Staging | Environment variable or your organization's secret manager |
-| Production | Environment variable or a dedicated secret manager |
-
-During development, the recommended approach is **User Secrets**, which stores the value **outside your
-project** so it never appears in Git:
-
-```bash
-dotnet user-secrets init
-dotnet user-secrets set "Jwt:SigningKey" "your-random-secret"
-```
-
-For production, **environment variables** are the simplest common solution. The configuration key `Jwt:SigningKey`
-maps to the environment variable:
-
-```text
-Jwt__SigningKey
-```
-
-Notice the **double underscore (`__`)** — in environment variables, `__` maps to the `:` used in config keys.
-
-```powershell
-$env:Jwt__SigningKey="your-random-secret"     # Windows (PowerShell), current session
-setx Jwt__SigningKey "your-random-secret"      # Windows, persist across reboots
-```
-
-```bash
-export Jwt__SigningKey="your-random-secret"    # Linux/macOS (add to ~/.bashrc to persist)
-```
-
-On a cloud platform you normally set it through the hosting service instead of by hand — **Azure App Service**
-→ Application Settings, **Docker** → `-e Jwt__SigningKey=...`, **Kubernetes** → Secrets, **IIS** → Environment
-Variables. Many organizations go further and use a **secret manager** (Azure Key Vault, AWS Secrets Manager,
-Google Secret Manager, HashiCorp Vault) for storage, access control, auditing, and automatic rotation.
-
-The nice part: **your code never changes.** Wherever the key comes from, ASP.NET Core exposes it through the
-same `config["Jwt:SigningKey"]` — which is exactly why the `IssuerSigningKey` line above just reads
-`jwt["SigningKey"]` and doesn't care about the source.
-
-> 🔑 **How large should the signing key be?** Generate at least **32 random bytes (256 bits)** with a
-> cryptographically secure generator — e.g. `openssl rand -base64 32` — suitable for HS256 signing.
->
-> ⚠️ **If the signing key is ever exposed** (committed to GitHub, accidentally shared), generate a brand-new
-> key and replace the old one — **rotating** the key. After rotation, every JWT signed with the old key
-> immediately becomes invalid, so users must authenticate again.
-
-> ⚠️ **The single most common JWT gotcha — don't skip this.** ASP.NET's JWT handler ships with a legacy
-> *inbound claim map* that silently rewrites short JWT claim names to long WS-* URIs — most notably `sub`
-> becomes `ClaimTypes.NameIdentifier`. So if you *write* `sub` (as `JwtTokenService` does) but later *read*
-> `sub` (as `CurrentUser.UserId` does), the read returns **null** and `long.Parse(null)` throws on the
-> first authenticated request — a baffling bug with a clean token. Setting `options.MapInboundClaims =
-> false` keeps claim names exactly as issued, so `sub` reads back as `sub`. (An alternative is to read
-> `ClaimTypes.NameIdentifier` instead — but turning mapping off is clearer and keeps token and reader in
-> agreement.) We pair it with explicit `RoleClaimType`/`NameClaimType` so role checks still work.
-
-And the middleware, **in this exact order** (order matters a lot):
-
-```csharp
-app.UseAuthentication();   // 1) read & validate the token → figure out WHO you are
-app.UseAuthorization();    // 2) check WHETHER you're allowed
-```
-
-> ❓ **You might be wondering: "Why does the order matter?"** Authorization needs to know who you are
-> before it can decide if you're allowed. `UseAuthentication` establishes identity; `UseAuthorization`
-> acts on it. Swap them and authorization runs before anyone's identified — nothing works. Middleware is
-> a pipeline; sequence is meaning.
-
-## 8. Step 6 — Implementing `ICurrentUser`
-
-Now that ASP.NET has validated the token, the claims are available on `HttpContext.User`. Infrastructure
-reads them and fulfils the Application's `ICurrentUser` promise:
-
-```csharp
-// Erp.Shared.Infrastructure/Security/CurrentUser.cs
 public sealed class CurrentUser(IHttpContextAccessor accessor) : ICurrentUser
 {
     private ClaimsPrincipal User => accessor.HttpContext?.User
         ?? throw new InvalidOperationException("No HTTP context.");
 
-    public long UserId => long.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)!);
-    public string Username => User.FindFirstValue(ClaimTypes.Name)!;
-    public string Role => User.FindFirstValue(ClaimTypes.Role)!;
-    public bool IsInRole(string role) => User.IsInRole(role);
+    public long UserId =>
+        long.Parse(User.FindFirstValue(JwtRegisteredClaimNames.Sub)!);
+
+    public string Username =>
+        User.FindFirstValue(ClaimTypes.Name)!;
+
+    public string Role =>
+        User.FindFirstValue(ClaimTypes.Role)!;
+
+    public bool IsInRole(string role) =>
+        User.IsInRole(role);
 }
 ```
 
-Register it: `services.AddHttpContextAccessor(); services.AddScoped<ICurrentUser, CurrentUser>();`
+---
 
-Now any handler can inject `ICurrentUser` and know the caller — used in [Phase 6](06-create-order.md) to
-stamp `CreatedByUserId`, and in [Phase 8](08-approval-cancellation.md) to check category role rules.
+### Walking through the implementation
 
-## 9. Two ways to authorize (endpoint vs. domain)
+`CurrentUser` doesn't validate JWTs.
 
-Authorization happens at **two levels**, and putting each rule at the right one is most of the skill:
+It doesn't query the database.
 
-1. **Coarse, at the endpoint** — "you must be a Manager to even call approve." Declared on the endpoint:
-   ```csharp
-   app.MapPost("/sales-orders/{id}/approve", ...).RequireAuthorization(p => p.RequireRole("SalesManager"));
-   ```
-   This rejects unauthorized callers *before* any handler runs. Cheap and clear.
+It doesn't know anything about login.
 
-2. **Fine, in the domain/handler** — "this *item category* requires a Manager." That's business logic
-   tied to data (which category), so it lives deeper, checked with `ICurrentUser.IsInRole(...)` in the
-   handler or domain (see [Phase 6](06-create-order.md)).
+Its only responsibility is reading information that the authentication middleware has already verified.
 
-> 🔑 **Rule of thumb:** if the rule is "this endpoint is for role X, full stop" → put it on the endpoint.
-> If the rule depends on the *data* ("this category needs a manager", "you can only cancel your own
-> draft") → it's business logic, put it in the handler/domain. Don't force data-dependent rules into
-> endpoint attributes; you'll contort them.
+#### Step A — Access the authenticated user
 
-### See it work — two users, one endpoint
+```csharp
+private ClaimsPrincipal User => accessor.HttpContext?.User;
+```
 
-The rules above click once you watch a real request get **let in** or **turned away**. Our
-[Phase 3](03-database-schema.md) seed gives us three users, each with exactly one role:
+`IHttpContextAccessor` gives Infrastructure access to the current HTTP request.
+
+From there we obtain the authenticated `ClaimsPrincipal`.
+
+If no HTTP request exists, we throw an exception because there is no authenticated user to read.
+
+---
+
+#### Step B — Read the user ID
+
+```csharp
+User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+```
+
+During login we created the `sub` claim:
+
+```csharp
+new Claim(JwtRegisteredClaimNames.Sub, userId.ToString())
+```
+
+Now we simply read it back.
+
+---
+
+#### Step C — Read the username
+
+```csharp
+User.FindFirstValue(ClaimTypes.Name)
+```
+
+This returns the username that was placed into the JWT when the user logged in.
+
+---
+
+#### Step D — Read the role
+
+```csharp
+User.FindFirstValue(ClaimTypes.Role)
+```
+
+Later, our authorization rules will use this role to decide whether a user may perform a particular action.
+
+---
+
+#### Step E — Check roles
+
+```csharp
+User.IsInRole(role)
+```
+
+This is a convenience method provided by ASP.NET Core.
+
+It checks whether the authenticated user belongs to the specified role.
+
+---
+
+### Register the service
+
+Register both services in `Program.cs`:
+
+```csharp
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+```
+
+`IHttpContextAccessor` allows Infrastructure to access the current HTTP request.
+
+`CurrentUser` is registered as the implementation of `ICurrentUser`, allowing any handler to request it through dependency injection.
+
+---
+
+### How everything fits together
+
+At runtime, the flow now looks like this:
+
+```
+Client Request
+        │
+Bearer JWT
+        │
+        ▼
+Authentication Middleware
+        │
+        ▼
+JWT validated
+        │
+        ▼
+ClaimsPrincipal created
+        │
+        ▼
+HttpContext.User
+        │
+        ▼
+CurrentUser
+        │
+        ▼
+ICurrentUser
+        │
+        ▼
+Your handlers
+```
+
+Notice that `CurrentUser` never validates the JWT itself.
+
+That work has already been completed by the authentication middleware.
+
+`CurrentUser` simply exposes the authenticated user's information through an interface that the Application layer can safely depend on.
+
+We'll use `ICurrentUser` throughout the rest of the course—for example, to record who created an order and to apply business rules based on the current user's role.
+
+## 9. Step 7 — Authorization
+
+So far we've built the complete authentication pipeline:
+
+```
+User logs in
+        │
+        ▼
+Password verified
+        │
+        ▼
+JWT created
+        │
+        ▼
+Client sends JWT
+        │
+        ▼
+JWT validated
+        │
+        ▼
+ICurrentUser
+```
+
+At this point the API knows **who** the caller is.
+
+The next question is just as important:
+
+> **"Now that we know who this user is, are they allowed to perform this action?"**
+
+That question is called **authorization**.
+
+Authorization decides whether an authenticated user has permission to perform a specific operation.
+
+---
+
+### Authentication vs. Authorization
+
+Although the words sound similar, they answer two completely different questions.
+
+| Authentication | Authorization |
+|---------------|---------------|
+| **Who are you?** | **What are you allowed to do?** |
+| Verifies the user's identity. | Checks whether that user has permission. |
+| Happens when the JWT is validated. | Happens after authentication succeeds. |
+
+Think of entering an office building.
+
+Authentication is showing your employee ID at the entrance.
+
+Authorization is the security guard deciding which floors you're allowed to access.
+
+You must always authenticate before authorization can happen.
+
+If the server doesn't know who you are, it cannot decide what you're allowed to do.
+
+In ASP.NET Core, authentication and authorization happen in exactly that order:
+
+```
+Incoming Request
+        │
+Bearer JWT
+        │
+        ▼
+Authentication
+(Validate the JWT)
+        │
+        ▼
+ClaimsPrincipal
+        │
+        ▼
+Authorization
+(Check roles and permissions)
+        │
+        ▼
+Your endpoint
+```
+
+Throughout the rest of this course, you'll see authorization happen at **two different levels**.
+
+Some rules are simple enough to check before a handler runs.
+
+Others depend on business data and can only be checked after the application has loaded that data from the database.
+
+### Level 1 — Endpoint authorization
+
+The simplest kind of authorization depends **only on the caller's role**.
+
+For example:
+
+> "Only Sales Managers may approve orders."
+
+This rule doesn't depend on the order, the customer, or anything in the database.
+
+It only asks one question:
+
+> **"Does the authenticated user have the required role?"**
+
+ASP.NET Core lets us express that rule directly on the endpoint.
+
+```csharp
+app.MapPost("/sales-orders/{id}/approve", ...)
+    .RequireAuthorization(p =>
+        p.RequireRole("SalesManager"));
+```
+
+This is called **endpoint authorization**.
+
+Think of the endpoint as the front door to a building.
+
+Before anyone is allowed inside, the security guard checks their employee badge.
+
+If the badge doesn't contain the required role, they're turned away immediately.
+
+The handler never executes.
+
+```
+Incoming Request
+        │
+        ▼
+Authentication
+(Is the JWT valid?)
+        │
+        ▼
+Authorization
+(Does the user have the required role?)
+        │
+        ▼
+Handler runs
+```
+
+This has two important advantages.
+
+- Unauthorized requests are rejected before any business code runs.
+- The handler can assume the caller already has the minimum required role.
+
+Endpoint authorization works best for rules such as:
+
+- Only Managers may approve orders.
+- Only Administrators may create users.
+- Only Warehouse staff may adjust inventory.
+
+All of these rules depend only on **who** is calling—not on any business data.
+
+As soon as the rule needs information from the database, it no longer belongs at the endpoint. We'll see those cases later in this step.
+
+### Understanding 401 vs. 403
+
+Once authentication and authorization are wired into the application, there are two HTTP status codes you'll see frequently:
+
+- **401 Unauthorized**
+- **403 Forbidden**
+
+Although their names sound similar, they mean completely different things.
+
+The easiest way to understand the difference is to watch the same endpoint being called by different users.
+
+Our seed data from [Phase 3](03-database-schema.md) creates three users:
 
 | Username | Password | Role |
 |---|---|---|
@@ -855,320 +1094,860 @@ The rules above click once you watch a real request get **let in** or **turned a
 | `manager` | `Password123!` | `SalesManager` |
 | `admin` | `Password123!` | `Admin` |
 
-Say the approve endpoint is gated **manager-only**:
+Suppose we protect the approve endpoint so that only Sales Managers may call it.
 
 ```csharp
 app.MapPost("/sales-orders/{id}/approve", ...)
-   .RequireAuthorization(p => p.RequireRole("SalesManager"));
-```
-
-Log each user in (§6), take the access token you get back, and call approve with it. Here's who gets
-through, and why:
-
-| Caller | Sends a token? | `RequireRole("SalesManager")` check | Result |
-|---|---|---|---|
-| nobody (no `Authorization` header) | — | can't even run — there's no one to check | **401 Unauthorized** — "I don't know who you are" |
-| `rep` (SalesRep) | ✅ valid | role is `SalesRep`, not `SalesManager` | **403 Forbidden** — "I know who you are; you're not allowed" |
-| `manager` (SalesManager) | ✅ valid | role matches | **200 OK** — the handler runs |
-| `admin` (Admin) | ✅ valid | role is `Admin`, not `SalesManager` | **403 Forbidden** — surprised? read on ↓ |
-
-Two things beginners almost always trip on live in that table:
-
-**401 and 403 are different answers to different questions.** A **401** means *authentication* failed —
-no token, an expired one, or a forged one; the server can't establish who you are (§7 threw it out before
-authorization ever ran). A **403** means authentication *succeeded* — the token is perfectly valid and the
-server knows exactly who you are — but *authorization* said no: your role isn't on the list. "Not logged in"
-and "logged in but not allowed" are **not** the same failure, and the status code is how the caller tells
-them apart. ([Phase 11](11-cross-cutting.md) maps our exceptions to these codes.)
-
-**Roles are a flat list, not a ladder — this is your "two managers, one gets in" case.** In plain English
-an *Admin* obviously outranks a *SalesManager*, so why does `admin` get a 403? Because
-`RequireRole("SalesManager")` means *literally* "carry the `SalesManager` role," full stop. ASP.NET does
-**not** treat `Admin` as a superset of `SalesManager` — there is no built-in hierarchy, no "higher role wins."
-If you want admins to approve too, you have to **say so explicitly**, by listing every role that should pass:
-
-```csharp
-.RequireAuthorization(p => p.RequireRole("SalesManager", "Admin"));   // hold EITHER role → you're in
-```
-
-`RequireRole` with several roles is an **OR**: hold *any one* of them and you clear the gate. That's exactly
-why the real approve endpoint in [Phase 8](08-approval-cancellation.md) is written
-`RequireRole("SalesManager", "Admin")` — so both roles pass — while a plain `SalesRep` still bounces off with
-a 403.
-
-> 🔑 There is no magic ranking of role names. If a role should have access, its literal string must appear
-> in the list. When you genuinely want a hierarchy ("anything a manager can do, an admin can too, without
-> re-listing it everywhere"), you build that yourself — usually with permission claims (§4) or an
-> authorization policy — you don't get it by hoping the framework orders `Admin` above `SalesManager`.
-
-### The other case — two *managers*, one order
-
-The endpoint gate above is **coarse**: all it can see is your *role*. So it can wave through both `manager`
-and `admin` for approve, but it fundamentally **cannot** say *"Manager A may approve this order, Manager B
-may not"* — both hold the identical `SalesManager` role, so to the endpoint they're indistinguishable. Any
-rule that separates two callers who share the **same role** must depend on the **data**, which means it
-lives one level deeper — in the handler/domain (level 2 above).
-
-Classic example: **segregation of duties — a manager may not approve an order they created themselves** (the
-person who *raises* a spend shouldn't also *sign it off*). Picture order #50, created by `manager` (call them
-Manager B). Now two managers try to approve it:
-
-| Caller (both `SalesManager`) | Clears the endpoint role gate? | Data check: is the caller the order's creator? | Result |
-|---|---|---|---|
-| Manager A (did **not** create #50) | ✅ yes — has the role | no — creator was someone else | **approves** — 200 OK |
-| Manager B (created #50) | ✅ yes — the *same* role | **yes** — caller *is* the creator | **blocked** — 403 Forbidden |
-
-Both cleared the endpoint (identical role) — the only thing that separates them is *who created this
-specific order*, which the endpoint attribute can't know. So the check goes in the **handler**, using
-`ICurrentUser` (who's calling) against the order's own data (`CreatedBy`, stamped at create in
-[Phase 6](06-create-order.md)):
-
-```csharp
-// In ApproveSalesOrderHandler (Phase 8), right after loading the order — a DATA-dependent rule,
-// so it reads ICurrentUser and the order itself. No endpoint attribute could express this.
-if (order.CreatedBy.Value == currentUser.UserId)
-    throw new ForbiddenException("A manager cannot approve an order they created themselves.");
-```
-
-`ForbiddenException` maps to **403** in [Phase 11](11-cross-cutting.md) — the same "logged in, but not
-allowed" answer as the role gate, just decided by the data instead of the role.
-
-> 🔑 **The tell for level 2:** if two callers with the *identical role* should get *different* answers, the
-> rule is **never** an endpoint attribute — it needs the data, so it belongs in the handler/domain via
-> `ICurrentUser`. "Which *role* may call this?" → endpoint. "Which *specific user*, given *this* order?"
-> ("not your own order," "only your own customers," "only your region") → handler/domain.
-
-> ⚠️ This self-approval rule is an **illustration** of where a data-dependent rule goes — it is *not* wired
-> into the base build (the base `Approve` in [Phase 8](08-approval-cancellation.md) checks only the state
-> transition). It's exactly the kind of check you'd add using the cheat-sheet below.
-
-### Where to add *your own* user & role checks — the beginner's guide
-
-When people first learn authentication and authorization, they often know **what** they want to check but not **where** to put that check.
-
-For example, you might think:
-
-- "The password should be at least 8 characters."
-- "Only managers can approve orders."
-- "This account is disabled."
-- "A sales representative can only edit their own orders."
-
-All of those are valid checks—but **they do not belong in the same place.**
-
-Think of your application as a team where every part has a specific job.
-
-- The **Validator** checks whether the request is written correctly.
-- The **Handler** performs the business operation.
-- The **Endpoint** decides who is allowed to enter.
-- The **Domain/Business Logic** decides whether the current user is allowed to perform a specific business action.
-
-If you put checks in the wrong place, your code quickly becomes difficult to understand and maintain.
-
-The table below shows the correct home for each kind of check.
-
-| The check you want to add | Where it goes | Why? | Example |
-|---|---|---|---|
-| **Is the request well-formed?** (username not empty, password ≥ 8 chars, quantity > 0) | **Validator** (FluentValidation), in the same `...Handler.cs` file | The validator only checks whether the incoming request is valid. It does **not** know anything about users, roles, or the database. | `RuleFor(x => x.Password).MinimumLength(8);` |
-| **Is this login allowed?** (account active, password correct, account locked) | **Handler** | The handler performs the login process. It can load the user from the database and decide whether authentication should succeed. | `if (user is null || !user.IsActive || !hasher.Verify(...)) throw ...;` |
-| **Only users with a certain role may call this endpoint.** | **Endpoint**, using `RequireAuthorization` | The endpoint acts like the front door. Users without the required role are rejected before the handler even runs. | `app.MapPost(...).RequireAuthorization(p => p.RequireRole("SalesManager"));` |
-| **The rule depends on the business data.** ("Managers may approve high-value orders", "Sales reps may only edit their own orders") | **Handler / Domain**, using `ICurrentUser` | The application must first load the business data before it can decide whether the user is allowed to continue. | `if (order.RequiresManager && !currentUser.IsInRole("SalesManager")) throw ...;` |
-
----
-
-### Understanding the difference
-
-A useful way to remember these responsibilities is to imagine visiting a secure office building.
-
-#### 1. The Validator checks the form
-
-Imagine you're filling out a visitor form.
-
-The receptionist checks things like:
-
-- Did you write your name?
-- Did you write today's date?
-- Is your phone number in the correct format?
-
-They **do not** check whether you're actually allowed inside.
-
-Likewise, a validator only checks whether the request is properly formed.
-
-Good validator rules include:
-
-- Username is required.
-- Password must be at least 8 characters.
-- Quantity must be greater than zero.
-- Customer ID must be positive.
-
-A validator should **never** ask:
-
-- Does this user exist?
-- Is the password correct?
-- Is the account active?
-- Is this user a manager?
-
-Those questions require business knowledge or database access.
-
----
-
-#### 2. The Endpoint checks who may enter
-
-Once the request reaches the endpoint, ASP.NET Core already knows who the user is because the JWT has been validated.
-
-The endpoint's job is simply to answer:
-
-> "Does this user have the required role?"
-
-If the endpoint requires the `SalesManager` role, then anyone without that role is rejected immediately.
-
-```csharp
-app.MapPost("/approve", ...)
     .RequireAuthorization(p =>
         p.RequireRole("SalesManager"));
 ```
 
-The handler never runs if this check fails.
+Now let's see what happens when different callers send requests.
 
-Think of this as a security guard checking your employee badge before allowing you into the building.
+| Caller | JWT | Role Check | Result |
+|---|---|---|---|
+| No token | ❌ | Cannot run | **401 Unauthorized** |
+| `rep` | ✅ | `SalesRep` ≠ `SalesManager` | **403 Forbidden** |
+| `manager` | ✅ | Role matches | **200 OK** |
+| `admin` | ✅ | `Admin` ≠ `SalesManager` | **403 Forbidden** |
+
+Notice that there are two completely different failure cases.
+
+#### 401 Unauthorized
+
+A **401 Unauthorized** response means the server could **not authenticate** the caller.
+
+This happens when:
+
+- no JWT was sent,
+- the JWT has expired,
+- the JWT was modified,
+- the JWT's signature is invalid.
+
+The authentication middleware rejects the request before authorization even begins.
+
+```
+Request
+    │
+    ▼
+Authentication
+    │
+    ├── Invalid JWT
+    ▼
+401 Unauthorized
+```
+
+At this point the server cannot answer the question:
+
+> **"What are you allowed to do?"**
+
+because it doesn't even know who the caller is.
 
 ---
 
-#### 3. The Handler performs the work
+#### 403 Forbidden
 
-Once the user is allowed through the endpoint, the handler performs the actual business operation.
+A **403 Forbidden** response means authentication **succeeded**.
 
-For login, the handler might:
+The JWT is valid.
 
-1. Find the user.
-2. Verify the password.
-3. Check whether the account is active.
-4. Generate a JWT.
+The server knows exactly who the caller is.
 
-For an order, the handler might:
+However, the caller does not have permission to perform the requested action.
 
-1. Load the order.
-2. Update its status.
-3. Save the changes.
+```
+Request
+    │
+    ▼
+Authentication
+    │
+    ▼
+Authenticated User
+    │
+    ▼
+Authorization
+    │
+    ├── Permission denied
+    ▼
+403 Forbidden
+```
 
-The handler is the correct place for rules that require the database or other services.
+The important distinction is:
+
+- **401** = "I don't know who you are."
+- **403** = "I know who you are, but you're not allowed to do that."
+
+Keeping those two responses separate makes APIs much easier to understand and debug.
+
+Later, in [Phase 11](11-cross-cutting.md), we'll map our exceptions to these HTTP status codes so every endpoint returns consistent responses.
+
+### There is no built-in role hierarchy
+
+Looking at the previous table, one result surprises almost everyone the first time they see it.
+
+Why did the `admin` user receive a **403 Forbidden**?
+
+Isn't an Administrator supposed to have more privileges than a Sales Manager?
+
+The answer is **no—not automatically.**
+
+ASP.NET Core does **not** assume that one role is "higher" than another.
+
+When you write:
+
+```csharp
+.RequireAuthorization(p =>
+    p.RequireRole("SalesManager"));
+```
+
+the framework performs a very simple check:
+
+> **"Does this user have the `SalesManager` role?"**
+
+If the answer is **yes**, the request continues.
+
+If the answer is **no**, the request is rejected.
+
+It does **not** ask:
+
+- Is this user an administrator?
+- Is this role more powerful?
+- Should a higher role inherit lower roles?
+
+It simply compares role names.
+
+That means these two users are treated differently:
+
+| User | Roles | Passes `RequireRole("SalesManager")`? |
+|------|-------|----------------------------------------|
+| `manager` | `SalesManager` | ✅ Yes |
+| `admin` | `Admin` | ❌ No |
+
+Even though an Administrator may have more responsibilities in your organization, ASP.NET Core doesn't know that.
+
+To allow both roles, you must explicitly list both.
+
+```csharp
+app.MapPost("/sales-orders/{id}/approve", ...)
+    .RequireAuthorization(p =>
+        p.RequireRole("SalesManager", "Admin"));
+```
+
+When multiple roles are supplied, **`RequireRole` uses OR logic**.
+
+The user only needs **one** of the listed roles.
+
+```
+RequireRole(
+    "SalesManager",
+    "Admin")
+```
+
+means:
+
+```
+SalesManager
+        OR
+Admin
+```
+
+Either role is enough to access the endpoint.
+
+This is exactly how we'll protect the approval endpoint later in the course.
 
 ---
 
-#### 4. Business rules belong with the business logic
+#### Why ASPNET Core does not have a role hierarchy?
 
-Some authorization rules depend on the actual data.
+Different applications organize roles differently.
 
 For example:
 
-- Orders over ₱500,000 require a manager.
-- Only the employee who created the draft may edit it.
-- Only warehouse staff assigned to a warehouse may modify its inventory.
+```
+Company A
 
-These rules cannot be checked at the endpoint because the endpoint has not loaded the order yet.
+Admin
+ └── Manager
+      └── SalesRep
+```
 
-The application must first retrieve the order from the database, then inspect both:
+might consider administrators to inherit every permission.
 
-- the current user, and
-- the business data.
+But another company might use completely different rules:
+
+```
+Admin
+    │
+    ├── Manages users
+    └── Cannot approve purchases
+
+SalesManager
+    │
+    └── Can approve purchases
+```
+
+In that system, an Administrator should **not** automatically become a Sales Manager.
+
+Because every application has different business rules, ASP.NET Core avoids making assumptions about role hierarchies.
+
+Instead, it leaves that decision to your application.
+
+---
+
+#### If you want a hierarchy, build one explicitly
+
+For small applications, the simplest solution is usually to list every role that should have access.
+
+```csharp
+.RequireAuthorization(p =>
+    p.RequireRole(
+        "SalesManager",
+        "Admin"))
+```
+
+As applications become larger, however, repeatedly listing roles becomes difficult to maintain.
+
+Instead of asking:
+
+> "Does this user have the SalesManager role?"
+
+you start asking:
+
+> "Does this user have permission to approve orders?"
+
+We'll look at that approach next, when we discuss **permission claims** inside a JWT.
+
+### Level 2 — Business authorization
+
+In the previous section, authorization depended only on the caller's role.
+
+The endpoint could answer questions such as:
+
+> **"Is this user a Sales Manager?"**
+
+without loading anything from the database.
+
+But many business rules are more complicated than that.
+
+For example:
+
+- A manager may not approve an order they created themselves.
+- A sales representative may edit only their own draft orders.
+- Orders over ₱500,000 require manager approval.
+- Only employees assigned to a warehouse may update that warehouse's inventory.
+
+These rules cannot be checked by the endpoint.
+
+Why?
+
+Because the endpoint hasn't loaded the business data yet.
+
+It knows **who** is calling, but it doesn't yet know anything about:
+
+- the order,
+- the customer,
+- the warehouse,
+- or the item category.
+
+Those rules belong one level deeper—in the **handler** or **domain**.
+
+---
+
+#### A good way to recognize business authorization
+
+Ask yourself one question:
+
+> **"Can I answer this question without loading data from the database?"**
+
+If the answer is **yes**, the rule probably belongs on the endpoint.
+
+If the answer is **no**, the rule belongs in the handler or domain.
+
+Think about these two rules.
+
+> "Only Sales Managers may approve orders."
+
+The endpoint already has enough information to answer that.
+
+Now compare it with:
+
+> "A manager may not approve an order they created themselves."
+
+The endpoint cannot answer that question because it doesn't know who created the order.
+
+The application must first load the order before making the decision.
+
+---
+
+#### Two managers, one order
+
+Suppose order **#50** was created by **Manager B**.
+
+Now two different managers try to approve it.
+
+| Caller | Role | Created the order? | Result |
+|------|------|-------------------|--------|
+| Manager A | `SalesManager` | ❌ No | ✅ Approve |
+| Manager B | `SalesManager` | ✅ Yes | ❌ Reject |
+
+Notice something important.
+
+Both users have exactly the same role.
+
+Both successfully passed the endpoint authorization.
+
+The only thing that separates them is the **business data**.
+
+That means the authorization rule cannot live on the endpoint.
+
+It must live inside the handler.
+
+---
+
+#### Using `ICurrentUser`
+
+Once the order has been loaded, the handler can compare:
+
+- the authenticated user, and
+- the order itself.
 
 For example:
 
 ```csharp
-if (order.RequiresManager &&
-    !currentUser.IsInRole("SalesManager"))
+if (order.CreatedBy.Value == currentUser.UserId)
 {
-    throw new ForbiddenException();
+    throw new ForbiddenException(
+        "A manager cannot approve an order they created themselves.");
 }
 ```
 
-This is a business decision, so it belongs inside the handler or domain logic.
+Here the handler combines two pieces of information:
+
+- `currentUser.UserId` — who is making the request.
+- `order.CreatedBy` — who created the order.
+
+Only after comparing both values can it decide whether approval is allowed.
+
+This is exactly the kind of rule `ICurrentUser` was designed for.
 
 ---
 
-### A quick rule of thumb
+#### Endpoint vs. business authorization
 
-Before writing a check, ask yourself one question:
+A useful way to remember the difference is:
 
-> **"What information does this check need?"**
+| Endpoint authorization | Business authorization |
+|------------------------|------------------------|
+| Depends only on the authenticated user's role. | Depends on both the authenticated user and business data. |
+| Runs before the handler. | Runs inside the handler or domain. |
+| Never needs the database. | Usually requires loading business data first. |
 
-If it only needs the request itself:
+A simple rule of thumb is:
+
+> **If two users with the same role should receive different answers, the rule belongs in the handler or domain—not on the endpoint.**
+
+We'll use this pattern repeatedly throughout the rest of the course whenever authorization depends on the business data rather than just the caller's role.
+
+### Can a JWT contain more than one role?
+
+So far, our JWT contains a single role:
+
+```json
+{
+  "sub": "42",
+  "name": "rep",
+  "role": "SalesRep"
+}
+```
+
+That keeps the examples throughout this course simple, and for many business applications it is completely sufficient.
+
+But a JWT isn't limited to a single role.
+
+A JWT is simply a collection of **claims**.
+
+A claim is just one fact about the authenticated user.
+
+That means you can include as many claims as your application needs.
+
+For example, a larger application might issue a JWT like this:
+
+```json
+{
+  "sub": "42",
+  "name": "rep",
+  "roles": [
+    "SalesRep",
+    "SalesManager"
+  ],
+  "permissions": [
+    "orders:read",
+    "orders:create",
+    "orders:approve"
+  ],
+  "tenant": "acme-corp",
+  "region": "APAC"
+}
+```
+
+Every additional claim gives the application more information about the authenticated user.
+
+For example:
+
+| Claim | Purpose |
+|-------|---------|
+| `roles` | A user may belong to multiple roles. |
+| `permissions` | Represents specific capabilities instead of broad job titles. |
+| `tenant` | Identifies which company or customer the user belongs to in a multi-tenant application. |
+| `region` | Restricts users to data belonging to a particular region. |
+
+---
+
+#### Roles vs. permissions
+
+As applications grow, roles often become too broad.
+
+Suppose your application has these roles:
+
+```
+SalesRep
+SalesManager
+Admin
+```
+
+One way to protect the approve endpoint is:
+
+```csharp
+.RequireAuthorization(p =>
+    p.RequireRole("SalesManager", "Admin"));
+```
+
+That works well for a small application.
+
+But imagine dozens of endpoints.
+
+Soon you'll find yourself repeatedly writing:
+
+```text
+SalesManager OR Admin
+
+SalesManager OR Admin
+
+SalesManager OR Admin
+```
+
+If your business later decides that supervisors may also approve orders, every endpoint must be updated.
+
+Instead of checking for roles, many larger systems check for **permissions**.
+
+Instead of asking:
+
+> **"Is this user a Sales Manager?"**
+
+they ask:
+
+> **"Does this user have permission to approve orders?"**
+
+For example:
+
+```
+orders:approve
+```
+
+Now it doesn't matter which role granted that permission.
+
+The authorization rule remains the same.
+
+Changing who receives that permission becomes a configuration decision instead of a code change.
+
+---
+
+#### Why this course uses a single role
+
+Although permission-based authorization is common in larger systems, it also introduces additional concepts:
+
+- permission management,
+- role-to-permission mapping,
+- authorization policies,
+- permission administration.
+
+Those topics would distract from learning JWT authentication itself.
+
+To keep the examples focused, this course stores a single role inside the JWT.
+
+The authentication pipeline is exactly the same.
+
+The only difference is the claims you choose to include.
+
+As your application's authorization requirements grow, you can extend the JWT by adding more claims without changing the overall authentication flow.
+
+### From WebForms — module/view/button permissions
+
+If you've built applications with **ASP.NET WebForms**, this idea probably looks familiar.
+
+Many WebForms applications don't authorize using simple roles alone.
+
+Instead, they maintain a **permission matrix**.
+
+For example:
+
+- Which modules may this user access?
+- Which screens should appear in the menu?
+- Which buttons should be enabled?
+- Which actions may they perform?
+
+A JWT can carry that information too.
+
+For example:
+
+```json
+{
+  "sub": "42",
+  "name": "rep",
+  "role": "SalesRep",
+  "access": [
+    {
+      "moduleId": "SALES",
+      "views": [
+        "orders",
+        "customers"
+      ],
+      "buttons": [
+        "order:create",
+        "order:cancel"
+      ]
+    },
+    {
+      "moduleId": "INVENTORY",
+      "views": [
+        "stock"
+      ],
+      "buttons": []
+    }
+  ]
+}
+```
+
+The client application can read these claims to decide what to display.
+
+For example:
+
+- Show or hide menu items.
+- Enable or disable toolbar buttons.
+- Hide pages the user cannot access.
+
+This is very similar to what many WebForms applications did with code like:
+
+```vb
+Panel.Visible = hasAccess
+btnApprove.Enabled = canApprove
+```
+
+The difference is where the information comes from.
+
+Instead of reading permissions from a server-side session, the client reads them from the authenticated user's claims.
+
+---
+
+#### UI permissions are not security
+
+A common mistake is assuming that hiding a button secures the application.
+
+It doesn't.
+
+Suppose the front end hides the **Approve** button because the current user lacks permission.
+
+Nothing prevents someone from manually sending this request:
+
+```http
+POST /sales-orders/50/approve
+```
+
+using a tool such as Postman or curl.
+
+That's why the server must **always** perform its own authorization checks.
+
+Think of the UI as a convenience layer.
+
+It helps users avoid attempting actions they cannot perform.
+
+The server is still responsible for enforcing the real security rules.
+
+```
+Client
+    │
+Hide Approve button
+    │
+    ▼
+User cannot click it
+        │
+        ├──────────────┐
+        │              │
+        ▼              ▼
+Normal UI         Manual HTTP request
+                        │
+                        ▼
+                  API Endpoint
+                        │
+                        ▼
+              Authorization check
+                        │
+                        ▼
+                Allow or Reject
+```
+
+Whether the request comes from your application, Postman, curl, or another client makes no difference.
+
+Every request reaches the same authorization logic.
+
+That's why endpoint and business authorization remain the application's true security boundary.
+
+The UI simply reflects those rules to improve the user experience.
+
+### JWT size trade-offs
+
+At this point you might be wondering:
+
+> **"If a JWT can contain all of these claims, why not put everything inside it?"**
+
+The answer is simple:
+
+> **Every claim makes the token larger.**
+
+Remember that the client sends the JWT with **every authenticated request**.
+
+```
+Request 1
+Authorization: Bearer eyJ...
+
+Request 2
+Authorization: Bearer eyJ...
+
+Request 3
+Authorization: Bearer eyJ...
+```
+
+Unlike a database query, which happens only when needed, the JWT travels across the network every single time.
+
+A small token has very little overhead.
+
+A large token is transmitted repeatedly throughout the user's session.
+
+---
+
+#### Another trade-off: claims become stale
+
+JWTs are created during login.
+
+After that, the claims inside the token never change.
+
+Suppose a user logs in at **9:00 AM** with this permission:
+
+```json
+{
+  "permissions": [
+    "orders:approve"
+  ]
+}
+```
+
+At **10:00 AM**, an administrator removes that permission.
+
+The user still has the old JWT.
+
+That means the token continues to say:
+
+```json
+{
+  "permissions": [
+    "orders:approve"
+  ]
+}
+```
+
+until the access token expires and a new one is issued.
+
+This is one reason access tokens are intentionally short-lived.
+
+In the next part of this phase we'll introduce **refresh tokens**, which periodically issue a new access token containing the latest claims.
+
+---
+
+#### What should go inside a JWT?
+
+A good rule of thumb is:
+
+> **Put into the JWT only the information the server needs to authorize every request.**
+
+Examples include:
+
+- User ID
+- Username
+- Role
+- Small permission sets
+- Tenant ID
+
+Avoid placing large or frequently changing data inside the token.
+
+For example:
+
+- Complete menu structures
+- Hundreds of button permissions
+- User preferences
+- Customer lists
+- Large profile information
+
+Those are usually better loaded separately after login.
+
+For example:
+
+```
+POST /auth/login
+        │
+        ▼
+Receive JWT
+        │
+        ▼
+GET /me
+        │
+        ▼
+User profile
+
+GET /me/permissions
+        │
+        ▼
+Full permission matrix
+```
+
+This approach keeps the JWT small while still allowing the application to retrieve richer information when needed.
+
+---
+
+#### A practical guideline
+
+For this course we'll keep our JWT intentionally small.
+
+It contains only the claims that every request needs:
+
+- User ID
+- Username
+- Role
+- Token ID (`jti`)
+
+Everything else can be loaded separately when the application starts.
+
+As your applications grow, this simple guideline scales well:
+
+> **Use the JWT to identify the caller. Use your API to retrieve everything else.**
+
+### Where should I put this check?
+
+By this point you've seen several kinds of authentication and authorization rules.
+
+A common beginner question is:
+
+> **"I know what I want to check—but where should I put that check?"**
+
+The answer depends on **what information the rule needs**.
+
+| The rule you want to write | Where it belongs | Why? | Example |
+|---|---|---|---|
+| **Is the request well-formed?** | **Validator** | Validators only check whether the request is valid. They don't know about users, roles, or the database. | `RuleFor(x => x.Password).MinimumLength(8);` |
+| **Can this user log in?** | **Handler** | The handler loads the user, verifies the password, and decides whether authentication succeeds. | `if (user is null || !hasher.Verify(...)) throw ...;` |
+| **May this role call this endpoint?** | **Endpoint** | The endpoint checks only the authenticated user's role before the handler runs. | `.RequireAuthorization(p => p.RequireRole("SalesManager"))` |
+| **Does this business rule depend on application data?** | **Handler / Domain** | The application must first load the business data before making the decision. | `if (order.RequiresManager && !currentUser.IsInRole("SalesManager")) throw ...;` |
+
+---
+
+#### A simple way to remember it
+
+Before writing any check, ask yourself:
+
+> **"What information does this rule need?"**
+
+If it only needs the incoming request:
 
 → **Validator**
 
-If it only needs the user's role:
+If it only needs the authenticated user's role:
 
 → **Endpoint**
 
-If it needs the database:
+If it needs data from the database:
 
 → **Handler**
 
-If it needs both the current user **and** business data:
+If it needs both the authenticated user **and** business data:
 
 → **Handler or Domain**
 
----
-
-> ⚠️ **Never put business rules inside a validator.**
->
-> A validator answers only:
->
-> > "Is this request shaped correctly?"
->
-> It should never answer:
->
-> - Is the password correct?
-> - Does the user exist?
-> - Is the account active?
-> - Is this customer allowed to order?
-> - Is this user a manager?
->
-> Those are business decisions that belong in the handler or domain. Validators should remain simple and independent of the database so they are easy to test.
+```
+                 What information does the rule need?
+                               │
+        ┌──────────────────────┼──────────────────────┐
+        │                      │                      │
+        ▼                      ▼                      ▼
+Request only?            User's role?          Business data?
+        │                      │                      │
+        ▼                      ▼                      ▼
+ Validator               Endpoint          Handler / Domain
+```
 
 ---
 
-> ⚠️ **Role names must match exactly.**
->
-> If your application uses:
->
-> - `SalesRep`
-> - `SalesManager`
-> - `Admin`
->
-> then use those exact strings everywhere.
->
-> These will **not** match:
->
-> - `"Manager"`
-> - `"salesmanager"`
-> - `"sales_manager"`
->
-> Role comparisons are exact. A typo usually doesn't produce an error—the authorization simply fails to match, and your security rule won't work as intended.
->
-> To avoid mistakes, define role names as constants in one place and reuse them throughout the application.
+#### Common mistakes
 
-New checks are the first thing you'll want to add, so here's the full picture in one place. Every check you
-could write about a user or a role has exactly **one** correct home. Putting it in the wrong place is the most
-common way beginners tangle this code — so match your check to the row below before you write it.
+⚠️ **Don't put business rules in validators.**
 
-| The check you want to add | Where it goes | Concretely |
-|---|---|---|
-| **Is the request well-formed?** (shape only: username not empty, password ≥ 8 chars) | **Validator** (FluentValidation), in the same `…Handler.cs` file | Add a rule to `LoginValidator`: `RuleFor(x => x.Password).MinimumLength(8);` |
-| **Is this login allowed?** (account active? password correct? locked out?) | **Handler** | Extend the existing guard in `LoginHandler`: `if (user is null \|\| !user.IsActive \|\| !hasher.Verify(...)) throw …` |
-| **"This whole endpoint is for role X, full stop."** | **Endpoint**, via `RequireAuthorization` | `app.MapPost("/sales-orders/{id}/approve", …).RequireAuthorization(p => p.RequireRole("SalesManager"));` |
-| **A role rule that depends on the *data*** ("*this item category* needs a Manager", "you can only cancel *your own* draft") | **Handler / domain**, via `ICurrentUser` | Inject `ICurrentUser`, then `if (order.RequiresManager && !currentUser.IsInRole("SalesManager")) throw …` |
+A validator answers only:
 
-> ⚠️ **Never put a business rule in the validator.** A validator answers only *"is the request shaped
-> right?"* — positive ids, non-empty fields, ranges. *"Is this user allowed?"* / *"is the password
-> correct?"* is a **handler/domain** decision that usually needs the database, and a validator must stay
-> unit-testable without one. Mixing the two is treated as a defect in this course — it's the exact skill
-> §9 is teaching you to keep straight.
+> **"Is this request shaped correctly?"**
 
-> ⚠️ **Role strings must be the literal values `SalesRep`, `SalesManager`, `Admin`.** Not `"Manager"`, not
-> `"salesmanager"`, not `"sales_manager"`. A typo doesn't throw an error — the role check simply never
-> matches, so the rule silently does nothing and the wrong people get through. Copy the strings exactly, or
-> better, keep them as `const` values in one place and reference those.
+It should never answer questions such as:
+
+- Does the user exist?
+- Is the password correct?
+- Is the account active?
+- Is this customer allowed to order?
+- Is this user a manager?
+
+Those are business decisions and belong in the handler or domain.
 
 ---
 
-> 👉 Next: [Phase 4 (Part 3 of 4) — Refresh Tokens & the API-Key Gate](04c-jwt-refresh-apikey.md) — stay logged in without staying exposed, then add an app-level gate in front of the login door itself.
+⚠️ **Don't trust the UI for security.**
+
+Hiding a button or menu item improves the user experience, but it does **not** secure your API.
+
+Every protected operation must still be enforced on the server using endpoint authorization or business authorization.
+
+---
+
+⚠️ **Keep role names consistent.**
+
+If your application defines:
+
+- `SalesRep`
+- `SalesManager`
+- `Admin`
+
+then use those exact values everywhere.
+
+A typo usually won't produce an error.
+
+Instead, the authorization check simply won't match.
+
+To avoid mistakes, define role names as constants in one place and reuse them throughout the application.
+
+---
+
+At this point, users can:
+
+- log in,
+- receive a JWT,
+- call protected endpoints,
+- be authenticated by ASP.NET Core,
+- be exposed through `ICurrentUser`,
+- and be authorized using roles and business rules.
+
+In the next part we'll complete the authentication system by adding **refresh tokens**, allowing users to stay signed in securely without keeping long-lived access tokens.
