@@ -5,7 +5,10 @@
       "Bash(openssl rand *)",
       "Bash(echo \"mobile:  $\\(openssl rand -base64 32\\)\")",
       "Bash(echo \"desktop: $\\(openssl rand -base64 32\\)\")",
-      "Bash(python -)"
+      "Bash(python -)",
+      "PowerShell(dotnet build \"c:\\\\Users\\\\jgmayo\\\\source\\\\repos\\\\Dyastinn\\\\Modular monolith\\\\course-validation\\\\business\\\\Erp.slnx\" -clp:ErrorsOnly --nologo 2>&1)",
+      "PowerShell(dotnet msbuild \"c:\\\\Users\\\\jgmayo\\\\source\\\\repos\\\\Dyastinn\\\\Modular monolith\\\\course-validation\\\\business\\\\src\\\\Shared\\\\Erp.Shared.Infrastructure\\\\Erp.Shared.Infrastructure.csproj\" -t:CoreCompile -clp:ErrorsOnly --nologo 2>&1 | Select-Object -Last 20; \"EXIT=$LASTEXITCODE\")",
+      "PowerShell(dotnet msbuild \"c:\\\\Users\\\\jgmayo\\\\source\\\\repos\\\\Dyastinn\\\\Modular monolith\\\\course-validation\\\\business\\\\src\\\\Erp.Api\\\\Erp.Api.csproj\" -t:CoreCompile -clp:ErrorsOnly --nologo 2>&1 | Select-Object -Last 25; \"EXIT=$LASTEXITCODE\")"
     ]
   }
 }

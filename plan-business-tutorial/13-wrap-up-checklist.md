@@ -225,12 +225,18 @@ as "in production." Here's the honest gap list, grouped, so you know what a real
 - [ ] **HTTPS enforced** (`app.UseHttpsRedirection()`); tokens must never travel over plain HTTP.
 - [ ] Password policy on user creation (length, complexity) — we only *check* passwords here, we didn't
       build user management.
+- [ ] A **change-password / reset endpoint** on top of `usp_AppUser_ChangePassword` — the proc and the
+      DB-driven 90-day policy exist ([Phase 4 §10](04c-jwt-refresh-apikey.md)); the `POST /auth/change-password`
+      slice that calls it (rotating the security stamp, forcing re-login everywhere) is exercise #7 below.
+      Without it, an expired password is a dead end.
 - [ ] Rate-limiting on `/auth/login` to slow brute-force attempts (ASP.NET Core has built-in rate
       limiting — no new dependency).
 - [x] **Refresh tokens** — ✅ built in [Phase 4 §10](04c-jwt-refresh-apikey.md): short (15 min) access tokens backed by
-      rotating refresh tokens with reuse detection and a revoke-all-sessions endpoint. (Two hardening extras
-      remain, both flagged in that section: delivering the refresh token as an `HttpOnly` cookie for browser
-      clients, and a periodic cleanup of revoked/expired rows.)
+      rotating refresh tokens with reuse detection and a revoke-all-sessions endpoint. A password change
+      **instantly voids every refresh token** via the user's `SecurityStamp`, and a token's absolute lifetime
+      is capped by the DB-driven `PasswordExpiresUtc`, so a session can never outlive its password. (Two
+      hardening extras remain, both flagged in that section: delivering the refresh token as an `HttpOnly`
+      cookie for browser clients, and a periodic cleanup of revoked/expired rows.)
 
 ### Correctness & data
 - [ ] Every multi-step write is in a transaction — ✅ you did this. Double-check no new feature skips it.
@@ -330,6 +336,12 @@ Stay within the stack; each reinforces a pattern:
    auth.)
 6. **Audit trail table** — a domain-event handler that writes every status change to an `OrderAudit`
    table. (Reinforces: after-commit event dispatch.)
+7. **Change-password endpoint** — a `POST /auth/change-password` slice (authenticated) that verifies the
+   current password, hashes the new one, and calls `usp_AppUser_ChangePassword`. Because that proc rotates the
+   `SecurityStamp` and pushes `PasswordExpiresUtc` 90 days out, the user is logged out of every device on their
+   next refresh and gets a fresh session lifetime — no extra code in the refresh path. (Reinforces: how a
+   single DB-driven policy change ripples through the auth system without new branching. See
+   [Phase 4 §10](04c-jwt-refresh-apikey.md).)
 
 Try one *before* reading how; struggling first is where the learning is.
 

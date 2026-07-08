@@ -37,14 +37,20 @@ public sealed class LoginHandler(
         if (user is null || !user.IsActive || !hasher.Verify(cmd.Password, user.PasswordHash))
             throw new AuthenticationException("Invalid username or password.");
 
+        var now = clock.UtcNow;
+
+        // The DB-driven password policy also governs login: an expired password can't mint a session.
+        if (now >= user.PasswordExpiresUtc)
+            throw new AuthenticationException("Your password has expired. Please reset it before signing in.");
+
         var access = jwt.CreateAccessToken(user.Id, user.Username, user.Role);
 
         // Start a NEW token family for this login, storing the refresh token's HASH (never the raw value).
+        // The token carries the user's SecurityStamp, and its hard cap IS the password-expiry date (from the DB).
         var (rawRefresh, refreshHash) = refreshTokens.Generate();
-        var now = clock.UtcNow;
         await using var tx = await uow.BeginAsync(ct);
-        await store.AddAsync(refreshHash, user.Id, Guid.NewGuid(),
-            refreshTokens.SlidingExpiry(now), refreshTokens.AbsoluteExpiry(now), tx.Transaction, ct);
+        await store.AddAsync(refreshHash, user.Id, Guid.NewGuid(), user.SecurityStamp,
+            refreshTokens.SlidingExpiry(now, user.PasswordExpiresUtc), user.PasswordExpiresUtc, tx.Transaction, ct);
         await tx.CommitAsync(ct);
 
         return new LoginResult(access, rawRefresh, user.Username, user.Role);   // client keeps the RAW refresh token

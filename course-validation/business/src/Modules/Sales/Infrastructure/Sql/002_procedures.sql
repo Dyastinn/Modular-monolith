@@ -6,7 +6,7 @@ CREATE OR ALTER PROCEDURE [identity].usp_AppUser_GetByUsername
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, Username, PasswordHash, Role, IsActive
+    SELECT Id, Username, PasswordHash, Role, IsActive, SecurityStamp, PasswordExpiresUtc
     FROM [identity].AppUser
     WHERE Username = @Username;
 END
@@ -17,21 +17,35 @@ CREATE OR ALTER PROCEDURE [identity].usp_AppUser_GetById
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, Username, PasswordHash, Role, IsActive
+    SELECT Id, Username, PasswordHash, Role, IsActive, SecurityStamp, PasswordExpiresUtc
     FROM [identity].AppUser
     WHERE Id = @Id;
+END
+GO
+
+-- Changing a password: rotate the stamp (logs out every session) and push the 90-day expiry — atomically.
+CREATE OR ALTER PROCEDURE [identity].usp_AppUser_ChangePassword
+    @UserId BIGINT, @NewPasswordHash NVARCHAR(500)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE [identity].AppUser
+    SET PasswordHash       = @NewPasswordHash,
+        SecurityStamp      = NEWID(),                              -- every old refresh token is now stale
+        PasswordExpiresUtc  = DATEADD(day, 90, SYSUTCDATETIME())   -- DB policy: 90 days from this change
+    WHERE Id = @UserId;
 END
 GO
 
 -- Refresh-token procs (Phase 4 §9). Persistence only — the policy (expired? replayed?) is in the handler.
 CREATE OR ALTER PROCEDURE [identity].usp_RefreshToken_Insert
     @TokenHash NVARCHAR(200), @UserId BIGINT, @FamilyId UNIQUEIDENTIFIER,
-    @ExpiresUtc DATETIME2, @AbsoluteExpiresUtc DATETIME2
+    @SecurityStamp UNIQUEIDENTIFIER, @ExpiresUtc DATETIME2, @AbsoluteExpiresUtc DATETIME2
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO [identity].RefreshToken (TokenHash, UserId, FamilyId, ExpiresUtc, AbsoluteExpiresUtc)
-    VALUES (@TokenHash, @UserId, @FamilyId, @ExpiresUtc, @AbsoluteExpiresUtc);
+    INSERT INTO [identity].RefreshToken (TokenHash, UserId, FamilyId, SecurityStamp, ExpiresUtc, AbsoluteExpiresUtc)
+    VALUES (@TokenHash, @UserId, @FamilyId, @SecurityStamp, @ExpiresUtc, @AbsoluteExpiresUtc);
 END
 GO
 
@@ -40,7 +54,7 @@ CREATE OR ALTER PROCEDURE [identity].usp_RefreshToken_GetByHash
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, TokenHash, UserId, FamilyId, ExpiresUtc, AbsoluteExpiresUtc, RevokedUtc
+    SELECT Id, TokenHash, UserId, FamilyId, SecurityStamp, ExpiresUtc, AbsoluteExpiresUtc, RevokedUtc
     FROM [identity].RefreshToken WHERE TokenHash = @TokenHash;
 END
 GO

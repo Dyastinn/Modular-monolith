@@ -49,21 +49,22 @@ Two defenses, and you need both:
 ### The refresh-token service (generate, hash, expiry policy)
 
 `Erp.Shared.Infrastructure/Security/RefreshTokenService.cs` — the random token, its one-way hash, and the
-sliding/absolute expiry policy, in one place:
+sliding-window policy, in one place. Notice there's **no** absolute-expiry method: the hard cap isn't a span
+this service computes, it's the user's `PasswordExpiresUtc`, which the handler reads from the database and
+passes in:
 
 ```csharp
 public interface IRefreshTokenService
 {
-    (string RawToken, string TokenHash) Generate();   // a new random token + its hash
-    string Hash(string rawToken);                       // hash an incoming token, to look it up
-    DateTime SlidingExpiry(DateTime from);              // from + Jwt:RefreshSlidingDays
-    DateTime AbsoluteExpiry(DateTime from);             // from + Jwt:RefreshAbsoluteDays
+    (string RawToken, string TokenHash) Generate();          // a new random token + its hash
+    string Hash(string rawToken);                            // hash an incoming token, to look it up
+    DateTime SlidingExpiry(DateTime from, DateTime cap);     // from + Jwt:RefreshSlidingDays, but never past cap
+    // No AbsoluteExpiry(from): the absolute cap is the user's PasswordExpiresUtc (from the DB), not a config span.
 }
 
 public sealed class RefreshTokenService(IConfiguration config) : IRefreshTokenService
 {
-    private readonly int _sliding  = int.Parse(config["Jwt:RefreshSlidingDays"]  ?? "7");
-    private readonly int _absolute = int.Parse(config["Jwt:RefreshAbsoluteDays"] ?? "30");
+    private readonly int _sliding = int.Parse(config["Jwt:RefreshSlidingDays"] ?? "7");
 
     public (string, string) Generate()
     {
@@ -76,8 +77,14 @@ public sealed class RefreshTokenService(IConfiguration config) : IRefreshTokenSe
     public string Hash(string rawToken) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawToken)));
 
-    public DateTime SlidingExpiry(DateTime from)  => from.AddDays(_sliding);
-    public DateTime AbsoluteExpiry(DateTime from) => from.AddDays(_absolute);
+    // The sliding window from 'from', but CLAMPED so it never runs past the password-expiry cap.
+    // A refresh token must never outlive the password, and this also keeps the DB's
+    // CK_RefreshToken_Expiry constraint (AbsoluteExpiresUtc >= ExpiresUtc) satisfied.
+    public DateTime SlidingExpiry(DateTime from, DateTime cap)
+    {
+        var sliding = from.AddDays(_sliding);
+        return sliding < cap ? sliding : cap;
+    }
 }
 ```
 
@@ -85,6 +92,13 @@ public sealed class RefreshTokenService(IConfiguration config) : IRefreshTokenSe
 > useless. But a password is short and human-chosen, so it needs a *slow, salted* hash (PBKDF2, §3). A refresh
 > token is 256 random bits — unguessable by construction — so one fast SHA-256 is correct and cheaper. Right
 > tool for the actual threat.
+
+> 🔑 **Why the absolute cap moved out of config and into the database.** The old design used a fixed
+> `Jwt:RefreshAbsoluteDays` (say, 30). But the real rule the business wants is *"a session may not outlive the
+> password."* Passwords are governed by a **database-driven policy** — they expire 90 days after the last
+> change — so the only correct source for a refresh token's hard cap is that same `PasswordExpiresUtc` column.
+> A configured span would be a *second* copy of the policy that could silently drift out of sync (the
+> "split-brain" [Phase 3](03-database-schema.md) warns about). One policy, one home: the database.
 
 > ℹ️ **`IClock`** — the trivial abstraction listed in `Shared.Common` back in [Phase 1](01-solution-setup.md),
 > now earning its keep. The login and refresh handlers inject it instead of calling `DateTime.UtcNow` directly,
@@ -102,12 +116,12 @@ procs:
 
 ```csharp
 public sealed record RefreshTokenRecord(
-    long Id, string TokenHash, long UserId, Guid FamilyId,
+    long Id, string TokenHash, long UserId, Guid FamilyId, Guid SecurityStamp,
     DateTime ExpiresUtc, DateTime AbsoluteExpiresUtc, DateTime? RevokedUtc);
 
 public interface IRefreshTokenRepository
 {
-    Task AddAsync(string tokenHash, long userId, Guid familyId,
+    Task AddAsync(string tokenHash, long userId, Guid familyId, Guid securityStamp,
         DateTime expiresUtc, DateTime absoluteExpiresUtc, IDbTransaction tx, CancellationToken ct);
     Task<RefreshTokenRecord?> GetByHashAsync(string tokenHash, CancellationToken ct);
     Task RevokeAsync(string tokenHash, string? replacedByHash, IDbTransaction tx, CancellationToken ct);
@@ -115,6 +129,9 @@ public interface IRefreshTokenRepository
     Task RevokeAllForUserAsync(long userId, IDbTransaction tx, CancellationToken ct);
 }
 ```
+
+`AddAsync` now also takes `securityStamp` — the value the caller snapshots from the user at mint time —
+which maps straight to the `@SecurityStamp` parameter on `usp_RefreshToken_Insert`.
 
 Each method is a one-line Dapper call to its matching `usp_RefreshToken_*` proc — the same shape as every
 other repository in this course, so the bodies are elided. `GetByHashAsync` reads on `IDbConnectionFactory`
@@ -173,18 +190,26 @@ public sealed class LoginHandler(
         if (user is null || !user.IsActive || !hasher.Verify(cmd.Password, user.PasswordHash))
             throw new AuthenticationException("Invalid username or password.");
 
+        var now = clock.UtcNow;
+
+        // The DB-driven password policy also governs login: an expired password can't mint a session.
+        if (now >= user.PasswordExpiresUtc)
+            throw new AuthenticationException("Your password has expired. Please reset it before signing in.");
+
         var access = jwt.CreateAccessToken(user.Id, user.Username, user.Role);
 
         // Start a NEW token family for this login, storing the refresh token's HASH (never the raw value).
+        // The token carries the user's SecurityStamp, and its hard cap IS the password-expiry date.
         var (rawRefresh, refreshHash) = refreshTokens.Generate();
-        var now = clock.UtcNow;
         using var conn = factory.Create();
         await conn.OpenAsync(ct);
         using var tx = conn.BeginTransaction();
         try
         {
             await store.AddAsync(refreshHash, user.Id, familyId: Guid.NewGuid(),
-                expiresUtc: refreshTokens.SlidingExpiry(now), absoluteExpiresUtc: refreshTokens.AbsoluteExpiry(now),
+                securityStamp: user.SecurityStamp,
+                expiresUtc: refreshTokens.SlidingExpiry(now, user.PasswordExpiresUtc),
+                absoluteExpiresUtc: user.PasswordExpiresUtc,   // hard cap comes from the DB, not config
                 tx, ct);
             tx.Commit();
         }
@@ -248,7 +273,7 @@ public sealed class RefreshHandler(
             throw new AuthenticationException("Refresh token reuse detected — session revoked. Please log in again.");
         }
 
-        // Expiry: BOTH the sliding window and the absolute family cap must still be in the future.
+        // Expiry: BOTH the sliding window and the absolute cap (the password-expiry date) must be in the future.
         if (now >= token.ExpiresUtc || now >= token.AbsoluteExpiresUtc)
             throw new AuthenticationException("Refresh token expired. Please log in again.");
 
@@ -257,15 +282,21 @@ public sealed class RefreshHandler(
         if (user is null || !user.IsActive)
             throw new AuthenticationException("Account is no longer active.");
 
-        // ROTATE: a new token in the SAME family; the sliding window resets, the absolute cap is carried over.
+        // PASSWORD-CHANGE DETECTION: the stamp we snapshotted at mint no longer matches the user's current one,
+        // so the password was changed since this token was issued → every token in this lineage is now void.
+        if (token.SecurityStamp != user.SecurityStamp)
+            throw new AuthenticationException("Credentials changed. Please log in again.");
+
+        // ROTATE: a new token in the SAME family. The sliding window resets (clamped to the password-expiry
+        // cap); the hard cap is the user's CURRENT PasswordExpiresUtc — unchanged here, since the stamp matched.
         var (rawNew, hashNew) = refreshTokens.Generate();
         using var conn = factory.Create();
         await conn.OpenAsync(ct);
         using var tx = conn.BeginTransaction();
         try
         {
-            await store.AddAsync(hashNew, user.Id, token.FamilyId,
-                refreshTokens.SlidingExpiry(now), token.AbsoluteExpiresUtc, tx, ct);
+            await store.AddAsync(hashNew, user.Id, token.FamilyId, user.SecurityStamp,
+                refreshTokens.SlidingExpiry(now, user.PasswordExpiresUtc), user.PasswordExpiresUtc, tx, ct);
             await store.RevokeAsync(presentedHash, replacedByHash: hashNew, tx, ct);   // old one spent
             tx.Commit();
         }
@@ -286,6 +317,29 @@ public sealed class RefreshHandler(
 > rotates, one of the two copies eventually presents an already-spent token, and *that* presentation reveals
 > the theft and kills the family. You don't have to catch the theft in the act; you only need the two copies to
 > diverge, which rotation guarantees.
+
+### The two password-driven safeguards, in one place
+
+The refresh handler now enforces two rules that both trace back to the **database's password policy**, not to
+anything configured in the app. They're easy to blur together, so here they are side by side:
+
+| Safeguard | What it checks | What triggers it | Effect |
+|---|---|---|---|
+| **Security stamp** | `token.SecurityStamp == user.SecurityStamp` | A **password change** rotates the user's stamp (`NEWID()`) | Every outstanding refresh token, on every device, fails its next refresh — an **instant, global logout** |
+| **Password-expiry cap** | `now < token.AbsoluteExpiresUtc` (= the user's `PasswordExpiresUtc`) | The **90-day** password lifetime elapsing | A refresh token can never outlive the password it was minted under |
+
+> 💡 **Why the stamp beats "just revoke all tokens on password change."** You *could* run
+> `usp_RefreshToken_RevokeAllForUser` inside the change-password proc's transaction. The stamp is better for a
+> beginner build for two reasons: (1) it's **one column compare**, not a table sweep, and it can't miss a
+> token that's mid-flight in another request; (2) it's **self-healing** — even a token that somehow dodged a
+> revoke sweep still fails, because it's the *value* that no longer agrees. The password change doesn't have to
+> hunt tokens down; it just changes the fact they were all vouching for.
+
+> ❓ **"Where does the stamp actually change?"** In `usp_AppUser_ChangePassword`
+> ([Phase 3](03-database-schema.md)): the same atomic write that stores the new hash also does
+> `SecurityStamp = NEWID()` and `PasswordExpiresUtc = DATEADD(day, 90, …)`. That one proc is the single origin
+> of *both* safeguards. The refresh handler is purely a **reader** of the consequences — it never sets a stamp
+> or an expiry itself, which is exactly why the policy stays in one home.
 
 ### Logout and logout-all
 
@@ -386,6 +440,12 @@ public sealed class RefreshEndpoint : ICarterModule
 >   simplicity; for a browser client, prefer the cookie.
 > - **Revoked/expired rows accumulate.** A periodic cleanup (a scheduled job or a `DELETE … WHERE RevokedUtc <
 >   …` proc) keeps the table small. Housekeeping, not correctness — noted, out of scope here.
+> - **An expired password is a dead end without a reset flow.** Once `PasswordExpiresUtc` passes, refresh fails
+>   *and* login rejects the password (both by design — the DB policy governs both). A complete system pairs
+>   this with a **password-reset / change-password** flow (which calls `usp_AppUser_ChangePassword` to rotate
+>   the stamp and push the expiry). This tutorial ships the proc and policy but not the endpoint — building
+>   `POST /auth/change-password` on top of it is a [Phase 13](13-wrap-up-checklist.md) exercise. Until then,
+>   don't let a seed user's 90 days lapse, or re-seed `PasswordExpiresUtc`.
 
 ## 11. A second gate — requiring an API key from the frontend
 

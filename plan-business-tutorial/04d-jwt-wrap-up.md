@@ -23,8 +23,11 @@
      → endpoint calls sender.Send(command)
      → handler injects ICurrentUser → reads UserId to stamp CreatedByUserId
 4. ...15 minutes pass; the access token expires → the next request gets 401.
-5. POST /auth/refresh {refreshToken}  → RefreshHandler rotates it → returns a new { accessToken, refreshToken }
+5. POST /auth/refresh {refreshToken}  → RefreshHandler reloads the user, checks the security stamp + the
+     password-expiry cap, then rotates → returns a new { accessToken, refreshToken }
      → client swaps in the new pair and retries. No re-login.
+6. (If the password had been changed anywhere) the user's SecurityStamp rotated → step 5's stamp check fails
+     → refresh is refused on every device at once → the user must log in again with the new password.
 ```
 
 ## 13. Checkpoint — log in, get a token, prove it protects ✅
@@ -77,7 +80,14 @@ browser.)
 - ❌ **A long-lived access token "to save round-trips."** ✅ Keep the access token short (15 min) and lean on
   the refresh token; a stolen short-lived token expires before it's useful.
 - ✅ **Best practice: reload the user on refresh.** It's your chance to honor a role change or a deactivation
-  since login, instead of trusting stale claims for days.
+  since login, instead of trusting stale claims for days — and to compare the **security stamp** so a password
+  change instantly voids every outstanding refresh token (§10).
+- ❌ **Configuring the refresh token's absolute cap as a fixed span** (`Jwt:RefreshAbsoluteDays`) when a
+  database-driven password policy already governs how long credentials live. ✅ Cap it at the user's
+  `PasswordExpiresUtc`, read from the DB — one policy, one home; a token can't outlive its password (§10).
+- ❌ **Relying on a "revoke all tokens" sweep to log a user out after a password change** (a token mid-flight
+  can slip past it). ✅ Rotate a `SecurityStamp` the tokens are compared against — the value they vouched for
+  simply stops agreeing, no hunt required (§10).
 - ❌ **Treating a browser-shipped API key as a real secret, or letting it replace user auth.** ✅ Use it as a
   coarse *outer* gate — block anonymous traffic off the login door, tell clients apart, rate-limit/revoke one.
   Keep JWT + the §9 checks as the real security. An API key is a genuine secret only for
@@ -98,7 +108,11 @@ browser.)
    server do the moment it detects reuse?
 6. Why store only the *hash* of a refresh token, yet a plain SHA-256 is fine here where a password needs
    PBKDF2?
-7. What question does an API key answer that a JWT doesn't — why must its gate run *before* authentication,
+7. A user changes their password. Which column makes their existing refresh tokens stop working on the *next*
+   refresh — and why is comparing that value better than running a "revoke all their tokens" sweep?
+8. Why is a refresh token's absolute expiry taken from the user's `PasswordExpiresUtc` instead of a
+   `Jwt:RefreshAbsoluteDays` setting — and what would go wrong if both existed?
+9. What question does an API key answer that a JWT doesn't — why must its gate run *before* authentication,
    and why can't a browser SPA treat its API key as a true secret?
 
 > 👉 Next: [Phase 5 — The SalesOrder domain model and its business rules](05-domain-model.md).

@@ -3,11 +3,12 @@
 -- value in the {iterations}.{salt}.{key} format PasswordHasher produces (Phase 4 §3), so login works
 -- out of the box. (The tutorial leaves this as a <hash-of-Password123!> placeholder — filled in here.)
 
+-- PasswordExpiresUtc seeded 90 days out (the DB policy); SecurityStamp defaults to a fresh NEWID().
 IF NOT EXISTS (SELECT 1 FROM [identity].AppUser WHERE Username = 'rep')
-INSERT INTO [identity].AppUser (Username, PasswordHash, Role) VALUES
- ('rep',     '600000.2KCoQTqX/lrPlY4QVlVPXg==.5yaeUmLG5LqYE9QBTspiKqER/NSvNhE7mzYQno9q3tE=', 'SalesRep'),
- ('manager', '600000.2KCoQTqX/lrPlY4QVlVPXg==.5yaeUmLG5LqYE9QBTspiKqER/NSvNhE7mzYQno9q3tE=', 'SalesManager'),
- ('admin',   '600000.2KCoQTqX/lrPlY4QVlVPXg==.5yaeUmLG5LqYE9QBTspiKqER/NSvNhE7mzYQno9q3tE=', 'Admin');
+INSERT INTO [identity].AppUser (Username, PasswordHash, Role, PasswordExpiresUtc) VALUES
+ ('rep',     '600000.2KCoQTqX/lrPlY4QVlVPXg==.5yaeUmLG5LqYE9QBTspiKqER/NSvNhE7mzYQno9q3tE=', 'SalesRep',     DATEADD(day, 90, SYSUTCDATETIME())),
+ ('manager', '600000.2KCoQTqX/lrPlY4QVlVPXg==.5yaeUmLG5LqYE9QBTspiKqER/NSvNhE7mzYQno9q3tE=', 'SalesManager', DATEADD(day, 90, SYSUTCDATETIME())),
+ ('admin',   '600000.2KCoQTqX/lrPlY4QVlVPXg==.5yaeUmLG5LqYE9QBTspiKqER/NSvNhE7mzYQno9q3tE=', 'Admin',        DATEADD(day, 90, SYSUTCDATETIME()));
 GO
 
 IF NOT EXISTS (SELECT 1 FROM sales.Customer)

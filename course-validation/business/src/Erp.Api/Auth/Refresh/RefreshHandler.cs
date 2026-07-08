@@ -34,7 +34,7 @@ public sealed class RefreshHandler(
             throw new AuthenticationException("Refresh token reuse detected — session revoked. Please log in again.");
         }
 
-        // Expiry: BOTH the sliding window and the absolute family cap must still be in the future.
+        // Expiry: BOTH the sliding window and the absolute cap (the password-expiry date) must be in the future.
         if (now >= token.ExpiresUtc || now >= token.AbsoluteExpiresUtc)
             throw new AuthenticationException("Refresh token expired. Please log in again.");
 
@@ -43,11 +43,17 @@ public sealed class RefreshHandler(
         if (user is null || !user.IsActive)
             throw new AuthenticationException("Account is no longer active.");
 
-        // ROTATE: a new token in the SAME family; the sliding window resets, the absolute cap is carried over.
+        // PASSWORD-CHANGE DETECTION: the stamp we snapshotted at mint no longer matches the user's current one,
+        // so the password changed since this token was issued → every token in this lineage is now void.
+        if (token.SecurityStamp != user.SecurityStamp)
+            throw new AuthenticationException("Credentials changed. Please log in again.");
+
+        // ROTATE: a new token in the SAME family. The sliding window resets (clamped to the password-expiry
+        // cap); the hard cap is the user's CURRENT PasswordExpiresUtc — unchanged here, since the stamp matched.
         var (rawNew, hashNew) = refreshTokens.Generate();
         await using var tx = await uow.BeginAsync(ct);
-        await store.AddAsync(hashNew, user.Id, token.FamilyId,
-            refreshTokens.SlidingExpiry(now), token.AbsoluteExpiresUtc, tx.Transaction, ct);
+        await store.AddAsync(hashNew, user.Id, token.FamilyId, user.SecurityStamp,
+            refreshTokens.SlidingExpiry(now, user.PasswordExpiresUtc), user.PasswordExpiresUtc, tx.Transaction, ct);
         await store.RevokeAsync(presentedHash, hashNew, tx.Transaction, ct);   // old one spent
         await tx.CommitAsync(ct);
 

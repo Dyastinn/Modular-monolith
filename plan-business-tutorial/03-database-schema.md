@@ -63,7 +63,8 @@ as a map; you don't need to memorize it, and you'll meet each table again in the
 
 ```
 identity  (host/shared: who can log in)
-  ├─ AppUser         users + hashed password + role            → used at login (Phase 4)
+  ├─ AppUser         users + hashed password + role + stamp    → used at login (Phase 4)
+  │                  + password-expiry date (90-day policy)
   └─ RefreshToken    long-lived session tokens (rotate/revoke) → used at login (Phase 4)
 
 sales     (the Sales module: customers, catalogue, orders)
@@ -102,17 +103,29 @@ time, explaining the columns that encode business meaning.
 
 ```sql
 CREATE TABLE [identity].AppUser (   -- [identity] bracketed: it's a reserved keyword (see ⚠️ above)
-    Id            BIGINT IDENTITY PRIMARY KEY,
-    Username      NVARCHAR(100) NOT NULL UNIQUE,
-    PasswordHash  NVARCHAR(500) NOT NULL,        -- NEVER store plain passwords
-    Role          NVARCHAR(50)  NOT NULL,        -- 'SalesRep' | 'SalesManager' | 'Admin'
-    IsActive      BIT NOT NULL DEFAULT 1,
+    Id                 BIGINT IDENTITY PRIMARY KEY,
+    Username           NVARCHAR(100) NOT NULL UNIQUE,
+    PasswordHash       NVARCHAR(500) NOT NULL,        -- NEVER store plain passwords
+    Role               NVARCHAR(50)  NOT NULL,        -- 'SalesRep' | 'SalesManager' | 'Admin'
+    IsActive           BIT NOT NULL DEFAULT 1,
+    SecurityStamp      UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),  -- changes on every password change
+    PasswordExpiresUtc DATETIME2 NOT NULL,            -- DB-driven policy: 90 days from the last password change
     CONSTRAINT CK_AppUser_Role CHECK (Role IN ('SalesRep','SalesManager','Admin'))
 );
 ```
 
 The `CHECK` on `Role` is integrity: the database itself refuses an unknown role. That's a backstop even
 if buggy code tries to insert `'Wizard'`.
+
+Two columns carry the **password-policy** design that [Phase 4](04-jwt-auth.md) leans on — read them
+together, because refresh tokens depend on both:
+- **`SecurityStamp`** is a random GUID that gets a **new value every time the password changes**. A refresh
+  token records the stamp it was minted under; when the two no longer match, the token is dead. That's how
+  one password change **instantly invalidates every refresh token** the user holds, on every device — no
+  bulk `UPDATE`, no revocation sweep, just a value that no longer agrees.
+- **`PasswordExpiresUtc`** is the DB-driven expiry date. Passwords last **90 days**; changing one pushes this
+  90 days into the future. Phase 4 uses this exact timestamp as a refresh token's **hard cap**, so a refresh
+  token can never outlive the password it was born under.
 
 ### Refresh tokens (for the rotating login sessions — Phase 4)
 
@@ -125,8 +138,9 @@ CREATE TABLE [identity].RefreshToken (
     TokenHash          NVARCHAR(200) NOT NULL UNIQUE,   -- SHA-256 of the raw token; we NEVER store the raw value
     UserId             BIGINT NOT NULL REFERENCES [identity].AppUser(Id),
     FamilyId           UNIQUEIDENTIFIER NOT NULL,       -- one login/device lineage; rotation keeps this constant
+    SecurityStamp      UNIQUEIDENTIFIER NOT NULL,       -- the user's stamp AT MINT; a mismatch later = password changed
     ExpiresUtc         DATETIME2 NOT NULL,              -- sliding: reset every rotation (inactivity timeout)
-    AbsoluteExpiresUtc DATETIME2 NOT NULL,              -- hard cap: set once at login, carried through rotations
+    AbsoluteExpiresUtc DATETIME2 NOT NULL,              -- hard cap = the user's PasswordExpiresUtc at mint
     CreatedUtc         DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
     RevokedUtc         DATETIME2 NULL,                  -- set when rotated, logged out, or revoked on breach
     ReplacedByHash     NVARCHAR(200) NULL,              -- the token that superseded this one (rotation audit chain)
@@ -136,15 +150,20 @@ CREATE INDEX IX_RefreshToken_UserId   ON [identity].RefreshToken(UserId);
 CREATE INDEX IX_RefreshToken_FamilyId ON [identity].RefreshToken(FamilyId);
 ```
 
-Three columns carry the security design, and Phase 4 explains each in action:
+Four columns carry the security design, and Phase 4 explains each in action:
 - **`TokenHash`, not the token.** Like a password, the raw refresh token is never stored — only its hash. A
   database leak then hands out no usable tokens. (A plain SHA-256 is enough here; unlike a password, the token
   is already long and random, so it needs no salt or slow hash.)
 - **`FamilyId`** groups every token descended from one login. Rotation issues a new token in the *same* family;
   detecting a replayed token revokes the *whole* family in one statement.
+- **`SecurityStamp`** snapshots the user's `AppUser.SecurityStamp` at the moment the token is minted. On every
+  refresh, Phase 4 reloads the user and compares the two: if they differ, the password changed since this token
+  was issued, so the token is refused. This is the mechanism that lets a single password change kill every
+  outstanding refresh token at once — across every device — without touching the `RefreshToken` table.
 - **`ExpiresUtc` vs `AbsoluteExpiresUtc`** encode two timeouts at once: a *sliding* inactivity window that
-  resets on each use, and an *absolute* cap that doesn't — so an actively-used session still forces a
-  re-login eventually.
+  resets on each use, and an *absolute* cap that doesn't. Here the absolute cap is **not** a fixed
+  configured span — it's copied from the user's `PasswordExpiresUtc`, so a refresh token can never outlive
+  the password it belongs to.
 
 ### Customers (blocking + credit limit)
 
@@ -279,9 +298,10 @@ rest follow the same shape.)
 
 | Proc | Used by | Does |
 |---|---|---|
-| `[identity].usp_AppUser_GetByUsername` | Login (Phase 4) | Fetch a user + hash for password check |
-| `[identity].usp_AppUser_GetById` | Refresh (Phase 4) | Reload a user (role/active) when minting a new access token |
-| `[identity].usp_RefreshToken_Insert` | Login/Refresh (Phase 4) | Store a new refresh token (hash, family, expiries) |
+| `[identity].usp_AppUser_GetByUsername` | Login (Phase 4) | Fetch a user + hash, stamp & password-expiry for the login check |
+| `[identity].usp_AppUser_GetById` | Refresh (Phase 4) | Reload a user (role/active/stamp/password-expiry) when minting a new access token |
+| `[identity].usp_AppUser_ChangePassword` | Change password (Phase 4) | Set a new hash, **rotate `SecurityStamp`**, push `PasswordExpiresUtc` 90 days out — atomically |
+| `[identity].usp_RefreshToken_Insert` | Login/Refresh (Phase 4) | Store a new refresh token (hash, family, stamp, expiries) |
 | `[identity].usp_RefreshToken_GetByHash` | Refresh/Logout (Phase 4) | Look a refresh token up by its hash |
 | `[identity].usp_RefreshToken_Revoke` | Refresh (Phase 4) | Revoke one token, recording its replacement |
 | `[identity].usp_RefreshToken_RevokeFamily` | Refresh/Logout (Phase 4) | Revoke a whole family (rotation breach or logout) |
@@ -432,12 +452,12 @@ no-op:
 ```sql
 CREATE OR ALTER PROCEDURE [identity].usp_RefreshToken_Insert
     @TokenHash NVARCHAR(200), @UserId BIGINT, @FamilyId UNIQUEIDENTIFIER,
-    @ExpiresUtc DATETIME2, @AbsoluteExpiresUtc DATETIME2
+    @SecurityStamp UNIQUEIDENTIFIER, @ExpiresUtc DATETIME2, @AbsoluteExpiresUtc DATETIME2
 AS
 BEGIN
     SET NOCOUNT ON;
-    INSERT INTO [identity].RefreshToken (TokenHash, UserId, FamilyId, ExpiresUtc, AbsoluteExpiresUtc)
-    VALUES (@TokenHash, @UserId, @FamilyId, @ExpiresUtc, @AbsoluteExpiresUtc);
+    INSERT INTO [identity].RefreshToken (TokenHash, UserId, FamilyId, SecurityStamp, ExpiresUtc, AbsoluteExpiresUtc)
+    VALUES (@TokenHash, @UserId, @FamilyId, @SecurityStamp, @ExpiresUtc, @AbsoluteExpiresUtc);
 END
 
 CREATE OR ALTER PROCEDURE [identity].usp_RefreshToken_GetByHash
@@ -445,7 +465,7 @@ CREATE OR ALTER PROCEDURE [identity].usp_RefreshToken_GetByHash
 AS
 BEGIN
     SET NOCOUNT ON;
-    SELECT Id, TokenHash, UserId, FamilyId, ExpiresUtc, AbsoluteExpiresUtc, RevokedUtc
+    SELECT Id, TokenHash, UserId, FamilyId, SecurityStamp, ExpiresUtc, AbsoluteExpiresUtc, RevokedUtc
     FROM [identity].RefreshToken WHERE TokenHash = @TokenHash;
 END
 
@@ -479,7 +499,39 @@ END
 ```
 
 (`[identity].usp_AppUser_GetById` is the obvious one-row `SELECT … WHERE Id = @Id` — the same shape as
-`usp_AppUser_GetByUsername`.)
+`usp_AppUser_GetByUsername`. Both now also return the new `SecurityStamp` and `PasswordExpiresUtc` columns,
+because Phase 4's login and refresh checks need them.)
+
+### Changing a password (where invalidation and the expiry cap come from)
+
+Both new behaviours — instant token invalidation and the moving expiry cap — originate in **one** place: the
+proc that changes a password. It does three things in a single atomic write. This is the **database-driven
+password policy** the rest of Phase 4 relies on:
+
+```sql
+CREATE OR ALTER PROCEDURE [identity].usp_AppUser_ChangePassword
+    @UserId BIGINT, @NewPasswordHash NVARCHAR(500)
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE [identity].AppUser
+    SET PasswordHash       = @NewPasswordHash,
+        SecurityStamp      = NEWID(),                              -- (1) rotate → every old refresh token is now stale
+        PasswordExpiresUtc  = DATEADD(day, 90, SYSUTCDATETIME())   -- (2) DB policy: 90 days from this change
+    WHERE Id = @UserId;
+END
+```
+
+> 🔑 **One write, two guarantees.** Rotating `SecurityStamp` means every refresh token minted under the old
+> stamp fails its next refresh — the user is logged out everywhere the instant the password changes. Setting
+> `PasswordExpiresUtc` to 90 days out means the *next* login's refresh tokens get a fresh 90-day hard cap.
+> Neither guarantee is a configured number in the app — both live in the database, exactly where the password
+> policy lives.
+
+> ℹ️ **This tutorial doesn't build a full change-password *endpoint*** (username/password reset flows are
+> their own topic). It ships the proc and the policy so the auth mechanism is complete and honest: you can see
+> precisely where invalidation and the expiry cap come from, and wiring a `POST /auth/change-password` slice
+> on top of this proc is a short exercise ([Phase 13](13-wrap-up-checklist.md)).
 
 ## 5. Seed data (`Infrastructure/Sql/003_seed.sql`)
 
@@ -487,10 +539,11 @@ So you have something to log in as and order against:
 
 ```sql
 -- Password hashes are placeholders; Phase 4 shows how to generate real ones.
-INSERT INTO [identity].AppUser (Username, PasswordHash, Role) VALUES
- ('rep',     '<hash-of-Password123!>', 'SalesRep'),
- ('manager', '<hash-of-Password123!>', 'SalesManager'),
- ('admin',   '<hash-of-Password123!>', 'Admin');
+-- PasswordExpiresUtc is seeded 90 days out (the DB policy); SecurityStamp defaults to a fresh NEWID().
+INSERT INTO [identity].AppUser (Username, PasswordHash, Role, PasswordExpiresUtc) VALUES
+ ('rep',     '<hash-of-Password123!>', 'SalesRep',     DATEADD(day, 90, SYSUTCDATETIME())),
+ ('manager', '<hash-of-Password123!>', 'SalesManager', DATEADD(day, 90, SYSUTCDATETIME())),
+ ('admin',   '<hash-of-Password123!>', 'Admin',        DATEADD(day, 90, SYSUTCDATETIME()));
 
 INSERT INTO sales.Customer (Name, IsBlocked, CreditLimit, OutstandingBalance) VALUES
  ('Acme Corp',        0, 50000, 10000),   -- healthy: ₱40,000 of headroom

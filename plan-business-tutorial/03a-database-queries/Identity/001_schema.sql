@@ -10,11 +10,13 @@ GO
 IF OBJECT_ID('[identity].AppUser', 'U') IS NULL
 BEGIN
     CREATE TABLE [identity].AppUser (
-        Id            BIGINT IDENTITY PRIMARY KEY,
-        Username      NVARCHAR(100) NOT NULL UNIQUE,
-        PasswordHash  NVARCHAR(500) NOT NULL,        -- NEVER store plain passwords
-        Role          NVARCHAR(50)  NOT NULL,        -- 'SalesRep' | 'SalesManager' | 'Admin'
-        IsActive      BIT NOT NULL DEFAULT 1,
+        Id                 BIGINT IDENTITY PRIMARY KEY,
+        Username           NVARCHAR(100) NOT NULL UNIQUE,
+        PasswordHash       NVARCHAR(500) NOT NULL,        -- NEVER store plain passwords
+        Role               NVARCHAR(50)  NOT NULL,        -- 'SalesRep' | 'SalesManager' | 'Admin'
+        IsActive           BIT NOT NULL DEFAULT 1,
+        SecurityStamp      UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),  -- changes on every password change
+        PasswordExpiresUtc DATETIME2 NOT NULL,            -- DB-driven policy: 90 days from last password change
         CONSTRAINT CK_AppUser_Role CHECK (Role IN ('SalesRep','SalesManager','Admin'))
     );
 END
@@ -27,8 +29,9 @@ BEGIN
         TokenHash          NVARCHAR(200) NOT NULL UNIQUE,   -- SHA-256 of the raw token; never the raw value
         UserId             BIGINT NOT NULL REFERENCES [identity].AppUser(Id),
         FamilyId           UNIQUEIDENTIFIER NOT NULL,       -- one login/device lineage
+        SecurityStamp      UNIQUEIDENTIFIER NOT NULL,       -- user's stamp at mint; mismatch later = password changed
         ExpiresUtc         DATETIME2 NOT NULL,              -- sliding inactivity timeout
-        AbsoluteExpiresUtc DATETIME2 NOT NULL,              -- hard cap set once at login
+        AbsoluteExpiresUtc DATETIME2 NOT NULL,              -- hard cap = user's PasswordExpiresUtc at mint
         CreatedUtc         DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
         RevokedUtc         DATETIME2 NULL,
         ReplacedByHash     NVARCHAR(200) NULL,              -- rotation audit chain

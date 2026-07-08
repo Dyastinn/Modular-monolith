@@ -9,11 +9,13 @@ GO
 -- Users (for JWT auth — Phase 4)
 IF OBJECT_ID('[identity].AppUser') IS NULL
 CREATE TABLE [identity].AppUser (
-    Id            BIGINT IDENTITY PRIMARY KEY,
-    Username      NVARCHAR(100) NOT NULL UNIQUE,
-    PasswordHash  NVARCHAR(500) NOT NULL,        -- NEVER store plain passwords
-    Role          NVARCHAR(50)  NOT NULL,        -- 'SalesRep' | 'SalesManager' | 'Admin'
-    IsActive      BIT NOT NULL DEFAULT 1,
+    Id                 BIGINT IDENTITY PRIMARY KEY,
+    Username           NVARCHAR(100) NOT NULL UNIQUE,
+    PasswordHash       NVARCHAR(500) NOT NULL,        -- NEVER store plain passwords
+    Role               NVARCHAR(50)  NOT NULL,        -- 'SalesRep' | 'SalesManager' | 'Admin'
+    IsActive           BIT NOT NULL DEFAULT 1,
+    SecurityStamp      UNIQUEIDENTIFIER NOT NULL DEFAULT NEWID(),  -- changes on every password change
+    PasswordExpiresUtc DATETIME2 NOT NULL,            -- DB-driven policy: 90 days from the last password change
     CONSTRAINT CK_AppUser_Role CHECK (Role IN ('SalesRep','SalesManager','Admin'))
 );
 GO
@@ -25,8 +27,9 @@ CREATE TABLE [identity].RefreshToken (
     TokenHash          NVARCHAR(200) NOT NULL UNIQUE,   -- SHA-256 of the raw token
     UserId             BIGINT NOT NULL REFERENCES [identity].AppUser(Id),
     FamilyId           UNIQUEIDENTIFIER NOT NULL,       -- one login lineage; rotation keeps this constant
+    SecurityStamp      UNIQUEIDENTIFIER NOT NULL,       -- user's stamp at mint; mismatch later = password changed
     ExpiresUtc         DATETIME2 NOT NULL,              -- sliding: reset every rotation
-    AbsoluteExpiresUtc DATETIME2 NOT NULL,              -- hard cap: set once at login, carried through rotations
+    AbsoluteExpiresUtc DATETIME2 NOT NULL,              -- hard cap = user's PasswordExpiresUtc at mint
     CreatedUtc         DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME(),
     RevokedUtc         DATETIME2 NULL,                  -- set when rotated, logged out, or revoked on breach
     ReplacedByHash     NVARCHAR(200) NULL,              -- the token that superseded this one (rotation audit chain)

@@ -5,12 +5,12 @@ namespace Erp.Shared.Infrastructure;
 
 // The stored refresh token, as the handler needs it (Phase 4 §9).
 public sealed record RefreshTokenRecord(
-    long Id, string TokenHash, long UserId, Guid FamilyId,
+    long Id, string TokenHash, long UserId, Guid FamilyId, Guid SecurityStamp,
     DateTime ExpiresUtc, DateTime AbsoluteExpiresUtc, DateTime? RevokedUtc);
 
 public interface IRefreshTokenRepository
 {
-    Task AddAsync(string tokenHash, long userId, Guid familyId,
+    Task AddAsync(string tokenHash, long userId, Guid familyId, Guid securityStamp,
         DateTime expiresUtc, DateTime absoluteExpiresUtc, IDbTransaction tx, CancellationToken ct);
     Task<RefreshTokenRecord?> GetByHashAsync(string tokenHash, CancellationToken ct);
     Task RevokeAsync(string tokenHash, string? replacedByHash, IDbTransaction tx, CancellationToken ct);
@@ -20,11 +20,11 @@ public interface IRefreshTokenRepository
 
 public sealed class RefreshTokenRepository(IDbConnectionFactory factory) : IRefreshTokenRepository
 {
-    public async Task AddAsync(string tokenHash, long userId, Guid familyId,
+    public async Task AddAsync(string tokenHash, long userId, Guid familyId, Guid securityStamp,
         DateTime expiresUtc, DateTime absoluteExpiresUtc, IDbTransaction tx, CancellationToken ct) =>
         await tx.Connection!.ExecuteAsync(new CommandDefinition(
             "[identity].usp_RefreshToken_Insert",
-            new { TokenHash = tokenHash, UserId = userId, FamilyId = familyId, ExpiresUtc = expiresUtc, AbsoluteExpiresUtc = absoluteExpiresUtc },
+            new { TokenHash = tokenHash, UserId = userId, FamilyId = familyId, SecurityStamp = securityStamp, ExpiresUtc = expiresUtc, AbsoluteExpiresUtc = absoluteExpiresUtc },
             transaction: tx, commandType: CommandType.StoredProcedure, cancellationToken: ct));
 
     public async Task<RefreshTokenRecord?> GetByHashAsync(string tokenHash, CancellationToken ct)

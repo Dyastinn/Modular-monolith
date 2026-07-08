@@ -560,11 +560,15 @@ Next, add the JWT configuration to `appsettings.json`.
     "Audience": "Erp.Client",
     "SigningKey": "",
     "AccessTokenMinutes": 15,
-    "RefreshSlidingDays": 7,
-    "RefreshAbsoluteDays": 30
+    "RefreshSlidingDays": 7
   }
 }
 ```
+
+> ℹ️ **No `RefreshAbsoluteDays` here.** A refresh token's *sliding* window is a configured span
+> (`RefreshSlidingDays`), but its *absolute* hard cap is **not** a number in this file — it's the user's
+> `PasswordExpiresUtc` from the database ([Part 3, §10](04c-jwt-refresh-apikey.md)). Password policy lives in
+> the database, so the cap does too. A token can never outlive the password it was issued under.
 
 Notice that the signing key is intentionally left blank.
 

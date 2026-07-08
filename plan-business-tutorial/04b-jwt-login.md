@@ -143,7 +143,9 @@ public sealed record AppUser(
     string Username,
     string PasswordHash,
     string Role,
-    bool IsActive);
+    bool IsActive,
+    Guid SecurityStamp,          // rotates on every password change (Phase 3 schema)
+    DateTime PasswordExpiresUtc); // DB-driven 90-day policy; caps a refresh token's lifetime
 
 public interface IUserRepository
 {
@@ -159,8 +161,12 @@ Notice how `AppUser` contains only the fields authentication needs:
 - PasswordHash
 - Role
 - IsActive
+- SecurityStamp — the value we snapshot onto each refresh token, so a password change can invalidate it (§10)
+- PasswordExpiresUtc — the database's password-expiry date, which becomes a refresh token's hard cap (§10)
 
-Nothing more.
+Nothing more. The last two aren't used by *this* first-pass login; they earn their place when we add refresh
+tokens in [Part 3, §10](04c-jwt-refresh-apikey.md), and `AppUser` is the natural place to carry them since
+both procs (`GetByUsername`, `GetById`) already return them.
 
 The repository exposes two read methods.
 
