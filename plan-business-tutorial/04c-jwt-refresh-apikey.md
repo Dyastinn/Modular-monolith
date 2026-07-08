@@ -138,14 +138,75 @@ public interface IRefreshTokenRepository
 `AddAsync` now also takes `securityStamp` — the value the caller snapshots from the user at mint time —
 which maps straight to the `@SecurityStamp` parameter on `usp_RefreshToken_Insert`.
 
-Each method is a one-line Dapper call to its matching `usp_RefreshToken_*` proc — the same shape as every
-other repository in this course, so the bodies are elided. `GetByHashAsync` reads on `IDbConnectionFactory`
-(no transaction); the writes take the handler's transaction, so a rotation is atomic.
+Each method is a one-line Dapper call to its matching `usp_RefreshToken_*` proc — the same shape as
+`UserRepository` in [Phase 4b](04b-jwt-login.md). The one distinction to notice: `GetByHashAsync` is a pure
+read, so it opens its **own** connection through `IDbConnectionFactory` (no transaction — [Phase 3b](03b-data-access.md));
+every write instead runs on the handler's **transaction** (`tx.Connection!`, `transaction: tx`), which is what
+lets a rotation add-the-new and revoke-the-old atomically.
 
-The implementation goes in `Erp.Shared.Infrastructure/Security/RefreshTokenRepository.cs` — copy the shape of
-`UserRepository` from [Phase 4b](04b-jwt-login.md): a constructor taking `IDbConnectionFactory`, one Dapper call
-per method. Register both the service and the store in the composition root **now**, so this phase's checkpoint
-can actually log in and refresh:
+`Erp.Shared.Infrastructure/Security/RefreshTokenRepository.cs`:
+
+```csharp
+public sealed class RefreshTokenRepository(IDbConnectionFactory factory) : IRefreshTokenRepository
+{
+    // WRITE — runs on the handler's transaction (rotation must be atomic with the revoke).
+    public async Task AddAsync(string tokenHash, long userId, Guid familyId, Guid securityStamp,
+        DateTime expiresUtc, DateTime absoluteExpiresUtc, IDbTransaction tx, CancellationToken ct)
+    {
+        await tx.Connection!.ExecuteAsync(new CommandDefinition(
+            "[identity].usp_RefreshToken_Insert",
+            new { TokenHash = tokenHash, UserId = userId, FamilyId = familyId, SecurityStamp = securityStamp,
+                  ExpiresUtc = expiresUtc, AbsoluteExpiresUtc = absoluteExpiresUtc },
+            transaction: tx, commandType: CommandType.StoredProcedure, cancellationToken: ct));
+    }
+
+    // READ — pure lookup, no transaction (Phase 3b), so it opens its own connection.
+    public async Task<RefreshTokenRecord?> GetByHashAsync(string tokenHash, CancellationToken ct)
+    {
+        using var conn = factory.Create();
+
+        return await conn.QuerySingleOrDefaultAsync<RefreshTokenRecord>(new CommandDefinition(
+            "[identity].usp_RefreshToken_GetByHash",
+            new { TokenHash = tokenHash },
+            commandType: CommandType.StoredProcedure, cancellationToken: ct));
+    }
+
+    // WRITE — revoke one token, recording what replaced it (the rotation grace-window caveat below).
+    public async Task RevokeAsync(string tokenHash, string? replacedByHash, IDbTransaction tx, CancellationToken ct)
+    {
+        await tx.Connection!.ExecuteAsync(new CommandDefinition(
+            "[identity].usp_RefreshToken_Revoke",
+            new { TokenHash = tokenHash, ReplacedByHash = replacedByHash },
+            transaction: tx, commandType: CommandType.StoredProcedure, cancellationToken: ct));
+    }
+
+    // WRITE — burn a whole lineage (reuse-detection breach, or logout).
+    public async Task RevokeFamilyAsync(Guid familyId, IDbTransaction tx, CancellationToken ct)
+    {
+        await tx.Connection!.ExecuteAsync(new CommandDefinition(
+            "[identity].usp_RefreshToken_RevokeFamily",
+            new { FamilyId = familyId },
+            transaction: tx, commandType: CommandType.StoredProcedure, cancellationToken: ct));
+    }
+
+    // WRITE — logout-all: every outstanding token for one user.
+    public async Task RevokeAllForUserAsync(long userId, IDbTransaction tx, CancellationToken ct)
+    {
+        await tx.Connection!.ExecuteAsync(new CommandDefinition(
+            "[identity].usp_RefreshToken_RevokeAllForUser",
+            new { UserId = userId },
+            transaction: tx, commandType: CommandType.StoredProcedure, cancellationToken: ct));
+    }
+}
+```
+
+The parameter object on each call maps 1:1 to that proc's `@`-parameters from [Phase 3](03-database-schema.md),
+and `RefreshTokenRecord`'s properties line up with the `usp_RefreshToken_GetByHash` `SELECT` list, so Dapper
+maps the row with no aliases. `[identity]` stays **bracketed** in every call — `IDENTITY` is a reserved keyword,
+same note as the user procs.
+
+Register both the service and the store in the composition root **now**, so this phase's checkpoint can actually
+log in and refresh:
 
 ```csharp
 // Program.cs — the auth platform, alongside IUserRepository / IClock (Phase 4b)
