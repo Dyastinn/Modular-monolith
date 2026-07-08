@@ -10,7 +10,7 @@
 
 ---
 
-## 10. Step 7 — Refresh tokens: staying logged in without staying exposed
+## 10. Step 8 — Refresh tokens: staying logged in without staying exposed
 
 A 15-minute access token is safe — steal it and it's dead by the time you use it — but on its own it means
 re-typing your password every 15 minutes. The fix is a second, longer-lived credential: the **refresh token**.
@@ -100,19 +100,24 @@ public sealed class RefreshTokenService(IConfiguration config) : IRefreshTokenSe
 > A configured span would be a *second* copy of the policy that could silently drift out of sync (the
 > "split-brain" [Phase 3](03-database-schema.md) warns about). One policy, one home: the database.
 
-> ℹ️ **`IClock`** — the trivial abstraction listed in `Shared.Common` back in [Phase 1](01-solution-setup.md),
-> now earning its keep. The login and refresh handlers inject it instead of calling `DateTime.UtcNow` directly,
-> so a test can pin "now" and assert an expiry to the second:
+> ℹ️ **`IClock`** — [Phase 1](01-solution-setup.md)'s folder map named this as one of `Shared.Common`'s types
+> but left it unbuilt; this is where we actually create it. The login and refresh handlers inject it instead of
+> calling `DateTime.UtcNow` directly, so a test can pin "now" and assert an expiry to the second. Two files,
+> the same interface-in-`Common` / implementation-in-`Infrastructure` split as `IUserRepository`:
 > ```csharp
-> public interface IClock { DateTime UtcNow { get; } }                                       // Erp.Shared.Common
-> public sealed class SystemClock : IClock { public DateTime UtcNow => DateTime.UtcNow; }     // Erp.Shared.Infrastructure
+> // Erp.Shared.Common/IClock.cs
+> public interface IClock { DateTime UtcNow { get; } }
+>
+> // Erp.Shared.Infrastructure/SystemClock.cs
+> public sealed class SystemClock : IClock { public DateTime UtcNow => DateTime.UtcNow; }
 > ```
 > Register it once in `AddSharedInfrastructure`: `services.AddSingleton<IClock, SystemClock>();`
 
 ### The store (persist, look up, revoke)
 
-The port the handlers use; `Shared.Infrastructure` implements it with Dapper over the [Phase 3](03-database-schema.md)
-procs:
+The port lives in `Erp.Shared.Common/Security/IRefreshTokenRepository.cs` — the same home as `IUserRepository`
+from [Phase 4b](04b-jwt-login.md); `Shared.Infrastructure` implements it with Dapper over the
+[Phase 3](03-database-schema.md) procs:
 
 ```csharp
 public sealed record RefreshTokenRecord(
@@ -136,6 +141,19 @@ which maps straight to the `@SecurityStamp` parameter on `usp_RefreshToken_Inser
 Each method is a one-line Dapper call to its matching `usp_RefreshToken_*` proc — the same shape as every
 other repository in this course, so the bodies are elided. `GetByHashAsync` reads on `IDbConnectionFactory`
 (no transaction); the writes take the handler's transaction, so a rotation is atomic.
+
+The implementation goes in `Erp.Shared.Infrastructure/Security/RefreshTokenRepository.cs` — copy the shape of
+`UserRepository` from [Phase 4b](04b-jwt-login.md): a constructor taking `IDbConnectionFactory`, one Dapper call
+per method. Register both the service and the store in the composition root **now**, so this phase's checkpoint
+can actually log in and refresh:
+
+```csharp
+// Program.cs — the auth platform, alongside IUserRepository / IClock (Phase 4b)
+services.AddSingleton<IRefreshTokenService, RefreshTokenService>();     // generate / hash / sliding expiry
+services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();  // one Dapper proc call per method
+```
+
+([Phase 11](11-cross-cutting.md) recaps the whole registration block; these are the two lines this section adds.)
 
 ### Reminder — the transaction pattern
 
