@@ -826,7 +826,251 @@ a 403.
 > re-listing it everywhere"), you build that yourself — usually with permission claims (§4) or an
 > authorization policy — you don't get it by hoping the framework orders `Admin` above `SalesManager`.
 
-### Where to add *your own* user & role checks — the cheat-sheet
+### The other case — two *managers*, one order
+
+The endpoint gate above is **coarse**: all it can see is your *role*. So it can wave through both `manager`
+and `admin` for approve, but it fundamentally **cannot** say *"Manager A may approve this order, Manager B
+may not"* — both hold the identical `SalesManager` role, so to the endpoint they're indistinguishable. Any
+rule that separates two callers who share the **same role** must depend on the **data**, which means it
+lives one level deeper — in the handler/domain (level 2 above).
+
+Classic example: **segregation of duties — a manager may not approve an order they created themselves** (the
+person who *raises* a spend shouldn't also *sign it off*). Picture order #50, created by `manager` (call them
+Manager B). Now two managers try to approve it:
+
+| Caller (both `SalesManager`) | Clears the endpoint role gate? | Data check: is the caller the order's creator? | Result |
+|---|---|---|---|
+| Manager A (did **not** create #50) | ✅ yes — has the role | no — creator was someone else | **approves** — 200 OK |
+| Manager B (created #50) | ✅ yes — the *same* role | **yes** — caller *is* the creator | **blocked** — 403 Forbidden |
+
+Both cleared the endpoint (identical role) — the only thing that separates them is *who created this
+specific order*, which the endpoint attribute can't know. So the check goes in the **handler**, using
+`ICurrentUser` (who's calling) against the order's own data (`CreatedBy`, stamped at create in
+[Phase 6](06-create-order.md)):
+
+```csharp
+// In ApproveSalesOrderHandler (Phase 8), right after loading the order — a DATA-dependent rule,
+// so it reads ICurrentUser and the order itself. No endpoint attribute could express this.
+if (order.CreatedBy.Value == currentUser.UserId)
+    throw new ForbiddenException("A manager cannot approve an order they created themselves.");
+```
+
+`ForbiddenException` maps to **403** in [Phase 11](11-cross-cutting.md) — the same "logged in, but not
+allowed" answer as the role gate, just decided by the data instead of the role.
+
+> 🔑 **The tell for level 2:** if two callers with the *identical role* should get *different* answers, the
+> rule is **never** an endpoint attribute — it needs the data, so it belongs in the handler/domain via
+> `ICurrentUser`. "Which *role* may call this?" → endpoint. "Which *specific user*, given *this* order?"
+> ("not your own order," "only your own customers," "only your region") → handler/domain.
+
+> ⚠️ This self-approval rule is an **illustration** of where a data-dependent rule goes — it is *not* wired
+> into the base build (the base `Approve` in [Phase 8](08-approval-cancellation.md) checks only the state
+> transition). It's exactly the kind of check you'd add using the cheat-sheet below.
+
+### Where to add *your own* user & role checks — the beginner's guide
+
+When people first learn authentication and authorization, they often know **what** they want to check but not **where** to put that check.
+
+For example, you might think:
+
+- "The password should be at least 8 characters."
+- "Only managers can approve orders."
+- "This account is disabled."
+- "A sales representative can only edit their own orders."
+
+All of those are valid checks—but **they do not belong in the same place.**
+
+Think of your application as a team where every part has a specific job.
+
+- The **Validator** checks whether the request is written correctly.
+- The **Handler** performs the business operation.
+- The **Endpoint** decides who is allowed to enter.
+- The **Domain/Business Logic** decides whether the current user is allowed to perform a specific business action.
+
+If you put checks in the wrong place, your code quickly becomes difficult to understand and maintain.
+
+The table below shows the correct home for each kind of check.
+
+| The check you want to add | Where it goes | Why? | Example |
+|---|---|---|---|
+| **Is the request well-formed?** (username not empty, password ≥ 8 chars, quantity > 0) | **Validator** (FluentValidation), in the same `...Handler.cs` file | The validator only checks whether the incoming request is valid. It does **not** know anything about users, roles, or the database. | `RuleFor(x => x.Password).MinimumLength(8);` |
+| **Is this login allowed?** (account active, password correct, account locked) | **Handler** | The handler performs the login process. It can load the user from the database and decide whether authentication should succeed. | `if (user is null || !user.IsActive || !hasher.Verify(...)) throw ...;` |
+| **Only users with a certain role may call this endpoint.** | **Endpoint**, using `RequireAuthorization` | The endpoint acts like the front door. Users without the required role are rejected before the handler even runs. | `app.MapPost(...).RequireAuthorization(p => p.RequireRole("SalesManager"));` |
+| **The rule depends on the business data.** ("Managers may approve high-value orders", "Sales reps may only edit their own orders") | **Handler / Domain**, using `ICurrentUser` | The application must first load the business data before it can decide whether the user is allowed to continue. | `if (order.RequiresManager && !currentUser.IsInRole("SalesManager")) throw ...;` |
+
+---
+
+### Understanding the difference
+
+A useful way to remember these responsibilities is to imagine visiting a secure office building.
+
+#### 1. The Validator checks the form
+
+Imagine you're filling out a visitor form.
+
+The receptionist checks things like:
+
+- Did you write your name?
+- Did you write today's date?
+- Is your phone number in the correct format?
+
+They **do not** check whether you're actually allowed inside.
+
+Likewise, a validator only checks whether the request is properly formed.
+
+Good validator rules include:
+
+- Username is required.
+- Password must be at least 8 characters.
+- Quantity must be greater than zero.
+- Customer ID must be positive.
+
+A validator should **never** ask:
+
+- Does this user exist?
+- Is the password correct?
+- Is the account active?
+- Is this user a manager?
+
+Those questions require business knowledge or database access.
+
+---
+
+#### 2. The Endpoint checks who may enter
+
+Once the request reaches the endpoint, ASP.NET Core already knows who the user is because the JWT has been validated.
+
+The endpoint's job is simply to answer:
+
+> "Does this user have the required role?"
+
+If the endpoint requires the `SalesManager` role, then anyone without that role is rejected immediately.
+
+```csharp
+app.MapPost("/approve", ...)
+    .RequireAuthorization(p =>
+        p.RequireRole("SalesManager"));
+```
+
+The handler never runs if this check fails.
+
+Think of this as a security guard checking your employee badge before allowing you into the building.
+
+---
+
+#### 3. The Handler performs the work
+
+Once the user is allowed through the endpoint, the handler performs the actual business operation.
+
+For login, the handler might:
+
+1. Find the user.
+2. Verify the password.
+3. Check whether the account is active.
+4. Generate a JWT.
+
+For an order, the handler might:
+
+1. Load the order.
+2. Update its status.
+3. Save the changes.
+
+The handler is the correct place for rules that require the database or other services.
+
+---
+
+#### 4. Business rules belong with the business logic
+
+Some authorization rules depend on the actual data.
+
+For example:
+
+- Orders over ₱500,000 require a manager.
+- Only the employee who created the draft may edit it.
+- Only warehouse staff assigned to a warehouse may modify its inventory.
+
+These rules cannot be checked at the endpoint because the endpoint has not loaded the order yet.
+
+The application must first retrieve the order from the database, then inspect both:
+
+- the current user, and
+- the business data.
+
+For example:
+
+```csharp
+if (order.RequiresManager &&
+    !currentUser.IsInRole("SalesManager"))
+{
+    throw new ForbiddenException();
+}
+```
+
+This is a business decision, so it belongs inside the handler or domain logic.
+
+---
+
+### A quick rule of thumb
+
+Before writing a check, ask yourself one question:
+
+> **"What information does this check need?"**
+
+If it only needs the request itself:
+
+→ **Validator**
+
+If it only needs the user's role:
+
+→ **Endpoint**
+
+If it needs the database:
+
+→ **Handler**
+
+If it needs both the current user **and** business data:
+
+→ **Handler or Domain**
+
+---
+
+> ⚠️ **Never put business rules inside a validator.**
+>
+> A validator answers only:
+>
+> > "Is this request shaped correctly?"
+>
+> It should never answer:
+>
+> - Is the password correct?
+> - Does the user exist?
+> - Is the account active?
+> - Is this customer allowed to order?
+> - Is this user a manager?
+>
+> Those are business decisions that belong in the handler or domain. Validators should remain simple and independent of the database so they are easy to test.
+
+---
+
+> ⚠️ **Role names must match exactly.**
+>
+> If your application uses:
+>
+> - `SalesRep`
+> - `SalesManager`
+> - `Admin`
+>
+> then use those exact strings everywhere.
+>
+> These will **not** match:
+>
+> - `"Manager"`
+> - `"salesmanager"`
+> - `"sales_manager"`
+>
+> Role comparisons are exact. A typo usually doesn't produce an error—the authorization simply fails to match, and your security rule won't work as intended.
+>
+> To avoid mistakes, define role names as constants in one place and reuse them throughout the application.
 
 New checks are the first thing you'll want to add, so here's the full picture in one place. Every check you
 could write about a user or a role has exactly **one** correct home. Putting it in the wrong place is the most
