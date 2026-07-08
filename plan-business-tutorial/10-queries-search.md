@@ -35,18 +35,19 @@ Read side:  Query   → Handler → Dapper → read proc → DTO           (no d
 > [beginner Phase 6 §4](../plan-beginner-friendly/07-phase-6-queries.md). Short version: the domain's
 > total *decides* things (credit, approval); the read total merely *displays*. Different jobs.
 
-### Queries use the connection factory; commands use the unit of work — and why
+### Queries just open a connection; commands add a transaction — and why
 
 You'll notice every query handler here injects **`IDbConnectionFactory`** and just calls `factory.Create()`,
-while the command handlers in Phases 6–9 all went through **`IUnitOfWork` / `BeginAsync`**. That's a
-deliberate, consistent split (the rule was introduced in [Phase 6 §7](06-create-order.md)); here's the full
-reasoning, since it's the kind of thing that looks inconsistent until you see *why*:
+reads, and releases — while the command handlers in Phases 6–9 inject the *same* factory but then open a
+**transaction** (`conn.BeginTransaction()`) around their writes. That's a deliberate, consistent split (the
+rule was introduced in [Phase 6 §7](06-create-order.md)); here's the full reasoning, since it's the kind of
+thing that looks inconsistent until you see *why*:
 
-- **Why queries intentionally avoid the unit of work.** A query only *reads*. There's nothing to make
+- **Why queries intentionally skip the transaction.** A query only *reads*. There's nothing to make
   atomic and nothing to roll back, so a transaction would add pure cost: it holds locks for the duration and
   can block writers, all to protect an operation that changes nothing. Grabbing a connection, running the
   read, and releasing it is simpler *and* friendlier to concurrency. Fewer moving parts, by design.
-- **Why commands use the unit of work.** A command usually makes *several* writes that must succeed or fail
+- **Why commands open a transaction.** A command usually makes *several* writes that must succeed or fail
   **together** (insert header + N lines; reserve stock + change status; update status + adjust balance). The
   transaction is what makes that all-or-nothing. A read has no such requirement, so it needs no such tool.
 - **Is there any danger in "mixing" them?** Not in *using both* — that's exactly right, each for its job.

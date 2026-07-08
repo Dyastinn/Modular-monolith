@@ -120,7 +120,7 @@ wants the slow, analogy-rich take on a concept, never a prerequisite.
 | 1 | [01-solution-setup.md](01-solution-setup.md) | Projects, folders, packages, config | ~1 hr | [beginner Phase 1](../plan-beginner-friendly/02-phase-1-skeleton.md) |
 | 2 | [02-mediator-own-vs-free.md](02-mediator-own-vs-free.md) | Your own mediator **vs** the free GitHub one — decide | ~1 hr | [beginner Phase 2](../plan-beginner-friendly/03-phase-2-mediator.md) |
 | 3 | [03-database-schema.md](03-database-schema.md) | Tables, stored procedures, seed data | ~1–1.5 hr | [beginner Phase 4 §6](../plan-beginner-friendly/05-phase-4-create-order.md) |
-| 3b | [03b-data-access.md](03b-data-access.md) | Connection factory + unit of work (transactions) | ~30–45 min | [beginner Phase 4](../plan-beginner-friendly/05-phase-4-create-order.md) |
+| 3b | [03b-data-access.md](03b-data-access.md) | Connection factory + ADO.NET transactions | ~30–45 min | [beginner Phase 4](../plan-beginner-friendly/05-phase-4-create-order.md) |
 | 4 | [04-jwt-auth.md](04-jwt-auth.md) | **Part 1** — password hashing + the access-token service | ~45 min *(new topic)* | *new topic* |
 | 4b | [04b-jwt-login.md](04b-jwt-login.md) | **Part 2** — login slice, token validation, `ICurrentUser`, role authorization | ~1 hr *(new topic)* | *new topic* |
 | 4c | [04c-jwt-refresh-apikey.md](04c-jwt-refresh-apikey.md) | **Part 3** — rotating refresh tokens (reuse detection) + the API-key gate | ~45 min *(new topic)* | *new topic* |

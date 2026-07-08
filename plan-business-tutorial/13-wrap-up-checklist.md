@@ -38,7 +38,7 @@ Every business rule landed in exactly one home:
 | **Inventory reservation** | **SQL (atomic proc)** | Only SQL is safe under concurrency |
 | **Lost-update protection** | **SQL (`RowVersion`)** | Must be checked atomically at write |
 | Manager-only approve | Endpoint (`RequireRole`) | Blanket role gate, before the handler |
-| Transaction rollback | Handler (unit of work) | The use case owns its atomic boundary |
+| Transaction rollback | Handler (`IDbTransaction`) | The use case owns its atomic boundary |
 
 If you can explain that table without looking, you have genuinely internalized the architecture. That
 was the whole goal.
@@ -69,8 +69,8 @@ Erp/                                         # repo root
 │   │   │   ├── DomainEvents.cs               #   IDomainEventHandler, IDomainEventDispatcher (Phase 8)
 │   │   │   └── Behaviors/                    #   LoggingBehavior.cs, ValidationBehavior.cs (Phase 11)
 │   │   └── Erp.Shared.Infrastructure/        # → Messaging, Common, BuildingBlocks (+ ASP.NET framework ref)
-│   │       ├── Persistence/                  #   IDbConnectionFactory + SqlConnectionFactory,
-│   │       │                                 #   IUnitOfWork + UnitOfWork + AppTransaction
+│   │       ├── Data/                         #   SqlConnectionFactory (the IDbConnectionFactory impl;
+│   │       │                                 #   the interface itself lives in Shared.Common)
 │   │       ├── Security/                     #   IPasswordHasher+PasswordHasher, IJwtTokenService+JwtTokenService,
 │   │       │                                 #   IRefreshTokenService+RefreshTokenService, CurrentUser (ICurrentUser impl)
 │   │       ├── Messaging/DomainEventDispatcher.cs

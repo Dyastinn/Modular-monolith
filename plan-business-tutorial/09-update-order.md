@@ -55,7 +55,7 @@ public sealed class UpdateSalesOrderHandler(
     ISalesOrderRepository orders,
     ICustomerRepository customers,
     IItemRepository items,
-    IUnitOfWork uow,
+    IDbConnectionFactory factory,
     ICurrentUser currentUser) : ICommandHandler<UpdateSalesOrderCommand, Unit>   // command marker (Phase 2)
 {
     public async Task<Unit> Handle(UpdateSalesOrderCommand cmd, CancellationToken ct)
@@ -90,9 +90,19 @@ public sealed class UpdateSalesOrderHandler(
 
         customer.EnsureWithinCreditLimit(order.Total);
 
-        await using var tx = await uow.BeginAsync(ct);
-        await orders.ReplaceLinesAsync(order, tx.Transaction, ct);   // delete old lines, insert new, update total
-        await tx.CommitAsync(ct);
+        using var conn = factory.Create();
+        await conn.OpenAsync(ct);
+        using var tx = conn.BeginTransaction();
+        try
+        {
+            await orders.ReplaceLinesAsync(order, tx, ct);   // delete old lines, insert new, update total
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
 
         return Unit.Value;
     }

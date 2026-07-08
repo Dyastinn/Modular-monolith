@@ -120,20 +120,30 @@ Each method is a one-line Dapper call to its matching `usp_RefreshToken_*` proc 
 other repository in this course, so the bodies are elided. `GetByHashAsync` reads on `IDbConnectionFactory`
 (no transaction); the writes take the handler's transaction, so a rotation is atomic.
 
-### Reminder — the transaction handle
+### Reminder — the transaction pattern
 
-Refresh tokens are where the [Phase 3b](03b-data-access.md) unit of work earns its keep. A refresh writes
-*two* rows in one breath — add the new token, revoke the old — and they must land **both or neither**, so the
-login and refresh handlers wrap their writes in the transaction you already built, the same three moves:
+Refresh tokens are where the [Phase 3b](03b-data-access.md) transaction pattern earns its keep. A refresh
+writes *two* rows in one breath — add the new token, revoke the old — and they must land **both or neither**,
+so the login and refresh handlers wrap their writes in a transaction, the same moves you learned there:
 
 ```csharp
-await using var tx = await uow.BeginAsync(ct);   // 1) open
-await store.AddAsync(..., tx.Transaction, ct);   // 2) run each write ON that transaction
-await tx.CommitAsync(ct);                          // 3) seal it
+using var conn = factory.Create();
+await conn.OpenAsync(ct);
+using var tx = conn.BeginTransaction();
+try
+{
+    await store.AddAsync(..., tx, ct);   // run each write ON that transaction
+    tx.Commit();                          // seal it
+}
+catch
+{
+    tx.Rollback();                        // any failure → both rows vanish
+    throw;
+}
 ```
 
-Remember **throw = rollback**: if a guard throws before `CommitAsync`, disposing `tx` rolls everything back
-automatically — you never call `Rollback` yourself ([Phase 3b §6](03b-data-access.md)).
+Remember **commit on success, roll back on throw**: if a guard throws before `tx.Commit()`, the `catch` rolls
+everything back — and the `using` is the backstop if anything slips past it ([Phase 3b §6](03b-data-access.md)).
 
 ### Back to login — now issue a refresh token
 
@@ -152,7 +162,7 @@ public sealed class LoginHandler(
     IJwtTokenService jwt,
     IRefreshTokenService refreshTokens,   // generates + hashes the random refresh token
     IRefreshTokenRepository store,        // persists it
-    IUnitOfWork uow,
+    IDbConnectionFactory factory,
     IClock clock) : ICommandHandler<LoginCommand, LoginResult>
 {
     public async Task<LoginResult> Handle(LoginCommand cmd, CancellationToken ct)
@@ -168,11 +178,21 @@ public sealed class LoginHandler(
         // Start a NEW token family for this login, storing the refresh token's HASH (never the raw value).
         var (rawRefresh, refreshHash) = refreshTokens.Generate();
         var now = clock.UtcNow;
-        await using var tx = await uow.BeginAsync(ct);
-        await store.AddAsync(refreshHash, user.Id, familyId: Guid.NewGuid(),
-            expiresUtc: refreshTokens.SlidingExpiry(now), absoluteExpiresUtc: refreshTokens.AbsoluteExpiry(now),
-            tx.Transaction, ct);
-        await tx.CommitAsync(ct);
+        using var conn = factory.Create();
+        await conn.OpenAsync(ct);
+        using var tx = conn.BeginTransaction();
+        try
+        {
+            await store.AddAsync(refreshHash, user.Id, familyId: Guid.NewGuid(),
+                expiresUtc: refreshTokens.SlidingExpiry(now), absoluteExpiresUtc: refreshTokens.AbsoluteExpiry(now),
+                tx, ct);
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
 
         return new LoginResult(access, rawRefresh, user.Username, user.Role);   // client keeps the RAW refresh token
     }
@@ -181,8 +201,8 @@ public sealed class LoginHandler(
 
 Now every dependency traces back to something already built: `IUserRepository` (§5), `IPasswordHasher` (§3),
 `IJwtTokenService` (§4), `IRefreshTokenService` + `IRefreshTokenRepository` (this section), `IClock` (recalled
-earlier in this section), and `IUnitOfWork` (from [Phase 3b](03b-data-access.md), recalled just above). No
-forward references — every piece was defined before it's used here.
+earlier in this section), and `IDbConnectionFactory` (from [Phase 3b](03b-data-access.md), recalled just
+above). No forward references — every piece was defined before it's used here.
 
 ### `POST /auth/refresh` — rotate, and catch the thief
 
@@ -197,7 +217,7 @@ public sealed class RefreshHandler(
     IRefreshTokenRepository store,
     IUserRepository users,
     IJwtTokenService jwt,
-    IUnitOfWork uow,
+    IDbConnectionFactory factory,
     IClock clock) : ICommandHandler<RefreshCommand, LoginResult>
 {
     public async Task<LoginResult> Handle(RefreshCommand cmd, CancellationToken ct)
@@ -212,9 +232,19 @@ public sealed class RefreshHandler(
         // Burn the whole family so neither the thief nor the victim keeps using the lineage.
         if (token.RevokedUtc is not null)
         {
-            await using var breach = await uow.BeginAsync(ct);
-            await store.RevokeFamilyAsync(token.FamilyId, breach.Transaction, ct);
-            await breach.CommitAsync(ct);
+            using var conn = factory.Create();
+            await conn.OpenAsync(ct);
+            using var breach = conn.BeginTransaction();
+            try
+            {
+                await store.RevokeFamilyAsync(token.FamilyId, breach, ct);
+                breach.Commit();
+            }
+            catch
+            {
+                breach.Rollback();
+                throw;
+            }
             throw new AuthenticationException("Refresh token reuse detected — session revoked. Please log in again.");
         }
 
@@ -229,11 +259,21 @@ public sealed class RefreshHandler(
 
         // ROTATE: a new token in the SAME family; the sliding window resets, the absolute cap is carried over.
         var (rawNew, hashNew) = refreshTokens.Generate();
-        await using var tx = await uow.BeginAsync(ct);
-        await store.AddAsync(hashNew, user.Id, token.FamilyId,
-            refreshTokens.SlidingExpiry(now), token.AbsoluteExpiresUtc, tx.Transaction, ct);
-        await store.RevokeAsync(presentedHash, replacedByHash: hashNew, tx.Transaction, ct);   // old one spent
-        await tx.CommitAsync(ct);
+        using var conn = factory.Create();
+        await conn.OpenAsync(ct);
+        using var tx = conn.BeginTransaction();
+        try
+        {
+            await store.AddAsync(hashNew, user.Id, token.FamilyId,
+                refreshTokens.SlidingExpiry(now), token.AbsoluteExpiresUtc, tx, ct);
+            await store.RevokeAsync(presentedHash, replacedByHash: hashNew, tx, ct);   // old one spent
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
 
         var access = jwt.CreateAccessToken(user.Id, user.Username, user.Role);
         return new LoginResult(access, rawNew, user.Username, user.Role);
@@ -254,7 +294,7 @@ Logging out is just *revoking* — one device, or every device:
 ```csharp
 // Erp.Api/Auth/Logout — anonymous: the access token may already be expired, and that's fine here.
 public sealed record LogoutCommand(string RefreshToken) : ICommand<Unit>;
-public sealed class LogoutHandler(IRefreshTokenService refreshTokens, IRefreshTokenRepository store, IUnitOfWork uow)
+public sealed class LogoutHandler(IRefreshTokenService refreshTokens, IRefreshTokenRepository store, IDbConnectionFactory factory)
     : ICommandHandler<LogoutCommand, Unit>
 {
     public async Task<Unit> Handle(LogoutCommand cmd, CancellationToken ct)
@@ -262,9 +302,19 @@ public sealed class LogoutHandler(IRefreshTokenService refreshTokens, IRefreshTo
         var token = await store.GetByHashAsync(refreshTokens.Hash(cmd.RefreshToken), ct);
         if (token is not null)   // unknown/already-gone token → nothing to do; logout is idempotent
         {
-            await using var tx = await uow.BeginAsync(ct);
-            await store.RevokeFamilyAsync(token.FamilyId, tx.Transaction, ct);   // this whole session out
-            await tx.CommitAsync(ct);
+            using var conn = factory.Create();
+            await conn.OpenAsync(ct);
+            using var tx = conn.BeginTransaction();
+            try
+            {
+                await store.RevokeFamilyAsync(token.FamilyId, tx, ct);   // this whole session out
+                tx.Commit();
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
         }
         return Unit.Value;
     }
@@ -272,14 +322,24 @@ public sealed class LogoutHandler(IRefreshTokenService refreshTokens, IRefreshTo
 
 // "Log me out everywhere" — needs a valid ACCESS token, so it acts on the authenticated caller.
 public sealed record LogoutAllCommand : ICommand<Unit>;
-public sealed class LogoutAllHandler(ICurrentUser currentUser, IRefreshTokenRepository store, IUnitOfWork uow)
+public sealed class LogoutAllHandler(ICurrentUser currentUser, IRefreshTokenRepository store, IDbConnectionFactory factory)
     : ICommandHandler<LogoutAllCommand, Unit>
 {
     public async Task<Unit> Handle(LogoutAllCommand cmd, CancellationToken ct)
     {
-        await using var tx = await uow.BeginAsync(ct);
-        await store.RevokeAllForUserAsync(currentUser.UserId, tx.Transaction, ct);
-        await tx.CommitAsync(ct);
+        using var conn = factory.Create();
+        await conn.OpenAsync(ct);
+        using var tx = conn.BeginTransaction();
+        try
+        {
+            await store.RevokeAllForUserAsync(currentUser.UserId, tx, ct);
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
         return Unit.Value;
     }
 }

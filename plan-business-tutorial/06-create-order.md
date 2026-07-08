@@ -73,8 +73,8 @@ public sealed class CreateSalesOrderValidator : AbstractValidator<CreateSalesOrd
 ## 4. The repository interfaces (the module declares what it needs)
 
 The `SalesOrder` repository interface belongs to the **module** (it's specific to this aggregate), in
-`Modules/Sales/Domain` (a "port"); the generic data plumbing it uses — `IDbConnectionFactory`,
-`IUnitOfWork` — lives in `Erp.Shared.Infrastructure` because every module needs it:
+`Modules/Sales/Domain` (a "port"); the generic data plumbing it uses — `IDbConnectionFactory` — comes from
+`Shared` because every module needs it:
 
 ```csharp
 public interface ISalesOrderRepository
@@ -118,7 +118,7 @@ public sealed class CreateSalesOrderHandler(
     ICustomerRepository customers,
     IItemRepository items,
     ISalesOrderRepository orders,
-    IUnitOfWork uow,
+    IDbConnectionFactory factory,
     ICurrentUser currentUser) : ICommandHandler<CreateSalesOrderCommand, long>   // command marker (Phase 2)
 {
     public async Task<long> Handle(CreateSalesOrderCommand cmd, CancellationToken ct)
@@ -165,11 +165,20 @@ public sealed class CreateSalesOrderHandler(
         customer.EnsureWithinCreditLimit(order.Total);
 
         // 9) Persist in ONE transaction (header + all lines, all-or-nothing).
-        await using var tx = await uow.BeginAsync(ct);
-        var newId = await orders.AddAsync(order, tx.Transaction, ct);   // AddAsync hands back the DB id
-        await tx.CommitAsync(ct);
-
-        return newId;
+        using var conn = factory.Create();
+        await conn.OpenAsync(ct);
+        using var tx = conn.BeginTransaction();
+        try
+        {
+            var newId = await orders.AddAsync(order, tx, ct);   // AddAsync hands back the DB id
+            tx.Commit();
+            return newId;
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
     }
 }
 ```
@@ -209,8 +218,8 @@ Look at what the handler *does* vs. what it *decides*:
 > dotnet add src/Modules/Sales package Dapper
 > ```
 > (The shared data-access packages — `Dapper` and `Microsoft.Data.SqlClient` in `Shared.Infrastructure`, where
-> the connection factory / unit of work create `SqlConnection`s — were added back in
-> [Phase 3b](03b-data-access.md). The module just uses Dapper against the `IDbConnection` the factory hands
+> the connection factory creates `SqlConnection`s — were added back in
+> [Phase 3b](03b-data-access.md). The module just uses Dapper against the `DbConnection` the factory hands
 > out. CPM adds the `<PackageVersion>` line.)
 
 `Modules/Sales/Infrastructure/SalesOrderRepository.cs` (abbreviated to the create path):
@@ -260,9 +269,9 @@ boundary: `order.CustomerId.Value`, `(int)order.Status`, `line.UnitPrice.Amount`
 
 ## 7. Wrapping the write in a transaction
 
-This is your first Sales-order **write**, so it's where the unit of work you built in
+This is your first Sales-order **write**, so it's where the transaction pattern you learned in
 [Phase 3b](03b-data-access.md) earns its keep. Recall the one rule from there: *reads* grab a connection
-directly; a *write that must be all-or-nothing* goes through `IUnitOfWork`. A create is the textbook case — an
+directly; a *write that must be all-or-nothing* opens a transaction. A create is the textbook case — an
 order is a header **plus** its lines, several `INSERT`s that have to land together or not at all.
 
 Look back at how the two paths split in `CreateSalesOrderHandler` above:
@@ -271,20 +280,31 @@ Look back at how the two paths split in `CreateSalesOrderHandler` above:
   and `NextOrderNumberAsync` each grab a connection, read, and release it. Every read-only check — blocked
   customer, category rules, `EnsureWithinCreditLimit` — runs here, *before* any transaction exists, so you
   never hold locks while deciding. (The query slices in [Phase 10](10-queries-search.md) are *pure* reads, so
-  they never touch the unit of work at all.)
-- **Only the write is wrapped.** `AddAsync` (header + every line) runs inside the transaction, on
-  `tx.Transaction`:
+  they never open a transaction at all.)
+- **Only the write is wrapped.** `AddAsync` (header + every line) runs inside the transaction, on `tx`:
 
 ```csharp
-await using var tx = await uow.BeginAsync(ct);
-var newId = await orders.AddAsync(order, tx.Transaction, ct);   // header + lines, atomically
-await tx.CommitAsync(ct);
+using var conn = factory.Create();
+await conn.OpenAsync(ct);
+using var tx = conn.BeginTransaction();
+try
+{
+    var newId = await orders.AddAsync(order, tx, ct);   // header + lines, atomically
+    tx.Commit();
+    return newId;
+}
+catch
+{
+    tx.Rollback();
+    throw;
+}
 ```
 
-And thanks to **throw = rollback** ([Phase 3b §6](03b-data-access.md)), if any guard throws before
-`CommitAsync`, disposing `tx` discards the half-written order automatically — no `Rollback` call, no orphaned
-header. We lean on this hard in [Phase 7](07-submit-reserve-concurrency.md), where a submit reserves stock
-across several rows in one transaction.
+The shape is **commit on success, roll back on throw** ([Phase 3b §6](03b-data-access.md)): if any guard
+throws before `tx.Commit()`, the `catch` rolls back the half-written order — and even if something slips past
+the `catch`, the `using` disposes the uncommitted transaction and rolls it back anyway. No orphaned header
+either way. We lean on this hard in [Phase 7](07-submit-reserve-concurrency.md), where a submit reserves
+stock across several rows in one transaction.
 
 ## 8. The endpoint (a Carter module, in the feature folder)
 
@@ -345,7 +365,7 @@ Item 1 is *Widget* at ₱25. 100 × ₱25 = **₱2,500**. Watch:
 9. Running qty for General = 100; EnsureQuantityAllowed(100) → 100 <= 1000 ✓.
 10. order.AddLine(...) → order Total becomes ₱2,500.
 11. customer.EnsureWithinCreditLimit(₱2,500) → 4500 + 2500 = 7000 > 5000 limit → THROWS ❌
-12. Handler exits via exception; the transaction was never opened (or if opened, disposes → rollback).
+12. Handler exits via exception; the transaction was never opened (and had it been, the catch/using rolls it back).
 13. The exception becomes an HTTP 422 with "would exceed the credit limit" once Phase 11 formats it.
 ```
 
@@ -378,7 +398,7 @@ order returns `201` and a rule-breaking one writes nothing, **Phase 6 is done an
 | `CreateSalesOrderValidator` | Input well-formedness, before any work. |
 | `CreateSalesOrderHandler` | Orchestrates the use case; delegates every rule to the domain. |
 | `ISalesOrderRepository` etc. | Application's declared needs; Infrastructure supplies the SQL. |
-| `IUnitOfWork` / `IAppTransaction` | Makes the transaction boundary explicit and gives auto-rollback. |
+| `IDbConnectionFactory` + `IDbTransaction` | Makes the transaction boundary explicit; commit on success, roll back on throw. |
 | `ICurrentUser` | Supplies the caller (to stamp `CreatedBy` and check category roles). |
 | Endpoint | Thin HTTP adapter; enforces coarse "must be a sales role" auth. |
 
@@ -392,7 +412,7 @@ order returns `201` and a rule-breaking one writes nothing, **Phase 6 is done an
 - ❌ **Checking the category cap per-line instead of per-order.** ✅ Accumulate quantity per category
   across all lines (a customer could split a restricted item across two lines to dodge a per-line cap).
 - ❌ **Forgetting to pass the transaction to the repository**, so inserts run outside it and can't roll
-  back together. ✅ Thread `tx.Transaction` through.
+  back together. ✅ Thread `tx` through.
 - ❌ **A naive `MAX(Id)+1` order number** — two concurrent creates can produce the same number. ✅
   `NextOrderNumberAsync` calls `sales.usp_SalesOrder_NextNumber`, backed by a SQL `SEQUENCE`
   ([Phase 3 §3](03-database-schema.md)), which hands out unique values safely under concurrency.
@@ -401,15 +421,15 @@ order returns `201` and a rule-breaking one writes nothing, **Phase 6 is done an
   sequences guarantee **uniqueness**, not **gapless** numbering. If your business genuinely needs
   gapless numbers, that's a separate, harder problem — don't try to solve it with a sequence.)*
 - ✅ **Best practice: fail fast, before opening the transaction.** Notice most checks run *before*
-  `BeginAsync`. Don't hold a database transaction open while doing validation you could have done first.
+  `BeginTransaction()`. Don't hold a database transaction open while doing validation you could have done first.
 
 ---
 
 ## ✅ Check Yourself
 
 1. Which checks are in the validator and which in the domain — and what's the dividing principle?
-2. How does an exception mid-handler cause the database changes to roll back, with no explicit
-   `Rollback` call?
+2. How does an exception mid-handler cause the database changes to roll back — what does the `catch` do,
+   and what still happens if the `catch` is somehow bypassed?
 3. Why accumulate category quantity across the whole order instead of per line?
 4. Trace what happens (and why) when Beta Industries orders 100 Widgets.
 

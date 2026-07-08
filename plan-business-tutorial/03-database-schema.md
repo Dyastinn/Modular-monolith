@@ -547,7 +547,7 @@ schema. In `appsettings.Development.json` (local dev only):
 Leave an empty `"ConnectionStrings": { "ErpDb": "" }` in `appsettings.json` so the *shape* is documented but
 no environment-specific value is committed. (The C# packages for querying — Dapper and
 `Microsoft.Data.SqlClient` — arrive in the very next phase, [Phase 3b](03b-data-access.md), where we build
-the connection factory and unit of work; right now we just need somewhere to point the scripts.)
+the connection factory and the transaction pattern; right now we just need somewhere to point the scripts.)
 
 ### Run the scripts
 

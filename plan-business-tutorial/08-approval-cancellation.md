@@ -45,7 +45,7 @@ public sealed record ApproveSalesOrderCommand(long OrderId) : ICommand<Unit>;
 public sealed class ApproveSalesOrderHandler(
     ISalesOrderRepository orders,
     ICustomerRepository customers,
-    IUnitOfWork uow,
+    IDbConnectionFactory factory,
     ICurrentUser currentUser,
     IDomainEventDispatcher events) : ICommandHandler<ApproveSalesOrderCommand, Unit>   // command marker (Phase 2)
 {
@@ -57,15 +57,24 @@ public sealed class ApproveSalesOrderHandler(
         // DOMAIN: only a PendingApproval order can be approved (state machine). Throws otherwise.
         order.Approve(new UserId(currentUser.UserId));
 
-        await using var tx = await uow.BeginAsync(ct);
+        using var conn = factory.Create();
+        await conn.OpenAsync(ct);
+        using var tx = conn.BeginTransaction();
+        try
+        {
+            // Version-checked status update: fails if someone changed the order since we loaded it.
+            await orders.UpdateStatusAsync(order, tx, ct);
 
-        // Version-checked status update: fails if someone changed the order since we loaded it.
-        await orders.UpdateStatusAsync(order, tx.Transaction, ct);
+            // The customer now owes this money — add it to their outstanding balance, same transaction.
+            await customers.AdjustBalanceAsync(order.CustomerId, +order.Total.Amount, tx, ct);
 
-        // The customer now owes this money — add it to their outstanding balance, same transaction.
-        await customers.AdjustBalanceAsync(order.CustomerId, +order.Total.Amount, tx.Transaction, ct);
-
-        await tx.CommitAsync(ct);
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
 
         // AFTER commit: dispatch domain events (audit log, etc.). Best-effort side effects.
         await events.DispatchAsync(order, ct);
@@ -132,7 +141,7 @@ public sealed class CancelSalesOrderHandler(
     ISalesOrderRepository orders,
     ICustomerRepository customers,  // needed to reverse the balance if the order was already Approved
     IStockReservation stock,        // the Inventory contract — release goes back across the wall
-    IUnitOfWork uow,
+    IDbConnectionFactory factory,
     IDomainEventDispatcher events) : ICommandHandler<CancelSalesOrderCommand, Unit>   // command marker (Phase 2)
 {
     public async Task<Unit> Handle(CancelSalesOrderCommand cmd, CancellationToken ct)
@@ -150,19 +159,28 @@ public sealed class CancelSalesOrderHandler(
         // DOMAIN: is cancelling legal from the current status? Throws if not (e.g. already Cancelled).
         order.Cancel();
 
-        await using var tx = await uow.BeginAsync(ct);
+        using var conn = factory.Create();
+        await conn.OpenAsync(ct);
+        using var tx = conn.BeginTransaction();
+        try
+        {
+            // If the order was holding stock (submitted/approved), give it back — same transaction.
+            if (hadReservation)
+                foreach (var line in order.Lines)
+                    await stock.ReleaseAsync(line.ItemId.Value, line.Quantity.Value, tx, ct);
 
-        // If the order was holding stock (submitted/approved), give it back — same transaction.
-        if (hadReservation)
-            foreach (var line in order.Lines)
-                await stock.ReleaseAsync(line.ItemId.Value, line.Quantity.Value, tx.Transaction, ct);
+            // If we had already charged the customer at approval, reverse it now (a matched debit/credit pair).
+            if (wasApproved)
+                await customers.AdjustBalanceAsync(order.CustomerId, -total.Amount, tx, ct);
 
-        // If we had already charged the customer at approval, reverse it now (a matched debit/credit pair).
-        if (wasApproved)
-            await customers.AdjustBalanceAsync(order.CustomerId, -total.Amount, tx.Transaction, ct);
-
-        await orders.UpdateStatusAsync(order, tx.Transaction, ct);
-        await tx.CommitAsync(ct);
+            await orders.UpdateStatusAsync(order, tx, ct);
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
 
         await events.DispatchAsync(order, ct);
         return Unit.Value;

@@ -242,7 +242,6 @@ By now `Program.cs` composes the shared kernel and each module — registration 
 // AddSharedInfrastructure (Erp.Shared.Infrastructure) — the platform every module uses:
 services.AddMessaging();   // ISender + the LoggingBehavior/ValidationBehavior we added to it in §3 above
 services.AddScoped<IDbConnectionFactory>(_ => new SqlConnectionFactory(config.GetConnectionString("ErpDb")!));  // Phase 3b
-services.AddScoped<IUnitOfWork, UnitOfWork>();                  // transaction boundary (Phase 3b)
 services.AddHttpContextAccessor();
 services.AddScoped<ICurrentUser, CurrentUser>();
 services.AddSingleton<IClock, SystemClock>();                   // UtcNow wrapper — testable time (Phase 4 §10)

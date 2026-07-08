@@ -3,22 +3,22 @@
 > A short **bridge phase**. [Phase 3](03-database-schema.md) built the database — tables, stored procedures,
 > seed data; from [Phase 4](04-jwt-auth.md) on, C# needs to *talk* to it. Before any handler can read a user
 > or write an order, we need two small pieces of plumbing: a way to **open a connection**, and a way to group
-> writes into an **all-or-nothing transaction**. We build both here, once, so every later phase just uses
-> them.
+> writes into an **all-or-nothing transaction**. We build the first here, once, and learn the second — plain
+> ADO.NET transactions — so every later phase just uses them.
 
 ---
 
-> ⏱️ **Time for this phase:** ~30–45 min. Small and foundational — two interfaces, two implementations, and
-> the one rule for choosing between them. Nothing here is business logic; it's the pipe every later phase runs
-> its SQL through.
+> ⏱️ **Time for this phase:** ~30–45 min. Small and foundational — one interface, one implementation, and the
+> one rule for choosing between a bare connection and a transaction. Nothing here is business logic; it's the
+> pipe every later phase runs its SQL through.
 
 ## 1. What we're building
 
 - `IDbConnectionFactory` — hands out a database connection on demand (reads use it directly).
-- `IUnitOfWork` / `IAppTransaction` — an explicit, **visible** transaction for writes that must be
-  all-or-nothing.
-- The **one rule** for which of the two to reach for, and the "throw = rollback" guarantee you'll lean on in
-  every write handler from Phase 4 on.
+- The **transaction pattern** for writes that must be all-or-nothing — a `IDbTransaction` opened right in the
+  handler with `BeginTransaction()`, committed on success, rolled back on failure.
+- The **one rule** for choosing between them, and the "commit on success, roll back on throw" shape you'll
+  reuse in every write handler from Phase 4 on.
 
 ## 2. Why a separate, tiny phase for this?
 
@@ -26,8 +26,8 @@ Two reasons.
 
 **First, it's shared.** Auth ([Phase 4](04-jwt-auth.md)), Sales ([Phase 6](06-create-order.md)), and every
 query slice ([Phase 10](10-queries-search.md)) all open connections and wrap writes. That's not a Sales
-concern or an auth concern — it's the **platform's**, so it lives in `Erp.Shared.Infrastructure` and gets
-explained once, here, instead of again in every phase that writes a row.
+concern or an auth concern — it's the **platform's**, so the connection factory lives in
+`Erp.Shared.Infrastructure` and gets explained once, here, instead of again in every phase that writes a row.
 
 **Second — feel the pain it removes.** As always, the naive version first.
 
@@ -46,8 +46,8 @@ exist, with no way to undo it. Wrapping the whole write in one transaction makes
 commits together, or none does.
 
 > 💡 **Analogy — the turnstile.** A transaction is a turnstile: you're either all the way through or still
-> outside, never stuck halfway. `CommitAsync` is the click that lets you through; throw before it and you
-> never entered — the database is untouched.
+> outside, never stuck halfway. `Commit()` is the click that lets you through; throw before it and you never
+> entered — you `Rollback()`, and the database is untouched.
 
 ## 3. Packages
 
@@ -57,34 +57,66 @@ commits together, or none does.
 > dotnet add src/Shared/Erp.Shared.Infrastructure package Microsoft.Data.SqlClient
 > dotnet add src/Shared/Erp.Shared.Infrastructure package Dapper
 > ```
-> Both live in `Shared.Infrastructure`: it's where the factory and unit of work create `SqlConnection`s, and
-> where the shared kernel runs Dapper. (Each *module* adds its own `Dapper` reference when it writes its first
-> repository — Sales does so in [Phase 6](06-create-order.md).) With Central Package Management on, each add
-> writes a `<PackageVersion>` line into `Directory.Packages.props`.
+> Both live in `Shared.Infrastructure`: it's where the factory creates `SqlConnection`s, and where the shared
+> kernel runs Dapper. (Each *module* adds its own `Dapper` reference when it writes its first repository —
+> Sales does so in [Phase 6](06-create-order.md).) With Central Package Management on, each add writes a
+> `<PackageVersion>` line into `Directory.Packages.props`.
 
 ## 4. The connection factory
 
-`IDbConnectionFactory` hands out a connection; nobody news up a `SqlConnection` directly. The interface is a
-**port** (any module may depend on it); the implementation lives in `Shared.Infrastructure` and is the *only*
-place that knows we're on SQL Server.
+`IDbConnectionFactory` hands out a database connection; nobody news up a `SqlConnection` directly.
 
-`Erp.Shared.Infrastructure/Persistence/SqlConnectionFactory.cs`:
+The interface is a **port** — any module may depend on it without knowing which database engine sits behind it. The implementation is an **adapter** that lives in `Shared.Infrastructure`, the only project that knows we're using SQL Server.
+
+```
+Erp.Shared.Common
+└── Data
+    └── IDbConnectionFactory.cs
+
+Erp.Shared.Infrastructure
+└── Data
+    └── SqlConnectionFactory.cs
+```
+
+`Erp.Shared.Common/Data/IDbConnectionFactory.cs`:
 
 ```csharp
+using System.Data.Common;
+
+namespace Erp.Shared.Common.Data;
+
 public interface IDbConnectionFactory
 {
-    IDbConnection Create();   // returns an unopened SqlConnection; the caller opens it
-}
-
-public sealed class SqlConnectionFactory(string connectionString) : IDbConnectionFactory
-{
-    public IDbConnection Create() => new SqlConnection(connectionString);
+    DbConnection Create();   // returns an unopened connection; the caller opens it
 }
 ```
 
-> 🔑 Only `SqlConnectionFactory` ever mentions `SqlConnection`. A module depends on `IDbConnectionFactory` and
-> never learns which database engine is behind it — the same "depend on the interface" move as
-> `ISalesOrderRepository` ([Phase 6](06-create-order.md)) or `IUserRepository` ([Phase 4](04-jwt-auth.md)).
+> ❓ **"Why `DbConnection`, not `IDbConnection`?"** `IDbConnection` only has a *synchronous* `Open()`. We want
+> `await conn.OpenAsync(ct)` so a waiting request doesn't tie up a thread. `DbConnection` (from
+> `System.Data.Common`) is the ADO.NET base class that adds the async methods — and it's still an *abstract*
+> type, not `SqlConnection`, so it stays a real port: no module learns which engine is behind it. Its
+> `BeginTransaction()` returns a `DbTransaction`, which is itself an `IDbTransaction`.
+
+`Erp.Shared.Infrastructure/Data/SqlConnectionFactory.cs`:
+
+```csharp
+using System.Data.Common;
+using Microsoft.Data.SqlClient;
+using Erp.Shared.Common.Data;
+
+namespace Erp.Shared.Infrastructure.Data;
+
+public sealed class SqlConnectionFactory(string connectionString)
+    : IDbConnectionFactory
+{
+    public DbConnection Create()
+        => new SqlConnection(connectionString);
+}
+```
+
+> 🔑 Only `SqlConnectionFactory` ever mentions `SqlConnection`. Every other part of the application depends only on `IDbConnectionFactory`, so it never learns which database engine sits behind the interface. Today the implementation happens to create a `SqlConnection`; tomorrow it could create a PostgreSQL connection instead, without changing any application code.
+>
+> This is the same dependency inversion you'll use throughout the course with abstractions such as `IUserRepository` and `ISalesOrderRepository`: **the application owns the contract, while infrastructure provides the implementation.**
 
 ## 5. When to use a transaction — the one rule
 
@@ -93,78 +125,97 @@ This tutorial uses **exactly two** data-access paths, and picking the right one 
 
 | | **Read-only** (one or more `SELECT`s, no mutation) | **Write** (mutations that must be all-or-nothing) |
 |---|---|---|
-| Use | `IDbConnectionFactory.Create()` **directly** — open, query, done | `IUnitOfWork.BeginAsync()` → run writes on `tx.Transaction` → `CommitAsync` |
+| Use | `factory.Create()` **directly** — open, query, done | `factory.Create()` → `OpenAsync` → `BeginTransaction()` → run writes → `Commit()` |
 | Transaction? | **No.** | **Yes** — the whole unit commits or rolls back together. |
 | Why | A single read has nothing to roll back; a transaction just adds locks and overhead for no gain. | Every row in the unit must succeed together, or none should exist. That atomicity is the entire point. |
 
 > 🔑 **Rule of thumb:** *reads* grab a connection and release it; *writes* that touch more than one row (or
-> more than one table) go through the unit of work. And read-only validation always happens **before** you
-> open a transaction — never hold one open while you're still deciding.
+> more than one table) run inside a transaction. And read-only validation always happens **before** you
+> `BeginTransaction()` — never hold one open while you're still deciding.
 
-## 6. The unit of work
+## 6. Transactions
 
-`IUnitOfWork` gives a handler a **visible** transaction — the boundary is right there in the handler, not
-hidden inside a framework. `Erp.Shared.Infrastructure/Persistence/UnitOfWork.cs`:
+A read is a single `SELECT`. It changes nothing, so there is nothing to undo — open a connection, query,
+release it. No transaction, no locks held for a decision you've already made.
+
+A write is different. Saving an order is a header **plus** its lines — several `INSERT`s that only make sense
+together. If the second `INSERT` fails, the first must vanish too. That "all of them or none of them"
+guarantee is what a **transaction** buys you.
+
+### `IDbTransaction`, `Commit()`, and `Rollback()`
+
+`BeginTransaction()` on an open connection hands back an `IDbTransaction`. Think of it as a **scratch space**
+the database keeps for you: every statement you run *on that transaction* is provisional — visible to you,
+but not yet real for anyone else.
+
+- **`Commit()`** makes every statement in the scratch space real, all at once. The turnstile clicks; you're
+  through.
+- **`Rollback()`** throws the scratch space away. Every provisional row disappears as if you'd never touched
+  the database.
+
+You attach each write to the transaction by passing it into the repository call (Dapper takes it as a
+parameter). That's how the database knows those `INSERT`s belong to the same unit.
+
+### Why `using` / `await using` matters
+
+A connection and a transaction are both **unmanaged resources** — a real socket to SQL Server and server-side
+state. If you forget to release them, you leak a connection from the pool; do it enough and the app grinds to
+a halt waiting for a free one.
+
+`using` guarantees release: the moment control leaves the block — normal exit *or* an exception — `Dispose()`
+runs. For a `DbConnection` you can go one better with `await using`, which calls `DisposeAsync()` and closes
+the socket without blocking a thread. And disposing a transaction that was **never committed rolls it back** —
+so `using` is also your safety net: if something throws past your `catch`, the half-written scratch space is
+still discarded on the way out.
+
+### The pattern every write handler uses
 
 ```csharp
-public interface IUnitOfWork
-{
-    Task<IAppTransaction> BeginAsync(CancellationToken ct);
-}
+using var conn = factory.Create();
+await conn.OpenAsync(ct);
 
-public interface IAppTransaction : IAsyncDisposable
-{
-    IDbTransaction Transaction { get; }        // hand this to each repository write
-    Task CommitAsync(CancellationToken ct);
-}
+using var tx = conn.BeginTransaction();
 
-public sealed class UnitOfWork(IDbConnectionFactory factory) : IUnitOfWork
+try
 {
-    public async Task<IAppTransaction> BeginAsync(CancellationToken ct)
-    {
-        var conn = factory.Create();
-        await ((SqlConnection)conn).OpenAsync(ct);
-        var tx = conn.BeginTransaction();
-        return new AppTransaction(conn, tx);
-    }
-}
+    await repo.AddHeaderAsync(..., tx, ct);
+    await repo.AddLinesAsync(..., tx, ct);
 
-public sealed class AppTransaction(IDbConnection conn, IDbTransaction tx) : IAppTransaction
+    tx.Commit();
+}
+catch
 {
-    public IDbTransaction Transaction => tx;
-    public Task CommitAsync(CancellationToken ct) { tx.Commit(); return Task.CompletedTask; }
-    public async ValueTask DisposeAsync()   // if we never committed, this rolls back
-    {
-        tx.Dispose();
-        if (conn is SqlConnection sc) await sc.DisposeAsync(); else conn.Dispose();
-    }
+    tx.Rollback();
+    throw;
 }
 ```
 
-Every write handler you'll write from Phase 4 on uses the same three moves:
+Read it top to bottom: open a connection, start a transaction, run every write **on that transaction**, and
+`Commit()` only once they've all succeeded. If any line throws, control jumps to the `catch`, we `Rollback()`
+the provisional rows, and `throw;` rethrows so the caller still sees the failure (Phase 11's exception
+handler turns it into the right HTTP response).
 
-```csharp
-await using var tx = await uow.BeginAsync(ct);   // 1) open
-await repo.AddAsync(..., tx.Transaction, ct);    // 2) run each write ON that transaction
-await tx.CommitAsync(ct);                          // 3) seal it
-```
+> ❓ **"Isn't the `catch` redundant if `using` already rolls back?"** Almost — disposing the uncommitted
+> transaction *would* roll back on its own. The explicit `Rollback()` earns its place by making the intent
+> **visible in the handler** (a reader sees exactly where the boundary is) and by rolling back *immediately*,
+> before any later cleanup runs. The `using` remains the backstop for anything the `catch` can't reach. Belt
+> and suspenders — cheap, and honest about what happens on failure.
 
-> ❓ **"How does a failure roll back? I don't see a `Rollback` call."** The `await using` disposes `tx` when
-> the handler exits. Reach `CommitAsync` and the changes are saved. But if anything throws *before* the commit
-> — a bad password, a credit-limit rule, a dropped connection — the handler exits early via the exception,
-> `DisposeAsync` runs, and because we never committed, disposing the transaction **rolls it back
-> automatically**. So **throw = rollback** falls out for free; you never write `Rollback` yourself. Every
-> write from [Phase 4](04-jwt-auth.md) on leans on exactly this.
+> 🔑 **Commit on success, roll back on throw.** That's the whole shape. Every write from
+> [Phase 4](04-jwt-auth.md) on is a variation of these ten lines — the only thing that changes is which
+> repository methods run between `BeginTransaction()` and `Commit()`.
 
-## 7. Register both
+## 7. Register the factory
 
-Both are platform services, registered once in `AddSharedInfrastructure` (they also appear in the consolidated
-composition root in [Phase 11 §7](11-cross-cutting.md)):
+The factory is a platform service, registered once in `AddSharedInfrastructure` (it also appears in the
+consolidated composition root in [Phase 11 §7](11-cross-cutting.md)):
 
 ```csharp
 services.AddScoped<IDbConnectionFactory>(_ => new SqlConnectionFactory(config.GetConnectionString("ErpDb")!));
-services.AddScoped<IUnitOfWork, UnitOfWork>();
 ```
+
+There's nothing else to register — a transaction isn't a service, it's something a handler opens on the
+connection it just asked the factory for.
 
 > ℹ️ `config.GetConnectionString("ErpDb")` reads the `ConnectionStrings:ErpDb` value you set in
 > [Phase 3](03-database-schema.md) — through the same `IConfiguration` pipeline detailed in
@@ -180,6 +231,7 @@ temporary endpoint in `Program.cs`:
 app.MapGet("/db-ping", async (IDbConnectionFactory factory, CancellationToken ct) =>
 {
     using var conn = factory.Create();
+    await conn.OpenAsync(ct);
     var count = await conn.QuerySingleAsync<int>(
         new CommandDefinition("SELECT COUNT(*) FROM [identity].AppUser", cancellationToken: ct));
     return Results.Ok(new { users = count });
@@ -203,10 +255,12 @@ factory.
   the engine and the connection string.
 - ❌ **Wrapping a plain read in a transaction.** ✅ Reads use `Create()` directly; transactions are for
   all-or-nothing *writes*.
-- ❌ **Opening the transaction, then doing validation inside it.** ✅ Validate first; `BeginAsync` last, so you
-  don't hold locks while thinking.
-- ❌ **Calling `Rollback` by hand — or forgetting to.** ✅ Don't; leaving the `using` scope without committing
-  rolls back for you.
+- ❌ **Calling `BeginTransaction()`, then doing validation inside it.** ✅ Validate first; open the transaction
+  last, so you don't hold locks while thinking.
+- ❌ **Forgetting the `using` on the connection or transaction.** ✅ Both are unmanaged resources; `using` /
+  `await using` guarantees they're released — and disposing an uncommitted transaction rolls it back.
+- ❌ **Committing in a `catch`, or swallowing the exception without `throw;`.** ✅ `Commit()` only on the happy
+  path; `Rollback(); throw;` on failure so the caller still learns it failed.
 - ❌ **Leaking the connection string into a module.** ✅ It stays in the composition root; modules see only the
   interface.
 
@@ -216,7 +270,7 @@ factory.
 
 1. What are the two data-access paths, and which one does a plain `SELECT` use?
 2. Why must a write that inserts an order header *and* its lines happen inside a single transaction?
-3. There's no `Rollback` call anywhere — so how does a failed handler undo its writes?
+3. What does `Commit()` do, and what happens to your rows if you `Rollback()` instead — or never commit at all?
 4. Why does a module depend on `IDbConnectionFactory` instead of newing up a `SqlConnection` itself?
 
 > 👉 Next: [Phase 4 — JWT authentication & authorization](04-jwt-auth.md).

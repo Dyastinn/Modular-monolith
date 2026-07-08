@@ -131,7 +131,7 @@ public sealed class SubmitSalesOrderHandler(
     ISalesOrderRepository orders,
     ICustomerRepository customers,
     IStockReservation stock,        // ← the published Inventory contract, NOT Inventory's internals
-    IUnitOfWork uow) : ICommandHandler<SubmitSalesOrderCommand, Unit>
+    IDbConnectionFactory factory) : ICommandHandler<SubmitSalesOrderCommand, Unit>
 {
     public async Task<Unit> Handle(SubmitSalesOrderCommand cmd, CancellationToken ct)
     {
@@ -149,22 +149,31 @@ public sealed class SubmitSalesOrderHandler(
         order.Submit();
 
         // 4) One transaction wraps EVERYTHING that follows.
-        await using var tx = await uow.BeginAsync(ct);
-
-        // 5) Atomically reserve each line. If ANY fails -> throw -> whole tx rolls back.
-        foreach (var line in order.Lines)
+        using var conn = factory.Create();
+        await conn.OpenAsync(ct);
+        using var tx = conn.BeginTransaction();
+        try
         {
-            var reserved = await stock.TryReserveAsync(line.ItemId.Value, line.Quantity.Value, tx.Transaction, ct);
-            if (!reserved)
-                throw new DomainException(
-                    $"Insufficient stock for item {line.ItemId.Value}. Submission cancelled.");
+            // 5) Atomically reserve each line. If ANY fails -> throw -> whole tx rolls back.
+            foreach (var line in order.Lines)
+            {
+                var reserved = await stock.TryReserveAsync(line.ItemId.Value, line.Quantity.Value, tx, ct);
+                if (!reserved)
+                    throw new DomainException(
+                        $"Insufficient stock for item {line.ItemId.Value}. Submission cancelled.");
+            }
+
+            // 6) Persist the new status (version-checked — Phase 8 explains the RowVersion guard).
+            await orders.UpdateStatusAsync(order, tx, ct);
+
+            // 7) Commit: reservations + status change become permanent together.
+            tx.Commit();
         }
-
-        // 6) Persist the new status (version-checked — Phase 8 explains the RowVersion guard).
-        await orders.UpdateStatusAsync(order, tx.Transaction, ct);
-
-        // 7) Commit: reservations + status change become permanent together.
-        await tx.CommitAsync(ct);
+        catch
+        {
+            tx.Rollback();   // any reservation failure or error → every reservation + the status change roll back
+            throw;
+        }
 
         return Unit.Value;
     }
@@ -175,13 +184,13 @@ public sealed class SubmitSalesOrderHandler(
 
 Imagine an order with 3 lines. Line 1 and line 2 reserve fine, but line 3 is out of stock. Without the
 transaction, you'd have reserved stock for lines 1 and 2 but *failed the submit* — phantom reservations
-that no order actually holds. Inside the transaction, throwing on line 3 causes `DisposeAsync` to roll
+that no order actually holds. Inside the transaction, throwing on line 3 jumps to the `catch`, which rolls
 back lines 1 and 2's reservations too. **Everything, or nothing.**
 
-> 🔑 This is the "transaction rollback on failure" requirement made concrete. The rollback is *automatic*
-> because we `throw` before `CommitAsync`, and the `await using` disposes the uncommitted transaction —
-> exactly the mechanism from [Phase 6 §7](06-create-order.md). You don't write a `Rollback` call; you
-> write correct `throw`s and let the transaction boundary do its job.
+> 🔑 This is the "transaction rollback on failure" requirement made concrete. Throwing before `tx.Commit()`
+> sends control to the `catch`, which calls `tx.Rollback()` on the uncommitted transaction — exactly the
+> mechanism from [Phase 6 §7](06-create-order.md). Write correct `throw`s and let the `catch` (backed by the
+> `using`) undo the partial work.
 
 ## 5. Walk the concurrency scenario (the payoff moment)
 
@@ -202,7 +211,7 @@ units at the same instant (managers, because it's the Controlled category — se
   t5     UpdateStatus → PendingApproval
   t6     COMMIT  (Reserved now 5, durable)
   t7                                              handler sees rows==0 → throws DomainException
-  t8                                              tx disposes uncommitted → ROLLBACK
+  t8                                              catch → tx.Rollback()
                                                   → B's order stays Draft, gets a 422 "Insufficient stock"
 ```
 
@@ -243,7 +252,7 @@ public sealed class SubmitSalesOrderEndpoint : ICarterModule
 | `SubmitSalesOrderHandler` | Orchestrates re-checks + reservation + status change inside one transaction. |
 | `IStockReservation.TryReserveAsync` | The cross-module contract to Inventory's atomic guard; success/failure. |
 | `usp_Inventory_Reserve` | The *actual* concurrency-safe guard (the whole reason this works). |
-| `IUnitOfWork` transaction | Binds all reservations + the status change into all-or-nothing. |
+| The transaction (`BeginTransaction`) | Binds all reservations + the status change into all-or-nothing. |
 | `order.Submit()` | Domain's legality + non-empty check; no DB knowledge. |
 
 ## 8. Common mistakes & best practices
@@ -258,7 +267,7 @@ public sealed class SubmitSalesOrderEndpoint : ICarterModule
   re-validate at the moment it matters. *(Caveat: like at create, this credit check still only weighs
   **this** order against the committed balance — not the customer's other in-flight orders. See the ⚠️ note
   in [Phase 5 §7](05-domain-model.md) for why, and the fix, if you want true pipeline-wide credit.)*
-- ✅ **Best practice: keep the transaction short.** Do read-only validation *before* `BeginAsync`; only
+- ✅ **Best practice: keep the transaction short.** Do read-only validation *before* `BeginTransaction()`; only
   the writes (reserve + status) live inside the transaction, minimizing how long rows are locked.
 
 ## 9. Checkpoint — submit reserves stock, over-submit rolls back ✅
