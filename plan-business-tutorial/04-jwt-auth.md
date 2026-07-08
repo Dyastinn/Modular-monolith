@@ -59,6 +59,18 @@ That's the entire purpose, in one line:
 > 🔑 **A token lets the server re-establish *who you are* on every request — fast, and without re-checking
 > your password or touching the database.**
 
+> ❓ **You might be wondering: "Does the server remember me between requests?"** No — and that's the whole
+> point. This API is **stateless**: it keeps *no* server-side session, no "who's logged in" table in memory,
+> nothing to look up. Everything it needs to trust you rides *inside the token you just handed it*, and the
+> server rebuilds your identity from scratch on every request. Two things fall out of that:
+> - 📈 **It scales sideways for free.** Because no server instance holds session state, *any* instance can
+>   serve *any* request. Put ten behind a load balancer and it just works — no shared session store to sync
+>   (this is a big part of why we don't reach for something like Redis here).
+> - ⚖️ **The tradeoff: you can't instantly "forget" someone.** Since the server isn't tracking sessions, a
+>   valid token stays valid until it *expires* — there's no session to delete to log them out early. That's
+>   exactly why access tokens are short-lived, and why §9's refresh tokens (which the server *does* track, by
+>   hash) exist to give back the revoke button.
+
 The catch is obvious: if the client is just waving a slip of paper that says "I'm an Admin," what stops
 someone from writing their own? Nothing — *unless* the paper is tamper-proof. That's what the structure below
 buys you.
@@ -118,6 +130,8 @@ so its interface lives in `Shared`, not in a business module.
 A password must never be stored as-is. We store a one-way **hash** — you can check a password against it,
 but you can't reverse it back to the password. .NET has a good built-in tool for this,
 `Rfc2898DeriveBytes` (PBKDF2). Put this in `Erp.Shared.Infrastructure/Security`:
+
+`Erp.Shared.Infrastructure/Security/PasswordHasher.cs`:
 
 ```csharp
 public interface IPasswordHasher
@@ -239,6 +253,73 @@ public sealed class JwtTokenService(IConfiguration config) : IJwtTokenService
 
 The key line for authorization is `new Claim(ClaimTypes.Role, role)` — it stamps the user's role into
 the wristband. Later, `[Authorize(Roles = "SalesManager")]` reads exactly this.
+
+> ❓ **You might be wondering: "Is one `role` claim all a token can carry?"** Not at all — a claim is just a
+> key/value *fact*, and you can bake in as many as you need. A single `role` string is the simplest useful
+> model (and all this course needs), but larger systems often carry richer authorization data right in the
+> token. For example:
+>
+> ```json
+> {
+>   "sub": "42",
+>   "name": "rep",
+>   "role": ["SalesRep", "SalesManager"],                                 // more than one role at once
+>   "permissions": ["orders:read", "orders:approve", "customers:read"],   // fine-grained, not just a role
+>   "tenant": "acme-corp",                                                // which org this user belongs to
+>   "region": "APAC"                                                      // scope a user to a slice of data
+> }
+> ```
+>
+> With **permissions** in the token, an endpoint can demand a *capability* (`orders:approve`) instead of a
+> role — so you can change which roles hold which powers in one place, without editing every endpoint's role
+> list. A `tenant` or `region` claim lets a handler scope queries to the caller's slice of the data. The
+> tradeoff: every extra claim makes the token **bigger** (it rides on *every* request) and **staler** (claims
+> only refresh when a new token is minted — §9 — so a permission revoked at 10:00 lingers until the current
+> token expires).
+>
+> 🔑 **We deliberately keep it to one `role` claim** in this course because our rules are simple and it keeps
+> the authorization story easy to follow. Reach for permission/multi-role/tenant claims when your real rules
+> outgrow a single role — the mechanism is identical, just more claims in the same `claims` array above.
+
+> 🧭 **From WebForms — the "module / view / button" permission grid.** In a classic WebForms ERP your
+> permissions probably lived in a grid: *per module, which pages may this user open, and which buttons may they
+> click?* That maps straight onto claims too — here it is keyed by our actual modules (`SALES`, `INVENTORY`):
+>
+> ```json
+> {
+>   "sub": "42",
+>   "name": "rep",
+>   "role": "SalesRep",
+>   "access": [
+>     {
+>       "moduleId": "SALES",
+>       "views":   ["orders", "customers"],          // screens this user may open
+>       "buttons": ["order:create", "order:cancel"]  // actions this user may click
+>     },
+>     {
+>       "moduleId": "INVENTORY",
+>       "views":   ["stock"],
+>       "buttons": []                                 // read-only: may view, no actions
+>     }
+>   ]
+> }
+> ```
+>
+> A front-end client reads `views` to decide which menu items to render and `buttons` to show or grey out each
+> action — the same muscle memory as toggling `Panel.Visible` or `btnApprove.Enabled` in code-behind, except
+> the truth now travels in the token instead of a server-side `Session["Permissions"]`.
+>
+> 🔑 **But hiding a button is convenience, not security.** A front end can be bypassed — anyone can call
+> `POST /sales-orders/{id}/approve` directly with a valid token. So the `buttons`/`views` claims only tidy the
+> *UI*; the **server still enforces the real check** on the endpoint or in the handler (§10). Never let a
+> hidden button be your only guard.
+>
+> ⚠️ **And watch the size — this is where the token tradeoff bites hardest.** A full module/view/button matrix
+> can be *hundreds* of entries, and it rides on **every** request. The usual fix: keep only a compact **role or
+> permission summary** in the token (what the server authorizes against, §10), and load the detailed UI matrix
+> **once** after login from an endpoint like `GET /me/permissions`. Rule of thumb: put in the token what the
+> *server* needs to authorize each call; fetch separately what the *UI* needs to render. Don't turn the
+> wristband into a filing cabinet.
 
 > ℹ️ **A note on the API surface.** `JwtSecurityToken`/`JwtSecurityTokenHandler` (from
 > `System.IdentityModel.Tokens.Jwt`) is the long-standing, fully-supported way to create tokens and is
@@ -687,6 +768,63 @@ Authorization happens at **two levels**, and putting each rule at the right one 
 > If the rule depends on the *data* ("this category needs a manager", "you can only cancel your own
 > draft") → it's business logic, put it in the handler/domain. Don't force data-dependent rules into
 > endpoint attributes; you'll contort them.
+
+### See it work — two users, one endpoint
+
+The rules above click once you watch a real request get **let in** or **turned away**. Our
+[Phase 3](03-database-schema.md) seed gives us three users, each with exactly one role:
+
+| Username | Password | Role |
+|---|---|---|
+| `rep` | `Password123!` | `SalesRep` |
+| `manager` | `Password123!` | `SalesManager` |
+| `admin` | `Password123!` | `Admin` |
+
+Say the approve endpoint is gated **manager-only**:
+
+```csharp
+app.MapPost("/sales-orders/{id}/approve", ...)
+   .RequireAuthorization(p => p.RequireRole("SalesManager"));
+```
+
+Log each user in (§6), take the access token you get back, and call approve with it. Here's who gets
+through, and why:
+
+| Caller | Sends a token? | `RequireRole("SalesManager")` check | Result |
+|---|---|---|---|
+| nobody (no `Authorization` header) | — | can't even run — there's no one to check | **401 Unauthorized** — "I don't know who you are" |
+| `rep` (SalesRep) | ✅ valid | role is `SalesRep`, not `SalesManager` | **403 Forbidden** — "I know who you are; you're not allowed" |
+| `manager` (SalesManager) | ✅ valid | role matches | **200 OK** — the handler runs |
+| `admin` (Admin) | ✅ valid | role is `Admin`, not `SalesManager` | **403 Forbidden** — surprised? read on ↓ |
+
+Two things beginners almost always trip on live in that table:
+
+**401 and 403 are different answers to different questions.** A **401** means *authentication* failed —
+no token, an expired one, or a forged one; the server can't establish who you are (§7 threw it out before
+authorization ever ran). A **403** means authentication *succeeded* — the token is perfectly valid and the
+server knows exactly who you are — but *authorization* said no: your role isn't on the list. "Not logged in"
+and "logged in but not allowed" are **not** the same failure, and the status code is how the caller tells
+them apart. ([Phase 11](11-cross-cutting.md) maps our exceptions to these codes.)
+
+**Roles are a flat list, not a ladder — this is your "two managers, one gets in" case.** In plain English
+an *Admin* obviously outranks a *SalesManager*, so why does `admin` get a 403? Because
+`RequireRole("SalesManager")` means *literally* "carry the `SalesManager` role," full stop. ASP.NET does
+**not** treat `Admin` as a superset of `SalesManager` — there is no built-in hierarchy, no "higher role wins."
+If you want admins to approve too, you have to **say so explicitly**, by listing every role that should pass:
+
+```csharp
+.RequireAuthorization(p => p.RequireRole("SalesManager", "Admin"));   // hold EITHER role → you're in
+```
+
+`RequireRole` with several roles is an **OR**: hold *any one* of them and you clear the gate. That's exactly
+why the real approve endpoint in [Phase 8](08-approval-cancellation.md) is written
+`RequireRole("SalesManager", "Admin")` — so both roles pass — while a plain `SalesRep` still bounces off with
+a 403.
+
+> 🔑 There is no magic ranking of role names. If a role should have access, its literal string must appear
+> in the list. When you genuinely want a hierarchy ("anything a manager can do, an admin can too, without
+> re-listing it everywhere"), you build that yourself — usually with permission claims (§4) or an
+> authorization policy — you don't get it by hoping the framework orders `Admin` above `SalesManager`.
 
 ### Where to add *your own* user & role checks — the cheat-sheet
 
