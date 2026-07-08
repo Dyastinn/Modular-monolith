@@ -20,134 +20,301 @@
 
 ## 1. What we're building
 
-- A `POST /auth/login` endpoint: give it a username + password, get back a **short-lived access token and a
-  refresh token**.
-- Token *validation* wired into ASP.NET Core so protected endpoints reject anyone without a valid token.
-- **Refresh tokens** (§10): `POST /auth/refresh` trades a refresh token for a fresh access token, **rotating**
-  it each time and **detecting replay** of a stolen one; plus `POST /auth/logout` and `POST /auth/logout-all`
-  to revoke sessions.
-- **Role-based authorization** so specific endpoints require specific roles (Manager to approve).
-- An `ICurrentUser` abstraction so our handlers can ask "who is calling, and what's their role?" without
-  depending on ASP.NET directly.
-- **An API key gate** (§11) so only your known *client apps* reach the API at all — an outer, app-level gate
-  that fires *before* user authentication (it's the one gate that can sit in front of `/auth/login` itself).
+By the end of this phase, you'll have a complete authentication system for your API.
+
+You'll build:
+
+- A `POST /auth/login` endpoint where a user submits a username and password and receives a **short-lived access token**.
+- Token **validation** wired into ASP.NET Core so protected endpoints automatically reject invalid or expired tokens.
+- **Role-based authorization** so specific endpoints can require particular roles, such as allowing only Managers to approve orders.
+- **Refresh tokens** (§10), allowing users to obtain a new access token without logging in again. We'll also implement **rotation**, **reuse detection**, and logout endpoints that revoke active sessions.
+- **An API key gate** (§11) that sits in front of the API as an outer layer of protection, ensuring only known client applications can access the API—even before user authentication occurs.
+
+By the end of Part 4, you'll understand the complete authentication flow—from entering a username and password, to issuing tokens, validating requests, authorizing users, refreshing sessions, and protecting the API from anonymous clients.
 
 ## 2. Why it's designed this way
 
 ### What even *is* a JWT?
 
 A **JWT** (JSON Web Token) is a small, digitally-signed string that says "this is user *rep*, role
-*SalesRep*, and this claim is signed by the server so it can't be forged." The client sends it on every
-request in an `Authorization: Bearer <token>` header. The server checks the signature — if it's valid,
-it trusts the claims inside *without hitting the database again*.
+*SalesRep*, and these claims were issued by the server." The client sends it on every request in an
+`Authorization: Bearer <token>` header.
 
-> 💡 **Analogy:** a JWT is like a **festival wristband**. At the gate (login) they check your ID once
-> and give you a tamper-proof wristband. After that, every stage just glances at the wristband — they
-> don't re-verify your ID. The signature is what makes it tamper-proof: you can't draw your own
-> wristband because you don't have the festival's special ink (the signing key).
+When the API receives the request, it verifies the token's **digital signature**. If the signature is valid
+and the token hasn't expired, the server trusts the claims inside **without querying the database again**.
 
-#### Why bother? The problem a token solves
+> 💡 **Analogy:** a JWT is like a **festival wristband**. At the gate (login) they check your ID once and
+> give you a tamper-proof wristband. After that, every stage just glances at the wristband—they don't ask for
+> your ID again. The digital signature is what makes the wristband tamper-proof. Anyone can see the wristband,
+> but only the festival can issue a genuine one.
 
-The fastest way to *get* why tokens exist is to try living without them first.
+### Why bother? The problem a token solves
 
-**Attempt 1 — just send the password on every request.** Every click re-sends username + password. Three
-things break:
+The fastest way to understand why tokens exist is to imagine a system without them.
 
-- 🔓 Your raw password is on the wire over and over — every request is another chance to leak it.
-- 🐌 The server has to run the slow password hash-check (§3) *every single time*. That slowness is a feature
-  when you log in, a tax when it's on every request.
-- 🗄️ The browser has to stash your actual password somewhere to replay it. Now the most sensitive secret you
-  own is sitting in client storage. Yuck.
+**Attempt 1 — send the password on every request.**
 
-**Attempt 2 — log in once, carry a token.** You log in **one** time. The server does the slow password check
-**once**, then hands back a small signed token that says *"this is user 42, role SalesRep."* After that, the
-client sends the **token** — not the password — and the server just checks the signature: a fast bit of math,
-no database, no re-hashing.
+Every button click sends your username and password again.
 
-That's the entire purpose, in one line:
+Three problems immediately appear:
 
-> 🔑 **A token lets the server re-establish *who you are* on every request — fast, and without re-checking
-> your password or touching the database.**
+- 🔓 Your password travels across the network on every request, increasing the chance it could be exposed.
+- 🐌 The server must perform the expensive password hash verification every single time. That slowness is a
+  feature during login, but a waste on every request.
+- 🗄️ The client must keep the user's real password somewhere so it can resend it. Storing passwords on the
+  client is something we want to avoid whenever possible.
 
-> ❓ **You might be wondering: "Does the server remember me between requests?"** No — and that's the whole
-> point. This API is **stateless**: it keeps *no* server-side session, no "who's logged in" table in memory,
-> nothing to look up. Everything it needs to trust you rides *inside the token you just handed it*, and the
-> server rebuilds your identity from scratch on every request. Two things fall out of that:
-> - 📈 **It scales sideways for free.** Because no server instance holds session state, *any* instance can
->   serve *any* request. Put ten behind a load balancer and it just works — no shared session store to sync
->   (this is a big part of why we don't reach for something like Redis here).
-> - ⚖️ **The tradeoff: you can't instantly "forget" someone.** Since the server isn't tracking sessions, a
->   valid token stays valid until it *expires* — there's no session to delete to log them out early. That's
->   exactly why access tokens are short-lived, and why §10's refresh tokens (which the server *does* track, by
->   hash) exist to give back the revoke button.
+**Attempt 2 — log in once, then carry a token.**
 
-The catch is obvious: if the client is just waving a slip of paper that says "I'm an Admin," what stops
-someone from writing their own? Nothing — *unless* the paper is tamper-proof. That's what the structure below
-buys you.
+The user logs in **once**.
 
-#### What a token actually looks like (readable, but not forgeable)
+The server performs the expensive password verification **once**.
 
-A JWT is just **three chunks of text joined by dots** — `header.payload.signature`:
+If everything is valid, the server creates a signed JWT containing information about the user.
+
+After that, the client sends **the token**, not the password.
+
+The server simply verifies the token's signature, which is much faster than checking the password again.
+
+The entire purpose of a JWT can be summarized in one sentence:
+
+> 🔑 **A JWT lets the server re-establish who you are on every request without asking for your password again.**
+
+---
+
+### Stateless authentication
+
+A natural question is:
+
+> **"Doesn't the server remember who's logged in?"**
+
+With JWT authentication, the answer is **no**.
+
+This style of authentication is called **stateless authentication**.
+
+The server keeps **no in-memory session** and no list of currently logged-in users.
+
+Instead, every request carries everything the server needs inside the JWT itself.
 
 ```
-eyJhbGciOiJIUzI1NiJ9  .  eyJzdWIiOiI0MiIsInJvbGUiOiJTYWxlc1JlcCJ9  .  3Rk...signature...
-└──── header ────┘        └──────────── payload (your claims) ─────────┘   └── signature ──┘
+Request
+    │
+Authorization: Bearer eyJ...
+    │
+    ▼
+API validates the token
+    │
+    ▼
+Claims become the authenticated user
 ```
 
-- **header** — says how it's signed (e.g. HMAC-SHA256).
-- **payload** — the **claims**: the actual facts, like `sub` (user id) and `role`. Decode it and you'd read
-  `{ "sub": "42", "role": "SalesRep" }`.
-- **signature** — the header + payload run through the secret **signing key**. This is the tamper-proof seal.
+This has two major advantages.
 
-Two things surprise people here, and both matter:
+- **It scales easily.** Any server can validate the token, so requests can be distributed across multiple
+  servers without sharing session state.
+- **It reduces database work.** Most authenticated requests don't need to query the Users table just to find
+  out who is calling.
 
-1. **A JWT is *not* encrypted — it's only signed.** Anyone can paste the payload into a base64 decoder and
-   read your role and user id. So never put a secret (a password, a credit-card number) in a claim. The
-   payload is public; treat it that way.
-2. **You still can't *forge* one.** Change a single character of the payload — say `SalesRep` → `Admin` — and
-   the signature no longer matches, because the attacker can't recompute it without the server's signing key.
-   The server recomputes the signature on every request (§7) and rejects any token where it doesn't line up.
-   That's the whole security model: *readable, but not changeable.*
+There is one tradeoff.
 
-Two words people confuse:
-- **Authentication** = "*who are you?*" (login, proving identity). The wristband proves it.
-- **Authorization** = "*are you allowed to do this?*" (does your role permit approving orders?).
+Since the server doesn't remember sessions, it also can't instantly forget them.
 
-### Why an `ICurrentUser` interface?
+A valid access token remains valid until it expires.
 
-Our handlers live in **modules**, whose Domain must stay **free of ASP.NET** (keep-the-domain-pure, from
-[beginner Phase 0](../plan-beginner-friendly/01-phase-0-orientation.md)). But handlers need to know the
-caller — e.g. "record *who* created this order," "is the caller a Manager?" So the **shared kernel**
-*declares* a small interface, and `Shared.Infrastructure` (which may touch ASP.NET) *implements* it:
+That's why access tokens are intentionally short-lived, and why we'll introduce **refresh tokens** later in
+this phase.
 
-```csharp
-// Erp.Shared.Common/Security/ICurrentUser.cs   (an interface any module may depend on)
-public interface ICurrentUser
+---
+
+### What is a claim?
+
+A **claim** is simply one piece of information about the authenticated user.
+
+Common claims include:
+
+| Claim | Meaning |
+|-------|---------|
+| `sub` | The user's unique ID |
+| `name` | The user's username |
+| `role` | The user's role |
+
+You can think of a JWT as a collection of claims that has been digitally signed by the server.
+
+For example:
+
+```json
 {
-    long UserId { get; }
-    string Username { get; }
-    string Role { get; }
-    bool IsInRole(string role);
+  "sub": "42",
+  "name": "rep",
+  "role": "SalesRep"
 }
 ```
 
-This is the same trick as `ISalesOrderRepository`: the code that *needs* something names it as an
-interface; `Shared.Infrastructure` supplies *how*. Authentication is a cross-cutting **platform** concern,
-so its interface lives in `Shared`, not in a business module.
+Later in this phase we'll create these claims using code like:
+
+```csharp
+new Claim(JwtRegisteredClaimNames.Sub, userId.ToString())
+new Claim(ClaimTypes.Name, username)
+new Claim(ClaimTypes.Role, role)
+```
+
+When ASP.NET Core validates the JWT on future requests, these claims become the authenticated user's identity.
+
+---
+
+### What a token actually looks like
+
+A JWT is simply **three pieces of text joined together with dots**:
+
+```
+header.payload.signature
+```
+
+A real JWT looks something like this:
+
+```
+eyJhbGciOiJIUzI1NiJ9  .  eyJzdWIiOiI0MiIsInJvbGUiOiJTYWxlc1JlcCJ9  .  3Rk...signature...
+└──── header ────┘        └──────────── payload ────────────┘      └── signature ──┘
+```
+
+Each section has a different purpose.
+
+- **Header** — describes how the token was signed (for example, HMAC-SHA256).
+- **Payload** — contains the claims about the user.
+- **Signature** — proves that the server created the token and that it hasn't been modified.
+
+Two facts about JWTs surprise most beginners.
+
+### JWTs are signed, not encrypted
+
+Anyone can decode the payload.
+
+For example, a website or Base64 decoder could show:
+
+```json
+{
+  "sub": "42",
+  "role": "SalesRep"
+}
+```
+
+This is completely normal.
+
+The payload should never contain sensitive information such as:
+
+- passwords
+- credit card numbers
+- API keys
+- personal secrets
+
+JWTs are designed to prove authenticity, **not** to hide information.
+
+### Why can't someone simply change the role?
+
+Suppose an attacker changes:
+
+```json
+{
+    "role": "SalesRep"
+}
+```
+
+into
+
+```json
+{
+    "role": "Admin"
+}
+```
+
+That immediately invalidates the signature.
+
+Since only the server knows the signing key, only the server can generate a valid signature.
+
+On every request ASP.NET Core recalculates the signature and compares it with the one inside the token.
+
+If they don't match, the token is rejected.
+
+This is why JWTs are often described as:
+
+> **Readable, but not forgeable.**
+
+---
+
+### Authentication vs. Authorization
+
+These two terms are often confused.
+
+**Authentication** answers:
+
+> **Who are you?**
+
+It verifies your identity.
+
+Examples:
+
+- logging in
+- validating a JWT
+- proving the caller is really user 42
+
+**Authorization** answers:
+
+> **What are you allowed to do?**
+
+It uses the authenticated user's claims to decide whether an action is permitted.
+
+Examples:
+
+- Only Managers may approve orders.
+- Only Admins may create users.
+- A Sales Representative may create orders but not approve them.
+
+Authentication always comes first.
+
+Once the server knows **who** you are, it can decide **what** you're allowed to do.
 
 ## 3. Step 1 — Hashing passwords (never store plain text)
 
-A password must **never** be stored directly in the database. If someone steals your database, every user's
-password would be exposed.
+Before we can build a login feature, we need a safe way to **store** and **verify** passwords.
 
-Instead, we store a **one-way hash**. A hash lets us verify a password, but it cannot be reversed back into
-the original password.
+A password must **never** be stored directly in the database. If someone steals your database, every user's
+password would immediately be exposed.
+
+Instead, we store a **one-way hash**.
+
+A hash is the result of running data through a mathematical function that cannot be reversed. That means we
+can verify whether a password is correct, but we cannot recover the original password from the stored hash.
 
 .NET already provides a secure password hashing implementation called `Rfc2898DeriveBytes`, which implements
 the **PBKDF2 (Password-Based Key Derivation Function 2)** algorithm defined by **RFC 2898**.
 
-Unlike a normal hash such as SHA-256, PBKDF2 intentionally performs hundreds of thousands of hashing rounds,
-making brute-force attacks much slower.
+Unlike a normal hash such as SHA-256, PBKDF2 intentionally performs hundreds of thousands of hashing rounds.
+That makes each password verification slightly slower, which is exactly what we want—it makes brute-force
+attacks dramatically more expensive.
+
+### Why an `IPasswordHasher`?
+
+The login handler shouldn't know *how* passwords are hashed.
+
+Its only responsibility is deciding whether the supplied password is correct.
+
+Just like we've done throughout this course, we separate **what** we need from **how** it's implemented.
+
+```
+LoginHandler
+      │
+      ▼
+IPasswordHasher
+      │
+      ▼
+PasswordHasher
+      │
+      ▼
+PBKDF2
+```
+
+The handler depends only on the `IPasswordHasher` interface. The infrastructure project provides the actual
+implementation using PBKDF2.
 
 Create `Erp.Shared.Infrastructure/Security/PasswordHasher.cs`:
 
@@ -191,22 +358,16 @@ public sealed class PasswordHasher : IPasswordHasher
 
     public bool Verify(string password, string storedHash)
     {
-
         if (string.IsNullOrWhiteSpace(storedHash))
             return false;
 
-        // Split the stored value back into:
+        // Split the stored value into:
         // iterations, salt and hash.
         var parts = storedHash.Split('.', 3);
 
         if (parts.Length != 3)
             return false;
 
-        // Explicit version:
-        // int iterations = 0;
-        // bool parsed = int.TryParse(parts[0], out iterations);
-        // if (!parsed)
-        //     return false;
         if (!int.TryParse(parts[0], out var iterations))
             return false;
 
@@ -232,9 +393,35 @@ public sealed class PasswordHasher : IPasswordHasher
 }
 ```
 
+### Walking through the implementation
+
+`PasswordHasher` exposes two methods.
+
+```csharp
+Hash(string password)
+```
+
+This is used when a user first creates or changes their password.
+
+It generates a random salt, hashes the password using PBKDF2, and returns the value that will be stored in the
+database.
+
+```csharp
+Verify(string password, string storedHash)
+```
+
+This is used during login.
+
+It reads the stored hash, recreates the PBKDF2 hash using the same salt and iteration count, and compares the
+result with the stored value.
+
+If they match, the password is correct.
+
+If they don't, authentication fails.
+
 ### Why do we use a salt?
 
-A **salt** is a random value added to every password before hashing.
+A **salt** is a random value generated for every password before hashing.
 
 Without a salt:
 
@@ -243,6 +430,8 @@ Password123 → Hash A
 Password123 → Hash A
 ```
 
+Every user with the same password ends up with the same hash.
+
 With a random salt:
 
 ```
@@ -250,86 +439,159 @@ Password123 + Salt A → Hash X
 Password123 + Salt B → Hash Y
 ```
 
-Even identical passwords produce different hashes. This prevents attackers from using precomputed lookup tables (rainbow tables). The salt is **not secret**, so it is stored together with the hash.
+Now the hashes are completely different, even though the original password is identical.
+
+This prevents attackers from using precomputed lookup tables, often called **rainbow tables**, to crack large
+numbers of passwords.
+
+The salt is **not secret**, so we store it together with the hash.
 
 ### Why store the iteration count?
 
-Notice we store:
+Notice that we store
 
 ```
 iterations.salt.hash
 ```
 
-instead of just the hash.
+instead of only the hash.
 
-This allows us to increase the iteration count in the future as hardware becomes faster. Existing passwords still verify correctly because we read the original iteration count from the stored value.
+As computers become faster, we may decide to increase the PBKDF2 work factor.
+
+By storing the iteration count alongside each password, older passwords continue to verify correctly while
+newer passwords can be created using a higher iteration count.
 
 ### Why use `FixedTimeEquals()`?
 
-A normal comparison (`==`) may stop as soon as it finds the first difference, creating tiny timing differences that attackers could measure.
+A normal comparison such as
 
-`CryptographicOperations.FixedTimeEquals()` always compares every byte, making the comparison take approximately the same amount of time regardless of where the difference occurs.
+```csharp
+attempt == key
+```
 
-To generate the seed hashes from [Phase 3](03-database-schema.md), run `Hash("Password123!")` once and
-paste the results into `003_seed.sql`.
+may stop comparing as soon as it finds the first different byte.
 
-> 📎 Don't want to boot the app just to seed three hashes? The companion
-> [`04a-password-hashing`](04a-password-hashing/README.md) folder has a standard-library Python port of
-> this exact `Hash` method — run `python hash_password.py --seed` and paste the output straight over the
-> placeholders in [`Identity/003_seed.sql`](03a-database-queries/Identity/003_seed.sql). Same algorithm,
-> same parameters, so the hashes it writes verify against the C# `Verify` above.
+That creates tiny timing differences that sophisticated attackers can sometimes measure.
 
+`CryptographicOperations.FixedTimeEquals()` always compares every byte before returning, making timing attacks
+much harder.
+
+To generate the seed hashes from [Phase 3](03-database-schema.md), run `Hash("Password123!")` once and paste
+the results into `003_seed.sql`.
+
+> 📎 Don't want to boot the app just to generate the seed hashes? The companion
+> `04a-password-hashing` folder contains a Python implementation of the same algorithm. Run
+> `python hash_password.py --seed`, then copy the generated hashes into
+> `Identity/003_seed.sql`. It uses the same PBKDF2 algorithm and parameters, so the generated hashes verify
+> correctly with the C# `Verify()` method above.
 ## 4. Step 2 — Creating the access token (`IJwtTokenService`)
 
-> 📦 **Packages & config for this phase — add these first.** JWT is where these are first used, so (per the
-> "install only when needed" rule from [Phase 1](01-solution-setup.md)) this is where we add them:
->
-> ```bash
-> dotnet add src/Shared/Erp.Shared.Infrastructure package System.IdentityModel.Tokens.Jwt
-> dotnet add src/Erp.Api package Microsoft.AspNetCore.Authentication.JwtBearer
-> ```
->
-> With Central Package Management on, each `dotnet add` also writes a `<PackageVersion>` line into
-> `Directory.Packages.props` (known-good for .NET 10: `System.IdentityModel.Tokens.Jwt` `8.19.1`,
-> `Microsoft.AspNetCore.Authentication.JwtBearer` `10.0.9`).
->
-> Now add the **`Jwt` settings** these read. Put the **non-secret configuration** in `appsettings.json`:
->
-> ```json
-> {
->   "Jwt": {
->     "Issuer": "Erp.Api",
->     "Audience": "Erp.Client",
->     "SigningKey": "",
->     "AccessTokenMinutes": 15,   // short: a stolen access token dies fast (§10's refresh tokens make this practical)
->     "RefreshSlidingDays": 7,    // inactivity timeout — resets on each use
->     "RefreshAbsoluteDays": 30   // hard cap — an active session still re-logs-in eventually
->   }
-> }
-> ```
->
-> For **local development**, you can place a temporary key in `appsettings.Development.json` while learning:
->
-> ```json
-> {
->   "Jwt": {
->     "SigningKey": "dev-only-super-secret-key-change-me-32chars-min"
->   }
-> }
-> ```
->
-> That development key should never leave your machine.
->
-> 🔐 **The `SigningKey` is a real secret** — it must **never** be committed to source control. The dev key
-> above is fine while you are learning locally. **Where it belongs in every other environment** (User
-> Secrets, environment variables, cloud secret managers), **how to generate one**, and **how to rotate it if
-> it leaks** are all covered in **[Part 2, §7](04b-jwt-login.md)** — right where the app *reads* the key to
-> validate tokens, so the whole "where configuration comes from" story lives in one place.
+Now that we can safely store and verify passwords, the next piece is creating the **access token** that a
+client receives after a successful login.
 
-This mints the **access token** — the short-lived one (15 minutes, from the `Jwt:AccessTokenMinutes` setting
-above) that the client sends on every request. It's deliberately brief because a stolen access token then
-expires fast; §10's refresh token is what keeps the user from re-typing a password every 15 minutes.
-`Erp.Shared.Infrastructure/Security/JwtTokenService.cs`:
+Remember the goal of JWT authentication:
+
+1. The user logs in with a username and password.
+2. The server verifies the password.
+3. The server creates a signed JWT.
+4. The client sends that JWT on every future request instead of sending the password again.
+
+Something has to create that JWT.
+
+### Why an `IJwtTokenService`?
+
+We could put all of the JWT creation logic directly inside the login handler.
+
+But then the login handler would need to know:
+
+- how to build claims,
+- how to sign a token,
+- how long the token should live,
+- how to serialize the JWT into a string.
+
+Those responsibilities don't belong to the login handler.
+
+Instead, we create a dedicated service whose only responsibility is generating access tokens.
+
+```
+LoginHandler
+      │
+      ▼
+IJwtTokenService
+      │
+      ▼
+JwtTokenService
+      │
+      ▼
+Creates a signed JWT
+```
+
+Later, the login handler will simply call:
+
+```csharp
+var accessToken = jwt.CreateAccessToken(
+    user.Id,
+    user.Username,
+    user.Role);
+```
+
+without needing to know anything about how JWTs are built internally.
+
+---
+
+### Packages and configuration
+
+JWT support isn't part of the .NET runtime itself, so we need two packages.
+
+```bash
+dotnet add src/Shared/Erp.Shared.Infrastructure package System.IdentityModel.Tokens.Jwt
+dotnet add src/Erp.Api package Microsoft.AspNetCore.Authentication.JwtBearer
+```
+
+If you're using Central Package Management, `dotnet add` also updates
+`Directory.Packages.props` with the package versions.
+
+Next, add the JWT configuration to `appsettings.json`.
+
+```json
+{
+  "Jwt": {
+    "Issuer": "Erp.Api",
+    "Audience": "Erp.Client",
+    "SigningKey": "",
+    "AccessTokenMinutes": 15,
+    "RefreshSlidingDays": 7,
+    "RefreshAbsoluteDays": 30
+  }
+}
+```
+
+Notice that the signing key is intentionally left blank.
+
+For local development you can temporarily place it in
+`appsettings.Development.json`:
+
+```json
+{
+  "Jwt": {
+    "SigningKey": "dev-only-super-secret-key-change-me-32chars-min"
+  }
+}
+```
+
+That key should never leave your machine.
+
+> 🔐 **The signing key is a real secret.** Never commit it to source control.
+>
+> In later sections we'll cover where secrets belong in development and production (User Secrets,
+> environment variables, cloud secret managers), how ASP.NET Core automatically loads them through
+> `IConfiguration`, and what to do if the key is ever compromised.
+
+---
+
+### Implementing `IJwtTokenService`
+
+Create `Erp.Shared.Infrastructure/Security/JwtTokenService.cs`.
 
 ```csharp
 public interface IJwtTokenService
@@ -342,15 +604,19 @@ public sealed class JwtTokenService(IConfiguration config) : IJwtTokenService
     public string CreateAccessToken(long userId, string username, string role)
     {
         var jwt = config.GetSection("Jwt");
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt["SigningKey"]!));
-        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
-        // Claims = the facts baked into the token.
+        var key = new SymmetricSecurityKey(
+            Encoding.UTF8.GetBytes(jwt["SigningKey"]!));
+
+        var creds = new SigningCredentials(
+            key,
+            SecurityAlgorithms.HmacSha256);
+
         var claims = new[]
         {
-            new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),   // subject = user id
+            new Claim(JwtRegisteredClaimNames.Sub, userId.ToString()),
             new Claim(ClaimTypes.Name, username),
-            new Claim(ClaimTypes.Role, role),                            // ← powers role authorization
+            new Claim(ClaimTypes.Role, role),
             new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 
@@ -358,7 +624,8 @@ public sealed class JwtTokenService(IConfiguration config) : IJwtTokenService
             issuer: jwt["Issuer"],
             audience: jwt["Audience"],
             claims: claims,
-            expires: DateTime.UtcNow.AddMinutes(int.Parse(jwt["AccessTokenMinutes"]!)),
+            expires: DateTime.UtcNow.AddMinutes(
+                int.Parse(jwt["AccessTokenMinutes"]!)),
             signingCredentials: creds);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
@@ -366,83 +633,178 @@ public sealed class JwtTokenService(IConfiguration config) : IJwtTokenService
 }
 ```
 
-The key line for authorization is `new Claim(ClaimTypes.Role, role)` — it stamps the user's role into
-the wristband. Later, `[Authorize(Roles = "SalesManager")]` reads exactly this.
+---
 
-> ❓ **You might be wondering: "Is one `role` claim all a token can carry?"** Not at all — a claim is just a
-> key/value *fact*, and you can bake in as many as you need. A single `role` string is the simplest useful
-> model (and all this course needs), but larger systems often carry richer authorization data right in the
-> token. For example:
->
-> ```json
-> {
->   "sub": "42",
->   "name": "rep",
->   "role": ["SalesRep", "SalesManager"],
->   "permissions": ["orders:read", "orders:approve", "customers:read"],
->   "tenant": "acme-corp",
->   "region": "APAC"
-> }
-> ```
->
-> With **permissions** in the token, an endpoint can demand a *capability* (`orders:approve`) instead of a
-> role — so you can change which roles hold which powers in one place, without editing every endpoint's role
-> list. A `tenant` or `region` claim lets a handler scope queries to the caller's slice of the data. The
-> tradeoff: every extra claim makes the token **bigger** (it rides on *every* request) and **staler** (claims
-> only refresh when a new token is minted — §10 — so a permission revoked at 10:00 lingers until the current
-> token expires).
->
-> 🔑 **We deliberately keep it to one `role` claim** in this course because our rules are simple and it keeps
-> the authorization story easy to follow. Reach for permission/multi-role/tenant claims when your real rules
-> outgrow a single role — the mechanism is identical, just more claims in the same `claims` array above.
+### Walking through `JwtTokenService`
 
-> 🧭 **From WebForms — the "module / view / button" permission grid.** In a classic WebForms ERP your
-> permissions probably lived in a grid: *per module, which pages may this user open, and which buttons may they
-> click?* That maps straight onto claims too — here it is keyed by our actual modules (`SALES`, `INVENTORY`):
->
-> ```json
-> {
->   "sub": "42",
->   "name": "rep",
->   "role": "SalesRep",
->   "access": [
->     {
->       "moduleId": "SALES",
->       "views":   ["orders", "customers"],
->       "buttons": ["order:create", "order:cancel"]
->     },
->     {
->       "moduleId": "INVENTORY",
->       "views":   ["stock"],
->       "buttons": []
->     }
->   ]
-> }
-> ```
->
-> A front-end client reads `views` to decide which menu items to render and `buttons` to show or grey out each
-> action — the same muscle memory as toggling `Panel.Visible` or `btnApprove.Enabled` in code-behind, except
-> the truth now travels in the token instead of a server-side `Session["Permissions"]`.
->
-> 🔑 **But hiding a button is convenience, not security.** A front end can be bypassed — anyone can call
-> `POST /sales-orders/{id}/approve` directly with a valid token. So the `buttons`/`views` claims only tidy the
-> *UI*; the **server still enforces the real check** on the endpoint or in the handler (§9). Never let a
-> hidden button be your only guard.
->
-> ⚠️ **And watch the size — this is where the token tradeoff bites hardest.** A full module/view/button matrix
-> can be *hundreds* of entries, and it rides on **every** request. The usual fix: keep only a compact **role or
-> permission summary** in the token (what the server authorizes against, §9), and load the detailed UI matrix
-> **once** after login from an endpoint like `GET /me/permissions`. Rule of thumb: put in the token what the
-> *server* needs to authorize each call; fetch separately what the *UI* needs to render. Don't turn the
-> wristband into a filing cabinet.
+Although the class creates a JWT, each part has a single responsibility.
 
-> ℹ️ **A note on the API surface.** `JwtSecurityToken`/`JwtSecurityTokenHandler` (from
-> `System.IdentityModel.Tokens.Jwt`) is the long-standing, fully-supported way to create tokens and is
-> perfectly fine here. The *newer* recommended type is `JsonWebTokenHandler` (from
-> `Microsoft.IdentityModel.JsonWebTokens`), which is faster and the direction Microsoft is steering. If you
-> start a fresh project, prefer it; we use the classic handler because it reads more simply for a first
-> encounter. Either way, the `MapInboundClaims = false` fix below still applies.
+#### Step A — Read the JWT configuration
+
+```csharp
+var jwt = config.GetSection("Jwt");
+```
+
+The service loads all of the JWT settings from the application's configuration.
+
+These include:
+
+- the issuer,
+- the audience,
+- the signing key,
+- and the token lifetime.
+
+The service doesn't care whether those values came from `appsettings.json`,
+User Secrets, environment variables, or somewhere else.
+
+It simply asks `IConfiguration` for them.
 
 ---
 
-> 👉 Next: [Phase 4 (Part 2 of 4) — Login, Validation & Authorization](04b-jwt-login.md), where we turn the password hasher and token service into a working `POST /auth/login`, wire token *validation* into the app, and add role-based authorization.
+#### Step B — Create the signing key
+
+```csharp
+var key = new SymmetricSecurityKey(
+    Encoding.UTF8.GetBytes(jwt["SigningKey"]!));
+```
+
+The signing key is the application's secret.
+
+It is used to digitally sign every JWT that the server creates.
+
+Anyone can read a JWT, but only someone who knows this key can generate a valid
+signature.
+
+---
+
+#### Step C — Create the signing credentials
+
+```csharp
+var creds = new SigningCredentials(
+    key,
+    SecurityAlgorithms.HmacSha256);
+```
+
+The signing credentials tell .NET which algorithm should be used when signing
+the JWT.
+
+In this course we'll use **HMAC-SHA256**, one of the most common algorithms for
+server-generated JWTs.
+
+---
+
+#### Step D — Build the claims
+
+```csharp
+var claims = new[]
+{
+    ...
+};
+```
+
+These claims become the authenticated user's identity.
+
+Every request carrying this JWT will contain these same claims until the token
+expires.
+
+Our token contains four claims.
+
+```csharp
+new Claim(JwtRegisteredClaimNames.Sub, userId.ToString())
+```
+
+The user's unique identifier.
+
+```csharp
+new Claim(ClaimTypes.Name, username)
+```
+
+The user's username.
+
+```csharp
+new Claim(ClaimTypes.Role, role)
+```
+
+The user's role.
+
+We'll use this later when protecting endpoints with role-based authorization.
+
+```csharp
+new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+```
+
+A unique identifier for this particular JWT.
+
+Even if the same user logs in twice, each token receives its own unique ID.
+
+---
+
+#### Step E — Create the JWT
+
+```csharp
+var token = new JwtSecurityToken(
+    ...
+);
+```
+
+This combines:
+
+- the issuer,
+- the audience,
+- the claims,
+- the expiration time,
+- and the digital signature
+
+into a JWT object.
+
+Notice that the expiration time comes from:
+
+```csharp
+jwt["AccessTokenMinutes"]
+```
+
+We're deliberately making the access token short-lived (15 minutes).
+
+If someone steals it, it becomes useless fairly quickly.
+
+Later in this phase we'll introduce **refresh tokens**, allowing users to obtain
+a new access token without logging in again.
+
+---
+
+#### Step F — Convert the JWT into a string
+
+```csharp
+return new JwtSecurityTokenHandler().WriteToken(token);
+```
+
+Up until this point we've been working with a .NET object.
+
+The final step converts it into the compact string that the client stores and
+sends in the `Authorization: Bearer <token>` header.
+
+A finished JWT looks something like this:
+
+```
+eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI0MiIsInJvbGUiOiJTYWxlc1JlcCJ9.3Rk...
+```
+
+---
+
+> ℹ️ **A note on the API surface.**
+>
+> `JwtSecurityToken` and `JwtSecurityTokenHandler` (from
+> `System.IdentityModel.Tokens.Jwt`) are the long-standing APIs for creating JWTs
+> and remain fully supported.
+>
+> Newer applications may instead use `JsonWebTokenHandler`
+> (`Microsoft.IdentityModel.JsonWebTokens`), which offers better performance and
+> is Microsoft's recommended direction going forward.
+>
+> For this course we use `JwtSecurityTokenHandler` because it is easier to read
+> and understand when learning JWT authentication for the first time.
+
+---
+
+> 👉 Next: **Phase 4 (Part 2 of 4) — Login, Validation & Authorization**, where we'll build a complete login
+> feature, validate JWTs on incoming requests, and use them to authenticate and authorize users.
