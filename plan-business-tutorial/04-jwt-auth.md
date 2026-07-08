@@ -127,11 +127,19 @@ so its interface lives in `Shared`, not in a business module.
 
 ## 3. Step 1 — Hashing passwords (never store plain text)
 
-A password must never be stored as-is. We store a one-way **hash** — you can check a password against it,
-but you can't reverse it back to the password. .NET has a good built-in tool for this,
-`Rfc2898DeriveBytes` (PBKDF2). Put this in `Erp.Shared.Infrastructure/Security`:
+A password must **never** be stored directly in the database. If someone steals your database, every user's
+password would be exposed.
 
-`Erp.Shared.Infrastructure/Security/PasswordHasher.cs`:
+Instead, we store a **one-way hash**. A hash lets us verify a password, but it cannot be reversed back into
+the original password.
+
+.NET already provides a secure password hashing implementation called `Rfc2898DeriveBytes`, which implements
+the **PBKDF2 (Password-Based Key Derivation Function 2)** algorithm defined by **RFC 2898**.
+
+Unlike a normal hash such as SHA-256, PBKDF2 intentionally performs hundreds of thousands of hashing rounds,
+making brute-force attacks much slower.
+
+Create `Erp.Shared.Infrastructure/Security/PasswordHasher.cs`:
 
 ```csharp
 public interface IPasswordHasher
@@ -142,41 +150,124 @@ public interface IPasswordHasher
 
 public sealed class PasswordHasher : IPasswordHasher
 {
-    // Iterations = the "work factor": how many times PBKDF2 re-hashes. Higher = slower to crack (and to
-    // check). 600,000 is the current OWASP floor for PBKDF2-HMAC-SHA256 (as of 2025) — tune it up over time
-    // as hardware gets faster. Because we store the iteration count *inside* each hash (see Hash below),
-    // raising this later doesn't break existing passwords: old hashes still verify with their old count.
+    // SaltSize
+    //     16 random bytes mixed into every password.
+    //
+    // KeySize
+    //     Produce a 32-byte (256-bit) hash.
+    //
+    // Iterations
+    //     The PBKDF2 work factor. Higher values make passwords harder to crack.
+    //     We also store this value inside the hash so it can be increased later
+    //     without breaking existing passwords.
     private const int SaltSize = 16, KeySize = 32, Iterations = 600_000;
 
     public string Hash(string password)
     {
-        // A random "salt" so two identical passwords produce different hashes.
+        // Generate a cryptographically secure random salt.
         byte[] salt = RandomNumberGenerator.GetBytes(SaltSize);
-        byte[] key  = Rfc2898DeriveBytes.Pbkdf2(password, salt, Iterations, HashAlgorithmName.SHA256, KeySize);
+
+        // Hash the password using PBKDF2.
+        byte[] key = Rfc2898DeriveBytes.Pbkdf2(
+            password,
+            salt,
+            Iterations,
+            HashAlgorithmName.SHA256,
+            KeySize);
+
+        // Store: iterations.base64Salt.base64Hash
         return $"{Iterations}.{Convert.ToBase64String(salt)}.{Convert.ToBase64String(key)}";
     }
 
     public bool Verify(string password, string storedHash)
     {
+
+        if (string.IsNullOrWhiteSpace(storedHash))
+            return false;
+
+        // Split the stored value back into:
+        // iterations, salt and hash.
         var parts = storedHash.Split('.', 3);
-        var iterations = int.Parse(parts[0]);
-        var salt = Convert.FromBase64String(parts[1]);
-        var key  = Convert.FromBase64String(parts[2]);
-        var attempt = Rfc2898DeriveBytes.Pbkdf2(password, salt, iterations, HashAlgorithmName.SHA256, key.Length);
-        // Constant-time compare avoids leaking info via timing.
-        return CryptographicOperations.FixedTimeEquals(attempt, key);
+
+        if (parts.Length != 3)
+            return false;
+            
+        // Explicit version:
+        // int iterations = 0;
+        // bool parsed = int.TryParse(parts[0], out iterations);
+        // if (!parsed)
+        //     return false;
+        if (!int.TryParse(parts[0], out var iterations))
+            return false;
+
+        try
+        {
+            var salt = Convert.FromBase64String(parts[1]);
+            var key = Convert.FromBase64String(parts[2]);
+
+            var attempt = Rfc2898DeriveBytes.Pbkdf2(
+                password,
+                salt,
+                iterations,
+                HashAlgorithmName.SHA256,
+                key.Length);
+
+            return CryptographicOperations.FixedTimeEquals(attempt, key);
+        }
+        catch (FormatException)
+        {
+            return false;
+        }
     }
 }
 ```
 
-> ❓ **You might be wondering: "What's a salt, and why random?"** If two users both pick `Password123`,
-> a plain hash would be *identical* for both — so an attacker who cracks one cracks both, and can
-> pre-compute hashes ("rainbow tables"). A random **salt** mixed in makes every hash unique even for the
-> same password, defeating that. We store the salt alongside the hash (it's not secret; its job is just
-> to be unique).
+### Why do we use a salt?
+
+A **salt** is a random value added to every password before hashing.
+
+Without a salt:
+
+```
+Password123 → Hash A
+Password123 → Hash A
+```
+
+With a random salt:
+
+```
+Password123 + Salt A → Hash X
+Password123 + Salt B → Hash Y
+```
+
+Even identical passwords produce different hashes. This prevents attackers from using precomputed lookup tables (rainbow tables). The salt is **not secret**, so it is stored together with the hash.
+
+### Why store the iteration count?
+
+Notice we store:
+
+```
+iterations.salt.hash
+```
+
+instead of just the hash.
+
+This allows us to increase the iteration count in the future as hardware becomes faster. Existing passwords still verify correctly because we read the original iteration count from the stored value.
+
+### Why use `FixedTimeEquals()`?
+
+A normal comparison (`==`) may stop as soon as it finds the first difference, creating tiny timing differences that attackers could measure.
+
+`CryptographicOperations.FixedTimeEquals()` always compares every byte, making the comparison take approximately the same amount of time regardless of where the difference occurs.
 
 To generate the seed hashes from [Phase 3](03-database-schema.md), run `Hash("Password123!")` once and
 paste the results into `003_seed.sql`.
+
+> 📎 Don't want to boot the app just to seed three hashes? The companion
+> [`04a-password-hashing`](04a-password-hashing/README.md) folder has a standard-library Python port of
+> this exact `Hash` method — run `python hash_password.py --seed` and paste the output straight over the
+> placeholders in [`Identity/003_seed.sql`](03a-database-queries/Identity/003_seed.sql). Same algorithm,
+> same parameters, so the hashes it writes verify against the C# `Verify` above.
 
 ## 4. Step 2 — Creating the access token (`IJwtTokenService`)
 
