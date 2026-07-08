@@ -1874,9 +1874,57 @@ The answer depends on **what information the rule needs**.
 | The rule you want to write | Where it belongs | Why? | Example |
 |---|---|---|---|
 | **Is the request well-formed?** | **Validator** | Validators only check whether the request is valid. They don't know about users, roles, or the database. | `RuleFor(x => x.Password).MinimumLength(8);` |
-| **Can this user log in?** | **Handler** | The handler loads the user, verifies the password, and decides whether authentication succeeds. | `if (user is null || !hasher.Verify(...)) throw ...;` |
-| **May this role call this endpoint?** | **Endpoint** | The endpoint checks only the authenticated user's role before the handler runs. | `.RequireAuthorization(p => p.RequireRole("SalesManager"))` |
-| **Does this business rule depend on application data?** | **Handler / Domain** | The application must first load the business data before making the decision. | `if (order.RequiresManager && !currentUser.IsInRole("SalesManager")) throw ...;` |
+| **Can this user log in?** | **Handler** | The handler loads the user, verifies the password, and decides whether authentication succeeds. | `if (user is null OR !hasher.Verify(...)) throw ...;` |
+| **May this role call this endpoint?** | **Endpoint** | The endpoint checks whether the authenticated user satisfies the required role or policy before the handler runs. | `.RequireAuthorization(p => p.RequireRole("SalesManager"))` |
+| **Does this business rule depend on application data?** | **Handler / Domain** | The application must first load the required data before the business rule can be evaluated. | `order.Approve(currentUser.Roles);` |
+
+---
+
+#### Why is "does this record exist?" handled in the handler?
+
+A common question is:
+
+> **"Why isn't `if (order is null)` considered a business rule?"**
+
+Because checking whether a record exists is **not** business logic—it's part of loading the data needed to perform the use case.
+
+The domain cannot decide whether an order exists because the domain object doesn't exist until the application loads it.
+
+```csharp
+var order = await repository.Get(request.OrderId);
+
+if (order is null)
+    throw new NotFoundException();
+
+order.Approve(currentUser.Roles);
+
+await repository.Update(order);
+```
+
+The handler is responsible for:
+
+- Loading data from the database
+- Checking whether the requested data exists
+- Calling the domain to perform business behavior
+- Saving any changes
+
+The domain is responsible for deciding **whether the requested action is allowed**.
+
+```csharp
+public void Approve(IEnumerable<string> roles)
+{
+    if (Total >= 500000 &&
+        !roles.Contains("SalesManager"))
+    {
+        throw new BusinessRuleException(
+            "Orders over ₱500,000 require a Sales Manager.");
+    }
+
+    IsApproved = true;
+}
+```
+
+Notice that the entity doesn't know anything about SQL, Dapper, repositories, or HTTP. It only knows the business rules.
 
 ---
 
@@ -1894,13 +1942,13 @@ If it only needs the authenticated user's role:
 
 → **Endpoint**
 
-If it needs data from the database:
+If it needs to load data from the database:
 
 → **Handler**
 
-If it needs both the authenticated user **and** business data:
+If it needs business data that has already been loaded:
 
-→ **Handler or Domain**
+→ **Domain**
 
 ```
                  What information does the rule need?
@@ -1913,6 +1961,13 @@ Request only?            User's role?          Business data?
         ▼                      ▼                      ▼
  Validator               Endpoint          Handler / Domain
 ```
+
+A useful mental model is:
+
+- **Validator** → "Is the request valid?"
+- **Endpoint** → "Is the caller allowed to enter?"
+- **Handler** → "Load everything needed for this use case."
+- **Domain** → "Given this data, is this business action allowed?"
 
 ---
 
