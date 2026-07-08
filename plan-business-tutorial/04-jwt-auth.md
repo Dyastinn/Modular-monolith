@@ -21,6 +21,8 @@
 - **Role-based authorization** so specific endpoints require specific roles (Manager to approve).
 - An `ICurrentUser` abstraction so our handlers can ask "who is calling, and what's their role?" without
   depending on ASP.NET directly.
+- **An API key gate** (§9b) so only your known *client apps* reach the API at all — an outer, app-level gate
+  that fires *before* user authentication (it's the one gate that can sit in front of `/auth/login` itself).
 
 ## 2. Why it's designed this way
 
@@ -1239,6 +1241,136 @@ public sealed class RefreshEndpoint : ICarterModule
 > - **Revoked/expired rows accumulate.** A periodic cleanup (a scheduled job or a `DELETE … WHERE RevokedUtc <
 >   …` proc) keeps the table small. Housekeeping, not correctness — noted, out of scope here.
 
+## 9b. A second gate — requiring an API key from the frontend
+
+Everything from §3 to §9 answered **one** question: *who is the **user**?* An API key answers a **different**
+one: *which **client application** is calling at all?* Those are orthogonal, and real systems often want both
+gates — so we add the second one now.
+
+### First, feel the hole
+
+Look back at the login endpoint (§6): it's `.AllowAnonymous()`. It **has** to be — you can't require a token
+to get a token (chicken-and-egg). So the JWT gate protects everything *except the one door everybody walks
+through first*. Right now **anything on the internet** — `curl`, a scraper, a competitor's app, a botnet —
+can hammer `/auth/login`, probe every route, and burn your password-check CPU (§3 made that check
+*deliberately* slow, remember). The user gate can't help here: at the front door there's no user *yet* to
+identify. You need a gate that fires **before** authentication and asks a blunter question: *"is this even one
+of our known clients?"*
+
+> 💡 **Analogy.** The JWT wristband (§2) is per-**person**. The API key is the **vendor pass painted on the
+> delivery truck** — it says *which company's* truck is at the loading dock, no matter who's driving. Two
+> gates, two jobs: the truck needs the vendor pass to reach the dock (**client** gate), and the driver still
+> needs a wristband to go inside (**user** gate). Neither one alone is enough.
+
+An **API key** is just a long random string your API issues to each trusted client (your web app, your mobile
+app, a partner integration). The client sends it on **every** request in a header — conventionally
+`X-Api-Key` — and the server compares it to the key(s) it expects. No match → the request never reaches an
+endpoint.
+
+### Step 1 — the key is just another secret
+
+You already built the whole "where does config come from" story in §7. An API key rides the *exact same*
+`IConfiguration` pipeline as `Jwt:SigningKey` — it's a secret, so it follows the same rules (User Secrets or
+an environment variable; **never** committed). In `appsettings.json`, only the empty placeholder:
+
+```json
+{
+  "ApiKey": ""   // the expected client key — a real secret, same handling as Jwt:SigningKey (§7)
+}
+```
+
+```bash
+dotnet user-secrets set "ApiKey" "$(openssl rand -base64 32)"   # local dev; prod uses ApiKey env var
+```
+
+### Step 2 — the middleware
+
+The check gates the *whole pipeline*, so it's a middleware in the host, not a feature slice —
+`Erp.Api/Security/ApiKeyMiddleware.cs`:
+
+```csharp
+public sealed class ApiKeyMiddleware(RequestDelegate next, IConfiguration config)
+{
+    private const string HeaderName = "X-Api-Key";
+    // Read the expected key once at startup (middleware is built once).
+    private readonly byte[] _expected = Encoding.UTF8.GetBytes(config["ApiKey"] ?? "");
+
+    public async Task InvokeAsync(HttpContext context)
+    {
+        if (!context.Request.Headers.TryGetValue(HeaderName, out var provided) || !Matches(provided!))
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;   // unknown client — stop here
+            await context.Response.WriteAsJsonAsync(new { error = "Missing or invalid API key." });
+            return;   // short-circuit: never call next() → no endpoint runs
+        }
+
+        await next(context);
+    }
+
+    // Same fixed-time comparison as the password check (§3): FixedTimeEquals returns false for a length
+    // mismatch (no throw), so an attacker can't learn the key by timing our compares.
+    private bool Matches(string provided) =>
+        _expected.Length > 0 &&
+        CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(provided), _expected);
+}
+```
+
+### Step 3 — wire it *first*
+
+Order is everything (§7). The API key gate goes in **front of** authentication — reject unknown clients before
+you spend a cycle validating tokens:
+
+```csharp
+app.UseMiddleware<ApiKeyMiddleware>();   // 0) is this even one of our known client apps?
+app.UseAuthentication();                 // 1) who is the user?
+app.UseAuthorization();                  // 2) are they allowed to do this?
+```
+
+Now the client sends **both** headers on every call — the API key (which app) *and*, once logged in, the
+bearer token (which user):
+
+```bash
+curl http://localhost:5xxx/sales/ping?name=world \
+     -H "X-Api-Key: <your-api-key>" \
+     -H "Authorization: Bearer eyJ..."
+# no X-Api-Key at all → 401 before authentication ever runs, even on /auth/login
+```
+
+> ❓ **You might be wondering: "Isn't this just JWT again?"** No — and the login hole is the clean proof. JWT
+> *cannot* guard `/auth/login`, because login is anonymous by necessity. The API key is the **only** gate you
+> can put in front of the login door itself. More broadly: **JWT = which *user*; API key = which *app*.**
+> Different question, different answer, and they stack.
+
+> 🧭 **From WebForms.** This is the app-level key you might have checked in `Global.asax`'s `BeginRequest`
+> before any page ran — or the `<clientKey>` a partner had to pass into your old SOAP / `[WebMethod]` service
+> before you'd answer. Same idea, now expressed as one middleware at the very front of the pipeline.
+
+> ℹ️ **Let the tooling through.** This gate is blunt — it will 401 the **Swagger UI** and any **health-check**
+> endpoint too. Simplest fixes: register `UseMiddleware<ApiKeyMiddleware>()` *after* you map Swagger/health, or
+> have the middleware wave through a small allow-list of paths (`/swagger`, `/health`) in Development.
+
+### The honest caveat you must not skip
+
+> ⚠️ **A browser frontend cannot keep an API key secret.** If your client is a browser SPA, the key ships in
+> the JavaScript bundle and rides on every request — **anyone** can read it in the network tab or devtools in
+> about ten seconds. So in a browser, an API key is **not** a wall against a determined attacker; it's a
+> **coarse outer filter**. What it genuinely buys you even there is real but limited:
+> - it keeps your login door (and the slow §3 hash) from facing the *raw, anonymous* internet;
+> - it lets you tell clients apart — issue one key per app and you can **rate-limit or revoke a single client**
+>   without touching the others.
+>
+> What it must **never** do is *replace* user auth. The API key is the outer, coarse gate; **JWT plus the §10
+> checks are the real security.** Treat a leaked browser API key as an annoyance to rotate, not a breach.
+>
+> 🔑 **Where an API key *is* a true secret:** server-to-server callers, a **backend-for-frontend**, a
+> mobile/desktop app's own backend, or a trusted partner integration — anywhere the key lives on a machine the
+> public can't read. That's when it becomes a genuine security boundary, not just a filter.
+
+> 🔑 **Scaling past one key.** One shared string is fine to learn with. For several clients, store a *set* of
+> keys — and, exactly like refresh tokens (§9), store their **hashes**, not the raw values, so a config/DB leak
+> yields nothing usable. Look each incoming key up by its SHA-256 hash; the middleware shape above doesn't
+> change, only where `_expected` comes from. Rotate keys on a schedule, and immediately if one leaks.
+
 ## 10. Two ways to authorize (endpoint vs. domain)
 
 Authorization happens at **two levels**, and putting each rule at the right one is most of the skill:
@@ -1586,10 +1718,12 @@ common way beginners tangle this code — so match your check to the row below b
 ## 11. How a full authenticated request flows
 
 ```
+0. EVERY request carries  X-Api-Key: <key>  → ApiKeyMiddleware checks it FIRST; unknown client → 401
+     before anything else runs (yes, even /auth/login). Below, assume it's present and valid.
 1. POST /auth/login {rep, Password123!}  → LoginHandler verifies hash → returns { accessToken, refreshToken }
 2. Client stores both: the access token for requests, the refresh token for later.
-3. POST /sales-orders   Authorization: Bearer <accessToken>
-     → UseAuthentication validates signature+expiry → builds HttpContext.User with claims
+3. POST /sales-orders   X-Api-Key: <key>   Authorization: Bearer <accessToken>
+     → ApiKeyMiddleware OKs the client → UseAuthentication validates signature+expiry → HttpContext.User claims
      → UseAuthorization checks the endpoint's role requirement (here: SalesRep or Manager — ok)
      → endpoint calls sender.Send(command)
      → handler injects ICurrentUser → reads UserId to stamp CreatedByUserId
@@ -1649,6 +1783,12 @@ browser.)
   the refresh token; a stolen short-lived token expires before it's useful.
 - ✅ **Best practice: reload the user on refresh.** It's your chance to honor a role change or a deactivation
   since login, instead of trusting stale claims for days.
+- ❌ **Treating a browser-shipped API key as a real secret, or letting it replace user auth.** ✅ Use it as a
+  coarse *outer* gate — block anonymous traffic off the login door, tell clients apart, rate-limit/revoke one.
+  Keep JWT + the §10 checks as the real security. An API key is a genuine secret only for
+  server-to-server/partner clients (§9b).
+- ❌ **Putting the API key gate *after* `UseAuthentication`.** ✅ Wire it *first* — reject unknown clients
+  before you spend cycles validating tokens, and so it can guard the anonymous `/auth/login` too.
 
 ---
 
@@ -1663,5 +1803,7 @@ browser.)
    server do the moment it detects reuse?
 6. Why store only the *hash* of a refresh token, yet a plain SHA-256 is fine here where a password needs
    PBKDF2?
+7. What question does an API key answer that a JWT doesn't — why must its gate run *before* authentication,
+   and why can't a browser SPA treat its API key as a true secret?
 
 > 👉 Next: [Phase 5 — The SalesOrder domain model and its business rules](05-domain-model.md).

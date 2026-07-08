@@ -72,6 +72,8 @@
     <div></div>
     <div class="card" style="max-width:380px;margin:40px auto;">
       <h2>Sign in</h2>
+      <label>API key <span class="muted">(sent as <code>X-Api-Key</code> on every request — §9b)</span></label>
+      <input id="apiKey" placeholder="the ApiKey the server expects" />
       <label>Username</label>
       <input id="u" value="manager" />
       <label>Password</label>
@@ -142,6 +144,9 @@ const API = "http://localhost:5264";
 let token = sessionStorage.getItem("erp_token") || null;
 let refreshToken = sessionStorage.getItem("erp_refresh") || null;
 let me = JSON.parse(sessionStorage.getItem("erp_me") || "null");
+// The API now requires an app-level API key (X-Api-Key) on EVERY request — even /auth/login (§9b).
+// It's remembered for this tab so you only paste it once.
+let apiKey = sessionStorage.getItem("erp_apikey") || "";
 
 const ITEMS = { 1:{name:"Widget",price:25}, 2:{name:"Gadget",price:40}, 3:{name:"Restricted Kit",price:500} };
 
@@ -156,6 +161,7 @@ function toast(title, body, kind){
 
 async function api(method, path, body, _retried){
   const headers={"Content-Type":"application/json"};
+  if(apiKey) headers["X-Api-Key"]=apiKey;   // app-level gate — required before auth even runs (§9b)
   if(token) headers["Authorization"]="Bearer "+token;
   const res=await fetch(API+path,{method,headers,body:body?JSON.stringify(body):undefined});
   const text=await res.text();
@@ -166,8 +172,9 @@ async function api(method, path, body, _retried){
       if(await refresh()) return api(method, path, body, true);
     }
     const detail = data && data.detail ? data.detail
+      : (data && data.error ? data.error                          // e.g. "Missing or invalid API key." (§9b)
       : (data && data.errors ? data.errors.join(", ")
-      : (typeof data==="string"&&data ? data : res.status+" "+res.statusText));
+      : (typeof data==="string"&&data ? data : res.status+" "+res.statusText)));
     throw {status:res.status, detail, data};
   }
   return data;
@@ -176,7 +183,7 @@ async function api(method, path, body, _retried){
 // Trade the refresh token for a new access+refresh pair (rotation). Returns true on success.
 async function refresh(){
   try{
-    const res=await fetch(API+"/auth/refresh",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({refreshToken})});
+    const res=await fetch(API+"/auth/refresh",{method:"POST",headers:{"Content-Type":"application/json","X-Api-Key":apiKey},body:JSON.stringify({refreshToken})});
     if(!res.ok){ refreshToken=null; return false; }
     const r=await res.json();
     token=r.accessToken; refreshToken=r.refreshToken;
@@ -187,6 +194,9 @@ async function refresh(){
 
 async function login(){
   try{
+    // Capture the API key first — it's required on the login request itself (§9b).
+    apiKey=document.getElementById("apiKey").value.trim();
+    sessionStorage.setItem("erp_apikey",apiKey);
     const r=await api("POST","/auth/login",{username:document.getElementById("u").value, password:document.getElementById("p").value});
     token=r.accessToken; refreshToken=r.refreshToken; me={username:r.username, role:r.role};
     sessionStorage.setItem("erp_token",token); sessionStorage.setItem("erp_refresh",refreshToken); sessionStorage.setItem("erp_me",JSON.stringify(me));
@@ -194,8 +204,10 @@ async function login(){
   }catch(e){ toast("Login failed", e.detail, "err"); }
 }
 async function logout(){
-  try{ if(refreshToken) await fetch(API+"/auth/logout",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({refreshToken})}); }catch{}
-  token=null; refreshToken=null; me=null; sessionStorage.clear(); showLogin();
+  try{ if(refreshToken) await fetch(API+"/auth/logout",{method:"POST",headers:{"Content-Type":"application/json","X-Api-Key":apiKey},body:JSON.stringify({refreshToken})}); }catch{}
+  token=null; refreshToken=null; me=null; sessionStorage.clear();
+  if(apiKey) sessionStorage.setItem("erp_apikey",apiKey);   // app key isn't a user credential — keep it
+  showLogin();
 }
 
 function showApp(){
@@ -210,6 +222,8 @@ function showApp(){
 function showLogin(){
   document.getElementById("appView").classList.add("hidden");
   document.getElementById("loginView").classList.remove("hidden");
+  document.getElementById("apiKey").value=apiKey;   // remember the key across logout/reload
+
   document.getElementById("whoami").classList.add("hidden");
   document.getElementById("logoutBtn").classList.add("hidden");
 }

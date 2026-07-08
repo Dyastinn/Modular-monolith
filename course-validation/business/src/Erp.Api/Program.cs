@@ -3,6 +3,7 @@ using System.Text;
 using Carter;
 using Erp.Api;
 using Erp.Api.Auth;
+using Erp.Api.Security;
 using Erp.Modules.Inventory;
 using Erp.Modules.Sales;
 using Erp.Shared.Infrastructure;
@@ -89,6 +90,10 @@ if (app.Environment.IsDevelopment())
 await DatabaseInitializer.RunAsync(app);
 
 app.UseCors("test-console");
+
+// 0) App-level gate: is this even one of our known client apps? (Phase 4 §9b). Placed AFTER UseCors so the
+// CORS preflight is handled first, and BEFORE authentication so unknown clients are rejected up front.
+app.UseMiddleware<ApiKeyMiddleware>();
 
 app.UseAuthentication();   // 1) read & validate the token → figure out WHO you are
 app.UseAuthorization();    // 2) check WHETHER you're allowed
