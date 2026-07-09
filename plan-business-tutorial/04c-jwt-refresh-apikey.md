@@ -705,19 +705,46 @@ endpoint.
 
 ### Step 1 — the key is just another secret
 
-You already built the whole "where does config come from" story in §7. An API key rides the *exact same*
-`IConfiguration` pipeline as `Jwt:SigningKey` — it's a secret, so it follows the same rules (User Secrets or
-an environment variable; **never** committed). In `appsettings.json`, only the empty placeholder:
+You already built the whole "where does config come from" story in §7. API keys ride the *exact same*
+`IConfiguration` pipeline as `Jwt:SigningKey` — they're secrets, so they follow the same rules (User Secrets
+or environment variables; **never** committed).
+
+Although we're only building one website and one mobile app, it's already worth thinking like a production
+system: **issue one API key per client application**. That lets you identify and manage each client
+independently.
+
+During development you could place them in `appsettings.json`:
 
 ```json
 {
-  "ApiKey": ""   // the expected client key — a real secret, same handling as Jwt:SigningKey (§7)
+  "ApiKeys": [
+    "web-live-abc123",
+    "mobile-live-xyz789"
+  ]
 }
 ```
 
+But just like the JWT signing key, these should **not** live in source control.
+
+For local development, use User Secrets:
+
 ```bash
-dotnet user-secrets set "ApiKey" "$(openssl rand -base64 32)"   # local dev; prod uses ApiKey env var
+dotnet user-secrets set "ApiKeys:0" "web-live-abc123"
+dotnet user-secrets set "ApiKeys:1" "mobile-live-xyz789"
 ```
+
+For production, use environment variables instead:
+
+```text
+ApiKeys__0=web-live-abc123
+ApiKeys__1=mobile-live-xyz789
+```
+
+Notice the double underscore (`__`). ASP.NET Core automatically translates that into the same array
+structure as the JSON above.
+
+We're only using two API keys here, but the same approach scales to dozens of client applications without
+changing any application code.
 
 ### Step 2 — the middleware
 
@@ -728,8 +755,14 @@ The check gates the *whole pipeline*, so it's a middleware in the host, not a fe
 public sealed class ApiKeyMiddleware(RequestDelegate next, IConfiguration config)
 {
     private const string HeaderName = "X-Api-Key";
-    // Read the expected key once at startup (middleware is built once).
-    private readonly byte[] _expected = Encoding.UTF8.GetBytes(config["ApiKey"] ?? "");
+
+    // Read all configured API keys once at startup (middleware is built once).
+    private readonly byte[][] _expected =
+        config.GetSection("ApiKeys")
+              .Get<string[]>()?
+              .Select(k => Encoding.UTF8.GetBytes(k))
+              .ToArray()
+        ?? [];
 
     public async Task InvokeAsync(HttpContext context)
     {
@@ -743,11 +776,20 @@ public sealed class ApiKeyMiddleware(RequestDelegate next, IConfiguration config
         await next(context);
     }
 
-    // Same fixed-time comparison as the password check (§3): FixedTimeEquals returns false for a length
-    // mismatch (no throw), so an attacker can't learn the key by timing our compares.
-    private bool Matches(string provided) =>
-        _expected.Length > 0 &&
-        CryptographicOperations.FixedTimeEquals(Encoding.UTF8.GetBytes(provided), _expected);
+    // Same fixed-time comparison as the password check (§3). We compare against every registered
+    // client key until one matches.
+    private bool Matches(string provided)
+    {
+        var bytes = Encoding.UTF8.GetBytes(provided);
+
+        foreach (var expected in _expected)
+        {
+            if (CryptographicOperations.FixedTimeEquals(bytes, expected))
+                return true;
+        }
+
+        return false;
+    }
 }
 ```
 
@@ -772,6 +814,41 @@ curl http://localhost:5xxx/sales/ping?name=world \
 # no X-Api-Key at all → 401 before authentication ever runs, even on /auth/login
 ```
 
+In our ERP, the website and mobile app each have their own API key.
+
+Website:
+
+```http
+GET /sales
+X-Api-Key: web-live-abc123
+Authorization: Bearer eyJ...
+```
+
+Mobile:
+
+```http
+GET /sales
+X-Api-Key: mobile-live-xyz789
+Authorization: Bearer eyJ...
+```
+
+Notice something important.
+
+Both requests could belong to **the exact same employee**.
+
+The API key answers:
+
+> "Which client application is calling?"
+
+The JWT answers:
+
+> "Which user is calling?"
+
+Those are two different identities.
+
+Having separate API keys also means you can revoke or rate-limit **only the mobile application** without
+affecting the website, or vice versa.
+
 > ❓ **You might be wondering: "Isn't this just JWT again?"** No — and the login hole is the clean proof. JWT
 > *cannot* guard `/auth/login`, because login is anonymous by necessity. The API key is the **only** gate you
 > can put in front of the login door itself. More broadly: **JWT = which *user*; API key = which *app*.**
@@ -789,18 +866,27 @@ curl http://localhost:5xxx/sales/ping?name=world \
 
 > ⚠️ **A browser frontend cannot keep an API key secret.** If your client is a browser SPA, the key ships in
 > the JavaScript bundle and rides on every request — **anyone** can read it in the network tab or devtools in
-> about ten seconds. So in a browser, an API key is **not** a wall against a determined attacker; it's a
-> **coarse outer filter**. What it genuinely buys you even there is real but limited:
+> about ten seconds.
+>
+> A **mobile app raises the bar, but it cannot guarantee secrecy forever either.** A determined attacker can
+> eventually extract the key by reverse engineering the app or inspecting it on a compromised device.
+>
+> So an API key should **identify the client application**, not replace authentication. In a browser it's a
+> coarse outer filter; in a mobile app it's a somewhat stronger one—but neither should ever be considered the
+> real security boundary.
+>
+> What it genuinely buys you is still valuable:
 > - it keeps your login door (and the slow §3 hash) from facing the *raw, anonymous* internet;
 > - it lets you tell clients apart — issue one key per app and you can **rate-limit or revoke a single client**
 >   without touching the others.
 >
-> What it must **never** do is *replace* user auth. The API key is the outer, coarse gate; **JWT plus the §9
-> checks are the real security.** Treat a leaked browser API key as an annoyance to rotate, not a breach.
+> What it must **never** do is replace user auth. The API key is the outer, coarse gate; **JWT plus the §9
+> checks are the real security.** Treat a leaked API key as something to rotate, not as a catastrophic breach.
 >
 > 🔑 **Where an API key *is* a true secret:** server-to-server callers, a **backend-for-frontend**, a
 > mobile/desktop app's own backend, or a trusted partner integration — anywhere the key lives on a machine the
-> public can't read. That's when it becomes a genuine security boundary, not just a filter.
+> public can't read. That's when it becomes a genuine security boundary rather than simply identifying a client
+> application.
 
 > 🔑 **Scaling past one key.** One shared string is fine to learn with. For several clients, store a *set* of
 > keys — and, exactly like refresh tokens (§10), store their **hashes**, not the raw values, so a config/DB leak
