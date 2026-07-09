@@ -34,55 +34,237 @@
      This is also the ONLY way back in once a password has expired: login refuses it and points here (Part 4).
 ```
 
-## 14. Checkpoint — log in, get a token, prove it protects ✅
+## 14. Checkpoint — prove the whole gate, end to end ✅
 
-Run the app and verify auth works end-to-end. First, log in as the seed user `rep` (password
-`Password123!`):
+This is a security phase, so the checkpoint is thorough on purpose: it walks **every** door you built — the
+API-key gate, login, the protected-endpoint token check, refresh + rotation, reuse detection, logout, and
+change-password's global logout — and tells you the exact status code each one must return. Do them **in
+order**; several steps depend on a token captured by an earlier one.
+
+### Before you start
+
+Run the app, then note two things and set them once so you can paste the rest verbatim:
 
 ```bash
-curl -X POST http://localhost:5xxx/auth/login \
+# 1) Your app's port — read it from the console banner or Properties/launchSettings.json.
+# 2) An API key you configured in §11 (User Secrets / appsettings). We use the sample "web" key here.
+BASE=http://localhost:5001         # ← replace 5001 with YOUR port
+KEY=web-live-abc123                # ← replace with a key you actually configured
+```
+
+Three prerequisites, or the steps below won't behave:
+
+- **Add `.RequireAuthorization()` to the `/sales/ping` endpoint** from [Phase 2](02-first-slice.md) — that's
+  the protected endpoint Step 2 leans on.
+- **Every command carries `-H "X-Api-Key: $KEY"`** — the §11 gate runs *first*, so a request without it never
+  even reaches login (that's Step 0's whole point).
+- The commands capture tokens with **`jq`**. If you don't have it, drop the `jq` lines and just copy the
+  `accessToken` / `refreshToken` string out of the printed JSON into the next command by hand.
+  *(On Windows, run these in Git Bash or WSL, or use the Swagger note at the end.)*
+
+The seed users from [Phase 3](03-database-schema.md), for reference:
+
+| Username | Password | Role |
+|---|---|---|
+| `rep` | `Password123!` | `SalesRep` |
+| `manager` | `Password123!` | `SalesManager` |
+| `admin` | `Password123!` | `Admin` |
+
+---
+
+### Step 0 — the API-key gate fires *before* anything (§11)
+
+Prove the outer gate guards even the anonymous login door. Send login with **no** API key:
+
+```bash
+curl -i -X POST "$BASE/auth/login" \
      -H "Content-Type: application/json" \
      -d '{"username":"rep","password":"Password123!"}'
-# → { "accessToken": "eyJ...", "refreshToken": "..." }
+# → 401 Unauthorized   { "error": "Missing or invalid API key." }
+#   Note: this 401 is the API-KEY gate, not the login logic — we never reached LoginHandler.
 ```
 
-Now prove the token actually *gates* access. Add `.RequireAuthorization()` to the `/sales/ping` endpoint
-from Phase 2, then:
+A wrong key is rejected the same way; only a configured key gets through:
 
 ```bash
-curl http://localhost:5xxx/sales/ping?name=world                       # → 401 Unauthorized (no token)
-curl http://localhost:5xxx/sales/ping?name=world -H "Authorization: Bearer eyJ..."   # → 200 "pong: world"
+curl -i -X POST "$BASE/auth/login" -H "X-Api-Key: not-a-real-key" \
+     -H "Content-Type: application/json" \
+     -d '{"username":"rep","password":"Password123!"}'
+# → 401 Unauthorized   { "error": "Missing or invalid API key." }
 ```
 
-Trade the refresh token for a fresh pair:
+### Step 1 — log in (and confirm the generic error)
+
+First the failure path — a wrong password must return the **same** message as an unknown user (§5), never
+"no such user" vs "bad password":
 
 ```bash
-curl -X POST http://localhost:5xxx/auth/refresh -H "Content-Type: application/json" \
-     -d '{"refreshToken":"<the refresh token above>"}'                 # → a NEW accessToken + refreshToken
+curl -i -X POST "$BASE/auth/login" -H "X-Api-Key: $KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"username":"rep","password":"WRONG"}'
+# → 401 Unauthorized   "Invalid username or password."
 ```
 
-Finally, prove change-password (Part 4) works **and** logs the user out everywhere. Change `rep`'s password,
-then watch the *old* refresh token stop working:
+Now the happy path. Capture the pair into shell variables so later steps can reuse them:
 
 ```bash
-curl -X POST http://localhost:5xxx/auth/change-password -H "Content-Type: application/json" \
-     -d '{"username":"rep","currentPassword":"Password123!","newPassword":"NewPassword456!"}'   # → 204 No Content
+resp=$(curl -s -X POST "$BASE/auth/login" -H "X-Api-Key: $KEY" \
+       -H "Content-Type: application/json" \
+       -d '{"username":"rep","password":"Password123!"}')
+echo "$resp"
+# → { "accessToken": "eyJ...", "refreshToken": "...", "username": "rep", "role": "SalesRep" }
 
-# The refresh token from the login above was minted under the OLD security stamp — now it's void:
-curl -X POST http://localhost:5xxx/auth/refresh -H "Content-Type: application/json" \
-     -d '{"refreshToken":"<the refresh token from before>"}'          # → 401 (stamp changed / credentials changed)
-
-curl -X POST http://localhost:5xxx/auth/login -H "Content-Type: application/json" \
-     -d '{"username":"rep","password":"NewPassword456!"}'             # → 200 with the NEW password
+ACCESS=$(echo "$resp"  | jq -r .accessToken)
+REFRESH=$(echo "$resp" | jq -r .refreshToken)
 ```
 
-If a bad/missing token gives 401, a valid one gives 200, refresh returns a *different* token pair, and a
-password change both returns 204 **and** kills the old refresh token, **Phase 4 is done and verifiable.** From
-Phase 6 on, every sales-order endpoint sits behind exactly this gate. (You can also paste the access token into
-Swagger's **Authorize** box and call endpoints from the browser.)
+### Step 2 — the access token actually *gates* the protected endpoint
 
-> ℹ️ Re-seed or change it back afterward if other checkpoints expect `Password123!` — or just remember `rep`'s
-> new password for the rest of the run.
+Three calls to the **same** endpoint, all carrying the API key (so we isolate the *token* check, not the gate
+from Step 0):
+
+```bash
+# No bearer token → 401 (authenticated? no).
+curl -i "$BASE/sales/ping?name=world" -H "X-Api-Key: $KEY"
+# → 401 Unauthorized
+
+# A garbage/tampered token → 401 (signature fails).
+curl -i "$BASE/sales/ping?name=world" -H "X-Api-Key: $KEY" -H "Authorization: Bearer not.a.jwt"
+# → 401 Unauthorized
+
+# The real token → 200.
+curl -i "$BASE/sales/ping?name=world" -H "X-Api-Key: $KEY" -H "Authorization: Bearer $ACCESS"
+# → 200 OK   "pong: world"
+```
+
+> 🔑 Role-based **403** (a valid token whose *role* is wrong) isn't demonstrable yet — `/sales/ping` only
+> requires *authentication*, not a role. You'll see the 401-vs-403 split for real in [Phase 6](06-create-order.md)+,
+> where the sales-order endpoints add `RequireRole(...)`.
+
+### Step 3 — refresh rotates to a brand-new pair (§10)
+
+Trade the refresh token for a fresh pair. The new tokens must be **different** strings — that's rotation:
+
+```bash
+resp=$(curl -s -X POST "$BASE/auth/refresh" -H "X-Api-Key: $KEY" \
+       -H "Content-Type: application/json" \
+       -d "{\"refreshToken\":\"$REFRESH\"}")
+echo "$resp"
+# → a NEW { "accessToken": "...", "refreshToken": "..." } — both different from Step 1.
+
+OLD_REFRESH=$REFRESH                              # remember the now-SPENT token for Step 4
+REFRESH=$(echo "$resp" | jq -r .refreshToken)     # the current live token
+ACCESS=$(echo  "$resp" | jq -r .accessToken)
+```
+
+### Step 4 — reuse detection burns the whole family (§10)
+
+Replay the token you *just spent* in Step 3. Because it's single-use, presenting it again means two parties
+hold copies — the server revokes the **entire family**:
+
+```bash
+curl -i -X POST "$BASE/auth/refresh" -H "X-Api-Key: $KEY" \
+     -H "Content-Type: application/json" \
+     -d "{\"refreshToken\":\"$OLD_REFRESH\"}"
+# → 401 Unauthorized   "Refresh token reuse detected — session revoked. Please log in again."
+```
+
+The trap also kills the *current* token you got in Step 3 — the family is gone, so even the good token now
+fails:
+
+```bash
+curl -i -X POST "$BASE/auth/refresh" -H "X-Api-Key: $KEY" \
+     -H "Content-Type: application/json" \
+     -d "{\"refreshToken\":\"$REFRESH\"}"
+# → 401 Unauthorized   (family revoked — the honest client must log in again)
+```
+
+### Step 5 — logout revokes a session
+
+Log in fresh (Step 4 nuked the family), then log out and watch that refresh token die:
+
+```bash
+resp=$(curl -s -X POST "$BASE/auth/login" -H "X-Api-Key: $KEY" \
+       -H "Content-Type: application/json" \
+       -d '{"username":"rep","password":"Password123!"}')
+REFRESH=$(echo "$resp" | jq -r .refreshToken)
+ACCESS=$(echo  "$resp" | jq -r .accessToken)
+
+curl -i -X POST "$BASE/auth/logout" -H "X-Api-Key: $KEY" \
+     -H "Content-Type: application/json" \
+     -d "{\"refreshToken\":\"$REFRESH\"}"
+# → 204 No Content
+
+curl -i -X POST "$BASE/auth/refresh" -H "X-Api-Key: $KEY" \
+     -H "Content-Type: application/json" \
+     -d "{\"refreshToken\":\"$REFRESH\"}"
+# → 401 Unauthorized   (revoked)
+```
+
+> ℹ️ `POST /auth/logout-all` is the "log me out everywhere" variant — it acts on the authenticated caller, so
+> unlike `/logout` it needs a **valid access token** and no body:
+> `curl -i -X POST "$BASE/auth/logout-all" -H "X-Api-Key: $KEY" -H "Authorization: Bearer $ACCESS"` → **204**.
+
+### Step 6 — change-password logs the user out everywhere (Part 4 + §10)
+
+Log in once more to mint a token *under the old security stamp*, change the password, then watch that token
+go void — this proves the `SecurityStamp` rotation, not a token sweep, is doing the logout:
+
+```bash
+resp=$(curl -s -X POST "$BASE/auth/login" -H "X-Api-Key: $KEY" \
+       -H "Content-Type: application/json" \
+       -d '{"username":"rep","password":"Password123!"}')
+REFRESH=$(echo "$resp" | jq -r .refreshToken)
+
+# Change the password — anonymous, gated on the CURRENT password (no access token needed).
+curl -i -X POST "$BASE/auth/change-password" -H "X-Api-Key: $KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"username":"rep","currentPassword":"Password123!","newPassword":"NewPassword456!"}'
+# → 204 No Content
+
+# The refresh token above was minted under the OLD stamp — the change rotated it, so now it's void:
+curl -i -X POST "$BASE/auth/refresh" -H "X-Api-Key: $KEY" \
+     -H "Content-Type: application/json" \
+     -d "{\"refreshToken\":\"$REFRESH\"}"
+# → 401 Unauthorized   "Credentials changed. Please log in again."
+
+# The old password no longer works…
+curl -i -X POST "$BASE/auth/login" -H "X-Api-Key: $KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"username":"rep","password":"Password123!"}'
+# → 401 Unauthorized   "Invalid username or password."
+
+# …and the NEW one does.
+curl -i -X POST "$BASE/auth/login" -H "X-Api-Key: $KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"username":"rep","password":"NewPassword456!"}'
+# → 200 OK   a fresh access + refresh pair
+```
+
+---
+
+### You're done when
+
+| # | You proved | Expected |
+|---|---|---|
+| 0 | The API-key gate fires before login | missing/bad key → **401** `Missing or invalid API key.` |
+| 1 | Login is generic on failure, issues a pair on success | wrong password → **401**; valid → **200** + `accessToken` + `refreshToken` |
+| 2 | The access token gates a protected endpoint | no/garbage token → **401**; valid → **200** `pong: world` |
+| 3 | Refresh **rotates** | **200** with a *different* token pair |
+| 4 | Reuse detection burns the family | replayed spent token → **401**; the rotated token dies too |
+| 5 | Logout revokes | logout → **204**; that token then → **401** |
+| 6 | Change-password is a global logout | change → **204**; old refresh → **401** (stamp); new password → **200** |
+
+If every row matches, **Phase 4 is done and verifiable.** From Phase 6 on, every sales-order endpoint sits
+behind exactly this gate (API key → authenticate → authorize).
+
+> ℹ️ **Using Swagger instead of curl?** The §11 gate will 401 the Swagger UI too unless you allow-listed
+> `/swagger` (see the ℹ️ note in [Part 3, §11](04c-jwt-refresh-apikey.md)) or send `X-Api-Key` via Swagger's
+> header UI. Once through, paste an access token into the **Authorize** box to call protected endpoints from the
+> browser.
+
+> ℹ️ You just changed `rep`'s password to `NewPassword456!`. Either **re-seed** (re-run the Phase 3 seed) or
+> **remember the new password** for the rest of the run, since later checkpoints assume `Password123!`.
 
 ## 15. Common mistakes & best practices
 
