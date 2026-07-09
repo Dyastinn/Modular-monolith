@@ -1,10 +1,11 @@
-# Phase 4 (Part 3 of 4) — Refresh Tokens & the API-Key Gate
+# Phase 4 (Part 3 of 5) — Refresh Tokens & the API-Key Gate
 
-> **Phase 4 is split into four parts** — do them in order:
+> **Phase 4 is split into five parts** — do them in order:
 > 1. [Passwords & access tokens](04-jwt-auth.md)
 > 2. [Login, validation & authorization](04b-jwt-login.md)
 > 3. **Refresh tokens & the API-key gate** ← you are here
-> 4. [Request flow, checkpoint & common mistakes](04d-jwt-wrap-up.md)
+> 4. [Changing & resetting a password](04d-jwt-change-password.md)
+> 5. [Request flow, checkpoint & common mistakes](04e-jwt-wrap-up.md)
 
 > Builds on [Part 2](04b-jwt-login.md): you can already log in, validate tokens, read the caller through `ICurrentUser`, and authorize by role. Two problems remain — a 15-minute access token means re-typing your password constantly (§10 fixes it with refresh tokens), and the anonymous login door faces the raw internet (§11 adds a client gate).
 
@@ -565,12 +566,12 @@ public sealed class RefreshEndpoint : ICarterModule
 >   simplicity; for a browser client, prefer the cookie.
 > - **Revoked/expired rows accumulate.** A periodic cleanup (a scheduled job or a `DELETE … WHERE RevokedUtc <
 >   …` proc) keeps the table small. Housekeeping, not correctness — noted, out of scope here.
-> - **An expired password is a dead end without a reset flow.** Once `PasswordExpiresUtc` passes, refresh fails
->   *and* login rejects the password (both by design — the DB policy governs both). A complete system pairs
->   this with a **password-reset / change-password** flow (which calls `usp_AppUser_ChangePassword` to rotate
->   the stamp and push the expiry). This tutorial ships the proc and policy but not the endpoint — building
->   `POST /auth/change-password` on top of it is a [Phase 13](13-wrap-up-checklist.md) exercise. Until then,
->   don't let a seed user's 90 days lapse, or re-seed `PasswordExpiresUtc`.
+> - **An expired password would be a dead end — so the next part fixes it.** Once `PasswordExpiresUtc` passes,
+>   refresh fails *and* login rejects the password (both by design — the DB policy governs both). The escape
+>   hatch is a **change/reset-password** flow over `usp_AppUser_ChangePassword` (which rotates the stamp and
+>   pushes the expiry). We build exactly that next, in [Part 4](04d-jwt-change-password.md) — including the
+>   subtle reason it must be anonymous. (A full **forgot-password** path — an emailed reset token for users who
+>   *don't* know the old password — stays a [Phase 13](13-wrap-up-checklist.md) extension.)
 
 ## 11. A second gate — requiring an API key from the frontend
 
@@ -704,4 +705,4 @@ curl http://localhost:5xxx/sales/ping?name=world \
 
 ---
 
-> 👉 Next: [Phase 4 (Part 4 of 4) — Request Flow, Checkpoint & Common Mistakes](04d-jwt-wrap-up.md) — trace a full authenticated request end to end, verify it works, and review the pitfalls.
+> 👉 Next: [Phase 4 (Part 4 of 5) — Changing & Resetting a Password](04d-jwt-change-password.md) — expose the change-password proc as a slice, and see why it must be anonymous to rescue an expired login.

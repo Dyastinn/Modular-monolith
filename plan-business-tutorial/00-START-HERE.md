@@ -124,7 +124,8 @@ wants the slow, analogy-rich take on a concept, never a prerequisite.
 | 4 | [04-jwt-auth.md](04-jwt-auth.md) | **Part 1** — password hashing + the access-token service | ~45 min *(new topic)* | *new topic* |
 | 4b | [04b-jwt-login.md](04b-jwt-login.md) | **Part 2** — login slice, token validation, `ICurrentUser`, role authorization | ~1 hr *(new topic)* | *new topic* |
 | 4c | [04c-jwt-refresh-apikey.md](04c-jwt-refresh-apikey.md) | **Part 3** — rotating refresh tokens (reuse detection) + the API-key gate | ~45 min *(new topic)* | *new topic* |
-| 4d | [04d-jwt-wrap-up.md](04d-jwt-wrap-up.md) | **Part 4** — full request-flow trace, checkpoint, common mistakes | ~20 min *(new topic)* | *new topic* |
+| 4d | [04d-jwt-change-password.md](04d-jwt-change-password.md) | **Part 4** — change/reset password over the DB proc (and why it's anonymous) | ~30 min *(new topic)* | *new topic* |
+| 4e | [04e-jwt-wrap-up.md](04e-jwt-wrap-up.md) | **Part 5** — full request-flow trace, checkpoint, common mistakes | ~20 min *(new topic)* | *new topic* |
 | 5 | [05-domain-model.md](05-domain-model.md) | The `SalesOrder` aggregate + business rules | ~1.5–2 hr | [beginner Phase 3](../plan-beginner-friendly/04-phase-3-domain.md) |
 | 6 | [06-create-order.md](06-create-order.md) | Create-order slice: blocking, credit, category, quantity | ~2 hr | [beginner Phase 4](../plan-beginner-friendly/05-phase-4-create-order.md) |
 | 7 | [07-submit-reserve-concurrency.md](07-submit-reserve-concurrency.md) | Submit + atomic inventory reservation + rollback | ~1.5–2 hr | [beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md) |

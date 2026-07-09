@@ -14,6 +14,7 @@ public interface IUserRepository
 {
     Task<AppUser?> GetByUsernameAsync(string username, CancellationToken ct);
     Task<AppUser?> GetByIdAsync(long id, CancellationToken ct);   // used by refresh to reload role/active (Phase 4 §9)
+    Task ChangePasswordAsync(long userId, string newPasswordHash, IDbTransaction tx, CancellationToken ct);  // change/reset (Phase 13)
 }
 
 public sealed class UserRepository(IDbConnectionFactory factory) : IUserRepository
@@ -36,4 +37,12 @@ public sealed class UserRepository(IDbConnectionFactory factory) : IUserReposito
             new { Id = id },
             commandType: CommandType.StoredProcedure, cancellationToken: ct));
     }
+
+    // WRITE — runs on the handler's transaction. The proc rotates PasswordHash + SecurityStamp +
+    // PasswordExpiresUtc atomically; the new stamp invalidates every outstanding refresh token (global logout).
+    public async Task ChangePasswordAsync(long userId, string newPasswordHash, IDbTransaction tx, CancellationToken ct) =>
+        await tx.Connection!.ExecuteAsync(new CommandDefinition(
+            "[identity].usp_AppUser_ChangePassword",
+            new { UserId = userId, NewPasswordHash = newPasswordHash },
+            transaction: tx, commandType: CommandType.StoredProcedure, cancellationToken: ct));
 }

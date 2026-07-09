@@ -1,10 +1,11 @@
-# Phase 4 (Part 1 of 4) — Passwords & Access Tokens
+# Phase 4 (Part 1 of 5) — Passwords & Access Tokens
 
-> **Phase 4 is split into four parts** — do them in order:
+> **Phase 4 is split into five parts** — do them in order:
 > 1. **Passwords & access tokens** ← you are here
 > 2. [Login, validation & authorization](04b-jwt-login.md)
 > 3. [Refresh tokens & the API-key gate](04c-jwt-refresh-apikey.md)
-> 4. [Request flow, checkpoint & common mistakes](04d-jwt-wrap-up.md)
+> 4. [Changing & resetting a password](04d-jwt-change-password.md)
+> 5. [Request flow, checkpoint & common mistakes](04e-jwt-wrap-up.md)
 
 
 > This is a **new topic** not covered in the earlier plans, so we go slowly and assume nothing. By the
@@ -13,7 +14,7 @@
 
 ---
 
-> ⏱️ **Time for all four parts:** ~2.5–3 hr (this Part 1 is ~45 min). This is a **new topic** — hashing,
+> ⏱️ **Time for all five parts:** ~3–3.5 hr (this Part 1 is ~45 min). This is a **new topic** — hashing,
 > tokens, claims, middleware order, the `MapInboundClaims` gotcha, and refresh-token rotation with reuse
 > detection ([Part 3, §10](04c-jwt-refresh-apikey.md)). Go slow; rushing auth is how subtle security bugs
 > sneak in.
@@ -810,5 +811,5 @@ eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI0MiIsInJvbGUiOiJTYWxlc1JlcCJ9.3Rk...
 
 ---
 
-> 👉 Next: **Phase 4 (Part 2 of 4) — Login, Validation & Authorization**, where we'll build a complete login
+> 👉 Next: **Phase 4 (Part 2 of 5) — Login, Validation & Authorization**, where we'll build a complete login
 > feature, validate JWTs on incoming requests, and use them to authenticate and authorize users.

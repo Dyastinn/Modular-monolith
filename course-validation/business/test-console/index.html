@@ -20,7 +20,7 @@
     .pill.role { color:var(--accent2); }
     main { display:grid; grid-template-columns:340px 1fr; gap:18px; padding:18px 22px; max-width:1200px; }
     @media (max-width:820px){ main{ grid-template-columns:1fr; } }
-    .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:18px; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:1px; }
     .card h2 { margin:0 0 12px; font-size:14px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); }
     label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
     input, select { width:100%; padding:9px 10px; background:var(--panel2); border:1px solid var(--line);
@@ -54,6 +54,25 @@
     .actions { display:flex; gap:6px; flex-wrap:wrap; }
     code { background:var(--panel2); padding:1px 6px; border-radius:6px; font-size:12px; }
     a.link { color:var(--accent); }
+    /* --- auth inspector --- */
+    .auth-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
+    @media (max-width:720px){ .auth-grid { grid-template-columns:1fr; } }
+    .subttl { font-size:12px; font-weight:600; color:var(--ink); display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+    .status.ok { color:var(--accent2); border-color:var(--accent2); }
+    .status.err { color:var(--danger); border-color:var(--danger); }
+    .status.warn { color:var(--warn); border-color:var(--warn); }
+    .tokraw { font-family:ui-monospace,Consolas,monospace; font-size:12px; word-break:break-all; background:var(--panel2);
+      border:1px solid var(--line); border-radius:8px; padding:8px 10px; min-height:34px; }
+    #claimsTable td { padding:5px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+    #claimsTable .ckey { color:var(--muted); font-family:ui-monospace,Consolas,monospace; width:32%; }
+    #claimsTable .cval { font-family:ui-monospace,Consolas,monospace; word-break:break-all; }
+    .authlog { display:flex; flex-direction:column; gap:5px; max-height:220px; overflow:auto; }
+    .authlog .ev { padding:6px 9px; background:var(--panel2); border:1px solid var(--line); border-left:3px solid var(--line);
+      border-radius:7px; font-size:12px; }
+    .authlog .ev.ok { border-left-color:var(--accent2); }
+    .authlog .ev.err { border-left-color:var(--danger); }
+    .authlog .ev.warn { border-left-color:var(--warn); }
+    .authlog .evt { color:var(--muted); font-variant-numeric:tabular-nums; margin-right:4px; }
   </style>
 </head>
 <body>
@@ -86,11 +105,67 @@
       <div style="margin-top:14px"><button style="width:100%" onclick="login()">Log in</button></div>
       <p class="muted" style="font-size:12px;margin-top:12px">Seed users all use password <code>Password123!</code>.
         Only <b>SalesManager</b>/<b>Admin</b> can approve.</p>
+
+      <details style="margin-top:8px;border-top:1px solid var(--line);padding-top:12px">
+        <summary style="cursor:pointer;color:var(--accent);font-size:13px;font-weight:600">Change or reset password →</summary>
+        <p class="muted" style="font-size:12px;margin:8px 0">
+          Prove your <b>current</b> password to set a new one via <code>POST /auth/change-password</code>. This is
+          also the way back in when your password has <b>expired</b> (login refuses an expired password and sends
+          you here). Changing it rotates your security stamp — an instant logout of every device — so log in again after.
+        </p>
+        <label>Username</label>
+        <input id="cpUser" placeholder="username" />
+        <label>Current password</label>
+        <input id="cpCur" type="password" placeholder="current (or expired) password" />
+        <label>New password <span class="muted">(min 8 chars, different from current)</span></label>
+        <input id="cpNew" type="password" placeholder="new password" />
+        <div style="margin-top:12px"><button class="secondary" style="width:100%" onclick="changePassword()">Change password</button></div>
+      </details>
     </div>
   </main>
 
   <!-- APP VIEW -->
-  <main id="appView" class="hidden">
+  <main id="appView" class="hidden" >
+    <div class="card" id="authCard" style="grid-column:1 / -1; " >
+      <h2>🔐 Auth &amp; tokens — how the access + refresh flow works</h2>
+      <p class="muted" style="font-size:12px;margin:-6px 0 4px">
+        The <b>access token</b> (a short-lived JWT) proves who you are on every request. When it expires the API answers
+        <code>401</code>; this console then trades the <b>refresh token</b> at <code>POST /auth/refresh</code> for a
+        brand-new pair (<b>rotation</b>) and retries the original call — so you stay signed in without re-entering your
+        password. Watch it happen in the log below.
+      </p>
+      <div class="auth-grid">
+        <div>
+          <div class="subttl">Access token — JWT claims <span id="accExp" class="status"></span></div>
+          <table id="claimsTable"><tbody><tr><td class="muted" colspan="2">No access token.</td></tr></tbody></table>
+          <div class="split" style="margin-top:8px;align-items:center">
+            <span class="muted" style="font-size:11px">raw token:</span>
+            <button class="ghost" onclick="toggleRaw('acc')">reveal / hide</button>
+          </div>
+          <div id="accRaw" class="tokraw">—</div>
+        </div>
+        <div>
+          <div class="subttl">Refresh token <span class="status warn">opaque · single-use</span></div>
+          <p class="muted" style="font-size:12px;margin:0 0 6px">
+            No claims — just a random string. The server keeps only its <b>SHA-256 hash</b>, and every refresh
+            <b>rotates</b> it (the old one is spent).
+            <button class="ghost" onclick="toggleRaw('ref')">reveal / hide</button>
+          </p>
+          <div id="refRaw" class="tokraw">—</div>
+          <div class="subttl" style="margin-top:12px">Event log — the flow, narrated</div>
+          <div id="authLog" class="authlog"></div>
+        </div>
+      </div>
+      <div class="split" style="margin-top:14px">
+        <button class="secondary" onclick="simulateExpiry()">⏱️ Force access-token expiry, then retry</button>
+        <button class="secondary" onclick="manualRefresh()">🔄 Rotate refresh token now</button>
+      </div>
+      <p class="muted" style="font-size:11px;margin-top:8px">
+        “Force expiry” swaps your access token for a locally-forged <b>expired</b> one, then fires a request — reproducing
+        the real 15-minute mark so you can watch the <code>401</code> → rotate → retry dance in the log.
+      </p>
+    </div>
+
     <div>
       <div class="card">
         <h2 id="orderCardTitle">New order</h2>
@@ -159,6 +234,95 @@ function toast(title, body, kind){
   setTimeout(()=>el.remove(), 5000);
 }
 
+// ───────────────────────────────────────────────────────────────────────────
+// AUTH INSPECTOR — makes the (normally invisible) access/refresh flow visible.
+// ───────────────────────────────────────────────────────────────────────────
+const authEvents=[];                 // newest-first list of narrated auth steps
+const rawShown={acc:false, ref:false};
+
+function authLog(msg, kind){
+  authEvents.unshift({t:new Date(), msg, kind:kind||""});
+  if(authEvents.length>40) authEvents.length=40;
+  renderAuthLog();
+}
+function renderAuthLog(){
+  const el=document.getElementById("authLog"); if(!el) return;
+  el.innerHTML=authEvents.length
+    ? authEvents.map(e=>`<div class="ev ${e.kind}"><span class="evt">${e.t.toLocaleTimeString()}</span>${e.msg}</div>`).join("")
+    : `<div class="muted" style="padding:6px">No auth events yet — log in to start.</div>`;
+}
+
+// Decode a JWT payload (base64url) WITHOUT verifying it — checking the signature is the server's job, not ours.
+function decodeJwt(t){
+  try{
+    let s=t.split(".")[1].replace(/-/g,"+").replace(/_/g,"/");
+    s+="=".repeat((4-s.length%4)%4);
+    return JSON.parse(decodeURIComponent(escape(atob(s))));
+  }catch{ return null; }
+}
+function fmtDur(secs){
+  const m=Math.floor(Math.abs(secs)/60), s=Math.abs(secs)%60;
+  return (secs<0?"-":"")+m+":"+String(s).padStart(2,"0");
+}
+function mask(s){ return !s?"—":(s.length<=18? "•".repeat(s.length) : s.slice(0,10)+"…"+s.slice(-6)); }
+
+// Redraw the claims table + the two raw-token boxes from the current token/refreshToken.
+function renderTokens(){
+  const tb=document.querySelector("#claimsTable tbody"); if(!tb) return;
+  const p=token?decodeJwt(token):null;
+  const dateClaims={exp:1,iat:1,nbf:1};   // seconds-since-epoch → show as a readable local time
+  tb.innerHTML=!p
+    ? `<tr><td class="muted" colspan="2">No access token.</td></tr>`
+    : Object.entries(p).map(([k,v])=>{
+        const disp=dateClaims[k] ? new Date(v*1000).toLocaleString()+` <span class="muted">(${v})</span>` : v;
+        return `<tr><td class="ckey">${k}</td><td class="cval">${disp}</td></tr>`;
+      }).join("");
+  const acc=document.getElementById("accRaw"), ref=document.getElementById("refRaw");
+  if(acc) acc.textContent = token ? (rawShown.acc?token:mask(token)) : "—";
+  if(ref) ref.textContent = refreshToken ? (rawShown.ref?refreshToken:mask(refreshToken)) : "—";
+  updateExpBadge();
+  renderAuthLog();
+}
+function toggleRaw(which){
+  rawShown[which]=!rawShown[which];
+  const el=document.getElementById(which==="acc"?"accRaw":"refRaw");
+  const val=which==="acc"?token:refreshToken;
+  if(el) el.textContent = val ? (rawShown[which]?val:mask(val)) : "—";
+}
+// The live "expires in mm:ss" badge — the whole point of a short access token.
+function updateExpBadge(){
+  const badge=document.getElementById("accExp"); if(!badge) return;
+  const p=token?decodeJwt(token):null;
+  if(!p||!p.exp){ badge.textContent=""; badge.className="status"; return; }
+  const secs=Math.floor(p.exp - Date.now()/1000);
+  if(secs>0){ badge.textContent="valid · expires in "+fmtDur(secs); badge.className="status ok"; }
+  else{ badge.textContent="EXPIRED "+fmtDur(secs)+" ago — next request auto-rotates"; badge.className="status err"; }
+}
+setInterval(updateExpBadge, 1000);
+
+// Forge a locally-EXPIRED access token so the next request 401s — exactly what the real 15-min mark does.
+// (The signature is bogus, so the server rejects it and the console's silent-refresh path takes over.)
+function forgeExpiredToken(){
+  const enc=o=>btoa(JSON.stringify(o)).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_");
+  const now=Math.floor(Date.now()/1000);
+  const header=enc({alg:"HS256",typ:"JWT"});
+  const payload=enc({sub:(me&&me.username)||"user", role:(me&&me.role)||"", iat:now-16*60, exp:now-60, _demo:"locally-forged-expired"});
+  return header+"."+payload+".not-a-real-signature";
+}
+function simulateExpiry(){
+  if(!refreshToken){ toast("Nothing to expire","Log in first.","err"); return; }
+  token=forgeExpiredToken(); sessionStorage.setItem("erp_token",token);
+  authLog("⏱️ <b>Access token forced to expired</b> (simulating the 15-minute mark). Firing a request…","warn");
+  renderTokens();
+  loadOrders();   // any protected call now 401s → watch api() rotate + retry in the log
+}
+async function manualRefresh(){
+  if(!refreshToken){ toast("No refresh token","Log in first.","err"); return; }
+  const ok=await refresh();
+  if(!ok){ toast("Refresh failed","Refresh token expired or revoked — log in again.","err"); showLogin(); }
+  renderTokens();
+}
+
 async function api(method, path, body, _retried){
   const headers={"Content-Type":"application/json"};
   if(apiKey) headers["X-Api-Key"]=apiKey;   // app-level gate — required before auth even runs (§9b)
@@ -169,7 +333,11 @@ async function api(method, path, body, _retried){
   if(!res.ok){
     // The 15-min access token likely expired → rotate the refresh token once and retry transparently.
     if(res.status===401 && refreshToken && !_retried && !path.startsWith("/auth/")){
-      if(await refresh()) return api(method, path, body, true);
+      authLog("• <code>"+method+" "+path.split("?")[0]+"</code> → <b>401</b> — access token expired/invalid. Rotating…","warn");
+      if(await refresh()){
+        authLog("↩ Retrying <code>"+method+" "+path.split("?")[0]+"</code> with the fresh access token.","ok");
+        return api(method, path, body, true);
+      }
     }
     const detail = data && data.detail ? data.detail
       : (data && data.error ? data.error                          // e.g. "Missing or invalid API key." (§9b)
@@ -183,13 +351,21 @@ async function api(method, path, body, _retried){
 // Trade the refresh token for a new access+refresh pair (rotation). Returns true on success.
 async function refresh(){
   try{
+    authLog("↻ <code>POST /auth/refresh</code> — trading the refresh token for a new pair…");
     const res=await fetch(API+"/auth/refresh",{method:"POST",headers:{"Content-Type":"application/json","X-Api-Key":apiKey},body:JSON.stringify({refreshToken})});
-    if(!res.ok){ refreshToken=null; return false; }
+    if(!res.ok){
+      refreshToken=null;
+      authLog("✗ Refresh rejected ("+res.status+") — token expired, reused, or revoked. Log in again.","err");
+      renderTokens();
+      return false;
+    }
     const r=await res.json();
     token=r.accessToken; refreshToken=r.refreshToken;
     sessionStorage.setItem("erp_token",token); sessionStorage.setItem("erp_refresh",refreshToken);
+    authLog("✓ Rotated — old refresh token <b>spent</b>, new access + refresh issued (same family).","ok");
+    renderTokens();
     return true;
-  }catch{ return false; }
+  }catch{ authLog("✗ Refresh network error.","err"); return false; }
 }
 
 async function login(){
@@ -200,10 +376,32 @@ async function login(){
     const r=await api("POST","/auth/login",{username:document.getElementById("u").value, password:document.getElementById("p").value});
     token=r.accessToken; refreshToken=r.refreshToken; me={username:r.username, role:r.role};
     sessionStorage.setItem("erp_token",token); sessionStorage.setItem("erp_refresh",refreshToken); sessionStorage.setItem("erp_me",JSON.stringify(me));
+    authLog("● Logged in — server issued a fresh access token + refresh token (a new family opened).","ok");
     showApp(); toast("Welcome, "+me.username, me.role, "ok"); loadOrders();
   }catch(e){ toast("Login failed", e.detail, "err"); }
 }
+
+// Change (or reset) a password. Anonymous + credential-verifying, so it works even when the password has
+// expired — the current password IS the proof. Needs the X-Api-Key like every request (§9b).
+async function changePassword(){
+  const key=document.getElementById("apiKey").value.trim();
+  if(key){ apiKey=key; sessionStorage.setItem("erp_apikey",apiKey); }   // remember the app key for the call
+  const username=document.getElementById("cpUser").value.trim();
+  const currentPassword=document.getElementById("cpCur").value;
+  const newPassword=document.getElementById("cpNew").value;
+  if(!username||!currentPassword||!newPassword){ toast("Missing fields","Username, current and new password are all required.","err"); return; }
+  try{
+    await api("POST","/auth/change-password",{username,currentPassword,newPassword});   // 204 on success
+    authLog("🔑 <code>POST /auth/change-password</code> for <b>"+username+"</b> — stamp rotated; every old refresh token is now dead.","ok");
+    toast("Password changed","Logged out everywhere — sign in with the new password.","ok");
+    // Prefill sign-in with the new credentials so the next step is one click.
+    document.getElementById("u").value=username;
+    document.getElementById("p").value=newPassword;
+    document.getElementById("cpCur").value=""; document.getElementById("cpNew").value="";
+  }catch(e){ toast("Change failed ("+e.status+")", e.detail, "err"); }
+}
 async function logout(){
+  authLog("○ <code>POST /auth/logout</code> — revoking this whole token family.");
   try{ if(refreshToken) await fetch(API+"/auth/logout",{method:"POST",headers:{"Content-Type":"application/json","X-Api-Key":apiKey},body:JSON.stringify({refreshToken})}); }catch{}
   token=null; refreshToken=null; me=null; sessionStorage.clear();
   if(apiKey) sessionStorage.setItem("erp_apikey",apiKey);   // app key isn't a user credential — keep it
@@ -218,6 +416,7 @@ function showApp(){
   document.getElementById("userPill").textContent="👤 "+me.username;
   document.getElementById("rolePill").textContent=me.role;
   if(document.querySelectorAll("#linesEditor .lineRow").length===0) addLineRow();
+  renderTokens();
 }
 function showLogin(){
   document.getElementById("appView").classList.add("hidden");
@@ -335,7 +534,7 @@ async function viewDetail(id){
 }
 
 // boot
-if(token && me){ showApp(); loadOrders(); } else { showLogin(); }
+if(token && me){ authLog("Restored session from this browser tab (tokens were in sessionStorage)."); showApp(); loadOrders(); } else { showLogin(); }
 </script>
 </body>
 </html>

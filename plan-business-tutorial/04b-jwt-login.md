@@ -1,10 +1,11 @@
-# Phase 4 (Part 2 of 4) — Login, Validation & Authorization
+# Phase 4 (Part 2 of 5) — Login, Validation & Authorization
 
-> **Phase 4 is split into four parts** — do them in order:
+> **Phase 4 is split into five parts** — do them in order:
 > 1. [Passwords & access tokens](04-jwt-auth.md)
 > 2. **Login, validation & authorization** ← you are here
 > 3. [Refresh tokens & the API-key gate](04c-jwt-refresh-apikey.md)
-> 4. [Request flow, checkpoint & common mistakes](04d-jwt-wrap-up.md)
+> 4. [Changing & resetting a password](04d-jwt-change-password.md)
+> 5. [Request flow, checkpoint & common mistakes](04e-jwt-wrap-up.md)
 
 > In [Part 1](04-jwt-auth.md), we learned how passwords are securely hashed and how a JWT access token is
 > created.

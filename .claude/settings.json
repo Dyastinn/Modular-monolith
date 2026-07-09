@@ -12,7 +12,8 @@
       "Bash(grep -iv \"^\\\\s*//\")",
       "Bash(grep -n \"Create \\\\|\\\\.cs\\\\`\\\\|Auth/\\\\|Erp.Api\\\\|Erp.Shared.Infrastructure/\" 04b-jwt-login.md 04c-jwt-refresh-apikey.md)",
       "Skill(artifact-design)",
-      "Skill(artifact-design:*)"
+      "Skill(artifact-design:*)",
+      "Bash(xargs grep -il \"AppUser\\\\|RefreshToken\")"
     ]
   }
 }

@@ -225,10 +225,11 @@ as "in production." Here's the honest gap list, grouped, so you know what a real
 - [ ] **HTTPS enforced** (`app.UseHttpsRedirection()`); tokens must never travel over plain HTTP.
 - [ ] Password policy on user creation (length, complexity) — we only *check* passwords here, we didn't
       build user management.
-- [ ] A **change-password / reset endpoint** on top of `usp_AppUser_ChangePassword` — the proc and the
-      DB-driven 90-day policy exist ([Phase 4 §10](04c-jwt-refresh-apikey.md)); the `POST /auth/change-password`
-      slice that calls it (rotating the security stamp, forcing re-login everywhere) is exercise #7 below.
-      Without it, an expired password is a dead end.
+- [x] A **change-password / reset endpoint** — ✅ built in [Phase 4 Part 4](04d-jwt-change-password.md): a
+      `POST /auth/change-password` slice over `usp_AppUser_ChangePassword` that verifies the current password,
+      rotates the security stamp (re-login everywhere), and — being anonymous — doubles as the way back in from
+      an expired password. The remaining gap is the **forgot-password** path for users who *don't* know the old
+      password (an emailed, single-use, time-boxed reset token + rate limiting) — exercise #7 below.
 - [ ] Rate-limiting on `/auth/login` to slow brute-force attempts (ASP.NET Core has built-in rate
       limiting — no new dependency).
 - [x] **Refresh tokens** — ✅ built in [Phase 4 §10](04c-jwt-refresh-apikey.md): short (15 min) access tokens backed by
@@ -336,12 +337,14 @@ Stay within the stack; each reinforces a pattern:
    auth.)
 6. **Audit trail table** — a domain-event handler that writes every status change to an `OrderAudit`
    table. (Reinforces: after-commit event dispatch.)
-7. **Change-password endpoint** — a `POST /auth/change-password` slice (authenticated) that verifies the
-   current password, hashes the new one, and calls `usp_AppUser_ChangePassword`. Because that proc rotates the
-   `SecurityStamp` and pushes `PasswordExpiresUtc` 90 days out, the user is logged out of every device on their
-   next refresh and gets a fresh session lifetime — no extra code in the refresh path. (Reinforces: how a
-   single DB-driven policy change ripples through the auth system without new branching. See
-   [Phase 4 §10](04c-jwt-refresh-apikey.md).)
+7. **Forgot-password (emailed reset) flow** — the base build already ships `POST /auth/change-password`
+   ([Phase 4 Part 4](04d-jwt-change-password.md)), but it needs the *current* password. Add the path for users
+   who've forgotten it: a `POST /auth/forgot-password` that mints a single-use, time-boxed reset token (stored
+   as a **hash**, exactly like a refresh token — §10) and "sends" it (log it to the console — a real mail
+   channel is out of scope), and a `POST /auth/reset-password` that trades that token for a new password via
+   `usp_AppUser_ChangePassword`. Add rate-limiting on both. (Reinforces: the refresh-token hashing/expiry
+   pattern reused for a new secret; how the same DB proc backs both the *change* and *reset* paths. See
+   [Phase 4 Part 4](04d-jwt-change-password.md).)
 
 Try one *before* reading how; struggling first is where the learning is.
 

@@ -47,6 +47,8 @@ builder.Services.AddScoped<IValidator<LoginCommand>, LoginValidator>();
 builder.Services.AddScoped<IRequestHandler<RefreshCommand, LoginResult>, RefreshHandler>();
 builder.Services.AddScoped<IRequestHandler<LogoutCommand, Unit>, LogoutHandler>();
 builder.Services.AddScoped<IRequestHandler<LogoutAllCommand, Unit>, LogoutAllHandler>();
+builder.Services.AddScoped<IRequestHandler<ChangePasswordCommand, Unit>, ChangePasswordHandler>();
+builder.Services.AddScoped<IValidator<ChangePasswordCommand>, ChangePasswordValidator>();
 
 // JWT token validation (separate from token creation at login).
 var jwt = builder.Configuration.GetSection("Jwt");
