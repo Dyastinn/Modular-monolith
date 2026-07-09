@@ -46,6 +46,36 @@ Two defenses, and you need both:
 > the **ticket stub** you swap at the gate for tomorrow's wristband — and the gate tears the stub as it hands
 > you the new one. Present a stub that's already torn and security knows it was copied.
 
+### A family's whole life, in one trace
+
+The word **family** does a lot of work above, so pin it down before the code piles on: a *family* is **every
+refresh token descended from a single login**, tied together by one shared `FamilyId` (a `Guid` minted at
+login). Rotation keeps you *in* the same family — `A1` becomes `A2` becomes `A3`, all still `F1`. The **only**
+thing that ever starts a *new* family is a fresh login. So "revoke the family" means "end that one login
+session, every token it ever spawned," in a single call.
+
+Here's one family — Alice's `F1` — living a normal day, getting copied by a thief, and dying the moment the
+two copies diverge. Read the right column as the state of the `RefreshToken` rows *after* each event:
+
+| When | Event | Family `F1` after |
+|---|---|---|
+| Mon 09:00 | Alice logs in — a new family `F1` opens | `A1` live |
+| Mon 09:16 | Alice refreshes `A1` (mint `A2`, revoke `A1`) | `A1` spent → `A2` live |
+| Mon 09:20 | A thief copies Alice's *current* token `A2` | unchanged — **a copy is invisible to the server** |
+| Tue 08:05 | Alice refreshes `A2` first (mint `A3`, revoke `A2`) | `A2` spent → `A3` live |
+| Tue 10:30 | Thief replays `A2` — but it's **already spent** | reuse detected → **every row in `F1` revoked** |
+| Tue 10:31 | Alice's own `A3` refresh now fails too | family is dead; both must log in again |
+
+The thief is locked out; Alice simply logs in again with her **password** — which the thief never had. One
+poisoned session ends cleanly, and nothing else the user owns is touched.
+
+> 🔑 **You never catch the theft in the act — and you don't need to.** Nothing fires at 09:20 when the token is
+> copied; the server literally cannot see a copy being made. What springs the trap is **rotation forcing the
+> two copies to diverge**: whoever refreshes first (Alice, here) spends `A2` and leaves the other party holding
+> a stub that's now revoked. The next time that spent stub is presented — from *either* hand — the reuse check
+> at the top of the handler fires. Detection is *inevitable*, not clever: single-use tokens guarantee that two
+> copies can't both stay valid.
+
 ### The refresh-token service (generate, hash, expiry policy)
 
 `Erp.Shared.Infrastructure/Security/RefreshTokenService.cs` — the random token, its one-way hash, and the
@@ -310,7 +340,23 @@ above). No forward references — every piece was defined before it's used here.
 
 ### `POST /auth/refresh` — rotate, and catch the thief
 
-The heart of the feature. Read the guards top to bottom; each maps to a real attack or edge case. It's a
+The heart of the feature. Before the code, hold the *shape* in your head: the handler is a **ladder of
+guards**, and the **order is deliberate** — the cheap in-memory checks and the theft trap run *before* the
+database round-trip that reloads the user, so an attacker replaying a stolen token is turned away without
+costing you a user lookup. Read it top to bottom:
+
+1. **Look it up.** Hash the presented token, fetch its row. Unknown hash → reject (nothing to rotate).
+2. **Reuse check.** Is that row *already* revoked? Then a spent token is being replayed — burn the whole family
+   and stop. (This is the trap from the trace above.)
+3. **Expiry check.** Both clocks must still be in the future: the sliding window (`ExpiresUtc`) *and* the
+   password-expiry hard cap (`AbsoluteExpiresUtc`).
+4. **Reload the user.** A refresh is the moment to notice a role change or a deactivation since login.
+5. **Stamp check.** Does the user's current `SecurityStamp` still match the one baked into the token? A password
+   change since mint voids the whole lineage.
+6. **Rotate.** Mint a new token in the *same* family, revoke the old one, commit both together, hand back a
+   fresh access + refresh pair.
+
+Each rung maps to a real attack or edge case; the code below is just those six steps in order. It's a
 host/platform slice, so it lives in `Erp.Api/Auth/Refresh/`:
 
 ```csharp
