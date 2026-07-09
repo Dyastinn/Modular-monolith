@@ -170,7 +170,7 @@ a single endpoint. We'll replace that with a proper `GET /health` endpoint later
 
 This solution will grow to eight-plus projects, and the same package (say `Dapper`, once we add it) can get
 referenced from several `.csproj` files. If each pins its *own* version, they drift — `Dapper 2.1.35` here,
-`2.1.66` there — and you get subtle runtime mismatches and painful upgrades (edit ten files to bump one
+`2.1.79` there — and you get subtle runtime mismatches and painful upgrades (edit ten files to bump one
 version). **.NET's Central Package Management (CPM)** fixes this: you declare **each package version once**,
 in a single `Directory.Packages.props` at the solution root, and each project references the package
 **without a version**. We set it up now, at solution-setup time, and it stays **one line per package** — we
@@ -216,7 +216,7 @@ Most projects should stop here. They automatically inherit the version defined i
 
 ```xml
 <!-- Directory.Packages.props -->
-<PackageVersion Include="Dapper" Version="2.1.66" />
+<PackageVersion Include="Dapper" Version="2.1.79" />
 ```
 
 ```xml
@@ -227,7 +227,7 @@ Most projects should stop here. They automatically inherit the version defined i
 </ItemGroup>
 ```
 
-The rest of the solution uses **Dapper 2.1.66**, while `LegacyTool` alone uses **2.1.35**.
+The rest of the solution uses **Dapper 2.1.79**, while `LegacyTool` alone uses **2.1.35**.
 
 Now install the package for this phase:
 
