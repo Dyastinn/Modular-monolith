@@ -444,9 +444,113 @@ public sealed class RefreshHandler(
 > the theft and kills the family. You don't have to catch the theft in the act; you only need the two copies to
 > diverge, which rotation guarantees.
 
+## Practice
+
+Before continuing, implement the endpoint yourself.
+
+Create the following file:
+
+```text
+Erp.Api/
+└── Auth/
+    └── Refresh/
+        └── RefreshEndpoint.cs
+```
+
+The endpoint should expose:
+
+```http
+POST /auth/refresh
+```
+
+Without looking ahead, try to build it using what you've already learned.
+
+Your endpoint should:
+
+- Accept a refresh token from the request body.
+- Create a `RefreshCommand`.
+- Send the command using `IMediator`.
+- Return the `LoginResult` from the handler.
+- Return an appropriate `401 Unauthorized` response when the refresh fails.
+
+You already have everything needed:
+
+- `RefreshCommand`
+- `RefreshHandler`
+- `LoginResult`
+- `IMediator`
+- Carter endpoint registration
+
+The request flow should look like this:
+
+```text
+POST /auth/refresh
+        │
+        ▼
+RefreshEndpoint
+        │
+        ▼
+RefreshCommand
+        │
+        ▼
+RefreshHandler
+        │
+        ▼
+Validate refresh token
+Detect token reuse
+Check expiry
+Verify security stamp
+Rotate refresh token
+Generate new access token
+        │
+        ▼
+Return LoginResult
+```
+
+If you can implement `RefreshEndpoint.cs` without referring to the next section, you've successfully connected the API layer to your Vertical Slice using CQRS and the Mediator pattern.
+
+## Answer Key
+
+Your implementation should look similar to the following:
+
+```csharp
+using Carter;
+using static Erp.Shared.Messaging.Contracts;
+
+namespace Erp.Api.Auth.Refresh;
+
+public sealed class RefreshEndPoint : ICarterModule
+{
+    public void AddRoutes(IEndpointRouteBuilder app) =>
+        app.MapPost("/auth/refresh",
+            async (RefreshCommand cmd, ISender sender, CancellationToken ct) =>
+            {
+                var result = await sender.Send(cmd, ct);
+                return Results.Ok(result);
+            })
+        .AllowAnonymous();   // Refreshing an expired access token is impossible if authorization is required.
+}
+```
+
+### Why is `AllowAnonymous()` required?
+
+A user's access token may already be expired when they call the refresh endpoint. If the endpoint required authentication, ASP.NET Core would reject the request before your `RefreshHandler` ever had a chance to validate the refresh token.
+
+Instead, the refresh token itself acts as the credential. The handler performs all of the security checks:
+
+- Verifies the refresh token exists.
+- Detects token reuse.
+- Checks sliding and absolute expiration.
+- Ensures the account is still active.
+- Verifies the user's security stamp hasn't changed.
+- Rotates the refresh token.
+- Issues a brand-new access token.
+
+In other words, **`/auth/refresh` authenticates using the refresh token, not the access token**, which is why the endpoint must allow anonymous requests.
+
 ### The two password-driven safeguards, in one place
 
-The refresh handler now enforces two rules that both trace back to the **database's password policy**, not to
+The refresh handler enforces two rules that both trace back to the **database's password policy**, not to
 anything configured in the app. They're easy to blur together, so here they are side by side:
 
 | Safeguard | What it checks | What triggers it | Effect |
