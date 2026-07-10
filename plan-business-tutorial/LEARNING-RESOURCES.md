@@ -116,7 +116,7 @@ Being stuck is part of the job — but *staying* stuck alone isn't productive. I
 1. Re-read the relevant phase section slowly, out loud.
 2. Check the [GLOSSARY.md](GLOSSARY.md) and [00a-FOUNDATIONS.md](00a-FOUNDATIONS.md) for any word that's
    fuzzy.
-3. Read the phase's **Answer Key** — sometimes seeing the answer explains the question.
+3. Try the phase's **Check Yourself** questions — sometimes attempting the answer explains the question.
 4. Search the *exact error message* (copy-paste it into a search engine). Someone has hit it before.
 5. Ask a specific question. "It doesn't work" is unanswerable; "I expected X, I got Y, here's my code"
    gets help fast.

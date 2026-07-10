@@ -2,9 +2,8 @@
 
 > Self-contained, including creating the second module. Money is in **Philippine Pesos (₱)**.
 >
-> 📎 *Optional* slow-motion version of the concurrency lesson, with timelines:
-> [beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md). This is the phase
-> where the whole architecture earns its keep — the one bug clean C# *cannot* fix on its own.
+> This is the phase where the whole architecture earns its keep — it's the one bug that clean C# *cannot*
+> fix on its own. Take it slowly.
 
 ---
 
@@ -25,8 +24,7 @@
 
 ## 2. Why it's designed this way
 
-This phase is the concrete payoff of "policy in the domain, atomicity in SQL"
-([beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md)). Three different
+This phase is the concrete payoff of "policy in the domain, atomicity in SQL." Three different
 responsibilities, three homes, no overlap:
 
 - **Domain** decides *whether* submit is a legal transition and the order is non-empty (`order.Submit()`).
@@ -45,8 +43,8 @@ responsibilities, three homes, no overlap:
 
 Reserving stock is **Inventory's** job, not Sales'. So Inventory is its own module
 (`Erp.Modules.Inventory`) with its own `inventory` schema, and Sales must *not* reference it or touch
-`inventory.*` directly. The only channel is a **published contract** in the shared kernel — the modular
-monolith's core move ([beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md)):
+`inventory.*` directly. The only channel is a **published contract** in the shared kernel. This is the
+modular monolith's core move: the *absence* of a project reference is what makes the wall real.
 
 > 📦 **Create the second module now (Phase 1 deliberately deferred it — here's where we need it):**
 > ```bash
@@ -87,7 +85,7 @@ Sales depends only on the interface, so neither module references the other. The
 > **saga** (reserve as a separate call, and *release* to compensate if the rest fails). So extraction reshapes
 > *this contract* and adds saga logic — it does **not** force you to untangle Sales from Inventory's tables,
 > because those were never shared. The wall still buys you most of the payoff; just don't picture the swap as
-> "same interface, zero changes." (Full version: [beginner Phase 9](../plan-beginner-friendly/10-phase-9-modularity.md).)
+> "same interface, zero changes." [Phase 13](13-wrap-up-checklist.md) revisits what extraction really costs.
 
 ```csharp
 // Modules/Inventory/Infrastructure/StockReservationService.cs  (Inventory owns this)
@@ -115,10 +113,9 @@ public sealed class StockReservationService : IStockReservation
 The safety is entirely in that one SQL `UPDATE ... WHERE (OnHand - Reserved) >= @Qty` statement. The C#
 just reads whether it reported success.
 
-> 📎 **Why the single-statement `UPDATE` is safe when a C# read-then-write isn't** — the moment-by-moment
-> two-request timeline is in
-> [beginner Phase 5 §3](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md). If you only
-> reread one thing before this phase, reread that. It's *the* idea.
+> 🔑 **Why the single-statement `UPDATE` is safe when a C# read-then-write isn't.** The two-request timeline
+> in §5 below walks through it moment by moment. If you only reread one thing in this tutorial, reread that.
+> It's *the* idea.
 
 ## 4. The Submit command and handler
 

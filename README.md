@@ -10,26 +10,24 @@ those are the traps this project deliberately avoids.
 
 ## Where to start
 
-**Start with [`plan-business-tutorial/`](plan-business-tutorial/) — this is the main course.** Two companion
-guides teach the *same* architecture with supporting jobs. All three share phase numbers, so you can move
-between them:
+**[`plan-business-tutorial/`](plan-business-tutorial/) is the course.** Open
+[00-START-HERE.md](plan-business-tutorial/00-START-HERE.md) and work through the phases in order.
 
-- **[`plan-business-tutorial/`](plan-business-tutorial/) — Build it for real (start here).** Roll up your
-  sleeves and implement the full, secured Sales Order module end-to-end — JWT, roles, credit limits,
-  inventory reservation, concurrency — applying the concepts **with your own hands.** It's **self-contained**:
-  every step you need is in this folder, and it explains each concept as it builds it.
-- **[`plan-beginner-friendly/`](plan-beginner-friendly/) — Understand it (optional companion).** A
-  lightweight, concept-first, plain-English read: *what problem* each pattern solves and *how* the pieces
-  fit, with analogies and answer keys. Perfect for a commute — you **mentally build** the system before (or
-  alongside) writing any code. Reach for it when a concept in the tutorial feels shaky, or read it first if
-  you like the *why* before the *how*. (Also written to help a developer coming from **ASP.NET WebForms**.)
-- **[`plan-Opus/`](plan-Opus/) — Let AI build it.** A terse, unambiguous, **AI-ready spec.** Hand a phase to
-  a coding agent (e.g. Claude Code) and have it implement exactly that phase — so you **see the architecture
-  come together first-hand** and review real code against the plan.
+You build the full, secured Sales Order module end-to-end — JWT, roles, credit limits, inventory
+reservation, concurrency — with your own hands. Every step you need is in that folder, and every concept is
+explained where it's first used, starting from the problem it solves rather than the solution. Nothing is
+assumed about what you already know, and no phase sends you elsewhere to fill a gap.
 
-> **Suggested path:** work through `plan-business-tutorial` end-to-end — that's the course. Keep
-> `plan-beginner-friendly` open as a companion for the *why* behind anything that feels abstract, and use
-> `plan-Opus` when you'd rather watch an AI implement a phase and review its code against the plan.
+Three reference files sit alongside the phases:
+
+| File | What it's for |
+|---|---|
+| [00a-FOUNDATIONS.md](plan-business-tutorial/00a-FOUNDATIONS.md) | The C# features the course leans on (records, `async`/`await`, interfaces, generics). Read it first if C# itself is new. |
+| [GLOSSARY.md](plan-business-tutorial/GLOSSARY.md) | Every term the course uses, in plain English. |
+| [LEARNING-RESOURCES.md](plan-business-tutorial/LEARNING-RESOURCES.md) | Where to go deeper, and how to get unstuck. |
+
+The tutorial is also written for someone coming from **ASP.NET WebForms** — 🧭 markers throughout translate
+each new idea back to `.aspx.vb`, `[WebMethod]`, and `SqlCommand`.
 
 ## Solution layout
 
@@ -112,5 +110,6 @@ Seed logins (all password `Password123!`): **`rep`** (SalesRep), **`manager`** (
 dotnet test        # 14 domain unit tests + 5 integration/e2e tests (uses a separate Erp_Test database)
 ```
 
-> The three `plan-*` folders remain the *teaching* material; `course-validation/business/` is the finished
-> business-tutorial code you can run and read alongside them.
+> [`plan-business-tutorial/`](plan-business-tutorial/) is the *teaching* material;
+> `course-validation/business/` is the finished code you can run and read alongside it. Build it yourself
+> first — the reference build is there to check your work, not to replace the typing.

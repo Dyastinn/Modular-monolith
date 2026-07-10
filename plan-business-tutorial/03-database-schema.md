@@ -3,10 +3,10 @@
 > Self-contained: this phase explains everything it uses. All monetary values are in **Philippine Pesos
 > (₱)** — this ERP is for a company that bills in PHP.
 >
-> 📎 *Optional* deeper reading on two ideas this phase leans on — the "integrity in SQL, policy in the
-> domain" split ([beginner Phase 4 §6](../plan-beginner-friendly/05-phase-4-create-order.md)) and "ordered
-> SQL scripts instead of EF migrations" ([beginner Phase 8 §6](../plan-beginner-friendly/09-phase-8-testing.md)).
-> Both are explained inline below; the links are just the slow version.
+> Two ideas run underneath this whole phase, and both are explained in full where we first need them: the
+> **"integrity in SQL, policy in the domain"** split (a `CHECK` constraint and a business rule are not the
+> same thing, and confusing them is a classic mistake), and **ordered SQL scripts instead of EF migrations**
+> (why we version the schema by hand, in numbered files).
 
 ---
 
@@ -275,10 +275,11 @@ CREATE INDEX IX_SalesOrder_CustomerId  ON sales.SalesOrder(CustomerId);
 CREATE INDEX IX_SalesOrder_Status      ON sales.SalesOrder(Status);
 ```
 
-Notes a beginner should catch:
-- **`RowVersion ROWVERSION`** — an auto-changing stamp SQL Server bumps on every update. It powers
-  optimistic concurrency (["don't overwrite someone else's change"](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md))
-  in [Phase 8](08-approval-cancellation.md).
+Details worth catching here:
+- **`RowVersion ROWVERSION`** — an auto-changing stamp SQL Server bumps on every update to the row. It
+  powers *optimistic concurrency*: when you save, you say "update this row **only if** its stamp is still
+  the one I read," so you can never silently overwrite a change someone else made in between. We build that
+  guard in [Phase 8](08-approval-cancellation.md).
 - **`UnitPrice` is copied onto the line.** We snapshot the price *at order time* so that later price
   changes don't silently alter historical orders. Real ERPs always do this.
 - **`Status` stored as `INT`** — the C# enum maps to these numbers (0–4). The `CHECK` keeps it in range.
@@ -359,10 +360,12 @@ BEGIN
 END
 ```
 
-> 📎 *Why* this single-statement form is safe when a C# check-then-act isn't — the moment-by-moment
-> timeline is in [beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md). This
-> proc is that lesson, in production form. [Phase 7](07-submit-reserve-concurrency.md) calls it inside a
-> transaction across all the order's lines.
+> 🔑 **Why one statement, and not a check followed by an update?** If C# reads "8 available," decides that's
+> enough, and *then* issues the update, another request can slip between the read and the write and reserve
+> the same units — both callers saw 8, both thought they were safe, and stock goes negative. Here the `WHERE`
+> clause does the checking *inside the same statement* that does the writing, so the database can't let
+> anyone interleave. [Phase 7](07-submit-reserve-concurrency.md) walks through that race step by step, and
+> calls this proc inside a transaction across all of the order's lines.
 
 ### The version-checked status update (optimistic concurrency)
 
@@ -616,8 +619,8 @@ sqlcmd -S "(localdb)\MSSQLLocalDB" -d Erp -i src/Modules/Sales/Infrastructure/Sq
 ```
 
 The *same* scripts set up the test database in [Phase 12](12-testing.md). One source of truth per module
-for schema, procs, seed — used by dev, test, and prod. That's the "migrations without EF" approach from
-[beginner Phase 8](../plan-beginner-friendly/09-phase-8-testing.md), and it's genuinely production-grade.
+for schema, procs, seed — used by dev, test, and prod. That's the "migrations without EF" approach: numbered
+scripts, applied in order, each one run exactly once. It's genuinely production-grade.
 
 ### A concrete runner (DbUp) so scripts apply once, in order, and are tracked
 

@@ -54,8 +54,8 @@ KEY=web-live-abc123                # ← replace with a key you actually configu
 
 Three prerequisites, or the steps below won't behave:
 
-- **Add `.RequireAuthorization()` to the `/sales/ping` endpoint** from [Phase 2](02-first-slice.md) — that's
-  the protected endpoint Step 2 leans on.
+- **Add `.RequireAuthorization()` to the `/sales/ping` endpoint** from [Phase 2](02-mediator-own-vs-free.md) —
+  that's the protected endpoint Step 2 leans on.
 - **Every command carries `-H "X-Api-Key: $KEY"`** — the §11 gate runs *first*, so a request without it never
   even reaches login (that's Step 0's whole point).
 - The commands capture tokens with **`jq`**. If you don't have it, drop the `jq` lines and just copy the

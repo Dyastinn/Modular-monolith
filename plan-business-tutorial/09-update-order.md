@@ -1,8 +1,9 @@
 # Phase 9 — Updating a Draft Order's Lines
 
 > Self-contained: a familiar variation on the create slice ([Phase 6](06-create-order.md)), which you've
-> already built. Money is in **Philippine Pesos (₱)**. *Optional* deeper reading on why the repeated shape
-> is a maintainability win: [beginner Phase 7](../plan-beginner-friendly/08-phase-7-remaining-slices.md).
+> already built. Money is in **Philippine Pesos (₱)**. If this phase feels repetitive, that's the point —
+> the repeated shape is the maintainability win, and by the end you'll be able to place a new feature
+> without thinking about where its pieces go.
 
 ---
 

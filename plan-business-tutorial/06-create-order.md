@@ -1,9 +1,6 @@
 # Phase 6 — Create Sales Order (End to End, With Real Checks)
 
 > Self-contained: every rule and every layer is explained here. Money is in **Philippine Pesos (₱)**.
->
-> 📎 *Optional* slow version of "the anatomy of a command slice":
-> [beginner Phase 4](../plan-beginner-friendly/05-phase-4-create-order.md). The reasoning is inline below.
 
 ---
 
@@ -27,11 +24,14 @@ This is the template every other command copies. Study it.
 
 ## 2. Why it's designed this way
 
-We're combining three ideas the earlier plans taught, now with teeth:
+Three ideas come together in this slice, and every later feature reuses the same three:
 
-- **Two kinds of validation** ([beginner Phase 4 §2](../plan-beginner-friendly/05-phase-4-create-order.md)):
-  *input validation* ("is customerId present, are quantities positive?") in the validator; *business
-  rules* ("is the customer blocked, over credit limit?") in the domain.
+- **Two kinds of validation, and they are not the same job.** *Input validation* asks "is this request even
+  well-formed — is `customerId` present, are the quantities positive?" and lives in the validator. *Business
+  rules* ask "is this operation allowed — is the customer blocked, are they over their credit limit?" and
+  live in the domain. Mixing them is the most common way this architecture rots: a business rule in a
+  validator can't be unit-tested with the entity it's about, and it silently stops being enforced the moment
+  some other slice writes the same data.
 - **Handlers orchestrate, the domain decides.** The handler loads data and calls domain methods; it
   holds no policy `if`s.
 - **Explicit transaction** so the boundary is visible while learning.
@@ -106,8 +106,8 @@ public sealed record ItemForOrder(long ItemId, bool IsActive, Money UnitPrice, I
 > ❓ **You might be wondering: "Why does the interface live in Application, but the implementation in
 > Infrastructure?"** The dependency rule. The handler (Application) needs *a way to load a customer*, so
 > Application *declares the interface*. The actual Dapper/SQL code (Infrastructure) *implements* it. The
-> handler depends on the interface, never on SQL. Same pattern as everything else —
-> [beginner Phase 4 §5](../plan-beginner-friendly/05-phase-4-create-order.md).
+> handler depends on the interface, never on SQL. The rule of thumb: **the layer that needs a capability
+> owns the interface for it; the layer that can talk to the outside world implements it.**
 
 ## 5. The handler — where the business rules come together
 

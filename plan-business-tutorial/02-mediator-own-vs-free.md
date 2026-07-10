@@ -2,10 +2,6 @@
 
 > Everything you need is here — we explain *what a mediator is*, weigh two ways to get one, and build
 > whichever you pick.
->
-> 📎 *Optional* deeper dive on the "post office" idea, with a U-shaped diagram:
-> [beginner Phase 2](../plan-beginner-friendly/03-phase-2-mediator.md). Nice if the concept is brand new,
-> but this phase stands on its own.
 
 ---
 
@@ -305,8 +301,6 @@ public interface ISender
     Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken ct = default);
 }
 ```
-
-> 📎 Line-by-line explanation of each of these interfaces is also in [beginner Phase 2 §4a](../plan-beginner-friendly/03-phase-2-mediator.md).
 
 > ❓ **"Why so many interfaces for something simple?"** Each interface is a *seam*—a clean place where two
 > parts meet without knowing each other's implementation. `ISender` lets endpoints stay ignorant of
@@ -1000,9 +994,11 @@ Endpoint: sender.Send(new CreateSalesOrderCommand(...))
    → result (the new order id) returns to the endpoint
 ```
 
-That "way in / way out" nesting is the one genuinely tricky idea. If it's fuzzy, the
-[beginner Phase 2](../plan-beginner-friendly/03-phase-2-mediator.md) walkthrough draws it as a U-shaped
-diagram — an *optional* deeper look.
+That "way in / way out" nesting is the one genuinely tricky idea, so read the trace above once more with
+this shape in mind: it goes **down** the left side of a **U** (each behavior does its "before" work and
+calls `next`), touches the handler at the bottom, then comes back **up** the right side (each behavior
+resumes *after* its `next` returned). A behavior therefore gets two turns — once on the way in, once on the
+way out — and the one registered *first* is the outermost, so it's first in and last out.
 
 <!-- ## 8. Why each component exists
 
@@ -1026,8 +1022,8 @@ diagram — an *optional* deeper look.
 - ❌ **Endpoints newing-up handlers directly** (`new CreateSalesOrderHandler(...)`). ✅ Always go through
   `sender.Send(...)`; that's the whole point.
 - ✅ **Best practice: code to the interface, decide the engine later.** Because we only use `ISender` and
-  `IRequestHandler`, choosing Option A vs B — or switching — is a *localized* change. That's exactly the
-  benefit [beginner Phase 9](../plan-beginner-friendly/10-phase-9-modularity.md) promised.
+  `IRequestHandler`, choosing Option A vs B — or switching — is a *localized* change. Nothing that *uses*
+  the mediator has to know which engine is behind it.
 - ✅ **Best practice: don't over-reach.** A mediator is worth it here because we have many use cases and
   real cross-cutting concerns. In a 3-endpoint app it would be ceremony — and knowing *that* is part of
   being senior.

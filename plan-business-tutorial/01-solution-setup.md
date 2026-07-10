@@ -2,10 +2,6 @@
 
 > Everything you need to build the solution is in this phase — the exact `dotnet` commands included. You
 > never have to leave this tutorial to get set up.
->
-> 📎 *Optional* slow version of the *why* behind this structure:
-> [beginner Phase 1](../plan-beginner-friendly/02-phase-1-skeleton.md). Skip it unless you want the
-> analogy-rich take — nothing here depends on reading it.
 
 ---
 
@@ -159,6 +155,65 @@ add events later; it's a harmless edge, since `BuildingBlocks` depends on nothin
 
 *(Authentication gets its own home under the host later, when we add login in Phase 4 — the business modules
 stay auth-agnostic. We don't create that folder now.)*
+
+## 4b. Fill in the building blocks (four small types the whole course leans on)
+
+`Erp.Shared.BuildingBlocks` is an empty class library right now. Four types go in it, and every module's
+domain will inherit from or throw them. They're short, so we write all four in one file — and because they
+depend on nothing, this project stays the bottom of the dependency graph.
+
+Delete the generated `Class1.cs` and create `BuildingBlocks.cs`:
+
+```csharp
+// src/Shared/Erp.Shared.BuildingBlocks/BuildingBlocks.cs
+namespace Erp.Shared.BuildingBlocks;
+
+public abstract class Entity<TId> where TId : struct
+{
+    public TId Id { get; protected set; }
+}
+
+public abstract class AggregateRoot<TId> : Entity<TId> where TId : struct
+{
+    private readonly List<IDomainEvent> _events = new();
+    public IReadOnlyList<IDomainEvent> DomainEvents => _events;
+    protected void Raise(IDomainEvent e) => _events.Add(e);
+    public void ClearEvents() => _events.Clear();
+}
+
+public interface IDomainEvent { }
+
+public class DomainException(string message) : Exception(message);
+```
+
+Read it slowly — every line pays off later:
+
+- **`Entity<TId>`** gives anything with an identity a typed `Id`. The setter is `protected`, so only the
+  entity itself may assign it: nothing outside can quietly reassign an order's identity. The `TId` is generic
+  because in [Phase 5](05-domain-model.md) we give each entity its *own* ID type (`SalesOrderId`,
+  `CustomerId`) rather than sharing a bare `long`.
+- **`where TId : struct`** says the ID must be a value type. Our ID types will be `readonly record struct`s.
+  ⚠️ Note that the constraint is repeated on `AggregateRoot<TId>` — C# does **not** inherit a constraint from
+  the base class, and leaving it off the derived class is a compiler error (`CS0453`). This trips people up
+  the first time.
+- **`AggregateRoot<TId>`** is an entity that also collects **domain events** — a running list of "things that
+  happened" (`SalesOrderSubmitted`, `SalesOrderApproved`). `Raise` is `protected` so *only the aggregate*
+  announces its own events; `DomainEvents` is exposed as `IReadOnlyList` so callers can read them but never
+  add one from outside. [Phase 8](08-approval-cancellation.md) is where we dispatch them, after the
+  transaction commits.
+- **`IDomainEvent`** is an empty **marker interface** — it holds no members, it just lets the compiler (and
+  our dispatcher) recognise "this record is a domain event."
+- **`DomainException`** is what the domain throws when a *business rule* is broken ("this customer is
+  blocked"). Giving it its own type is what later lets [Phase 11](11-cross-cutting.md) turn exactly these
+  into an HTTP **400**, while a genuine bug still surfaces as a **500**.
+
+> ❓ **"An `AggregateRoot`? Isn't that just an entity?"** An *aggregate root* is the one entity in a cluster
+> that the outside world is allowed to touch. Nothing loads or edits a `SalesOrderLine` directly — you go
+> through the `SalesOrder` that owns it. That's what makes it possible for the order to guarantee its own
+> rules (like "lines can only change on a draft"), because there's no back door around it. If this feels
+> abstract now, it becomes concrete in [Phase 5](05-domain-model.md); you don't need to fully grasp it yet.
+
+Everything above compiles on its own — no other project, no packages. That's the point of putting it here.
 
 ## 5. NuGet packages (install what this phase needs)
 

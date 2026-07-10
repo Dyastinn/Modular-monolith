@@ -3,10 +3,6 @@
 > Self-contained: this phase completes the pipeline the earlier phases were designed around — it's where the
 > `ValidationBehavior`, `LoggingBehavior`, and global error handling you kept seeing "arrives in Phase 11"
 > notes for actually get built and wired. Money is in **Philippine Pesos (₱)**.
->
-> 📎 *Optional* deeper reading: pipeline behaviors
-> ([beginner Phase 2](../plan-beginner-friendly/03-phase-2-mediator.md)) and the validation split
-> ([beginner Phase 4](../plan-beginner-friendly/05-phase-4-create-order.md)).
 
 ---
 

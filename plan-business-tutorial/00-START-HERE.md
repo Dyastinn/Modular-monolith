@@ -8,28 +8,21 @@
 
 ---
 
-## This is the main course — and it stands on its own
+## This is the whole course, and it stands on its own
 
-This folder is **the course**: you build the whole module yourself, and every step you need lives here.
-It doesn't send you to another folder to create the solution or to understand a concept before you can
-continue — when we introduce a mediator, a value object, an atomic SQL guard, or a validation behavior, we
-explain it right where we use it and then show it playing out in a real business feature.
+This folder is the course. You build the whole module yourself, and every step you need lives here. Nothing
+is left as an exercise for you to look up elsewhere, and nothing assumes you already know the pattern being
+introduced. When we reach a mediator, a value object, an atomic SQL guard, or a validation behavior, we
+explain what problem it solves and why the obvious alternative hurts — *before* we write it — and then show
+it doing real work inside a real business feature.
 
-Two **optional** companions cover the *same* architecture from other angles. You never *need* them, but
-they're there when you want a different view:
+Two reference files sit alongside the phases. Dip into them whenever you like; neither is a prerequisite:
 
-- [`../plan-beginner-friendly/`](../plan-beginner-friendly/) — **Understand it (optional, theory-first).**
-  A lightweight, analogy-rich read on *what problem* each pattern solves — mediator, domain, CQRS, vertical
-  slices, testing. Great on a commute, and the place to go if a concept here feels abstract and you want the
-  slow version. New to C# itself? [00a-FOUNDATIONS.md](../plan-beginner-friendly/00a-FOUNDATIONS.md) there is
-  a gentle on-ramp.
-- [`../plan-Opus/`](../plan-Opus/) — **Let AI build it (optional).** The terse, AI-ready spec of the same
-  phases. If you'd rather *watch* a phase get built than type it, hand it to a coding agent (e.g. Claude
-  Code), then compare the result to what you'd have written here.
-
-> 📎 Whenever you see a 📎 link like [beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md),
-> that's a purely **optional** "go here if you want the slow, analogy-rich version of this idea" — never a
-> step you must complete first.
+- [GLOSSARY.md](GLOSSARY.md) — every term this course uses, in plain English. If a word in a phase feels
+  slippery, it's defined here.
+- [00a-FOUNDATIONS.md](00a-FOUNDATIONS.md) — a gentle on-ramp to the C# features we lean on (records,
+  `async`/`await`, interfaces, generics). Read it first if C# itself is new to you.
+- [LEARNING-RESOURCES.md](LEARNING-RESOURCES.md) — where to go deeper on anything here, and how to study it.
 
 ---
 
@@ -60,16 +53,17 @@ can fulfill it. By the end you'll have secured HTTP endpoints for:
 
 ## The business rules we'll enforce
 
-This is the whole point — none of it is CRUD. Each rule is a decision about *where the logic lives*, which
-is the skill the earlier plans trained. You'll learn exactly where each one belongs:
+This is the whole point — none of it is CRUD. Each rule is a decision about *where the logic lives*, and
+learning to place a rule correctly is the single skill this course exists to teach. You'll learn exactly
+where each one belongs, and why the other plausible homes for it are wrong:
 
 1. **JWT authentication** — you must log in to touch any sales-order endpoint.
 2. **Role-based authorization** — only a **SalesManager** can approve orders.
 3. **Customer blocking** — you cannot create or submit an order for a *blocked* customer.
 4. **Credit limit** — an order can't push the customer's balance past their credit limit.
 5. **Inventory availability & reservation** — you can only submit if stock is available, and submitting
-   *atomically reserves* it so two salespeople can't reserve the same last unit (the concurrency lesson
-   from [beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md)).
+   *atomically reserves* it so two salespeople can't reserve the same last unit. This is the concurrency
+   lesson, and we build up to it slowly in [Phase 7](07-submit-reserve-concurrency.md).
 6. **Item category restrictions** — some categories (e.g. "Controlled") are limited to certain roles,
    and each category caps how many units can go on a single order.
 7. **Approval workflow** — every submitted order goes to a manager for approval before it becomes
@@ -82,9 +76,12 @@ is the skill the earlier plans trained. You'll learn exactly where each one belo
 9. **Transaction rollback on failure** — every multi-step write (reserve 5 lines + change status) is
    wrapped in a SQL transaction, so a failure halfway through undoes *everything*.
 
-## The exact stack (identical to the earlier plans — nothing new)
+## The exact stack
 
-| Concern | Choice | Why (see earlier plans) |
+Every choice below is fixed for the whole course, and each one gets explained properly in the phase that
+first needs it. You don't have to understand this table yet — it's here so you know what you're walking into.
+
+| Concern | Choice | Why |
 |---|---|---|
 | Runtime / language | **.NET 10**, C# | Current LTS. |
 | Architecture | **Modular Monolith + Vertical Slice Architecture** | Split by capability (module), then by feature — not by technical layer. |
@@ -99,9 +96,10 @@ is the skill the earlier plans trained. You'll learn exactly where each one belo
 | Transactions | **Explicit SQL transactions** in handlers | Boundary stays visible while learning. |
 
 > 🚫 **Deliberately NOT used** (and we never sneak them in): Clean Architecture's four-layer project split,
-> Docker, Redis, EF Core, RabbitMQ, MassTransit, microservices, or any library the earlier plans didn't
-> cover. If you ever feel tempted to reach for one, that temptation is a topic for *after* this tutorial —
-> not during it.
+> Docker, Redis, EF Core, RabbitMQ, MassTransit, microservices. Every one of them is a reasonable tool in
+> the right situation, and [Phase 13](13-wrap-up-checklist.md) explains exactly when each starts to earn its
+> keep. Until then, if you feel tempted to reach for one, that temptation is a topic for *after* this
+> tutorial — not during it.
 
 > 🧭 **Coming from WebForms (`.aspx.vb` + jQuery AJAX / `[WebMethod]`)?** This tutorial is written for you.
 > At each step we contrast the new way with what you already know: a `[WebMethod]` becomes a **Carter
@@ -111,53 +109,53 @@ is the skill the earlier plans trained. You'll learn exactly where each one belo
 
 ## The roadmap (each file is one phase)
 
-Everything below is self-contained — the last column is just **optional** companion reading for anyone who
-wants the slow, analogy-rich take on a concept, never a prerequisite.
+Each phase builds directly on the one before it, and each ends with something you can run and see working.
 
-| Phase | File | What you'll build | ⏱️ Est. time | Optional deeper reading |
-|---|---|---|---|---|
-| 0 | **this file** | The plan and the business rules | ~20 min (read) | — |
-| 1 | [01-solution-setup.md](01-solution-setup.md) | Projects, folders, packages, config | ~1 hr | [beginner Phase 1](../plan-beginner-friendly/02-phase-1-skeleton.md) |
-| 2 | [02-mediator-own-vs-free.md](02-mediator-own-vs-free.md) | Your own mediator **vs** the free GitHub one — decide | ~1 hr | [beginner Phase 2](../plan-beginner-friendly/03-phase-2-mediator.md) |
-| 3 | [03-database-schema.md](03-database-schema.md) | Tables, stored procedures, seed data | ~1–1.5 hr | [beginner Phase 4 §6](../plan-beginner-friendly/05-phase-4-create-order.md) |
-| 3b | [03b-data-access.md](03b-data-access.md) | Connection factory + ADO.NET transactions | ~30–45 min | [beginner Phase 4](../plan-beginner-friendly/05-phase-4-create-order.md) |
-| 4 | [04-jwt-auth.md](04-jwt-auth.md) | **Part 1** — password hashing + the access-token service | ~45 min *(new topic)* | *new topic* |
-| 4b | [04b-jwt-login.md](04b-jwt-login.md) | **Part 2** — login slice, token validation, `ICurrentUser`, role authorization | ~1 hr *(new topic)* | *new topic* |
-| 4c | [04c-jwt-refresh-apikey.md](04c-jwt-refresh-apikey.md) | **Part 3** — rotating refresh tokens (reuse detection) + the API-key gate | ~45 min *(new topic)* | *new topic* |
-| 4d | [04d-jwt-change-password.md](04d-jwt-change-password.md) | **Part 4** — change/reset password over the DB proc (and why it's anonymous) | ~30 min *(new topic)* | *new topic* |
-| 4e | [04e-jwt-wrap-up.md](04e-jwt-wrap-up.md) | **Part 5** — full request-flow trace, checkpoint, common mistakes | ~20 min *(new topic)* | *new topic* |
-| 5 | [05-domain-model.md](05-domain-model.md) | The `SalesOrder` aggregate + business rules | ~1.5–2 hr | [beginner Phase 3](../plan-beginner-friendly/04-phase-3-domain.md) |
-| 6 | [06-create-order.md](06-create-order.md) | Create-order slice: blocking, credit, category, quantity | ~2 hr | [beginner Phase 4](../plan-beginner-friendly/05-phase-4-create-order.md) |
-| 7 | [07-submit-reserve-concurrency.md](07-submit-reserve-concurrency.md) | Submit + atomic inventory reservation + rollback | ~1.5–2 hr | [beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md) |
-| 8 | [08-approval-cancellation.md](08-approval-cancellation.md) | Approve (manager), cancel (release), state machine | ~2 hr | [beginner Phase 7](../plan-beginner-friendly/08-phase-7-remaining-slices.md) |
-| 9 | [09-update-order.md](09-update-order.md) | Update a draft order's lines | ~45 min–1 hr | [beginner Phase 4](../plan-beginner-friendly/05-phase-4-create-order.md) |
-| 10 | [10-queries-search.md](10-queries-search.md) | Get one + search/filter/page | ~1–1.5 hr | [beginner Phase 6](../plan-beginner-friendly/07-phase-6-queries.md) |
-| 11 | [11-cross-cutting.md](11-cross-cutting.md) | Validation, global error handling, logging | ~1–1.5 hr | [beginner Phase 2](../plan-beginner-friendly/03-phase-2-mediator.md) |
-| 12 | [12-testing.md](12-testing.md) | Unit + integration tests for the business rules | ~2 hr | [beginner Phase 8](../plan-beginner-friendly/09-phase-8-testing.md) |
-| 13 | [13-wrap-up-checklist.md](13-wrap-up-checklist.md) | Recap + production-readiness checklist | ~30 min (read) | — |
+| Phase | File | What you'll build | ⏱️ Est. time |
+|---|---|---|---|
+| 0 | **this file** | The plan and the business rules | ~20 min (read) |
+| 1 | [01-solution-setup.md](01-solution-setup.md) | Projects, folders, packages, config | ~1 hr |
+| 2 | [02-mediator-own-vs-free.md](02-mediator-own-vs-free.md) | Your own mediator **vs** the free GitHub one — decide | ~1 hr |
+| 3 | [03-database-schema.md](03-database-schema.md) | Tables, stored procedures, seed data | ~1–1.5 hr |
+| 3b | [03b-data-access.md](03b-data-access.md) | Connection factory + ADO.NET transactions | ~30–45 min |
+| 4 | [04-jwt-auth.md](04-jwt-auth.md) | **Part 1** — password hashing + the access-token service | ~45 min |
+| 4b | [04b-jwt-login.md](04b-jwt-login.md) | **Part 2** — login slice, token validation, `ICurrentUser`, role authorization | ~1 hr |
+| 4c | [04c-jwt-refresh-apikey.md](04c-jwt-refresh-apikey.md) | **Part 3** — rotating refresh tokens (reuse detection) + the API-key gate | ~45 min |
+| 4d | [04d-jwt-change-password.md](04d-jwt-change-password.md) | **Part 4** — change/reset password over the DB proc (and why it's anonymous) | ~30 min |
+| 4e | [04e-jwt-wrap-up.md](04e-jwt-wrap-up.md) | **Part 5** — full request-flow trace, checkpoint, common mistakes | ~20 min |
+| 5 | [05-domain-model.md](05-domain-model.md) | The `SalesOrder` aggregate + business rules | ~1.5–2 hr |
+| 6 | [06-create-order.md](06-create-order.md) | Create-order slice: blocking, credit, category, quantity | ~2 hr |
+| 7 | [07-submit-reserve-concurrency.md](07-submit-reserve-concurrency.md) | Submit + atomic inventory reservation + rollback | ~1.5–2 hr |
+| 8 | [08-approval-cancellation.md](08-approval-cancellation.md) | Approve (manager), cancel (release), state machine | ~2 hr |
+| 9 | [09-update-order.md](09-update-order.md) | Update a draft order's lines | ~45 min–1 hr |
+| 10 | [10-queries-search.md](10-queries-search.md) | Get one + search/filter/page | ~1–1.5 hr |
+| 11 | [11-cross-cutting.md](11-cross-cutting.md) | Validation, global error handling, logging | ~1–1.5 hr |
+| 12 | [12-testing.md](12-testing.md) | Unit + integration tests for the business rules | ~2 hr |
+| 13 | [13-wrap-up-checklist.md](13-wrap-up-checklist.md) | Recap + production-readiness checklist | ~30 min (read) |
 
 > ⏱️ **Total: roughly 18–22 hours of focused, hands-on time** — think two to three unhurried days, or a
 > couple of evenings a week for a few weeks. These are *typing-and-understanding* estimates for someone
 > comfortable with C#, **not** counting deep debugging detours (which are where a lot of the real learning
-> happens — budget slack). Newer to C#? Add 50–100% and lean on the linked beginner phases. The phases are
-> sized to be **one sitting each**; Phases 4–8 are the meatiest, so start them when you're fresh.
+> happens — budget slack). Newer to C#? Add 50–100%, and read [00a-FOUNDATIONS.md](00a-FOUNDATIONS.md)
+> before Phase 1. The phases are sized to be **one sitting each**; Phases 4–8 are the meatiest, so start
+> them when you're fresh.
 
 ## Every phase follows the same shape
 
 Nothing gets skipped and nothing is assumed. **Every phase answers the same five questions:**
 
 1. **What we're building** — the concrete deliverable of this phase.
-2. **Why it's designed this way** — the reasoning, linking back to the pattern's home in the other plans.
+2. **Why it's designed this way** — the reasoning, starting from the naive version and the pain it causes.
 3. **How the request flows** — a step-by-step trace of a real request through the code.
 4. **Why each class/component exists** — no mystery files; every piece is justified.
-5. **Common mistakes & best practices** — the traps beginners fall into, and how to avoid them.
+5. **Common mistakes & best practices** — the traps people fall into, and how to avoid them.
 
 ## How to work through it
 
 - **Go in order.** Each phase assumes the previous one compiles and works.
-- **Type the code, don't paste it.** Fixing the compiler's complaints is where the learning happens
-  (see [beginner LEARNING-RESOURCES](../plan-beginner-friendly/LEARNING-RESOURCES.md)).
-- **When a concept feels shaky,** open the linked beginner phase for the slow version, then come back.
+- **Type the code, don't paste it.** Fixing the compiler's complaints is where the learning happens.
+  [LEARNING-RESOURCES.md](LEARNING-RESOURCES.md) says more about why.
+- **When a term feels shaky,** look it up in [GLOSSARY.md](GLOSSARY.md), then come back.
 - **Resist scope creep.** If you catch yourself adding a cache or a queue "to be safe," stop — that's
   not this tutorial.
 

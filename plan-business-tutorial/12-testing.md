@@ -4,9 +4,8 @@
 > where the `Erp.Modules.Sales.UnitTests` project was created) — this phase **rounds out** the suite and adds
 > the two harder levels: integration and end-to-end. Money is in **Philippine Pesos (₱)**.
 >
-> 📎 *Optional* slow version of "what each test level is *for*":
-> [beginner Phase 8](../plan-beginner-friendly/09-phase-8-testing.md), including a line-by-line read of an
-> xUnit test.
+> We explain what each test level is *for* before writing any of them — the levels are not "the same test,
+> bigger," they answer different questions.
 
 ---
 
@@ -27,8 +26,7 @@ Tests at the three levels, aimed at the business rules we built:
 ## 2. Why it's designed this way
 
 The architecture was *shaped* so the business rules are unit-testable without a database — this phase
-collects that dividend. The guiding principle from
-[beginner Phase 8](../plan-beginner-friendly/09-phase-8-testing.md): **if you need a database to test a
+collects that dividend. The guiding principle, and it's worth memorizing: **if you need a database to test a
 business rule, the rule is in the wrong place.** Almost all our rules are pure domain methods, so almost
 all our rule tests are millisecond-fast unit tests. Only the genuinely DB-dependent things (atomic
 reservation, concurrency, rollback) need integration tests — and those are exactly the bugs unit tests
@@ -215,8 +213,8 @@ public class InventoryReservationTests : IClassFixture<TestDatabaseFixture>
 > [Phase 7](07-submit-reserve-concurrency.md), calling the *actual* atomic proc. We use the real thing on
 > purpose: **a fake can't have a race condition, so a fake would prove nothing here.**
 
-> ⚠️ **Caveat (from [beginner Phase 8 §3](../plan-beginner-friendly/09-phase-8-testing.md)):** most
-> integration tests wrap each test in a transaction they *roll back* for isolation. But this one must
+> ⚠️ **Caveat, and it catches people.** Most integration tests wrap each test in a transaction they *roll
+> back* afterwards, which keeps tests isolated from each other. But this one must
 > **commit**, because you can't observe committed-concurrency behavior from inside a transaction you're
 > about to undo. Commit, assert, then clean up the reservation manually.
 

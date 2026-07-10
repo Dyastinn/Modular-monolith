@@ -1,7 +1,7 @@
 # Phase 10 — Queries: Get One & Search With Paging (CQRS-lite Read Side)
 
-> Self-contained: the read side is explained fully here. *Optional* slow version of "why reads are shaped
-> differently from writes": [beginner Phase 6](../plan-beginner-friendly/07-phase-6-queries.md).
+> Self-contained: the read side is explained fully here, starting from *why* reads are shaped differently
+> from writes.
 
 ---
 
@@ -30,10 +30,11 @@ Write side: Command → Handler → SalesOrder aggregate → Repository → proc
 Read side:  Query   → Handler → Dapper → read proc → DTO           (no domain, no repository)
 ```
 
-> 📎 The "is the search proc's Total the same split-brain danger as the domain's Total?" question — and
-> why it's *not* — is answered in
-> [beginner Phase 6 §4](../plan-beginner-friendly/07-phase-6-queries.md). Short version: the domain's
-> total *decides* things (credit, approval); the read total merely *displays*. Different jobs.
+> ❓ **"Isn't the search proc's `Total` the same split-brain danger we avoided in the domain?"** No, and the
+> difference is worth pinning down. The domain's computed total *decides* things — whether the customer is
+> over their credit limit, whether the order needs approval. The read total merely *displays*. Two values
+> that mean the same number but do different jobs: one is the authority, one is a convenience. The danger
+> would be letting a decision depend on the displayed one.
 
 ### Queries just open a connection; commands add a transaction — and why
 

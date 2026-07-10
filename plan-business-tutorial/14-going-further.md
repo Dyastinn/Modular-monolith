@@ -238,7 +238,7 @@ base build. Same rule: try it *before* reading how.
     after-commit dispatch can't make: if the process dies between commit and the side effect, the event is
     lost. Write each domain event to an `Outbox` table *in the same transaction* as the state change, and drain
     it with a background reader. (Reinforces: "after commit, best-effort" and "guaranteed delivery" are
-    different guarantees.) 📎 [beginner Phase 9](../plan-beginner-friendly/10-phase-9-modularity.md).
+    different guarantees.)
 12. **A second business module** — build `Purchasing` (buy stock from suppliers, raising `OnHand`) as its own
     module with its own schema, reusing the shared kernel untouched. If you can add it without editing Sales,
     the walls are real. (Reinforces: the whole point — the third module should be as easy as the second.)

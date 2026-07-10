@@ -1,6 +1,0 @@
-<Project>
-  <!-- Opt this validation solution OUT of the repo-root CPM: it pins versions in its .csproj files. -->
-  <PropertyGroup>
-    <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
-  </PropertyGroup>
-</Project>

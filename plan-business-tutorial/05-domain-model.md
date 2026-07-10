@@ -1,10 +1,6 @@
 # Phase 5 — The Domain Model: A `SalesOrder` That Knows Its Own Rules
 
 > Self-contained: every rule is explained here. Money is in **Philippine Pesos (₱)**.
->
-> 📎 *Optional* slow version of *why* rich domain objects beat dumb data bags:
-> [beginner Phase 3](../plan-beginner-friendly/04-phase-3-domain.md). The reasoning is inline below; the
-> link is just the analogy-rich take.
 
 ---
 
@@ -20,9 +16,9 @@ database, no web** — pure C# that compiles and is unit-testable on its own.
 
 ## 2. Why it's designed this way
 
-Every business rule that can be checked *in memory* lives here, on the object it's a rule about. That's
-the payoff from [beginner Phase 3](../plan-beginner-friendly/04-phase-3-domain.md): handlers later just
-*ask* the domain instead of policing it. The rules we'll encode here:
+Every business rule that can be checked *in memory* lives here, on the object it's a rule about. That is the
+whole payoff of a rich domain: handlers later just *ask* the domain instead of policing it themselves, so a
+rule can't be enforced in one place and forgotten in another. The rules we'll encode here:
 
 - Only a **Draft** order can have lines added/changed.
 - An order's **total** is always the sum of its lines (computed, never drifts).
@@ -33,8 +29,10 @@ the payoff from [beginner Phase 3](../plan-beginner-friendly/04-phase-3-domain.m
 
 Two rules that *cannot* be safely done in memory — **credit limit** (needs the customer's live balance)
 and **inventory reservation** (needs atomic DB guarding) — are *expressed* here but *enforced* at the
-handler/SQL level. We'll be explicit about that boundary; it's the "policy vs. atomicity" split from
-[beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md).
+handler/SQL level. We'll be explicit about that boundary every time we cross it. It's the **"policy vs.
+atomicity" split**: deciding *whether something is allowed* is policy and belongs in the domain, while
+making sure *two people doing it at once can't both win* is atomicity and belongs in SQL. [Phase 7](07-submit-reserve-concurrency.md)
+is where that distinction stops being abstract.
 
 ## 3. Where every file in this phase goes
 
@@ -56,8 +54,10 @@ src/Modules/Sales/Domain/
 └── ApprovalPolicy.cs                                      # the threshold constant (§8)
 ```
 
-The base types the domain builds on — `AggregateRoot<TId>`, `Entity`, `IDomainEvent`, `DomainException` —
-already live in `Erp.Shared.BuildingBlocks` (you created that project in Phase 1). The domain uses those and
+The base types the domain builds on — `AggregateRoot<TId>`, `Entity<TId>`, `IDomainEvent`, `DomainException` —
+already live in `Erp.Shared.BuildingBlocks` (you wrote them in [Phase 1 §4b](01-solution-setup.md)). If the
+`where TId : struct` constraint or the `Raise`/`DomainEvents` pair isn't fresh, reread that section now —
+this phase uses all of it. The domain uses those and
 nothing else. (Folder names like `ValueObjects/` are just organisation; put files wherever reads clearly —
 what matters is that they're all under the module's `Domain/`.)
 
@@ -71,9 +71,10 @@ public readonly record struct ItemId(long Value);
 public readonly record struct UserId(long Value);
 ```
 
-> 📎 Why distinct ID types instead of raw `long` (compiler stops you mixing a `CustomerId` and a
-> `SalesOrderId`) — [beginner Phase 3 §3](../plan-beginner-friendly/04-phase-3-domain.md). Cost: a small
-> Dapper `TypeHandler` per ID, added in the repository.
+> 🔑 **Why distinct ID types instead of a raw `long`?** Because `long` lets you pass a `CustomerId` where a
+> `SalesOrderId` was expected, and the compiler will happily agree — a bug you find in production, on the
+> wrong row. Give each ID its own type and that mistake stops compiling. The cost is small and paid once: a
+> Dapper `TypeHandler` per ID type, which we add in the repository.
 
 Value objects that make invalid states impossible (`Domain/ValueObjects/`):
 
@@ -168,8 +169,9 @@ public static class SalesOrderStatusRules
 }
 ```
 
-> 📎 Why a lookup table beats scattered `if`s — [beginner Phase 7](../plan-beginner-friendly/08-phase-7-remaining-slices.md).
-> All the transition rules sit in one readable grid.
+> 🔑 **Why a lookup table beats scattered `if`s.** Every legal move sits in one readable grid you can check
+> against the business's own state diagram. Spread the same rules across `if` statements in five methods and
+> nobody can answer "can an Approved order be cancelled?" without reading all five.
 
 ## 5. The `ItemCategory` rules (restrictions + limits)
 
@@ -329,9 +331,8 @@ public void Submit()
   first means a failed submit leaves the order exactly as it was (still `Draft`), never half-mutated.
 - **(b)** Only now the guarded transition: is this move even legal? If the order is already Approved or
   Cancelled, `Transition` throws *before* assigning `Status`, and nothing changes. The order defends
-  itself. **Guards before mutation** is the discipline from
-  [beginner Phase 3](../plan-beginner-friendly/04-phase-3-domain.md) — validate everything, *then* change
-  state, so a throw can never leave the object in a broken in-between state.
+  itself. **Guards before mutation** is the discipline: validate everything *first*, change state *after*,
+  so a throw can never leave the object stranded in a half-updated, broken state.
 - **(c)** Record the fact. The *inventory reservation* is **not** done here — that's an
   atomicity-under-concurrency concern the handler + SQL own (Phase 7). The domain *expresses* "this got
   submitted"; it does not reach into a database. Keep that boundary sharp.
@@ -340,10 +341,8 @@ public void Submit()
 > submitting."** Because reserving stock safely requires an *atomic database operation* — and the domain
 > is forbidden from touching the database (it must stay pure and unit-testable). The domain says "a
 > submit happened"; the **handler** orchestrates the actual reservation via SQL inside a transaction.
-> This is exactly the "policy in the domain, atomicity in SQL" division from
-> [beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md). If you put a DB call
-> in `Submit()`, you couldn't unit-test the state machine without a database — and you'd have broken the
-> dependency rule.
+> This is exactly the "policy in the domain, atomicity in SQL" division. If you put a DB call in `Submit()`,
+> you couldn't unit-test the state machine without a database — and you'd have broken the dependency rule.
 
 ### The `SalesOrderLine`
 
@@ -454,12 +453,12 @@ public static class ApprovalPolicy
 > step once the uniform flow is clear. (If your company genuinely wants "all orders need sign-off," the
 > uniform flow is also a perfectly valid real policy.)
 
-> 📎 **Two courses model approval differently — on purpose.** The
-> [beginner plan](../plan-beginner-friendly/04-phase-3-domain.md) folds approval into `Submit(bool
-> approvalGranted)` — the caller *asserts* approval as it submits, to keep that course to a single write
-> path. This tutorial splits it into a **dedicated manager `Approve` step** with its own role-gated
-> endpoint, which is the more realistic ERP shape. Same threshold idea, different workflow granularity;
-> neither contradicts the other.
+> ❓ **"Couldn't `Submit` just take an `approvalGranted` flag?"** It could — `Submit(bool approvalGranted)`
+> is a real design some systems use, and it keeps everything on one write path. We don't, because a flag
+> passed in by the caller means *the caller asserts* the approval happened; nothing in the system checks
+> that a manager was actually involved. Splitting approval into its own role-gated `Approve` step makes the
+> manager's involvement a fact the system enforces rather than a claim it trusts. That's the shape real ERPs
+> use, and it's why [Phase 8](08-approval-cancellation.md) exists.
 
 ## 9. Why each class exists
 
@@ -549,8 +548,7 @@ pipeline — a different level. These pure-domain tests are the fast, foundation
   the repository uses to rehydrate. Public setters reopen the dumb-data-bag hole.
 - ❌ **Storing `Total` as a settable field.** ✅ Compute it from the lines; it can't drift. (We *also*
   persist a snapshot in the DB for fast search — the domain's computed value is the authority; the DB
-  column is a display convenience, exactly the distinction from
-  [beginner Phase 6](../plan-beginner-friendly/07-phase-6-queries.md).)
+  column is a display convenience. [Phase 10](10-queries-search.md) leans on that distinction.)
 - ❌ **Calling the database from inside a domain method** (e.g. reserving stock in `Submit`). ✅ Domain
   stays pure; handlers orchestrate DB work.
 - ❌ **Modeling things no rule needs** (multi-currency, tax engines). ✅ Stop at the rules the tutorial

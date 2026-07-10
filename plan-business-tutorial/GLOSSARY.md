@@ -158,7 +158,7 @@ A rare special class for stateless domain *logic* that spans *multiple* aggregat
 them — and does **no** I/O (no database, no network). Example: a policy that spreads a whole-order discount
 across its lines. Used sparingly. *Analogy: a translator you hire only when two departments need to talk.*
 *(Note: something that merely **looks up data**, like `IPricingService` reading a price list, is a **read
-port / data access**, not a domain service — the I/O is the tell. See [Phase 5 §2](06-phase-5-inventory-concurrency.md).)*
+port / data access**, not a domain service — the I/O is the tell.)*
 
 **Repository**
 The object that saves and loads *one kind* of aggregate. `ISalesOrderRepository` loads and saves

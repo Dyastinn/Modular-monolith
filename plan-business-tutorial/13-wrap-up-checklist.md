@@ -189,10 +189,10 @@ before any handler runs, the SQL atomic guard makes the concurrency race come ou
 overselling, and a created order returns a real id. That mapping from *outcome* to *where the rule lives* is
 the entire skill this tutorial set out to build.
 
-## 2. The five questions from the beginner plan — answered by real features
+## 2. Five questions that prove you've got it
 
-[The beginner overview](../plan-beginner-friendly/00-START-HERE.md) said you'd "get it" when you could
-explain five things. Here they are, grounded in what you just built:
+You'll know this architecture is really yours when you can explain five things without looking them up.
+Here they are, grounded in what you just built:
 
 1. **Why is a command slice shaped differently from a query slice?** Compare
    [Create (Phase 6)](06-create-order.md) — domain, transaction, repository — with
@@ -210,8 +210,7 @@ explain five things. Here they are, grounded in what you just built:
    contract, and each module owns its own schema, extraction is *largely* mechanical — with **one honest
    exception**: the contract's `IDbTransaction` parameter can't cross a network, so the shared-transaction
    reserve becomes a **saga** (reserve, and release to compensate on failure). Your code doesn't need
-   untangling; that one seam does need reshaping. The path — and that caveat — are in
-   [beginner Phase 9](../plan-beginner-friendly/10-phase-9-modularity.md).
+   untangling; that one seam does need reshaping.
 
 ## 3. Production-readiness checklist (honest about what's still missing)
 
@@ -292,7 +291,7 @@ you adopt them for reasons, not fashion:
 | **Docker** | You need identical environments across machines/CI, or easy local SQL Server. Great next step. |
 | **Redis** | Profiling shows a genuinely hot read you must cache, or you need distributed rate-limiting. |
 | **EF Core** | A different project values developer speed over explicit SQL — *know both*, choose per project. |
-| **A message queue (RabbitMQ / a broker)** | You have a *reliable cross-system* reaction (e.g. notify Accounting of every approval) that must not be lost — the outbox pattern from [beginner Phase 9](../plan-beginner-friendly/10-phase-9-modularity.md). |
+| **A message queue (RabbitMQ / a broker)** | You have a *reliable cross-system* reaction (e.g. notify Accounting of every approval) that must not be lost — see the outbox pattern in [Phase 14](14-going-further.md). |
 | **Microservices** | Real scaling/team-autonomy pressure forces it — and your module boundaries (which you kept clean) make the split mechanical. |
 
 > 🧭 **The senior mindset to carry forward:** every one of those tools trades simplicity for a specific
@@ -381,4 +380,4 @@ If you can answer these without notes, this tutorial did its job:
 5. Point to the single decision (from Phase 2) that would make swapping the mediator engine — or later
    splitting this into its own service — a localized change.
 
-← Back to [the tutorial overview](00-START-HERE.md) · or the [beginner plan](../plan-beginner-friendly/00-START-HERE.md).
+← Back to [the tutorial overview](00-START-HERE.md) · onward to [Phase 14 — Going Further](14-going-further.md).

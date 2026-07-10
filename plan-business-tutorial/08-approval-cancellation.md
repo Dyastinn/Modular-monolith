@@ -2,10 +2,6 @@
 
 > Self-contained: the state machine, optimistic concurrency, and event dispatch are all explained here.
 > Money is in **Philippine Pesos (₱)**.
->
-> 📎 *Optional* deeper reading: the state machine and domain-event ideas
-> ([beginner Phase 7](../plan-beginner-friendly/08-phase-7-remaining-slices.md)) and the optimistic
-> concurrency guard ([beginner Phase 5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md)).
 
 ---
 
@@ -121,8 +117,9 @@ since we loaded it (any change bumps `RowVersion`). Rowcount `0` → someone bea
 > 🔑 **Two managers, one order:** both load order #50 (same `RowVersion`). Manager A approves → row
 > updates, `RowVersion` changes, commit. Manager B clicks reject a second later → their `UPDATE`'s
 > `WHERE RowVersion = <old>` matches **nothing** (the stamp changed) → rowcount 0 → `ConcurrencyException`.
-> B is safely told the order already changed, instead of silently overwriting A's approval. This is the
-> "lost update" prevented — [beginner Phase 5 §5](../plan-beginner-friendly/06-phase-5-inventory-concurrency.md).
+> B is safely told the order already changed, instead of silently overwriting A's approval. That failure —
+> a second writer clobbering the first writer's change without ever seeing it — is called a **lost update**,
+> and this is how you prevent it.
 
 > ❓ **You might be wondering: "Isn't the transaction enough? Why also need `RowVersion`?"** No — a
 > transaction guarantees *your* writes are atomic, but it doesn't stop you from *overwriting* a change
@@ -274,18 +271,19 @@ public sealed class SalesOrderApprovedAuditHandler(ILogger<SalesOrderApprovedAud
 > that isn't registered simply never runs — and since dispatch is best-effort after commit, you'd get *silent*
 > no-ops, so it's worth a quick check that yours are picked up.
 
-> 📎 **Why dispatch *after* commit** (and the consequence if a handler fails) —
-> [beginner Phase 7 §3](../plan-beginner-friendly/08-phase-7-remaining-slices.md). Short version: only
-> react to things that *actually saved*; if the audit log fails, the order is still correctly approved
-> (a failed log shouldn't un-approve an order). Reliable cross-system reactions would need a queue/outbox
-> — deliberately out of scope here (that's the [beginner Phase 9](../plan-beginner-friendly/10-phase-9-modularity.md)
-> "next step").
+> 🔑 **Why dispatch *after* commit, and what happens if a handler fails.** You only want to react to things
+> that *actually saved*. Dispatch before the commit and a later rollback leaves you having emailed a customer
+> about an order that no longer exists. Dispatch after, and the trade is the opposite one: if the audit-log
+> handler throws, the order stays correctly approved (a failed log should never un-approve an order), but the
+> log entry is simply lost. That's why this dispatch is **best-effort** — fine for an audit line, not fine
+> for "charge the customer." Making a cross-system reaction *reliable* needs a queue or an outbox table, and
+> that's deliberately out of scope here; [Phase 13](13-wrap-up-checklist.md) explains when you'd add one.
 
-> 🔗 **Same mechanism, two names.** The [beginner course](../plan-beginner-friendly/08-phase-7-remaining-slices.md)
-> introduces this dispatch under the *notification* vocabulary. It's one-to-one with what we build here:
-> `INotification` ↔ our `IDomainEvent`, `INotificationHandler<T>` ↔ our **`IDomainEventHandler<T>`**, and
-> `IPublisher` ↔ our **`IDomainEventDispatcher`**. Same pattern (publish an event to zero-or-more handlers
-> after commit) — just pick one naming set and stay consistent in your own build.
+> 📖 **A vocabulary note.** You'll meet this same pattern elsewhere under the name *notifications* —
+> `INotification`, `INotificationHandler<T>`, `IPublisher`. Those are one-to-one with our `IDomainEvent`,
+> `IDomainEventHandler<T>`, and `IDomainEventDispatcher`. Same idea (publish an event to zero-or-more
+> handlers after commit), different words. Pick one naming set and stay consistent; we use the domain-event
+> one because these events describe things that happened *in the business*, not in the framework.
 
 ## 7. The endpoints (each a Carter module in its feature folder; note the role gate on approve)
 

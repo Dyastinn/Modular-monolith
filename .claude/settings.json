@@ -6,14 +6,35 @@
       "Bash(echo \"mobile:  $\\(openssl rand -base64 32\\)\")",
       "Bash(echo \"desktop: $\\(openssl rand -base64 32\\)\")",
       "Bash(python -)",
+
       "PowerShell(dotnet build \"c:\\\\Users\\\\jgmayo\\\\source\\\\repos\\\\Dyastinn\\\\Modular monolith\\\\course-validation\\\\business\\\\Erp.slnx\" -clp:ErrorsOnly --nologo 2>&1)",
       "PowerShell(dotnet msbuild \"c:\\\\Users\\\\jgmayo\\\\source\\\\repos\\\\Dyastinn\\\\Modular monolith\\\\course-validation\\\\business\\\\src\\\\Shared\\\\Erp.Shared.Infrastructure\\\\Erp.Shared.Infrastructure.csproj\" -t:CoreCompile -clp:ErrorsOnly --nologo 2>&1 | Select-Object -Last 20; \"EXIT=$LASTEXITCODE\")",
       "PowerShell(dotnet msbuild \"c:\\\\Users\\\\jgmayo\\\\source\\\\repos\\\\Dyastinn\\\\Modular monolith\\\\course-validation\\\\business\\\\src\\\\Erp.Api\\\\Erp.Api.csproj\" -t:CoreCompile -clp:ErrorsOnly --nologo 2>&1 | Select-Object -Last 25; \"EXIT=$LASTEXITCODE\")",
+
+      "Bash(cat \"c:/Users/jgmayo/source/repos/Dyastinn/Modular monolith/**\")",
+      "Bash(grep * \"c:/Users/jgmayo/source/repos/Dyastinn/Modular monolith/**\")",
+      "Bash(find \"c:/Users/jgmayo/source/repos/Dyastinn/Modular monolith/**\")",
+      "Bash(ls \"c:/Users/jgmayo/source/repos/Dyastinn/Modular monolith/**\")",
+      "Bash(tree \"c:/Users/jgmayo/source/repos/Dyastinn/Modular monolith/**\")",
+      "Bash(head \"c:/Users/jgmayo/source/repos/Dyastinn/Modular monolith/**\")",
+      "Bash(tail \"c:/Users/jgmayo/source/repos/Dyastinn/Modular monolith/**\")",
+
+      "Bash(sed * \"c:/Users/jgmayo/source/repos/Dyastinn/Modular monolith/**\")",
+      "Bash(awk * \"c:/Users/jgmayo/source/repos/Dyastinn/Modular monolith/**\")",
+      "Bash(xargs *)",
+
+      "Bash(cp * \"c:/Users/jgmayo/source/repos/Dyastinn/Modular monolith/**\")",
+      "Bash(mv * \"c:/Users/jgmayo/source/repos/Dyastinn/Modular monolith/**\")",
+      "Bash(rm * \"c:/Users/jgmayo/source/repos/Dyastinn/Modular monolith/**\")",
+      "Bash(mkdir * \"c:/Users/jgmayo/source/repos/Dyastinn/Modular monolith/**\")",
+      "Bash(touch \"c:/Users/jgmayo/source/repos/Dyastinn/Modular monolith/**\")",
+
       "Bash(grep -iv \"^\\\\s*//\")",
       "Bash(grep -n \"Create \\\\|\\\\.cs\\\\`\\\\|Auth/\\\\|Erp.Api\\\\|Erp.Shared.Infrastructure/\" 04b-jwt-login.md 04c-jwt-refresh-apikey.md)",
+      "Bash(xargs grep -il \"AppUser\\\\|RefreshToken\")",
+
       "Skill(artifact-design)",
-      "Skill(artifact-design:*)",
-      "Bash(xargs grep -il \"AppUser\\\\|RefreshToken\")"
+      "Skill(artifact-design:*)"
     ]
   }
 }

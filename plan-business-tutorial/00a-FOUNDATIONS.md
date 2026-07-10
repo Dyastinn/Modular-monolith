@@ -108,7 +108,7 @@ public class SalesOrderRepository : ISalesOrderRepository   // ": ISalesOrderRep
 **Why do we care so much?** Because code that depends on the *interface* (`ISalesOrderRepository`) doesn't
 know or care about the real database code. That's what lets the `Domain` stay pure, and what lets us
 swap a real database for a fake one in tests. **When you see an `I` in front of a type name
-(`ISender`, `ISalesOrderRepository`, `IUnitOfWork`), it's almost always an interface — a promise, not the
+(`ISender`, `ISalesOrderRepository`, `IStockReservation`), it's almost always an interface — a promise, not the
 real thing.**
 
 ---
@@ -284,11 +284,11 @@ If you read a phase and feel like it went over your head — **that is completel
 sign you can't do this.** Here's what actually works:
 
 1. Read it once for the *big idea*, ignoring details.
-2. Read the **Answer Key** at the bottom of the phase — seeing the answers explained often makes the
-   whole thing click backwards.
+2. Work the **Check Yourself** questions at the bottom of the phase — trying to answer them shows you
+   exactly which part you didn't actually absorb.
 3. Read it a *second* time. It'll be dramatically easier.
 4. If a specific word blocks you, look it up in [GLOSSARY.md](GLOSSARY.md) or here.
 
 Nobody learns this in one pass. Seniors just had more passes than you. That's the whole difference.
 
-Now go to [01-phase-0-orientation.md](01-phase-0-orientation.md). You've got this.
+Now go to [00-START-HERE.md](00-START-HERE.md). You've got this.
