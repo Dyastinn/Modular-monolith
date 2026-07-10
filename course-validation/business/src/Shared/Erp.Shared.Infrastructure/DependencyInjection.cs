@@ -1,4 +1,6 @@
 using Erp.Shared.Common;
+using Erp.Shared.Common.Data;
+using Erp.Shared.Infrastructure.Data;
 using Erp.Shared.Messaging;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
@@ -8,14 +10,13 @@ namespace Erp.Shared.Infrastructure;
 
 public static class DependencyInjection
 {
-    // The platform every module uses: mediator + behaviors, Dapper/UoW, JWT/auth plumbing (Phase 11 §7).
+    // The platform every module uses: mediator + behaviors, Dapper, JWT/auth plumbing (Phase 11 §7).
     public static IServiceCollection AddSharedInfrastructure(this IServiceCollection services, IConfiguration config)
     {
         services.AddMessaging();
 
         services.AddScoped<IDbConnectionFactory>(_ =>
             new SqlConnectionFactory(config.GetConnectionString("ErpDb")!));
-        services.AddScoped<IUnitOfWork, UnitOfWork>();
 
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, CurrentUser>();

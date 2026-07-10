@@ -103,10 +103,9 @@ Clean Architecture's four-layer project split · **EF Core / any ORM** · Docker
 MassTransit · any message broker · microservices · distributed caching · a generic `Repository<T>` ·
 an `IUnitOfWork` abstraction over the transaction.
 
-> ⚠️ **Known drift:** `course-validation/business/` still uses `IUnitOfWork`, which the lessons dropped in
-> favour of raw ADO.NET transactions. The reference build is therefore *behind* the tutorial on this one
-> point. Don't copy `IUnitOfWork` from it into a lesson. Bringing the reference build in line is a pending
-> task — ask before doing it, since it touches every write handler.
+> ✅ **The lessons and `course-validation/business/` are in sync** (verified 2026-07-10: solution builds
+> clean, 14 unit + 6 integration tests pass). If you change one, change the other in the same edit — a
+> reference build that contradicts the lesson is worse than no reference build.
 
 The **only** place these may appear is a lesson's explicit *"when you'd add this later, and why not now"*
 discussion (Phase 13's checklist and Phase 14's extensions). Never as part of the built solution.

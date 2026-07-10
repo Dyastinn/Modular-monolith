@@ -1,7 +1,7 @@
 using System.Data;
 using Dapper;
+using Erp.Shared.Common.Data;
 using Erp.Modules.Sales.Domain;
-using Erp.Shared.Infrastructure;
 
 namespace Erp.Modules.Sales.Infrastructure;
 

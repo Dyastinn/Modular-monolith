@@ -75,7 +75,7 @@ public class SalesOrderWorkflowTests
     {
         var client = await LoggedInAs("manager");
         var create = await client.PostAsJsonAsync("/sales-orders",
-            new { customerId = 2, lines = new[] { new { itemId = 1, quantity = 100 } } });   // Beta: $2,500 > $500 left
+            new { customerId = 2, lines = new[] { new { itemId = 1, quantity = 100 } } });   // Beta: ₱2,500 > ₱500 left
         create.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
     }
 

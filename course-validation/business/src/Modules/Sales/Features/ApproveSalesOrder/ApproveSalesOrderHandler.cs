@@ -1,6 +1,6 @@
 using Erp.Modules.Sales.Domain;
 using Erp.Shared.Common;
-using Erp.Shared.Infrastructure;
+using Erp.Shared.Common.Data;
 using Erp.Shared.Messaging;
 
 namespace Erp.Modules.Sales.Features;
@@ -10,7 +10,7 @@ public sealed record ApproveSalesOrderCommand(long OrderId) : ICommand<Unit>;
 public sealed class ApproveSalesOrderHandler(
     ISalesOrderRepository orders,
     ICustomerRepository customers,
-    IUnitOfWork uow,
+    IDbConnectionFactory factory,
     ICurrentUser currentUser,
     IDomainEventDispatcher events) : ICommandHandler<ApproveSalesOrderCommand, Unit>
 {
@@ -22,15 +22,24 @@ public sealed class ApproveSalesOrderHandler(
         // DOMAIN: only a PendingApproval order can be approved (state machine). Throws otherwise.
         order.Approve(new UserId(currentUser.UserId));
 
-        await using var tx = await uow.BeginAsync(ct);
+        using var conn = factory.Create();
+        await conn.OpenAsync(ct);
+        using var tx = conn.BeginTransaction();
+        try
+        {
+            // Version-checked status update: fails if someone changed the order since we loaded it.
+            await orders.UpdateStatusAsync(order, tx, ct);
 
-        // Version-checked status update: fails if someone changed the order since we loaded it.
-        await orders.UpdateStatusAsync(order, tx.Transaction, ct);
+            // The customer now owes this money — add it to their outstanding balance, same transaction.
+            await customers.AdjustBalanceAsync(order.CustomerId, +order.Total.Amount, tx, ct);
 
-        // The customer now owes this money — add it to their outstanding balance, same transaction.
-        await customers.AdjustBalanceAsync(order.CustomerId, +order.Total.Amount, tx.Transaction, ct);
-
-        await tx.CommitAsync(ct);
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
 
         // AFTER commit: dispatch domain events (audit log, etc.). Best-effort side effects.
         await events.DispatchAsync(order, ct);

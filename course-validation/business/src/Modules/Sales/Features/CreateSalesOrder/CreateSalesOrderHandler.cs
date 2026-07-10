@@ -1,6 +1,6 @@
 using Erp.Modules.Sales.Domain;
 using Erp.Shared.Common;
-using Erp.Shared.Infrastructure;
+using Erp.Shared.Common.Data;
 using Erp.Shared.Messaging;
 using FluentValidation;
 
@@ -30,7 +30,7 @@ public sealed class CreateSalesOrderHandler(
     ICustomerRepository customers,
     IItemRepository items,
     ISalesOrderRepository orders,
-    IUnitOfWork uow,
+    IDbConnectionFactory factory,
     ICurrentUser currentUser) : ICommandHandler<CreateSalesOrderCommand, long>
 {
     public async Task<long> Handle(CreateSalesOrderCommand cmd, CancellationToken ct)
@@ -76,10 +76,19 @@ public sealed class CreateSalesOrderHandler(
         customer.EnsureWithinCreditLimit(order.Total);
 
         // 9) Persist in ONE transaction (header + all lines, all-or-nothing).
-        await using var tx = await uow.BeginAsync(ct);
-        var newId = await orders.AddAsync(order, tx.Transaction, ct);
-        await tx.CommitAsync(ct);
-
-        return newId;
+        using var conn = factory.Create();
+        await conn.OpenAsync(ct);
+        using var tx = conn.BeginTransaction();
+        try
+        {
+            var newId = await orders.AddAsync(order, tx, ct);   // AddAsync hands back the DB id
+            tx.Commit();
+            return newId;
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
     }
 }

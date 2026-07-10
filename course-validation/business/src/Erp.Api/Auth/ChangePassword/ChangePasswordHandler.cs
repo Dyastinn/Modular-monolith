@@ -1,4 +1,5 @@
 using System.Security.Authentication;
+using Erp.Shared.Common.Data;
 using Erp.Shared.Infrastructure;
 using Erp.Shared.Messaging;
 using FluentValidation;
@@ -28,7 +29,7 @@ public sealed class ChangePasswordValidator : AbstractValidator<ChangePasswordCo
 public sealed class ChangePasswordHandler(
     IUserRepository users,
     IPasswordHasher hasher,
-    IUnitOfWork uow) : ICommandHandler<ChangePasswordCommand, Unit>
+    IDbConnectionFactory factory) : ICommandHandler<ChangePasswordCommand, Unit>
 {
     public async Task<Unit> Handle(ChangePasswordCommand cmd, CancellationToken ct)
     {
@@ -46,9 +47,19 @@ public sealed class ChangePasswordHandler(
         // The proc rotates PasswordHash + SecurityStamp + PasswordExpiresUtc atomically. The new stamp
         // invalidates every outstanding refresh token on every device (an instant global logout), so the
         // client must log in again with the new password afterward.
-        await using var tx = await uow.BeginAsync(ct);
-        await users.ChangePasswordAsync(user.Id, newHash, tx.Transaction, ct);
-        await tx.CommitAsync(ct);
+        using var conn = factory.Create();
+        await conn.OpenAsync(ct);
+        using var tx = conn.BeginTransaction();
+        try
+        {
+            await users.ChangePasswordAsync(user.Id, newHash, tx, ct);
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
 
         return Unit.Value;
     }

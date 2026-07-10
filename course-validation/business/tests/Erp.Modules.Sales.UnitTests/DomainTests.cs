@@ -81,7 +81,7 @@ public class SalesOrderStateTests
     public void Order_over_threshold_is_flagged_high_value()   // tests the FLAG, not a workflow branch
     {
         var order = SalesOrder.Create("SO-1", new CustomerId(1), new UserId(1));
-        order.AddLine(new ItemId(1), new Quantity(1), new Money(12_000));  // > $10k threshold
+        order.AddLine(new ItemId(1), new Quantity(1), new Money(60_000));  // > ₱50,000 threshold
         order.RequiresApproval.Should().BeTrue();
     }
 

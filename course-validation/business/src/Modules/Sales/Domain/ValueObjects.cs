@@ -55,5 +55,5 @@ public static class SalesOrderStatusRules
 
 public static class ApprovalPolicy
 {
-    public static readonly Money Threshold = new(10_000m);  // orders over $10k are flagged high-value
+    public static readonly Money Threshold = new(50_000m);  // orders over ₱50,000 are flagged high-value
 }

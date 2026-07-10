@@ -1,5 +1,6 @@
 using System.Data;
 using Dapper;
+using Erp.Shared.Common.Data;
 
 namespace Erp.Shared.Infrastructure;
 

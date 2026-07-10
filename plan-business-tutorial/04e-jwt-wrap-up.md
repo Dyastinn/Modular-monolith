@@ -15,7 +15,8 @@
 
 ```
 0. EVERY request carries  X-Api-Key: <key>  → ApiKeyMiddleware checks it FIRST; unknown client → 401
-     before anything else runs (yes, even /auth/login). Below, assume it's present and valid.
+     before anything else runs (yes, even /auth/login). The only exceptions are CORS preflight (OPTIONS),
+     /health and /swagger. Below, assume the key is present and valid.
 1. POST /auth/login {rep, Password123!}  → LoginHandler verifies hash → returns { accessToken, refreshToken }
 2. Client stores both: the access token for requests, the refresh token for later.
 3. POST /sales-orders   X-Api-Key: <key>   Authorization: Bearer <accessToken>

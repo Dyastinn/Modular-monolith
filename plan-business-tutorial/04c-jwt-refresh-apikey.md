@@ -710,17 +710,22 @@ You already built the whole "where does config come from" story in §7. API keys
 or environment variables; **never** committed).
 
 Although we're only building one website and one mobile app, it's already worth thinking like a production
-system: **issue one API key per client application**. That lets you identify and manage each client
-independently.
+system: **issue one API key per client application**, and store them as a **map of client name → key** rather
+than a bare list.
+
+Why a map and not a list? Because a list can only answer "is this key valid?" A map also answers "*which
+client* is this?" — and that second answer is what lets you log per client, rate-limit one client without
+touching the others, and revoke the mobile app's key at 2am without knocking your website offline. The name
+costs you nothing and buys you all of that.
 
 During development you could place them in `appsettings.json`:
 
 ```json
 {
-  "ApiKeys": [
-    "web-live-abc123",
-    "mobile-live-xyz789"
-  ]
+  "ApiKeys": {
+    "web": "web-live-abc123",
+    "mobile": "mobile-live-xyz789"
+  }
 }
 ```
 
@@ -729,22 +734,22 @@ But just like the JWT signing key, these should **not** live in source control.
 For local development, use User Secrets:
 
 ```bash
-dotnet user-secrets set "ApiKeys:0" "web-live-abc123"
-dotnet user-secrets set "ApiKeys:1" "mobile-live-xyz789"
+dotnet user-secrets set "ApiKeys:web"    "web-live-abc123"
+dotnet user-secrets set "ApiKeys:mobile" "mobile-live-xyz789"
 ```
 
 For production, use environment variables instead:
 
 ```text
-ApiKeys__0=web-live-abc123
-ApiKeys__1=mobile-live-xyz789
+ApiKeys__web=web-live-abc123
+ApiKeys__mobile=mobile-live-xyz789
 ```
 
-Notice the double underscore (`__`). ASP.NET Core automatically translates that into the same array
-structure as the JSON above.
+Notice the double underscore (`__`). ASP.NET Core automatically translates that into the same nested
+structure as the JSON above — `__` is how you say "child key" in an environment variable name.
 
-We're only using two API keys here, but the same approach scales to dozens of client applications without
-changing any application code.
+We're only registering two clients here, but the same approach scales to dozens without changing any
+application code: add a line to config, hand the new client its key.
 
 ### Step 2 — the middleware
 
@@ -752,46 +757,86 @@ The check gates the *whole pipeline*, so it's a middleware in the host, not a fe
 `Erp.Api/Security/ApiKeyMiddleware.cs`:
 
 ```csharp
+// src/Erp.Api/Security/ApiKeyMiddleware.cs
+using System.Security.Cryptography;
+using System.Text;
+
+namespace Erp.Api.Security;
+
 public sealed class ApiKeyMiddleware(RequestDelegate next, IConfiguration config)
 {
     private const string HeaderName = "X-Api-Key";
 
-    // Read all configured API keys once at startup (middleware is built once).
-    private readonly byte[][] _expected =
-        config.GetSection("ApiKeys")
-              .Get<string[]>()?
-              .Select(k => Encoding.UTF8.GetBytes(k))
-              .ToArray()
+    // Read the configured "ApiKeys" map (client name → key) once at startup, pre-encoded for comparison.
+    private readonly (string Client, byte[] Key)[] _keys =
+        config.GetSection("ApiKeys").Get<Dictionary<string, string>>()
+            ?.Where(kv => !string.IsNullOrEmpty(kv.Value))
+             .Select(kv => (kv.Key, Encoding.UTF8.GetBytes(kv.Value)))
+             .ToArray()
         ?? [];
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (!context.Request.Headers.TryGetValue(HeaderName, out var provided) || !Matches(provided!))
+        // Let CORS preflight through: a browser NEVER sends custom headers (X-Api-Key) on an OPTIONS
+        // preflight, so gating it here would 401 the preflight and the real request would never be sent.
+        // Also wave through Swagger UI and the health check so the app stays browsable in dev.
+        if (HttpMethods.IsOptions(context.Request.Method) || IsExempt(context.Request.Path))
+        {
+            await next(context);
+            return;
+        }
+
+        context.Request.Headers.TryGetValue(HeaderName, out var provided);
+        var client = Match(provided!);
+
+        if (client is null)
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;   // unknown client — stop here
             await context.Response.WriteAsJsonAsync(new { error = "Missing or invalid API key." });
             return;   // short-circuit: never call next() → no endpoint runs
         }
 
+        // Remember WHICH client this is, so downstream (logging, rate limiting) can tell them apart.
+        context.Items["ClientId"] = client;
         await next(context);
     }
 
-    // Same fixed-time comparison as the password check (§3). We compare against every registered
-    // client key until one matches.
-    private bool Matches(string provided)
+    private static bool IsExempt(PathString path) =>
+        path.StartsWithSegments("/health") || path.StartsWithSegments("/swagger");
+
+    // Return the client name whose key matches, or null. Same fixed-time comparison as the §3 password
+    // check: FixedTimeEquals returns false on a length mismatch (no throw), so timing can't leak a key.
+    private string? Match(string provided)
     {
+        if (string.IsNullOrEmpty(provided)) return null;
         var bytes = Encoding.UTF8.GetBytes(provided);
-
-        foreach (var expected in _expected)
+        foreach (var (client, key) in _keys)
         {
-            if (CryptographicOperations.FixedTimeEquals(bytes, expected))
-                return true;
+            if (CryptographicOperations.FixedTimeEquals(bytes, key))
+                return client;
         }
-
-        return false;
+        return null;
     }
 }
 ```
+
+Three details worth slowing down for:
+
+- **`Match` returns the client's *name*, not a `bool`.** That's the whole reason for the map. Once we know
+  the request came from `"mobile"`, we stash it in `context.Items["ClientId"]` — a per-request scratchpad that
+  any later middleware or endpoint can read. Nothing uses it yet; it's the hook that makes per-client logging
+  and rate limiting possible later without touching this file again.
+- **The `IsOptions` escape hatch is not laziness.** Before a browser sends a cross-origin request that carries
+  a custom header, it first sends an `OPTIONS` *preflight* — and that preflight deliberately carries **no**
+  custom headers, so it can't carry `X-Api-Key` either. Gate the preflight and it 401s, the browser gives up,
+  and the real request is never sent at all. You'd see a CORS error and spend an hour blaming CORS.
+- **`/health` and `/swagger` are exempt** so you can still open the app in a browser (which can't set a
+  custom header by hand) and so a load balancer can poll health without holding a secret.
+
+> ⚠️ **An API key is not authentication.** It identifies the *client app*, not the *user*, and every copy of
+> your mobile app ships the same key — anyone can extract it. It raises the cost of casual abuse and lets you
+> revoke a client; it does **not** prove who is calling. The JWT does that. Two different jobs, which is
+> exactly why we run both gates.
 
 ### Step 3 — wire it *first*
 

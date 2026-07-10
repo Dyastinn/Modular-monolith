@@ -1,5 +1,6 @@
 using System.Security.Authentication;
 using Erp.Shared.Common;
+using Erp.Shared.Common.Data;
 using Erp.Shared.Infrastructure;
 using Erp.Shared.Messaging;
 
@@ -13,7 +14,7 @@ public sealed class RefreshHandler(
     IRefreshTokenRepository store,
     IUserRepository users,
     IJwtTokenService jwt,
-    IUnitOfWork uow,
+    IDbConnectionFactory factory,
     IClock clock) : ICommandHandler<RefreshCommand, LoginResult>
 {
     public async Task<LoginResult> Handle(RefreshCommand cmd, CancellationToken ct)
@@ -28,9 +29,19 @@ public sealed class RefreshHandler(
         // Burn the whole family so neither the thief nor the victim keeps using the lineage.
         if (token.RevokedUtc is not null)
         {
-            await using var breach = await uow.BeginAsync(ct);
-            await store.RevokeFamilyAsync(token.FamilyId, breach.Transaction, ct);
-            await breach.CommitAsync(ct);
+            using var breachConn = factory.Create();
+            await breachConn.OpenAsync(ct);
+            using var breach = breachConn.BeginTransaction();
+            try
+            {
+                await store.RevokeFamilyAsync(token.FamilyId, breach, ct);
+                breach.Commit();
+            }
+            catch
+            {
+                breach.Rollback();
+                throw;
+            }
             throw new AuthenticationException("Refresh token reuse detected — session revoked. Please log in again.");
         }
 
@@ -51,11 +62,21 @@ public sealed class RefreshHandler(
         // ROTATE: a new token in the SAME family. The sliding window resets (clamped to the password-expiry
         // cap); the hard cap is the user's CURRENT PasswordExpiresUtc — unchanged here, since the stamp matched.
         var (rawNew, hashNew) = refreshTokens.Generate();
-        await using var tx = await uow.BeginAsync(ct);
-        await store.AddAsync(hashNew, user.Id, token.FamilyId, user.SecurityStamp,
-            refreshTokens.SlidingExpiry(now, user.PasswordExpiresUtc), user.PasswordExpiresUtc, tx.Transaction, ct);
-        await store.RevokeAsync(presentedHash, hashNew, tx.Transaction, ct);   // old one spent
-        await tx.CommitAsync(ct);
+        using var conn = factory.Create();
+        await conn.OpenAsync(ct);
+        using var tx = conn.BeginTransaction();
+        try
+        {
+            await store.AddAsync(hashNew, user.Id, token.FamilyId, user.SecurityStamp,
+                refreshTokens.SlidingExpiry(now, user.PasswordExpiresUtc), user.PasswordExpiresUtc, tx, ct);
+            await store.RevokeAsync(presentedHash, hashNew, tx, ct);   // old one spent
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
 
         var access = jwt.CreateAccessToken(user.Id, user.Username, user.Role);
         return new LoginResult(access, rawNew, user.Username, user.Role);
@@ -68,16 +89,26 @@ public sealed record LogoutCommand(string RefreshToken) : ICommand<Unit>;
 public sealed class LogoutHandler(
     IRefreshTokenService refreshTokens,
     IRefreshTokenRepository store,
-    IUnitOfWork uow) : ICommandHandler<LogoutCommand, Unit>
+    IDbConnectionFactory factory) : ICommandHandler<LogoutCommand, Unit>
 {
     public async Task<Unit> Handle(LogoutCommand cmd, CancellationToken ct)
     {
         var token = await store.GetByHashAsync(refreshTokens.Hash(cmd.RefreshToken), ct);
         if (token is not null)   // unknown/already-gone token → nothing to do; logout is idempotent
         {
-            await using var tx = await uow.BeginAsync(ct);
-            await store.RevokeFamilyAsync(token.FamilyId, tx.Transaction, ct);   // this whole session out
-            await tx.CommitAsync(ct);
+            using var conn = factory.Create();
+            await conn.OpenAsync(ct);
+            using var tx = conn.BeginTransaction();
+            try
+            {
+                await store.RevokeFamilyAsync(token.FamilyId, tx, ct);   // this whole session out
+                tx.Commit();
+            }
+            catch
+            {
+                tx.Rollback();
+                throw;
+            }
         }
         return Unit.Value;
     }
@@ -89,13 +120,23 @@ public sealed record LogoutAllCommand : ICommand<Unit>;
 public sealed class LogoutAllHandler(
     ICurrentUser currentUser,
     IRefreshTokenRepository store,
-    IUnitOfWork uow) : ICommandHandler<LogoutAllCommand, Unit>
+    IDbConnectionFactory factory) : ICommandHandler<LogoutAllCommand, Unit>
 {
     public async Task<Unit> Handle(LogoutAllCommand cmd, CancellationToken ct)
     {
-        await using var tx = await uow.BeginAsync(ct);
-        await store.RevokeAllForUserAsync(currentUser.UserId, tx.Transaction, ct);
-        await tx.CommitAsync(ct);
+        using var conn = factory.Create();
+        await conn.OpenAsync(ct);
+        using var tx = conn.BeginTransaction();
+        try
+        {
+            await store.RevokeAllForUserAsync(currentUser.UserId, tx, ct);
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
         return Unit.Value;
     }
 }

@@ -1,5 +1,6 @@
 using System.Security.Authentication;
 using Erp.Shared.Common;
+using Erp.Shared.Common.Data;
 using Erp.Shared.Infrastructure;
 using Erp.Shared.Messaging;
 using FluentValidation;
@@ -26,7 +27,7 @@ public sealed class LoginHandler(
     IJwtTokenService jwt,
     IRefreshTokenService refreshTokens,   // generates + hashes the random refresh token
     IRefreshTokenRepository store,        // persists it
-    IUnitOfWork uow,
+    IDbConnectionFactory factory,
     IClock clock) : ICommandHandler<LoginCommand, LoginResult>
 {
     public async Task<LoginResult> Handle(LoginCommand cmd, CancellationToken ct)
@@ -48,10 +49,20 @@ public sealed class LoginHandler(
         // Start a NEW token family for this login, storing the refresh token's HASH (never the raw value).
         // The token carries the user's SecurityStamp, and its hard cap IS the password-expiry date (from the DB).
         var (rawRefresh, refreshHash) = refreshTokens.Generate();
-        await using var tx = await uow.BeginAsync(ct);
-        await store.AddAsync(refreshHash, user.Id, Guid.NewGuid(), user.SecurityStamp,
-            refreshTokens.SlidingExpiry(now, user.PasswordExpiresUtc), user.PasswordExpiresUtc, tx.Transaction, ct);
-        await tx.CommitAsync(ct);
+        using var conn = factory.Create();
+        await conn.OpenAsync(ct);
+        using var tx = conn.BeginTransaction();
+        try
+        {
+            await store.AddAsync(refreshHash, user.Id, Guid.NewGuid(), user.SecurityStamp,
+                refreshTokens.SlidingExpiry(now, user.PasswordExpiresUtc), user.PasswordExpiresUtc, tx, ct);
+            tx.Commit();
+        }
+        catch
+        {
+            tx.Rollback();
+            throw;
+        }
 
         return new LoginResult(access, rawRefresh, user.Username, user.Role);   // client keeps the RAW refresh token
     }
