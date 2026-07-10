@@ -49,7 +49,7 @@ Run the app, then note two things and set them once so you can paste the rest ve
 ```bash
 # 1) Your app's port — read it from the console banner or Properties/launchSettings.json.
 # 2) An API key you configured in §11 (User Secrets / appsettings). We use the sample "web" key here.
-BASE=http://localhost:5001         # ← replace 5001 with YOUR port
+BASE=http://localhost:5234         # ← replace 5234 with YOUR port
 KEY=web-live-abc123                # ← replace with a key you actually configured
 ```
 
@@ -259,10 +259,10 @@ curl -i -X POST "$BASE/auth/login" -H "X-Api-Key: $KEY" \
 If every row matches, **Phase 4 is done and verifiable.** From Phase 6 on, every sales-order endpoint sits
 behind exactly this gate (API key → authenticate → authorize).
 
-> ℹ️ **Using Swagger instead of curl?** The §11 gate will 401 the Swagger UI too unless you allow-listed
-> `/swagger` (see the ℹ️ note in [Part 3, §11](04c-jwt-refresh-apikey.md)) or send `X-Api-Key` via Swagger's
-> header UI. Once through, paste an access token into the **Authorize** box to call protected endpoints from the
-> browser.
+> ℹ️ **Using Swagger instead of curl?** The `/swagger` page itself loads (it's exempt), but every request it
+> fires is gated. That's why [Part 3, §11](04c-jwt-refresh-apikey.md) added an `ApiKey` security definition:
+> Swagger's **Authorize** button now takes **two** values — paste your `X-Api-Key` in one box and, after
+> logging in, the access token in the other. Then every "Try it out" carries both headers.
 
 > ℹ️ You just changed `rep`'s password to `NewPassword456!`. Either **re-seed** (re-run the Phase 3 seed) or
 > **remember the new password** for the rest of the run, since later checkpoints assume `Password123!`.
@@ -276,7 +276,7 @@ behind exactly this gate (API key → authenticate → authorize).
   token to get a token). ✅ Login is always anonymous.
 - ❌ **Middleware in the wrong order** (`UseAuthorization` before `UseAuthentication`). ✅ Authenticate,
   then authorize.
-- ❌ **Making handlers depend on `HttpContext`.** ✅ Depend on `ICurrentUser`; keep the Application layer
+- ❌ **Making handlers depend on `HttpContext`.** ✅ Depend on `ICurrentUser`; keep handlers and the domain
   framework-free and unit-testable (you can fake `ICurrentUser` in tests).
 - ❌ **Storing the raw refresh token in the database.** ✅ Store its hash; a DB leak then yields no usable
   tokens (§10).
@@ -295,8 +295,8 @@ behind exactly this gate (API key → authenticate → authorize).
   simply stops agreeing, no hunt required (§10).
 - ❌ **Treating a browser-shipped API key as a real secret, or letting it replace user auth.** ✅ Use it as a
   coarse *outer* gate — block anonymous traffic off the login door, tell clients apart, rate-limit/revoke one.
-  Keep JWT + the §9 checks as the real security. An API key is a genuine secret only for
-  server-to-server/partner clients (§11).
+  Keep the JWT plus §10's rotation and reuse checks as the real security. An API key is a genuine secret only
+  for server-to-server/partner clients (§11).
 - ❌ **Putting the API key gate *after* `UseAuthentication`.** ✅ Wire it *first* — reject unknown clients
   before you spend cycles validating tokens, and so it can guard the anonymous `/auth/login` too.
 - ❌ **Gating change-password behind `.RequireAuthorization()`.** It re-creates the expiry dead-end — the
@@ -311,7 +311,7 @@ behind exactly this gate (API key → authenticate → authorize).
 ## ✅ Check Yourself
 
 1. In one sentence each: what's authentication vs. authorization?
-2. Why does the Application layer talk to `ICurrentUser` instead of `HttpContext`?
+2. Why does a handler talk to `ICurrentUser` instead of reaching for `HttpContext`?
 3. Why must `UseAuthentication` come before `UseAuthorization`?
 4. Give an authorization rule that belongs on the *endpoint*, and one that belongs in the *handler* —
    and say why.

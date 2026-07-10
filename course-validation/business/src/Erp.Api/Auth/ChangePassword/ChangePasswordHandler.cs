@@ -1,4 +1,5 @@
 using System.Security.Authentication;
+using Erp.Shared.Common;
 using Erp.Shared.Common.Data;
 using Erp.Shared.Infrastructure;
 using Erp.Shared.Messaging;

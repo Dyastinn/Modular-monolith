@@ -69,6 +69,15 @@ thing that looks inconsistent until you see *why*:
 `Modules/Sales/Features/GetSalesOrder/GetSalesOrderHandler.cs`:
 
 ```csharp
+// src/Modules/Sales/Features/GetSalesOrder/GetSalesOrderHandler.cs
+using System.Data;              // CommandType
+using Dapper;                   // QueryMultipleAsync, CommandDefinition
+using Erp.Modules.Sales.Domain; // SalesOrderStatus
+using Erp.Shared.Common.Data;   // IDbConnectionFactory
+using Erp.Shared.Messaging;     // IQuery, IQueryHandler
+
+namespace Erp.Modules.Sales.Features;
+
 public sealed record GetSalesOrderQuery(long OrderId) : IQuery<SalesOrderDetailDto?>;
 
 public sealed record SalesOrderDetailDto(
@@ -113,18 +122,44 @@ write-side tool (it deals in aggregates); reads don't need it.
 
 `Modules/Sales/Features/SearchSalesOrders/SearchSalesOrdersHandler.cs`:
 
-```csharp
-public sealed record SearchSalesOrdersQuery(
-    long? CustomerId, string? Status, int Page = 1, int PageSize = 20)
-    : IQuery<PagedResult<SalesOrderSummaryDto>>;
+First, the paging envelope. It isn't Sales-specific — any module's grid wants the same shape — so it lives in
+the shared kernel, in `src/Shared/Erp.Shared.Common/PagedResult.cs`:
 
-public sealed record SalesOrderSummaryDto(
-    long Id, string OrderNumber, string CustomerName, string Status, decimal Total, DateTime CreatedUtc);
+```csharp
+// src/Shared/Erp.Shared.Common/PagedResult.cs
+namespace Erp.Shared.Common;
 
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, int TotalCount)
 {
     public int TotalPages => (int)Math.Ceiling(TotalCount / (double)PageSize);
 }
+```
+
+Now the slice itself:
+
+```csharp
+// src/Modules/Sales/Features/SearchSalesOrders/SearchSalesOrdersHandler.cs
+using System.Data;              // CommandType
+using Dapper;                   // QueryMultipleAsync, CommandDefinition
+using Erp.Modules.Sales.Domain; // SalesOrderStatus
+using Erp.Shared.Common;        // PagedResult
+using Erp.Shared.Common.Data;   // IDbConnectionFactory
+using Erp.Shared.Messaging;     // IQuery, IQueryHandler
+using FluentValidation;         // AbstractValidator, ValidationException
+
+namespace Erp.Modules.Sales.Features;
+
+public sealed record SearchSalesOrdersQuery(
+    long? CustomerId, string? Status, int Page = 1, int PageSize = 20)
+    : IQuery<PagedResult<SalesOrderSummaryDto>>;
+
+// What the API returns — Status is a readable NAME.
+public sealed record SalesOrderSummaryDto(
+    long Id, string OrderNumber, string CustomerName, string Status, decimal Total, DateTime CreatedUtc);
+
+// What Dapper reads from the proc — Status is the stored INT. Same two-shape split as GetSalesOrder above.
+public sealed record SalesOrderSummaryRow(
+    long Id, string OrderNumber, string CustomerName, int Status, decimal Total, DateTime CreatedUtc);
 
 public sealed class SearchSalesOrdersValidator : AbstractValidator<SearchSalesOrdersQuery>
 {
@@ -157,12 +192,23 @@ public sealed class SearchSalesOrdersHandler(IDbConnectionFactory factory)
             new { q.CustomerId, Status = statusNum, q.Page, q.PageSize },
             commandType: CommandType.StoredProcedure, cancellationToken: ct));
 
-        var items = (await multi.ReadAsync<SalesOrderSummaryDto>()).ToList();
-        var total = await multi.ReadSingleAsync<int>();   // second result set: total row count
+        var rows  = (await multi.ReadAsync<SalesOrderSummaryRow>()).ToList();   // read the INT status…
+        var total = await multi.ReadSingleAsync<int>();                        // second result set: total row count
+
+        // …and convert it to a name at the boundary, exactly as GetSalesOrder does.
+        var items = rows.Select(r => new SalesOrderSummaryDto(
+            r.Id, r.OrderNumber, r.CustomerName,
+            ((SalesOrderStatus)r.Status).ToString(), r.Total, r.CreatedUtc)).ToList();
+
         return new PagedResult<SalesOrderSummaryDto>(items, q.Page, q.PageSize, total);
     }
 }
 ```
+
+> ⚠️ **Don't skip the `Row` type and read straight into `SalesOrderSummaryDto`.** It's the obvious shortcut,
+> and it fails at runtime: the proc's `Status` column is an `int`, the DTO's `Status` property is a `string`,
+> and Dapper won't invent a conversion. You'd get a mapping exception on the first search. The two-record
+> split isn't ceremony — the DB shape and the API shape genuinely differ, and this is where you reconcile them.
 
 ## 5. The search stored procedure
 
@@ -274,10 +320,15 @@ query still runs, it just won't pre-validate paging inputs automatically.)
 With some orders created (Phases 6–8), fetch one and list them (any valid token works):
 
 ```bash
-curl http://localhost:5xxx/sales-orders/{id} -H "Authorization: Bearer $TOKEN"                       # → 200 detail JSON
-curl "http://localhost:5xxx/sales-orders?status=PendingApproval&page=1&pageSize=20" -H "Authorization: Bearer $TOKEN"
+AUTH=(-H "X-Api-Key: $KEY" -H "Authorization: Bearer $TOKEN")
+
+curl "$BASE/sales-orders/1" "${AUTH[@]}"                                       # → 200 detail JSON
+curl "$BASE/sales-orders?status=PendingApproval&page=1&pageSize=20" "${AUTH[@]}"
 # → 200 { items: [...], page: 1, pageSize: 20, totalCount: N, totalPages: ... }
 ```
+
+Also try `?status=Banana`. You should get a `400`, not a `500` — that's the `Enum.TryParse` guard in the
+handler turning bad input into a `ValidationException` (Phase 11 formats it).
 
 If the detail endpoint returns one order with its lines and names, and the search returns a paged envelope
 that respects `?status=` / `?customerId=` filters, **Phase 10 is done and verifiable** — and notice how much

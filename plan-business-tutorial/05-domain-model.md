@@ -9,10 +9,14 @@
 
 ## 1. What we're building
 
-The business objects at the center of everything: the `SalesOrder` aggregate (with its lines), the
-supporting `Customer`, `Item`, `ItemCategory`, and `Inventory` domain types, the strongly-typed IDs, the
-value objects (`Money`, `Quantity`), the `SalesOrderStatus` state machine, and the domain events. **No
-database, no web** — pure C# that compiles and is unit-testable on its own.
+The business objects at the center of everything: the `SalesOrder` aggregate (with its lines), the supporting
+`Customer` and `ItemCategory` types, the strongly-typed IDs, the value objects (`Money`, `Quantity`), the
+`SalesOrderStatus` state machine, and the domain events. **No database, no web** — pure C# that compiles and
+is unit-testable on its own.
+
+(Stock levels belong to the *Inventory* module, so no `Inventory` type appears here — [Phase 7](07-submit-reserve-concurrency.md)
+introduces it behind a contract. And an `Item` needs only its price and category at order time, so it arrives
+in [Phase 6](06-create-order.md) as a small read shape rather than an entity.)
 
 ## 2. Why it's designed this way
 
@@ -63,8 +67,16 @@ what matters is that they're all under the module's `Domain/`.)
 
 ## 3a. Strongly-typed IDs and value objects
 
+Every file in this section lives in the `Erp.Modules.Sales.Domain` namespace and needs
+`using Erp.Shared.BuildingBlocks;` for `DomainException`, `IDomainEvent`, and `AggregateRoot<TId>`. We show
+that header once here rather than repeating it on every block:
+
 ```csharp
 // src/Modules/Sales/Domain/SalesOrderId.cs (one small file each, or group them — your call)
+using Erp.Shared.BuildingBlocks;
+
+namespace Erp.Modules.Sales.Domain;
+
 public readonly record struct SalesOrderId(long Value);
 public readonly record struct CustomerId(long Value);
 public readonly record struct ItemId(long Value);
@@ -73,8 +85,11 @@ public readonly record struct UserId(long Value);
 
 > 🔑 **Why distinct ID types instead of a raw `long`?** Because `long` lets you pass a `CustomerId` where a
 > `SalesOrderId` was expected, and the compiler will happily agree — a bug you find in production, on the
-> wrong row. Give each ID its own type and that mistake stops compiling. The cost is small and paid once: a
-> Dapper `TypeHandler` per ID type, which we add in the repository.
+> wrong row. Give each ID its own type and that mistake stops compiling. The cost is one line at the database
+> boundary: Dapper doesn't know what a `CustomerId` is, so the repository unwraps it — `order.CustomerId.Value`
+> going in, `new CustomerId(row.CustomerId)` coming back. You'll see exactly that in
+> [Phase 6 §6](06-create-order.md). Keeping the unwrapping *in the repository* is the point: it's the only
+> place that ever deals in bare `long`s.
 
 Value objects that make invalid states impossible (`Domain/ValueObjects/`):
 
@@ -207,9 +222,15 @@ public sealed class ItemCategory
 ```
 
 Notice these are **rules expressed as methods on the thing they're about** — a category knows its own
-restrictions. The handler will hand the caller's role to `EnsureRoleAllowed`; the *fact* (the role)
-comes from outside, the *judgement* lives here. Same shape as `SalesOrder.Submit(approvalGranted)` from
-the beginner plan.
+restrictions. The handler will hand the caller's role to `EnsureRoleAllowed`; the *fact* (the role) comes
+from outside, the *judgement* lives here.
+
+That split is worth naming, because it's the shape every domain method in this course takes: **pass in facts,
+never decisions.** `EnsureRoleAllowed("SalesRep")` passes a fact — *this is who's calling* — and the category
+decides. Had we written `EnsureRoleAllowed(bool callerIsAllowed)`, the caller would be doing the deciding and
+the category would just be nodding along; the rule would have quietly moved out of the domain, and a second
+caller could nod differently. Watch for that inversion — a `bool` parameter on a domain method is almost
+always a decision that escaped.
 
 ## 6. The `SalesOrder` aggregate
 
@@ -217,6 +238,10 @@ This is the centerpiece. Read the comments — every design choice is deliberate
 
 ```csharp
 // src/Modules/Sales/Domain/SalesOrder.cs
+using Erp.Shared.BuildingBlocks;   // AggregateRoot<TId>, DomainException
+
+namespace Erp.Modules.Sales.Domain;
+
 public sealed class SalesOrder : AggregateRoot<SalesOrderId>
 {
     private readonly List<SalesOrderLine> _lines = new();
@@ -232,7 +257,7 @@ public sealed class SalesOrder : AggregateRoot<SalesOrderId>
     // Total is COMPUTED — it can never disagree with the lines.
     public Money Total => _lines.Aggregate(Money.Zero, (sum, l) => sum + l.LineTotal);
 
-    // The approval threshold is the ORDER'S own knowledge (a domain rule).
+    // The approval threshold is the ORDER'S own knowledge (a surfaced high-value flag — see §8).
     public bool RequiresApproval => Total > ApprovalPolicy.Threshold;
 
     private SalesOrder() { }   // for the repository to rehydrate from the DB
@@ -453,12 +478,12 @@ public static class ApprovalPolicy
 > step once the uniform flow is clear. (If your company genuinely wants "all orders need sign-off," the
 > uniform flow is also a perfectly valid real policy.)
 
-> ❓ **"Couldn't `Submit` just take an `approvalGranted` flag?"** It could — `Submit(bool approvalGranted)`
-> is a real design some systems use, and it keeps everything on one write path. We don't, because a flag
-> passed in by the caller means *the caller asserts* the approval happened; nothing in the system checks
-> that a manager was actually involved. Splitting approval into its own role-gated `Approve` step makes the
-> manager's involvement a fact the system enforces rather than a claim it trusts. That's the shape real ERPs
-> use, and it's why [Phase 8](08-approval-cancellation.md) exists.
+> ❓ **"Couldn't `Submit` just take an `approvalGranted` flag?"** This is §5's *"pass in facts, never
+> decisions"* rule showing up again, and it's worth seeing it bite twice. A `bool` handed to `Submit` means
+> **the caller asserts** the approval happened; nothing in the system ever checks that a manager was actually
+> involved. Splitting approval into its own role-gated `Approve` step makes the manager's involvement a fact
+> the system *enforces* rather than a claim it *trusts*. That's the shape real ERPs use, and it's why
+> [Phase 8](08-approval-cancellation.md) exists.
 
 ## 9. Why each class exists
 
@@ -499,6 +524,11 @@ the module's Domain stays free of any test dependency.)
 ### The tests (`tests/Erp.Modules.Sales.UnitTests/SalesOrderTests.cs`)
 
 ```csharp
+// tests/Erp.Modules.Sales.UnitTests/SalesOrderTests.cs
+using Erp.Modules.Sales.Domain;
+using Erp.Shared.BuildingBlocks;   // DomainException
+using Xunit;
+
 public class SalesOrderTests
 {
     [Fact]

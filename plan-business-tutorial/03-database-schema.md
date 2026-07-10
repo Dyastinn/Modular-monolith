@@ -33,17 +33,17 @@ production.
 
 ## 2. Why it's designed this way
 
-Two principles carried over from the earlier plans, applied to a real schema:
+Three principles decide what goes in this schema, and — just as importantly — what doesn't:
 
 - **Integrity lives in SQL.** Foreign keys, `NOT NULL`, `CHECK` constraints, and unique indexes enforce
   data correctness *no matter what code touches the database*. We don't trust the app to never insert
   garbage — the schema refuses it.
-- **Policy lives in the domain (C#).** "Only draft orders can be edited," "over ₱500,000 needs approval" —
-  those are *not* in the database. If you enforced them **both** in the domain *and* in SQL, you'd have the
-  same rule written in two languages that must be kept in perfect sync forever — a **"split-brain"**: change
-  the threshold in C# but forget the `CHECK`, and the two halves now disagree and fight. So each *policy*
-  rule gets exactly **one home**, the domain; the database enforces *integrity* (shapes and relationships),
-  not policy.
+- **Policy lives in the domain (C#).** "Only draft orders can be edited," "an order over ₱50,000 is flagged
+  high-value" — those are *not* in the database. If you enforced them **both** in the domain *and* in SQL,
+  you'd have the same rule written in two languages that must be kept in perfect sync forever — a
+  **"split-brain"**: change the threshold in C# but forget the `CHECK`, and the two halves now disagree and
+  fight. So each *policy* rule gets exactly **one home**, the domain; the database enforces *integrity*
+  (shapes and relationships), not policy.
 - **One exception, on purpose:** the *atomic inventory guard* (reserve only if available) **is** in SQL,
   because only the database can make it safe under concurrency. That's [Phase 7](07-submit-reserve-concurrency.md)'s
   whole lesson, and its proc lives here.
@@ -274,6 +274,14 @@ CREATE INDEX IX_SalesOrderLine_OrderId ON sales.SalesOrderLine(SalesOrderId);
 CREATE INDEX IX_SalesOrder_CustomerId  ON sales.SalesOrder(CustomerId);
 CREATE INDEX IX_SalesOrder_Status      ON sales.SalesOrder(Status);
 ```
+
+> ❓ **"Hold on — `CreatedByUserId` has an FK into `[identity]`. Didn't you just forbid cross-schema FKs?"**
+> Good catch, and the difference is worth being precise about. The rule is *no FK between two **modules***,
+> because an FK is a hard weld and modules are supposed to be separable. `[identity]` is not a module — it's
+> a **host-owned** table that every module's data can lean on, the same way every module leans on
+> `Erp.Shared`. It will never be extracted into its own service independently of the host, so the weld costs
+> nothing. `inventory` *is* a module, and `Inventory.ItemId` therefore stays a bare id. When you're unsure,
+> ask: *"could these two ever be pulled apart into separate deployables?"* If yes, no FK.
 
 Details worth catching here:
 - **`RowVersion ROWVERSION`** — an auto-changing stamp SQL Server bumps on every update to the row. It
@@ -531,10 +539,11 @@ END
 > Neither guarantee is a configured number in the app — both live in the database, exactly where the password
 > policy lives.
 
-> ℹ️ **This tutorial doesn't build a full change-password *endpoint*** (username/password reset flows are
-> their own topic). It ships the proc and the policy so the auth mechanism is complete and honest: you can see
-> precisely where invalidation and the expiry cap come from, and wiring a `POST /auth/change-password` slice
-> on top of this proc is a short exercise ([Phase 13](13-wrap-up-checklist.md)).
+> ℹ️ **You'll wire an endpoint onto this proc.** [Phase 4 Part 4](04d-jwt-change-password.md) builds
+> `POST /auth/change-password` on top of it — including the surprising reason that endpoint has to be
+> *anonymous*. What this tutorial does **not** build is a *forgot*-password flow (emailed reset links are
+> their own topic, with their own token lifecycle); that one's an
+> [extension exercise](13-wrap-up-checklist.md).
 
 ## 5. Seed data (`Infrastructure/Sql/003_seed.sql`)
 
@@ -562,6 +571,9 @@ INSERT INTO sales.Item (Sku, Name, CategoryId, UnitPrice) VALUES
  ('GEN-002', 'Gadget',        1, 40.00),
  ('CTL-001', 'Restricted Kit',2, 500.00);
 
+-- This last block belongs to the INVENTORY module's own 003_seed.sql (Phase 7 creates that folder),
+-- because inventory.Inventory is the Inventory module's table. It runs after the sales seed above,
+-- since it refers to the item ids that seed just created.
 INSERT INTO inventory.Inventory (ItemId, OnHand, Reserved) VALUES
  (1, 100, 0),
  (2,  50, 0),
@@ -607,16 +619,25 @@ the connection factory and the transaction pattern; right now we just need somew
 
 ### Run the scripts
 
-Run each module's scripts in dependency order against your dev database (create the schemas first, then
-`sales`, then `inventory`, plus `identity`). A tiny runner, or the free **DbUp** library, discovers each
-module's `Infrastructure/Sql/` folder:
+Run each module's scripts in dependency order against your dev database. The `sales` scripts go first
+(`inventory.Inventory` seeds item ids that `sales.Item` defines), then `inventory`:
 
 ```bash
 sqlcmd -S "(localdb)\MSSQLLocalDB" -d Erp -i src/Modules/Sales/Infrastructure/Sql/001_schema.sql
 sqlcmd -S "(localdb)\MSSQLLocalDB" -d Erp -i src/Modules/Sales/Infrastructure/Sql/002_procedures.sql
 sqlcmd -S "(localdb)\MSSQLLocalDB" -d Erp -i src/Modules/Sales/Infrastructure/Sql/003_seed.sql
-# ...and the equivalent Inventory + identity scripts.
+# ...then the three equivalent scripts under src/Modules/Inventory/Infrastructure/Sql/ (Phase 7 creates them).
 ```
+
+> ⚠️ **Where do the `[identity]` tables live?** There is no `Identity` *module* project — authentication is a
+> host concern, not a business capability, so we never gave it one. Its DDL therefore has to ride along
+> somewhere, and the pragmatic answer is the **Sales module's `001_schema.sql`**: `CREATE SCHEMA [identity]`
+> and both its tables sit at the top of that file, above the `sales` tables. That's a genuine wrinkle, not a
+> pattern — the tidy version is a third script folder owned by the host, and it's a fine thing to refactor
+> toward once you've seen why the wrinkle exists — in fact the [03a-database-queries/](03a-database-queries/README.md)
+> companion folder already lays them out that way, with `Identity/`, `Sales/`, and `Inventory/` side by side.
+> What matters is the rule that *does* hold: no `sales` proc ever reads an `[identity]` table, and no
+> `[identity]` proc ever reads a `sales` one.
 
 The *same* scripts set up the test database in [Phase 12](12-testing.md). One source of truth per module
 for schema, procs, seed — used by dev, test, and prod. That's the "migrations without EF" approach: numbered

@@ -16,7 +16,7 @@ introduced. When we reach a mediator, a value object, an atomic SQL guard, or a 
 explain what problem it solves and why the obvious alternative hurts — *before* we write it — and then show
 it doing real work inside a real business feature.
 
-Two reference files sit alongside the phases. Dip into them whenever you like; neither is a prerequisite:
+Three reference files sit alongside the phases. Dip into them whenever you like; none is a prerequisite:
 
 - [GLOSSARY.md](GLOSSARY.md) — every term this course uses, in plain English. If a word in a phase feels
   slippery, it's defined here.
@@ -37,6 +37,7 @@ can fulfill it. By the end you'll have secured HTTP endpoints for:
 | `POST /auth/login` | anyone | Log in, get a short-lived access token + a refresh token |
 | `POST /auth/refresh` | anyone with a valid refresh token | Rotate the refresh token, get a fresh access token |
 | `POST /auth/logout` / `/auth/logout-all` | valid refresh token / any logged-in user | Revoke this session / every session |
+| `POST /auth/change-password` | anyone who knows the old password | Change a password, revoking every existing session |
 | `POST /sales-orders` | SalesRep, SalesManager | Create a draft order (with all the create-time checks) |
 | `PUT /sales-orders/{id}` | SalesRep, SalesManager | Edit a *draft* order's lines |
 | `POST /sales-orders/{id}/submit` | SalesRep, SalesManager | Submit for approval + **reserve inventory** |
@@ -97,9 +98,9 @@ first needs it. You don't have to understand this table yet — it's here so you
 
 > 🚫 **Deliberately NOT used** (and we never sneak them in): Clean Architecture's four-layer project split,
 > Docker, Redis, EF Core, RabbitMQ, MassTransit, microservices. Every one of them is a reasonable tool in
-> the right situation, and [Phase 13](13-wrap-up-checklist.md) explains exactly when each starts to earn its
-> keep. Until then, if you feel tempted to reach for one, that temptation is a topic for *after* this
-> tutorial — not during it.
+> the right situation. [Phase 13](13-wrap-up-checklist.md) names what each would buy you, and
+> [Phase 14](14-going-further.md) shows exactly when Docker and Redis start earning their keep. Until then,
+> if you feel tempted to reach for one, that temptation is a topic for *after* this tutorial — not during it.
 
 > 🧭 **Coming from WebForms (`.aspx.vb` + jQuery AJAX / `[WebMethod]`)?** This tutorial is written for you.
 > At each step we contrast the new way with what you already know: a `[WebMethod]` becomes a **Carter
@@ -132,6 +133,7 @@ Each phase builds directly on the one before it, and each ends with something yo
 | 11 | [11-cross-cutting.md](11-cross-cutting.md) | Validation, global error handling, logging | ~1–1.5 hr |
 | 12 | [12-testing.md](12-testing.md) | Unit + integration tests for the business rules | ~2 hr |
 | 13 | [13-wrap-up-checklist.md](13-wrap-up-checklist.md) | Recap + production-readiness checklist | ~30 min (read) |
+| 14 | [14-going-further.md](14-going-further.md) | *Optional.* Harden what you built; when Docker and Redis start earning their keep | ~1 hr (read) |
 
 > ⏱️ **Total: roughly 18–22 hours of focused, hands-on time** — think two to three unhurried days, or a
 > couple of evenings a week for a few weeks. These are *typing-and-understanding* estimates for someone

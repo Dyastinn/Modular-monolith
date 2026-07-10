@@ -1,4 +1,4 @@
-# Foundations — The Stuff You Need *Before* Phase 0
+# Foundations — The Stuff You Need *Before* Phase 1
 
 > 👨‍🏫 **A note from your senior:** If any phase ever uses a word and your brain goes "wait, what's
 > that?", come back here first. There is *no shame* in not knowing these yet — every single senior dev
@@ -43,7 +43,7 @@ Understanding *what code is trying to do* comes before understanding *every symb
 - A **class** is a blueprint. `class SalesOrder { ... }` describes what a sales order *is* and what it can
   *do*.
 - An **object** (also called an "instance") is one actual thing built from that blueprint. You make one
-  with the keyword `new`: `var order = new SalesOrder();`
+  with the keyword `new`: `var dog = new Dog();`
 - **Analogy:** the class is the cookie *cutter*; each object is a *cookie* you stamp out with it.
 
 ```csharp
@@ -73,7 +73,8 @@ public string Status { get; private set; } // anyone can READ, but only THIS cla
 
 That `private set` is a **huge deal in this project.** It's how the `SalesOrder` protects its rules:
 outside code can *look* at the status, but can only *change* it by calling a method like `Submit()` —
-which checks the rules first. (This is the whole "rich vs. anemic" idea in Phase 3.)
+which checks the rules first. (This is the whole "rich vs. anemic" idea, and
+[Phase 5](05-domain-model.md) is built on it.)
 
 ---
 
@@ -128,6 +129,30 @@ The handler *needs* a repository to do its job. But instead of building one itse
 (`new SalesOrderRepository(...)`), it says "someone hand me one that fits the `ISalesOrderRepository` shape."
 That handing-over is **Dependency Injection**.
 
+### The parentheses after the class name
+
+`class CreateSalesOrderHandler(ISalesOrderRepository orders, ...)` looks odd the first time. Those
+parentheses are a **primary constructor** — modern C# shorthand for "to build one of these, you must supply
+an `orders` and a `customers`, and I'll keep them as fields." Every method in the class can then just use
+`orders` by name. The long-hand version says exactly the same thing:
+
+```csharp
+public class CreateSalesOrderHandler          // the old way — same meaning, four times the typing
+{
+    private readonly ISalesOrderRepository _orders;
+    private readonly ICustomerRepository _customers;
+
+    public CreateSalesOrderHandler(ISalesOrderRepository orders, ICustomerRepository customers)
+    {
+        _orders = orders;
+        _customers = customers;
+    }
+}
+```
+
+Nearly every handler, repository, and service in this course uses the short form. When you see parentheses
+right after a class name, read them as **"these get handed to me when I'm created."**
+
 **Analogy:** you're a chef. You don't own a farm. You just say "I need eggs and flour," and the kitchen
 supplies them. You cook the same way whether the eggs came from farm A or farm B. DI is the kitchen
 supplying your ingredients.
@@ -180,9 +205,9 @@ public interface IRequestHandler<TRequest, TResponse>   // works for ANY request
 ```
 
 When you see `<TRequest, TResponse>` or `<T>`, read it as "this is a fill-in-the-blank type." When it's
-*used*, the blanks get filled: `IRequestHandler<CreateOrderCommand, OrderId>` means "the handler for a
-CreateOrderCommand that gives back an OrderId." You don't need to write generic code in this project
-much — you mostly *fill in the blanks*.
+*used*, the blanks get filled: `IRequestHandler<CreateSalesOrderCommand, SalesOrderId>` means "the handler
+for a `CreateSalesOrderCommand` that gives back a `SalesOrderId`." You don't need to write generic code in
+this project much — you mostly *fill in the blanks*.
 
 **The `<T>` you'll see most is a *collection* — a list of things:**
 
@@ -206,7 +231,7 @@ You'll see all three. Rough differences, enough to read the code:
 - **`record`** — a class optimized for *holding data*, with handy built-in features (easy equality,
   easy copying). We use records for commands, queries, and DTOs: `record CreateOrderCommand(...)`.
 - **`struct`** — a lightweight value type, good for tiny things. Our strongly-typed IDs are structs:
-  `readonly record struct OrderId(long Value)` — a tiny, unchangeable wrapper around a number.
+  `readonly record struct SalesOrderId(long Value)` — a tiny, unchangeable wrapper around a number.
 
 For reading purposes: **`record` and `struct` here mostly mean "a small data holder."** Don't overthink
 it yet.
@@ -218,12 +243,13 @@ it yet.
 An **enum** is a type that can only be one of a set list of named values.
 
 ```csharp
-public enum SalesOrderStatus { Draft, Submitted, Cancelled, Completed }
+public enum SalesOrderStatus { Draft, PendingApproval, Approved, Cancelled, Rejected }
 ```
 
-Now `SalesOrderStatus` can *only* be one of those four. You can't set it to `"Banana"` or `"draftt"` (typo) —
-the compiler won't allow it. That's why Phase 3 uses an enum for status instead of a plain string:
-strings let typos and nonsense in; enums don't.
+Now `SalesOrderStatus` can *only* be one of those five. You can't set it to `"Banana"` or `"draftt"` (typo) —
+the compiler won't allow it. That's why [Phase 5](05-domain-model.md) gives an order's status an enum
+instead of a plain string: strings let typos and nonsense in; enums don't. (Those five names really are the
+whole lifecycle of an order in this system — you'll meet each one as we build it.)
 
 ---
 
@@ -270,7 +296,8 @@ In this project, when a business rule is broken, the domain *throws* a `DomainEx
 - **SQL** is the language for talking to the database: "give me all orders where status = submitted,"
   "insert this new row."
 - A **stored procedure** ("proc") is a chunk of SQL saved *inside* the database with a name, so your C#
-  can just call it by name instead of sending raw SQL every time. (Much more in Phases 4–6.)
+  can just call it by name instead of sending raw SQL every time. (Much more in
+  [Phase 3](03-database-schema.md).)
 - **Dapper** is a small helper that runs our SQL and turns the rows it gets back into C# objects.
 
 Don't worry about writing SQL yet — the phases show you the exact procs. For now: **database = permanent
@@ -291,4 +318,5 @@ sign you can't do this.** Here's what actually works:
 
 Nobody learns this in one pass. Seniors just had more passes than you. That's the whole difference.
 
-Now go to [00-START-HERE.md](00-START-HERE.md). You've got this.
+Now go back to [00-START-HERE.md](00-START-HERE.md) for the plan, then start building in
+[01-solution-setup.md](01-solution-setup.md). You've got this.

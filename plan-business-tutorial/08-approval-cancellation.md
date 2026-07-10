@@ -36,6 +36,14 @@ Plus: **optimistic concurrency** so two managers acting on the same order can't 
 `Modules/Sales/Features/ApproveSalesOrder/ApproveSalesOrderHandler.cs`:
 
 ```csharp
+// src/Modules/Sales/Features/ApproveSalesOrder/ApproveSalesOrderHandler.cs
+using Erp.Modules.Sales.Domain;
+using Erp.Shared.Common;        // NotFoundException, ICurrentUser
+using Erp.Shared.Common.Data;   // IDbConnectionFactory
+using Erp.Shared.Messaging;     // ICommand, ICommandHandler, Unit, IDomainEventDispatcher
+
+namespace Erp.Modules.Sales.Features;
+
 public sealed record ApproveSalesOrderCommand(long OrderId) : ICommand<Unit>;
 
 public sealed class ApproveSalesOrderHandler(
@@ -132,6 +140,14 @@ since we loaded it (any change bumps `RowVersion`). Rowcount `0` → someone bea
 `Modules/Sales/Features/CancelSalesOrder/CancelSalesOrderHandler.cs`:
 
 ```csharp
+// src/Modules/Sales/Features/CancelSalesOrder/CancelSalesOrderHandler.cs
+using Erp.Modules.Sales.Domain;
+using Erp.Shared.Common;        // NotFoundException, IStockReservation
+using Erp.Shared.Common.Data;   // IDbConnectionFactory
+using Erp.Shared.Messaging;
+
+namespace Erp.Modules.Sales.Features;
+
 public sealed record CancelSalesOrderCommand(long OrderId) : ICommand<Unit>;
 
 public sealed class CancelSalesOrderHandler(
@@ -202,10 +218,12 @@ public sealed class CancelSalesOrderHandler(
 ## 6. Domain event dispatch after commit
 
 The domain events raised in [Phase 5](05-domain-model.md) (`SalesOrderApproved`, etc.) get dispatched
-*after* the transaction commits. Minimal dispatcher (Infrastructure):
+*after* the transaction commits.
 
-First, the two contracts — a handler for one event type, and the dispatcher that runs them. These belong in
-`Erp.Shared.Messaging` (every module's events reuse them), alongside the other messaging contracts:
+Two contracts and one implementation, all three in a new
+`src/Shared/Erp.Shared.Messaging/DomainEvents.cs` — every module's events reuse them, so they sit beside the
+other messaging contracts rather than in `Infrastructure`. (There's nothing framework-specific here: the
+dispatcher only needs an `IServiceProvider` to find handlers.)
 
 > ✅ **No new reference needed here.** These contracts mention `IDomainEvent` and `AggregateRoot<TId>`, which
 > live in `Erp.Shared.BuildingBlocks` — and you already gave `Erp.Shared.Messaging` a reference to
@@ -214,6 +232,12 @@ First, the two contracts — a handler for one event type, and the dispatcher th
 > depends on nothing, so no module wall is crossed.
 
 ```csharp
+// src/Shared/Erp.Shared.Messaging/DomainEvents.cs
+using Erp.Shared.BuildingBlocks;                  // IDomainEvent, AggregateRoot<TId>
+using Microsoft.Extensions.DependencyInjection;   // GetServices
+
+namespace Erp.Shared.Messaging;
+
 // A reaction to a specific domain event. Zero-to-many handlers may exist per event.
 public interface IDomainEventHandler<in TEvent> where TEvent : IDomainEvent
 {
@@ -264,12 +288,25 @@ public sealed class SalesOrderApprovedAuditHandler(ILogger<SalesOrderApprovedAud
 }
 ```
 
-> ℹ️ **Register these like handlers.** `IDomainEventHandler<>` implementations are found the same way as your
-> request handlers — extend `AddSalesModule`'s assembly scan to also register every closed
-> `IDomainEventHandler<>` in the module (the same reflection loop from
-> [Phase 2](02-mediator-own-vs-free.md), swapping `IRequestHandler<,>` for `IDomainEventHandler<>`). A handler
-> that isn't registered simply never runs — and since dispatch is best-effort after commit, you'd get *silent*
-> no-ops, so it's worth a quick check that yours are picked up.
+> ℹ️ **Register these like handlers.** Two registrations to add:
+>
+> ```csharp
+> // AddSharedInfrastructure() — the dispatcher itself
+> services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
+> ```
+>
+> ```csharp
+> // AddSalesModule() — the same reflection loop as Phase 2's, with IDomainEventHandler<> instead
+> var eventHandlerTypes = assembly.GetTypes()
+>     .Where(t => !t.IsAbstract && !t.IsInterface)
+>     .SelectMany(t => t.GetInterfaces()
+>         .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IDomainEventHandler<>))
+>         .Select(i => new { Implementation = t, Service = i }));
+> foreach (var h in eventHandlerTypes) services.AddTransient(h.Service, h.Implementation);
+> ```
+>
+> A handler that isn't registered simply never runs — and since dispatch is best-effort after commit, you'd
+> get *silent* no-ops rather than an error. Worth a quick check that yours are picked up.
 
 > 🔑 **Why dispatch *after* commit, and what happens if a handler fails.** You only want to react to things
 > that *actually saved*. Dispatch before the commit and a later rollback leaves you having emailed a customer
@@ -279,11 +316,13 @@ public sealed class SalesOrderApprovedAuditHandler(ILogger<SalesOrderApprovedAud
 > for "charge the customer." Making a cross-system reaction *reliable* needs a queue or an outbox table, and
 > that's deliberately out of scope here; [Phase 13](13-wrap-up-checklist.md) explains when you'd add one.
 
-> 📖 **A vocabulary note.** You'll meet this same pattern elsewhere under the name *notifications* —
-> `INotification`, `INotificationHandler<T>`, `IPublisher`. Those are one-to-one with our `IDomainEvent`,
-> `IDomainEventHandler<T>`, and `IDomainEventDispatcher`. Same idea (publish an event to zero-or-more
-> handlers after commit), different words. Pick one naming set and stay consistent; we use the domain-event
-> one because these events describe things that happened *in the business*, not in the framework.
+> ℹ️ **If you meet this pattern under another name.** Mediator libraries — MediatR and the
+> `martinothamar/Mediator` from [Phase 2](02-mediator-own-vs-free.md) among them — ship an equivalent under
+> the heading *notifications*: one interface for the message, one for the handler, one for the publisher,
+> mapping one-to-one onto our `IDomainEvent`, `IDomainEventHandler<T>`, and `IDomainEventDispatcher`. Same
+> idea, different words. **We use the domain-event names on purpose**, and it isn't cosmetic: "notification"
+> describes a *framework mechanism*, while "domain event" describes a *thing that happened in the business*.
+> The name you pick is the name your team will reason with. Pick one set and stay on it.
 
 ## 7. The endpoints (each a Carter module in its feature folder; note the role gate on approve)
 
@@ -371,23 +410,31 @@ If a SalesRep had tried, they'd never reach step 3 — the 403 stops them at ste
 Take a `PendingApproval` order from Phase 7. First prove the role gate — with a **`rep`** token:
 
 ```bash
-curl -X POST http://localhost:5xxx/sales-orders/{id}/approve -H "Authorization: Bearer $REP_TOKEN"   # → 403 Forbidden
+ID=1   # the PendingApproval order from Phase 7
+
+curl -X POST "$BASE/sales-orders/$ID/approve" \
+     -H "X-Api-Key: $KEY" -H "Authorization: Bearer $REP_TOKEN"       # → 403 Forbidden
 ```
+
+That `403` is the whole lesson of endpoint authorization: the token was perfectly valid, so we knew exactly
+who the rep was — and refused them anyway, before `ApproveSalesOrderHandler` ever loaded a row.
 
 Now approve it as **`manager`**, and confirm the balance moved:
 
 ```bash
-curl -X POST http://localhost:5xxx/sales-orders/{id}/approve -H "Authorization: Bearer $MANAGER_TOKEN"  # → 204
+curl -X POST "$BASE/sales-orders/$ID/approve" \
+     -H "X-Api-Key: $KEY" -H "Authorization: Bearer $MANAGER_TOKEN"   # → 204 No Content
 ```
 ```sql
-SELECT Status FROM sales.SalesOrder WHERE Id = {id};                  -- 2 = Approved
-SELECT OutstandingBalance FROM sales.Customer WHERE Id = {customerId};-- rose by the order total
+SELECT Status FROM sales.SalesOrder WHERE Id = 1;            -- 2 = Approved
+SELECT OutstandingBalance FROM sales.Customer WHERE Id = 1;  -- rose by the order total
 ```
 
 Finally, cancel it and watch the reversals — stock released **and** the balance credited back:
 
 ```bash
-curl -X POST http://localhost:5xxx/sales-orders/{id}/cancel -H "Authorization: Bearer $MANAGER_TOKEN"   # → 204
+curl -X POST "$BASE/sales-orders/$ID/cancel" \
+     -H "X-Api-Key: $KEY" -H "Authorization: Bearer $MANAGER_TOKEN"   # → 204 No Content
 ```
 
 `Reserved` on the ordered items drops, and `OutstandingBalance` returns to where it was. If a rep gets `403`,

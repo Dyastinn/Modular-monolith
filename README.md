@@ -36,22 +36,25 @@ Erp.slnx
 Directory.Packages.props             one place for every NuGet version (Central Package Management)
 src/
 ├── Shared/                          shared kernel — code every module may use
-│   ├── Erp.Shared.BuildingBlocks/   Entity, AggregateRoot, ValueObject, IDomainEvent, DomainException
-│   ├── Erp.Shared.Common/           Result/Error, IClock, guard helpers, paging — no dependencies
+│   ├── Erp.Shared.BuildingBlocks/   Entity, AggregateRoot, IDomainEvent, DomainException
+│   ├── Erp.Shared.Common/           IClock, IDbConnectionFactory, ICurrentUser, PagedResult, cross-module contracts
 │   ├── Erp.Shared.Messaging/        hand-rolled mediator: IRequest, IRequestHandler, ISender, behaviors
-│   └── Erp.Shared.Infrastructure/   Dapper connection factory, JWT/auth, error handling, Carter wiring
+│   └── Erp.Shared.Infrastructure/   Dapper connection factory, JWT/auth, refresh tokens, Carter wiring
 │
 ├── Modules/
-│   └── Sales/  (Erp.Modules.Sales)  ONE module = ONE project = the isolation boundary
-│       ├── Domain/                  SalesOrder aggregate, value objects, domain events. Depends on nothing but BuildingBlocks.
-│       ├── Features/                one folder per business feature (the vertical slices)
-│       │   ├── CreateSalesOrder/
-│       │   │   ├── CreateSalesOrderHandler.cs    Command + Result + Validator + Handler
-│       │   │   └── CreateSalesOrderEndpoint.cs   Request + Response + Carter endpoint
-│       │   ├── SubmitSalesOrder/    ...
-│       │   └── ...
-│       ├── Infrastructure/          Dapper repositories, stored-proc callers, SQL scripts
-│       └── DependencyInjection.cs   AddSalesModule() — the module's one public registration seam
+│   ├── Sales/  (Erp.Modules.Sales)  ONE module = ONE project = the isolation boundary
+│   │   ├── Domain/                  SalesOrder aggregate, value objects, domain events. Depends on nothing but BuildingBlocks.
+│   │   ├── Features/                one folder per business feature (the vertical slices)
+│   │   │   ├── CreateSalesOrder/
+│   │   │   │   ├── CreateSalesOrderHandler.cs    Command + Result + Validator + Handler
+│   │   │   │   └── CreateSalesOrderEndpoint.cs   Request + Response + Carter endpoint
+│   │   │   ├── SubmitSalesOrder/    ...
+│   │   │   └── ...
+│   │   ├── Infrastructure/          Dapper repositories, stored-proc callers, SQL scripts
+│   │   └── DependencyInjection.cs   AddSalesModule() — the module's one public registration seam
+│   │
+│   └── Inventory/ (Erp.Modules.Inventory)  reserves/releases stock; Sales reaches it only through
+│                                           the IStockReservation contract published in Shared.Common
 │
 └── Erp.Api/                         host / composition root: wires modules, Carter, auth, error handling
 
@@ -94,8 +97,15 @@ On first start the app **creates the `Erp` database and applies each module's `I
 scripts automatically** (a small `DatabaseInitializer` runs the embedded scripts — the "migrations without
 EF" approach), so there is nothing to set up by hand. The API listens on **http://localhost:5264**:
 
-- **`/swagger`** — Swagger UI with an **Authorize** button (paste the token from `POST /auth/login`).
+- **`/swagger`** — Swagger UI. Its **Authorize** button asks for **two** things: an `X-Api-Key` (which client
+  app) and a bearer token (which user). Paste the dev `web` key from
+  [`appsettings.Development.json`](course-validation/business/src/Erp.Api/appsettings.Development.json), then
+  call `POST /auth/login` and paste the access token it returns.
 - **`/health`** — returns `"healthy"`.
+
+> Every path except `/health` and `/swagger` is gated by the **`X-Api-Key` header** (Phase 4 §11) — including
+> the anonymous `/auth/login`. A `curl` without it gets `401 {"error":"Missing or invalid API key."}`, which
+> looks like a broken login until you know to look for it.
 
 **Ready-made test interface (for the student):** the API is *not* coupled to any UI. Instead, a single
 standalone file — [`course-validation/business/test-console/index.html`](course-validation/business/test-console/index.html)
@@ -107,7 +117,7 @@ Seed logins (all password `Password123!`): **`rep`** (SalesRep), **`manager`** (
 (Admin). Only a manager/admin can approve.
 
 ```
-dotnet test        # 14 domain unit tests + 5 integration/e2e tests (uses a separate Erp_Test database)
+dotnet test        # 14 domain unit tests + 6 integration/e2e tests (uses a separate Erp_Test database)
 ```
 
 > [`plan-business-tutorial/`](plan-business-tutorial/) is the *teaching* material;

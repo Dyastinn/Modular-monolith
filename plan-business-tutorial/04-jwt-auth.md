@@ -8,30 +8,31 @@
 > 5. [Request flow, checkpoint & common mistakes](04e-jwt-wrap-up.md)
 
 
-> This is a **new topic** not covered in the earlier plans, so we go slowly and assume nothing. By the
-> end you can log in, receive a token, refresh it safely, and protect endpoints — including "only a Manager
-> may approve."
+> Nothing here assumes you've done auth before. We go slowly. By the end of all five parts you can log in,
+> receive a token, refresh it safely, and protect endpoints — including "only a **SalesManager** may approve."
 
 ---
 
-> ⏱️ **Time for all five parts:** ~3–3.5 hr (this Part 1 is ~45 min). This is a **new topic** — hashing,
+> ⏱️ **Time for all five parts:** ~3–3.5 hr (this Part 1 is ~45 min). Everything is new: hashing,
 > tokens, claims, middleware order, the `MapInboundClaims` gotcha, and refresh-token rotation with reuse
-> detection ([Part 3, §10](04c-jwt-refresh-apikey.md)). Go slow; rushing auth is how subtle security bugs
+> detection ([Part 3](04c-jwt-refresh-apikey.md)). Go slow; rushing auth is how subtle security bugs
 > sneak in.
 
 ## 1. What we're building
 
-By the end of this phase, you'll have a complete authentication system for your API.
+**Across all five parts**, you'll end up with a complete authentication system:
 
-You'll build:
+| Part | What it adds |
+|---|---|
+| **1** (this file) | Password hashing (`IPasswordHasher`) and access-token creation (`IJwtTokenService`) — the two ingredients login needs |
+| [**2**](04b-jwt-login.md) | The `POST /auth/login` slice, token *validation* on incoming requests, `ICurrentUser`, and role-based authorization |
+| [**3**](04c-jwt-refresh-apikey.md) | **Refresh tokens** with rotation and reuse detection, logout endpoints, and the **API-key gate** that keeps unknown client apps out even before authentication |
+| [**4**](04d-jwt-change-password.md) | `POST /auth/change-password`, and the surprising reason it must be anonymous |
+| [**5**](04e-jwt-wrap-up.md) | The full request-flow trace, the runnable checkpoint, and the mistakes people make |
 
-- A `POST /auth/login` endpoint where a user submits a username and password and receives a **short-lived access token**.
-- Token **validation** wired into ASP.NET Core so protected endpoints automatically reject invalid or expired tokens.
-- **Role-based authorization** so specific endpoints can require particular roles, such as allowing only Managers to approve orders.
-- **Refresh tokens** (§10), allowing users to obtain a new access token without logging in again. We'll also implement **rotation**, **reuse detection**, and logout endpoints that revoke active sessions.
-- **An API key gate** (§11) that sits in front of the API as an outer layer of protection, ensuring only known client applications can access the API—even before user authentication occurs.
-
-By the end of Part 4, you'll understand the complete authentication flow—from entering a username and password, to issuing tokens, validating requests, authorizing users, refreshing sessions, and protecting the API from anonymous clients.
+**This part builds two services and nothing else.** They're the pieces login will assemble in Part 2:
+a `PasswordHasher` that can store and check a password safely, and a `JwtTokenService` that can mint a signed,
+short-lived access token. Neither is reachable over HTTP yet — there's no endpoint until Part 2.
 
 ## 2. Why it's designed this way
 
@@ -320,6 +321,11 @@ implementation using PBKDF2.
 Create `Erp.Shared.Infrastructure/Security/PasswordHasher.cs`:
 
 ```csharp
+// src/Shared/Erp.Shared.Infrastructure/Security/PasswordHasher.cs
+using System.Security.Cryptography;   // RandomNumberGenerator, Rfc2898DeriveBytes, CryptographicOperations
+
+namespace Erp.Shared.Infrastructure;
+
 public interface IPasswordHasher
 {
     string Hash(string password);
@@ -477,14 +483,33 @@ That creates tiny timing differences that sophisticated attackers can sometimes 
 `CryptographicOperations.FixedTimeEquals()` always compares every byte before returning, making timing attacks
 much harder.
 
-To generate the seed hashes from [Phase 3](03-database-schema.md), run `Hash("Password123!")` once and paste
-the results into `003_seed.sql`.
+### Checkpoint — real hashes for the seed users ✅
 
-> 📎 Don't want to boot the app just to generate the seed hashes? The companion
-> `04a-password-hashing` folder contains a Python implementation of the same algorithm. Run
-> `python hash_password.py --seed`, then copy the generated hashes into
-> `Identity/003_seed.sql`. It uses the same PBKDF2 algorithm and parameters, so the generated hashes verify
-> correctly with the C# `Verify()` method above.
+[Phase 3](03-database-schema.md) seeded `rep`, `manager`, and `admin` with the placeholder
+`'<hash-of-Password123!>'`. Nothing can log in until those become real hashes — so generating them is both
+this part's exercise *and* the way you prove `PasswordHasher` works.
+
+Call `Hash("Password123!")` **three times** (each call produces a different string, because each gets its own
+random salt) and paste the three results into your `003_seed.sql`. Then sanity-check the round trip:
+
+```csharp
+var hasher = new PasswordHasher();
+var stored = hasher.Hash("Password123!");
+
+Console.WriteLine(stored);                                  // 600000.rXf2…==.9kQ1…=
+Console.WriteLine(hasher.Verify("Password123!", stored));   // True
+Console.WriteLine(hasher.Verify("wrong", stored));          // False
+Console.WriteLine(hasher.Hash("Password123!") == stored);   // False — different salt every time
+```
+
+Those four lines are the whole lesson in miniature: the same password verifies, a wrong one doesn't, and no
+two hashes of the same password are ever equal.
+
+> ℹ️ **Don't want to boot the app just to generate three hashes?** The companion
+> [04a-password-hashing/](04a-password-hashing/README.md) folder has a Python implementation of the same
+> algorithm with the same parameters. Run `python hash_password.py --seed` and copy its output into your seed
+> script — the hashes it produces verify correctly against the C# `Verify()` above.
+
 ## 4. Step 2 — Creating the access token (`IJwtTokenService`)
 
 Now that we can safely store and verify passwords, the next piece is creating the **access token** that a
@@ -599,6 +624,15 @@ That key should never leave your machine.
 Create `Erp.Shared.Infrastructure/Security/JwtTokenService.cs`.
 
 ```csharp
+// src/Shared/Erp.Shared.Infrastructure/Security/JwtTokenService.cs
+using System.IdentityModel.Tokens.Jwt;   // JwtSecurityToken, JwtSecurityTokenHandler, JwtRegisteredClaimNames
+using System.Security.Claims;            // Claim, ClaimTypes
+using System.Text;                       // Encoding
+using Microsoft.Extensions.Configuration;
+using Microsoft.IdentityModel.Tokens;    // SymmetricSecurityKey, SigningCredentials, SecurityAlgorithms
+
+namespace Erp.Shared.Infrastructure;
+
 public interface IJwtTokenService
 {
     string CreateAccessToken(long userId, string username, string role);
@@ -811,5 +845,16 @@ eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI0MiIsInJvbGUiOiJTYWxlc1JlcCJ9.3Rk...
 
 ---
 
-> 👉 Next: **Phase 4 (Part 2 of 5) — Login, Validation & Authorization**, where we'll build a complete login
-> feature, validate JWTs on incoming requests, and use them to authenticate and authorize users.
+## ✅ Check Yourself
+
+1. A JWT's payload can be decoded by anyone. Why is that not a security hole — and what must you therefore
+   never put in one?
+2. Why is PBKDF2 deliberately *slow*, when every other function you write should be fast?
+3. Two users pick the password `Password123!`. Why don't they end up with the same stored hash, and what
+   attack does that prevent?
+4. The stored hash starts with `600000.` — what is that number for, and what would break if we left it out?
+5. `IPasswordHasher` and `IJwtTokenService` are both interfaces sitting in front of a single implementation.
+   What does the login handler gain from that, given it's the only caller?
+
+> 👉 Next: **[Phase 4 (Part 2 of 5) — Login, Validation & Authorization](04b-jwt-login.md)**, where we build
+> the login slice, validate JWTs on incoming requests, and use them to authenticate and authorize users.

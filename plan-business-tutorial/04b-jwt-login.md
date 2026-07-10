@@ -136,9 +136,13 @@ It simply needs enough information to determine whether someone can log in.
 
 For that reason, we don't build a rich domain aggregate here. A simple read model is enough.
 
-`Erp.Shared.Common/Security/IUserRepository.cs`
+The **port** lives in `Erp.Shared.Common/Security/IUserRepository.cs` — the same home as `ICurrentUser` and
+`IDbConnectionFactory`:
 
 ```csharp
+// src/Shared/Erp.Shared.Common/Security/IUserRepository.cs
+namespace Erp.Shared.Common;
+
 public sealed record AppUser(
     long Id,
     string Username,
@@ -188,9 +192,17 @@ Both repository methods are **pure reads**.
 As discussed in **Phase 3b**, read-only operations don't need transactions, so they create their own database
 connection directly.
 
-`Erp.Shared.Infrastructure/Security/UserRepository.cs`
+The **adapter** lives in `Erp.Shared.Infrastructure/Identity/UserRepository.cs`:
 
 ```csharp
+// src/Shared/Erp.Shared.Infrastructure/Identity/UserRepository.cs
+using System.Data;                  // CommandType
+using Dapper;                       // QuerySingleOrDefaultAsync, CommandDefinition
+using Erp.Shared.Common;            // AppUser, IUserRepository
+using Erp.Shared.Common.Data;       // IDbConnectionFactory
+
+namespace Erp.Shared.Infrastructure;
+
 public sealed class UserRepository(IDbConnectionFactory factory) : IUserRepository
 {
     public async Task<AppUser?> GetByUsernameAsync(string username, CancellationToken ct)
@@ -248,6 +260,14 @@ The login slice consists of four pieces:
 `Erp.Api/Auth/Login/LoginHandler.cs`
 
 ```csharp
+using System.Security.Authentication;   // AuthenticationException
+using Erp.Shared.Common;                // IUserRepository
+using Erp.Shared.Infrastructure;        // IPasswordHasher, IJwtTokenService
+using Erp.Shared.Messaging;             // ICommand, ICommandHandler
+using FluentValidation;
+
+namespace Erp.Api.Auth;
+
 public sealed record LoginCommand(string Username, string Password)
     : ICommand<LoginResult>;
 
@@ -416,6 +436,14 @@ A client can:
 `Erp.Api/Auth/Login/LoginEndpoint.cs` — a Carter module, auto-discovered by `app.MapCarter()`:
 
 ```csharp
+using Carter;
+using Erp.Shared.Messaging;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+
+namespace Erp.Api.Auth;
+
 public sealed class LoginEndpoint : ICarterModule
 {
     public void AddRoutes(IEndpointRouteBuilder app) =>
@@ -431,6 +459,35 @@ public sealed class LoginEndpoint : ICarterModule
 > 🧭 **From WebForms:** this is your `Login.aspx` code-behind's `Login_Click` — but the credential check
 > and token creation moved into a handler, and the endpoint is a two-line adapter. A `[WebMethod]` you used
 > to call from jQuery is now this Carter `MapPost`.
+
+### ⚠️ Register the login handler — the assembly scan won't find it
+
+Here's a trap that will bite you the first time you call `POST /auth/login`. In
+[Phase 2](02-mediator-own-vs-free.md), `AddSalesModule()` discovered handlers by scanning **the Sales
+module's assembly**. But `LoginHandler` doesn't live in Sales — it lives in the **host**, `Erp.Api`, because
+authentication isn't a business capability. Nothing scans the host.
+
+So `sender.Send(cmd, ct)` would compile perfectly and then throw at runtime:
+
+```
+System.InvalidOperationException: No service for type
+'Erp.Shared.Messaging.IRequestHandler`2[LoginCommand,LoginResult]' has been registered.
+```
+
+The fix is one line per host-assembly slice, in `Program.cs`. We register them by hand rather than scanning
+`Erp.Api` — there are only a handful of auth slices, and an explicit list is easier to reason about than a
+second reflection loop:
+
+```csharp
+// Program.cs — the auth slices live in the HOST assembly, so the module scans don't see them.
+builder.Services.AddScoped<IRequestHandler<LoginCommand, LoginResult>, LoginHandler>();
+builder.Services.AddScoped<IValidator<LoginCommand>, LoginValidator>();
+
+// ...and the repository the handler depends on (this one is a shared-infrastructure service):
+builder.Services.AddScoped<IUserRepository, UserRepository>();
+```
+
+Parts 3 and 4 add one more line each, as they add the refresh, logout, and change-password handlers.
 
 ## 7. Step 5 — Wiring token validation into the app
 
@@ -755,27 +812,25 @@ So why don't our handlers simply use `HttpContext.User` directly?
 
 ### Why an `ICurrentUser`?
 
-Remember one of the architectural rules from earlier phases:
+Remember the rule from [Phase 1](01-solution-setup.md): **a module's `Domain/` never sees the web.**
 
-> **The Application layer should not depend on ASP.NET Core.**
+`HttpContext` is part of ASP.NET Core. If a handler or an entity reached for it directly, business code would
+be welded to the web framework — and you could no longer unit-test "a rep may only see their own customers"
+without spinning up an HTTP request.
 
-`HttpContext` is part of ASP.NET Core.
+So we use the same port/adapter move as `IDbConnectionFactory` in [Phase 3b](03b-data-access.md):
 
-If our handlers accessed it directly, they would become tied to the web framework.
-
-Instead, we use the same pattern we've used throughout this course:
-
-- The Application layer defines **what it needs**.
-- Infrastructure provides **how it's implemented**.
+- `Erp.Shared.Common` declares **what's needed** (`ICurrentUser`).
+- `Erp.Shared.Infrastructure` supplies **how it's done** (`CurrentUser`, which reads `HttpContext`).
 
 ```
-Application
+A handler (or the domain)
       │
       ▼
-ICurrentUser
+ICurrentUser            ← the port, in Erp.Shared.Common
       ▲
       │
-CurrentUser
+CurrentUser             ← the adapter, in Erp.Shared.Infrastructure
       │
       ▼
 HttpContext.User
@@ -787,10 +842,14 @@ Business code now depends only on the `ICurrentUser` abstraction, never on ASP.N
 
 ### Implementing `CurrentUser` and `ICurrentUser`
 
-Create `Erp.Shared.Common/Security/CurrentUser.cs`:
+The **port** goes in `Erp.Shared.Common`, which references nothing — so any module may depend on it.
 
 ```csharp
-public interface ICurrentUser {
+// src/Shared/Erp.Shared.Common/Security/ICurrentUser.cs
+namespace Erp.Shared.Common;
+
+public interface ICurrentUser
+{
     long UserId { get; }
     string Username { get; }
     string Role { get; }
@@ -798,9 +857,17 @@ public interface ICurrentUser {
 }
 ```
 
-Create `Erp.Shared.Infrastructure/Security/CurrentUser.cs`:
+The **adapter** goes in `Erp.Shared.Infrastructure`, the only shared project allowed to touch ASP.NET:
 
 ```csharp
+// src/Shared/Erp.Shared.Infrastructure/Security/CurrentUser.cs
+using System.IdentityModel.Tokens.Jwt;   // JwtRegisteredClaimNames
+using System.Security.Claims;            // ClaimsPrincipal, ClaimTypes, FindFirstValue
+using Erp.Shared.Common;
+using Microsoft.AspNetCore.Http;         // IHttpContextAccessor
+
+namespace Erp.Shared.Infrastructure;
+
 public sealed class CurrentUser(IHttpContextAccessor accessor) : ICurrentUser
 {
     private ClaimsPrincipal User => accessor.HttpContext?.User
@@ -954,7 +1021,7 @@ Notice that `CurrentUser` never validates the JWT itself.
 
 That work has already been completed by the authentication middleware.
 
-`CurrentUser` simply exposes the authenticated user's information through an interface that the Application layer can safely depend on.
+`CurrentUser` simply exposes the authenticated user's information through an interface that a module can safely depend on.
 
 We'll use `ICurrentUser` throughout the rest of the course—for example, to record who created an order and to apply business rules based on the current user's role.
 
@@ -1361,7 +1428,7 @@ For example:
 
 - A manager may not approve an order they created themselves.
 - A sales representative may edit only their own draft orders.
-- Orders over ₱500,000 require manager approval.
+- An order that would push a customer past their credit limit must be refused.
 - Only employees assigned to a warehouse may update that warehouse's inventory.
 
 These rules cannot be checked by the endpoint.
@@ -1448,6 +1515,11 @@ if (order.CreatedBy.Value == currentUser.UserId)
         "A manager cannot approve an order they created themselves.");
 }
 ```
+
+(`ForbiddenException` is one of the small exception types you'll define in [Phase 11](11-cross-cutting.md),
+where the global handler learns to turn it into a **403**. And note this particular rule — "not your own
+order" — isn't one we build; it's here because it's the clearest possible example of a check the endpoint
+*cannot* make. It's waiting for you as an [extension exercise](13-wrap-up-checklist.md).)
 
 Here the handler combines two pieces of information:
 
@@ -1881,9 +1953,9 @@ The answer depends on **what information the rule needs**.
 | The rule you want to write | Where it belongs | Why? | Example |
 |---|---|---|---|
 | **Is the request well-formed?** | **Validator** | Validators only check whether the request is valid. They don't know about users, roles, or the database. | `RuleFor(x => x.Password).MinimumLength(8);` |
-| **Can this user log in?** | **Handler** | The handler loads the user, verifies the password, and decides whether authentication succeeds. | `if (user is null OR !hasher.Verify(...)) throw ...;` |
-| **May this role call this endpoint?** | **Endpoint** | The endpoint checks whether the authenticated user satisfies the required role or policy before the handler runs. | `.RequireAuthorization(p => p.RequireRole("SalesManager"))` |
-| **Does this business rule depend on application data?** | **Handler / Domain** | The application must first load the required data before the business rule can be evaluated. | `order.Approve(currentUser.Roles);` |
+| **Can this user log in?** | **Handler** | The handler loads the user, verifies the password, and decides whether authentication succeeds. | `if (user is null \|\| !hasher.Verify(...)) throw ...;` |
+| **May this role call this endpoint?** | **Endpoint** | The endpoint checks whether the authenticated user satisfies the required role before the handler runs. | `.RequireAuthorization(p => p.RequireRole("SalesManager"))` |
+| **Does this business rule depend on business data?** | **Handler / Domain** | The handler must load the data first; then the entity itself decides whether the action is legal. | `order.Approve(new UserId(currentUser.UserId));` |
 
 ---
 
@@ -1895,17 +1967,17 @@ A common question is:
 
 Because checking whether a record exists is **not** business logic—it's part of loading the data needed to perform the use case.
 
-The domain cannot decide whether an order exists because the domain object doesn't exist until the application loads it.
+The domain cannot decide whether an order exists, because the domain object doesn't exist until the handler loads it.
 
 ```csharp
-var order = await repository.Get(request.OrderId);
+var order = await orders.GetAsync(cmd.Id, ct);
 
 if (order is null)
-    throw new NotFoundException();
+    throw new NotFoundException($"Sales order {cmd.Id.Value} was not found.");
 
-order.Approve(currentUser.Roles);
+order.Approve(new UserId(currentUser.UserId));   // the DOMAIN decides whether this is legal
 
-await repository.Update(order);
+await orders.UpdateStatusAsync(order, tx, ct);
 ```
 
 The handler is responsible for:
@@ -1918,20 +1990,25 @@ The handler is responsible for:
 The domain is responsible for deciding **whether the requested action is allowed**.
 
 ```csharp
-public void Approve(IEnumerable<string> roles)
+// This is roughly what SalesOrder.Approve looks like — you'll write it for real in Phase 5.
+public void Approve(UserId approver)
 {
-    if (Total >= 500000 &&
-        !roles.Contains("SalesManager"))
-    {
-        throw new BusinessRuleException(
-            "Orders over ₱500,000 require a Sales Manager.");
-    }
+    if (Status != SalesOrderStatus.PendingApproval)
+        throw new DomainException("Only orders awaiting approval can be approved.");
 
-    IsApproved = true;
+    Status = SalesOrderStatus.Approved;
+    ApprovedBy = approver;
+    Raise(new SalesOrderApproved(Id, CustomerId, Total, approver));
 }
 ```
 
 Notice that the entity doesn't know anything about SQL, Dapper, repositories, or HTTP. It only knows the business rules.
+
+> 🔑 **Notice what `Approve` does *not* take: the caller's role.** "Only a `SalesManager` may approve" needs
+> nothing but the JWT, so it's already been enforced at the endpoint by the time this method runs — the
+> domain would just be re-asking a question that was answered at the door. What the domain *does* enforce is
+> the rule that needs the order itself: you cannot approve something that isn't awaiting approval. That's the
+> split this whole section is about, and [Phase 8](08-approval-cancellation.md) builds it for real.
 
 ---
 

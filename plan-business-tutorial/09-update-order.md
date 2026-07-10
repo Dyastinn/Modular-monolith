@@ -30,6 +30,15 @@ business checks against the new lines.
 ## 3. The command and validator
 
 ```csharp
+// src/Modules/Sales/Features/UpdateSalesOrder/UpdateSalesOrderHandler.cs
+using Erp.Modules.Sales.Domain;
+using Erp.Shared.Common;        // NotFoundException, ICurrentUser
+using Erp.Shared.Common.Data;   // IDbConnectionFactory
+using Erp.Shared.Messaging;
+using FluentValidation;
+
+namespace Erp.Modules.Sales.Features;
+
 public sealed record UpdateSalesOrderCommand(
     long OrderId,
     IReadOnlyList<CreateSalesOrderLineDto> Lines) : ICommand<Unit>;   // reuse the line DTO from Phase 6
@@ -202,11 +211,14 @@ A SalesRep edits draft order #7, changing it to 3 Widgets:
 Take a **Draft** order (from Phase 6), then change its lines:
 
 ```bash
-curl -X PUT http://localhost:5xxx/sales-orders/{draftId} -H "Authorization: Bearer $TOKEN" \
+DRAFT=2   # a Draft order's id
+
+curl -X PUT "$BASE/sales-orders/$DRAFT" \
+     -H "X-Api-Key: $KEY" -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" -d '{"lines":[{"itemId":1,"quantity":3}]}'   # → 204
 ```
 
-`SELECT TotalAmount FROM sales.SalesOrder WHERE Id = {draftId};` now reads ₱75 (3 × ₱25). Then try the same
+`SELECT TotalAmount FROM sales.SalesOrder WHERE Id = 2;` now reads ₱75 (3 × ₱25). Then try the same
 `PUT` against a **submitted** order and confirm it's refused with `422` "Lines can only be changed on a draft
 order" — with its lines untouched. If a draft re-lines cleanly and a submitted order rejects the edit,
 **Phase 9 is done and verifiable** — the domain, not the handler, is enforcing "draft only."

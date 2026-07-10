@@ -15,7 +15,7 @@
 ## 1. What we're building
 
 - `IDbConnectionFactory` — hands out a database connection on demand (reads use it directly).
-- The **transaction pattern** for writes that must be all-or-nothing — a `IDbTransaction` opened right in the
+- The **transaction pattern** for writes that must be all-or-nothing — an `IDbTransaction` opened right in the
   handler with `BeginTransaction()`, committed on success, rolled back on failure.
 - The **one rule** for choosing between them, and the "commit on success, roll back on throw" shape you'll
   reuse in every write handler from Phase 4 on.
@@ -163,10 +163,16 @@ state. If you forget to release them, you leak a connection from the pool; do it
 a halt waiting for a free one.
 
 `using` guarantees release: the moment control leaves the block — normal exit *or* an exception — `Dispose()`
-runs. For a `DbConnection` you can go one better with `await using`, which calls `DisposeAsync()` and closes
-the socket without blocking a thread. And disposing a transaction that was **never committed rolls it back** —
-so `using` is also your safety net: if something throws past your `catch`, the half-written scratch space is
-still discarded on the way out.
+runs. And disposing a transaction that was **never committed rolls it back** — so `using` is also your safety
+net: if something throws past your `catch`, the half-written scratch space is still discarded on the way out.
+
+> ❓ **"Shouldn't that be `await using`?"** There is an async form — `await using` calls `DisposeAsync()`, which
+> can close the socket without blocking a thread. It's the better choice when disposal genuinely does I/O. We
+> use plain `using` everywhere in this tutorial for one reason: **consistency you can read**. Handlers already
+> mix `await`ed repository calls with a synchronous `Commit()`, and adding `await` to the `using` lines makes
+> the transaction boundary harder to spot, not easier. The connection returns to the pool either way. If you
+> later profile a thread-starvation problem under real load, switching these to `await using` is a
+> mechanical, safe change — just do it everywhere at once.
 
 ### The pattern every write handler uses
 
@@ -205,6 +211,21 @@ handler turns it into the right HTTP response).
 > [Phase 4](04-jwt-auth.md) on is a variation of these ten lines — the only thing that changes is which
 > repository methods run between `BeginTransaction()` and `Commit()`.
 
+> ❓ **"Shouldn't this be hidden behind an `IUnitOfWork`?"** You'll see that abstraction in a lot of codebases:
+> an interface with a `SaveChangesAsync()` that quietly owns the transaction, so handlers never mention one.
+> We don't use it, and the reason is worth sitting with. The transaction boundary is **the most consequential
+> decision in a write operation** — it's what decides whether a failure leaves you with half an order. Hiding
+> it behind a method named `SaveChanges` doesn't remove the decision; it removes your ability to *see* the
+> decision while reading the handler. Six months later, nobody can tell you where the transaction starts
+> without opening three other files.
+>
+> There's a second, sharper reason. A `IDbTransaction` is bound to **one open connection to one database**. The
+> moment a "unit of work" spans two connections — two databases, a database and a message broker — the
+> abstraction quietly stops meaning what its name promises, and it fails in ways that look like magic. Keeping
+> the transaction where you opened it keeps that limit visible. (This is also why the cross-module contract in
+> [Phase 7](07-submit-reserve-concurrency.md) takes an `IDbTransaction` parameter: Inventory has to enlist in
+> *the caller's* transaction, and it can only do that because there is one to hand it.)
+
 ## 7. Register the factory
 
 The factory is a platform service, registered once in `AddSharedInfrastructure` (it also appears in the
@@ -222,18 +243,35 @@ connection it just asked the factory for.
 > [Phase 4 §7](04b-jwt-login.md), so it comes from `appsettings.Development.json` locally and an environment
 > variable in production, with no code change.
 
+## 7b. Why each piece exists
+
+| Piece | Why it exists | Where it lives |
+|---|---|---|
+| `IDbConnectionFactory` | So a module can ask for a connection without learning which engine or connection string is behind it. The **port**. | `Erp.Shared.Common/Data/` — no dependencies, so even a pure module can reference it. |
+| `SqlConnectionFactory` | The one class in the solution allowed to say the words `SqlConnection`. The **adapter**. | `Erp.Shared.Infrastructure/Data/` — the only project that knows we chose SQL Server. |
+| `DbConnection` (not `IDbConnection`) | It's the abstract ADO.NET base class that has `OpenAsync`, so a waiting request doesn't pin a thread. | Returned by `Create()`. |
+| `IDbTransaction` | The unit of atomicity, opened **in the handler** so the boundary is visible in the code that owns it. | Never registered in DI — a handler opens it on the connection it just got. |
+
+Notice there is no repository, no `IUnitOfWork`, and no base class here. Four small pieces, and two of them
+are types ADO.NET already gave us.
+
 ## 8. Checkpoint — prove C# can reach the database ✅
 
 You don't have a repository yet, so prove the *plumbing* with a throwaway read against Phase 3's seed. Drop a
-temporary endpoint in `Program.cs`:
+temporary endpoint in `Program.cs` — plain ADO.NET, no Dapper, because we haven't met Dapper's API yet and
+this is really a test of the factory and the connection string:
 
 ```csharp
+// Program.cs — temporary. Add `using Erp.Shared.Common.Data;` at the top.
 app.MapGet("/db-ping", async (IDbConnectionFactory factory, CancellationToken ct) =>
 {
-    using var conn = factory.Create();
-    await conn.OpenAsync(ct);
-    var count = await conn.QuerySingleAsync<int>(
-        new CommandDefinition("SELECT COUNT(*) FROM [identity].AppUser", cancellationToken: ct));
+    using var conn = factory.Create();          // the factory hands back an unopened connection
+    await conn.OpenAsync(ct);                   // ...and we open it
+
+    using var cmd = conn.CreateCommand();
+    cmd.CommandText = "SELECT COUNT(*) FROM [identity].AppUser";
+    var count = (int)(await cmd.ExecuteScalarAsync(ct))!;
+
     return Results.Ok(new { users = count });
 });
 ```
@@ -241,7 +279,7 @@ app.MapGet("/db-ping", async (IDbConnectionFactory factory, CancellationToken ct
 Run the app and call it:
 
 ```bash
-curl http://localhost:5xxx/db-ping      # → { "users": 3 }
+curl http://localhost:5234/db-ping      # → { "users": 3 }   (use whatever port it printed)
 ```
 
 Three users (the `rep` / `manager` / `admin` seed from Phase 3) means the connection string, the factory, and

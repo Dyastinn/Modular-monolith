@@ -11,8 +11,8 @@
 
 ## 1. What you built (zoom all the way out)
 
-Trace the full lifecycle of one order and notice how *every* pattern from the earlier plans showed up in
-service of a real business need:
+Trace the full lifecycle of one order and notice how every pattern you learned showed up because a real
+business need demanded it — never for its own sake:
 
 ```
 Login (JWT) + refresh / rotation     → Phase 4: authentication, rotating refresh tokens, logout
@@ -45,7 +45,7 @@ was the whole goal.
 
 ## 1a. The complete project structure (everything you built)
 
-Here's the whole solution once all 12 phases are done — every project, and where each piece lives. Notice
+Here's the whole solution once you've worked through Phase 12 — every project, and where each piece lives. Notice
 the shape the architecture *forces*: split by **module** (Sales, Inventory) then by **feature** (two files
 each), with a pure `Domain/` and a shared kernel — never by technical layer.
 
@@ -57,25 +57,26 @@ Erp/                                         # repo root
 │   ├── Shared/
 │   │   ├── Erp.Shared.BuildingBlocks/        # depends on NOTHING
 │   │   │   └── BuildingBlocks.cs             #   Entity<TId>, AggregateRoot<TId>, IDomainEvent, DomainException
-│   │   ├── Erp.Shared.Common/                # depends on NOTHING
+│   │   ├── Erp.Shared.Common/                # depends on NOTHING — every PORT the modules code against
 │   │   │   ├── PagedResult.cs
+│   │   │   ├── IClock.cs
 │   │   │   ├── Exceptions.cs                 #   NotFoundException, ForbiddenException, ConcurrencyException
-│   │   │   ├── Security/ICurrentUser.cs
+│   │   │   ├── Data/IDbConnectionFactory.cs   #   (Phase 3b)
+│   │   │   ├── Security/                     #   ICurrentUser, IUserRepository (+AppUser),
+│   │   │   │                                 #   IRefreshTokenRepository (+RefreshTokenRecord) — Phase 4
 │   │   │   └── Contracts/IStockReservation.cs #   the Sales↔Inventory wall (Phase 7)
 │   │   ├── Erp.Shared.Messaging/             # → Common, BuildingBlocks
 │   │   │   ├── Contracts.cs                  #   IRequest, ICommand, IQuery, Unit, IRequestHandler,
 │   │   │   │                                 #   ICommandHandler, IQueryHandler, IPipelineBehavior, ISender
 │   │   │   ├── Sender.cs                     #   the hand-rolled mediator (Phase 2)
-│   │   │   ├── DomainEvents.cs               #   IDomainEventHandler, IDomainEventDispatcher (Phase 8)
-│   │   │   └── Behaviors/                    #   LoggingBehavior.cs, ValidationBehavior.cs (Phase 11)
+│   │   │   ├── DomainEvents.cs               #   IDomainEventHandler, IDomainEventDispatcher + impl (Phase 8)
+│   │   │   └── Behaviors/Behaviors.cs        #   LoggingBehavior, ValidationBehavior (Phase 11)
 │   │   └── Erp.Shared.Infrastructure/        # → Messaging, Common, BuildingBlocks (+ ASP.NET framework ref)
-│   │       ├── Data/                         #   SqlConnectionFactory (the IDbConnectionFactory impl;
-│   │       │                                 #   the interface itself lives in Shared.Common)
+│   │       ├── Data/SqlConnectionFactory.cs   #   the ADAPTER; its interface lives in Shared.Common
+│   │       ├── SystemClock.cs                 #   the IClock adapter
 │   │       ├── Security/                     #   IPasswordHasher+PasswordHasher, IJwtTokenService+JwtTokenService,
-│   │       │                                 #   IRefreshTokenService+RefreshTokenService, CurrentUser (ICurrentUser impl)
-│   │       ├── Messaging/DomainEventDispatcher.cs
-│   │       ├── Identity/                     #   UserRepository (IUserRepository + AppUser),
-│   │       │                                 #   RefreshTokenRepository (IRefreshTokenRepository) — Phase 4
+│   │       │                                 #   IRefreshTokenService+RefreshTokenService, CurrentUser
+│   │       ├── Identity/                     #   UserRepository, RefreshTokenRepository — Phase 4
 │   │       └── DependencyInjection.cs        #   AddSharedInfrastructure() + AddMessaging()
 │   ├── Modules/
 │   │   ├── Sales/  (Erp.Modules.Sales)       # → Shared.{BuildingBlocks, Common, Messaging, Infrastructure}
@@ -96,7 +97,6 @@ Erp/                                         # repo root
 │   │   │   │   └── SearchSalesOrders/         #     (Phase 10)
 │   │   │   ├── Infrastructure/
 │   │   │   │   ├── SalesOrderRepository.cs, CustomerRepository.cs, ItemRepository.cs
-│   │   │   │   ├── TypeHandlers.cs           #   Dapper handlers: SalesOrderId, CustomerId, ItemId
 │   │   │   │   ├── EventHandlers/            #   e.g. SalesOrderApprovedAuditHandler (Phase 8)
 │   │   │   │   └── Sql/ 001_schema.sql, 002_procedures.sql, 003_seed.sql   # the `sales` + `[identity]` schemas
 │   │   │   └── DependencyInjection.cs         #   AddSalesModule()
@@ -108,7 +108,9 @@ Erp/                                         # repo root
 │   └── Erp.Api/                              # → Modules.{Sales, Inventory}, Shared.Infrastructure
 │       ├── Auth/                              #   host/platform auth slices (NOT a module):
 │       │   ├── Login/                         #     LoginHandler.cs + LoginEndpoint.cs
-│       │   └── Refresh/                       #     Refresh + Logout + Logout-all handlers/endpoint (Phase 4 §10)
+│       │   ├── Refresh/                       #     Refresh + Logout + Logout-all handlers/endpoint (Phase 4 §10)
+│       │   └── ChangePassword/                #     ChangePasswordHandler.cs + Endpoint (Phase 4 Part 4)
+│       ├── Security/ApiKeyMiddleware.cs       #   the client-app gate, first in the pipeline (Phase 4 §11)
 │       ├── GlobalExceptionHandler.cs          #   maps exceptions → HTTP status (Phase 11)
 │       ├── Program.cs                         #   composition root; ends with `public partial class Program {}`
 │       ├── appsettings.json
@@ -202,8 +204,12 @@ Here they are, grounded in what you just built:
    SQL; and you can now say *why* (concurrency safety vs. pure policy).
 3. **What did the mediator buy you?** [Phase 11](11-cross-cutting.md): validation, logging, and error
    handling written *once*, applied to every endpoint. Add another and it's covered free.
-4. **Where would you (not) add a service?** You added `IPricingService`-style domain logic only where it
-   spanned aggregates; you *didn't* add a `SalesOrderService` god-object. The rules live on the entities.
+4. **Where would you (not) add a service?** Notice what you never wrote: a `SalesOrderService` god-object
+   holding every rule, with an anemic `SalesOrder` as its data bag. The rules live *on the entities they're
+   about* — `Customer.EnsureNotBlocked()`, `ItemCategory.EnsureQuantityAllowed()`. A separate class only
+   earns its place when logic genuinely spans several aggregates and belongs to none (a *domain service*),
+   and this module never needed one. If a class name ends in `Service` and its methods take the entity as
+   their first argument, the logic is on the wrong object.
 5. **What would it take to split this into its own service?** You already *proved* the module wall: when
    Sales needed stock, it couldn't reach into Inventory — it went through the `IStockReservation` contract
    ([Phase 7](07-submit-reserve-concurrency.md)). Because everything went through `ISender` and the
@@ -239,9 +245,9 @@ as "in production." Here's the honest gap list, grouped, so you know what a real
       cookie for browser clients, and a periodic cleanup of revoked/expired rows.)
 
 ### Correctness & data
-- [ ] Every multi-step write is in a transaction — ✅ you did this. Double-check no new feature skips it.
-- [ ] Register the Dapper `TypeHandler`s for strongly-typed IDs at startup — a forgotten one fails at
-      runtime.
+- [x] Every multi-step write is in a transaction — ✅ you did this. Double-check no new feature skips it.
+- [ ] Strongly-typed IDs are unwrapped **only** at the repository boundary. A `long` leaking into a handler
+      or a domain method is how the compiler's protection quietly stops protecting you.
 - [x] A concurrency-safe order-number generator — ✅ done via a SQL `SEQUENCE` +
       `sales.usp_SalesOrder_NextNumber` ([Phase 3](03-database-schema.md)), not a naive `MAX()+1`.
 - [x] Matched money/stock pairs — ✅ approval charges the balance and cancellation of an approved order
@@ -274,9 +280,10 @@ as "in production." Here's the honest gap list, grouped, so you know what a real
       a real multi-user deployment.
 
 ### API quality
-- [ ] Consistent error envelope — ✅ [Phase 11](11-cross-cutting.md) gave you this.
-- [ ] Swagger/OpenAPI documented with the auth scheme so testers can paste a token — ✅ mostly there.
-- [ ] Pagination caps enforced — ✅ [Phase 10](10-queries-search.md).
+- [x] Consistent error envelope — ✅ [Phase 11](11-cross-cutting.md) gave you this.
+- [x] Swagger/OpenAPI documented with **both** auth schemes — the bearer token and the `X-Api-Key`
+      ([Phase 4c §11](04c-jwt-refresh-apikey.md)) — so a tester can drive every endpoint from the browser.
+- [x] Pagination caps enforced — ✅ [Phase 10](10-queries-search.md).
 - [ ] Idempotency for `submit`/`approve` if clients might retry (an idempotency key) — a thoughtful
       extra.
 
@@ -345,7 +352,8 @@ Stay within the stack; each reinforces a pattern:
    pattern reused for a new secret; how the same DB proc backs both the *change* and *reset* paths. See
    [Phase 4 Part 4](04d-jwt-change-password.md).)
 
-Try one *before* reading how; struggling first is where the learning is.
+Try one *before* reading how; struggling first is where the learning is. ([Phase 14 §4](14-going-further.md)
+continues the list at #8, for exercises that push past the base stack.)
 
 > 👉 **Want the production last mile?** [Phase 14 — Going Further](14-going-further.md) is an optional,
 > out-of-scope appendix: how you'd close the checklist above, containerize with Docker, cache with Redis, and
@@ -354,7 +362,7 @@ Try one *before* reading how; struggling first is where the learning is.
 
 ## 6. Final word from your senior
 
-You started these three folders (maybe) unsure what problem a mediator even solved. You now have a
+You started this course, quite possibly, unsure what problem a mediator even solved. You now have a
 secured ERP module that enforces credit limits, blocks bad customers, reserves inventory safely under
 concurrency, gates approvals by role, and rolls back cleanly on failure — and you can *explain where
 every rule lives and why.*

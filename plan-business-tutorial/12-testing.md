@@ -124,8 +124,9 @@ the rules in the domain. **These should be the bulk of your tests.**
 > ❓ **You might be wondering: "Can I test the *handler* without a database?"** Yes — inject *fake*
 > repositories. Because the handler depends on interfaces (`ICustomerRepository`, etc.), a test can pass
 > in-memory fakes and verify orchestration (e.g. "a blocked customer never reaches the save step").
-> That's an Application-layer unit test, and it works precisely because of the dependency rule. Handy,
-> but the domain unit tests above give you the most value per line.
+> That's a *handler* unit test, and it works precisely because of the port/adapter split from
+> [Phase 6 §4](06-create-order.md). Handy — but the domain unit tests above give you the most value per line,
+> because they test the *rules*, and the handler has none.
 
 ## 4. Integration tests — what unit tests can't catch
 
@@ -141,22 +142,25 @@ the rules in the domain. **These should be the bulk of your tests.**
 > (Referencing `Erp.Api` transitively brings in the modules, so the tests can call the real
 > `StockReservationService` and boot the real host. CPM adds the `<PackageVersion>` lines.)
 
-`Erp.Integration.Tests` runs against a **separate test database** (never your dev DB). A fixture applies each
-module's `Infrastructure/Sql/` scripts before the run — the same scripts from
-[Phase 3](03-database-schema.md), which is why they double as your migration story.
+`Erp.Integration.Tests` runs against a **separate test database**, `Erp_Test` — never your dev DB. Setting it
+up costs you nothing extra: the app already applies each module's `Infrastructure/Sql/` scripts on startup
+([Phase 3](03-database-schema.md)), so booting the host against a different connection string is all it takes.
+Point it at `Erp_Test` and the same schemas, procs, and seed data appear there. **This is the payoff of
+"migrations without EF"** — one set of scripts builds dev, test, and production alike.
+
+That means there's no separate database fixture to write. The `CustomWebAppFactory` in §5 does the whole job,
+and the integration tests below reach the database through the *same* connection string it configures:
 
 ```csharp
-public sealed class TestDatabaseFixture : IAsyncLifetime
-{
-    public string ConnectionString => "Server=(localdb)\\MSSQLLocalDB;Database=Erp_Test;Trusted_Connection=True;TrustServerCertificate=True";
-
-    public async Task InitializeAsync()
-    {
-        // create the test DB, then run each module's Sql/ scripts (schemas → tables → procs → seed) in order
-    }
-    public Task DisposeAsync() => Task.CompletedTask;
-}
+public const string TestConnectionString =
+    "Server=(localdb)\\MSSQLLocalDB;Database=Erp_Test;Trusted_Connection=True;TrustServerCertificate=True";
 ```
+
+> ⚠️ **A stale `Erp_Test` will lie to you.** Because the scripts are applied on boot and are guarded to be
+> re-runnable, a test database created by an *older* version of your schema doesn't get rebuilt — it gets
+> patched, and only where the scripts say so. Seed rows in particular are inserted only `IF NOT EXISTS`. When
+> a test starts failing for reasons that make no sense (a customer with the wrong balance, an item that isn't
+> there), **drop `Erp_Test` and let it rebuild.** It's the first thing to try, and it's usually the answer.
 
 ### The most important integration test in the whole suite: the reservation race
 
@@ -164,10 +168,12 @@ This proves [Phase 7](07-submit-reserve-concurrency.md)'s atomic guard actually 
 tests *structurally cannot* catch.
 
 ```csharp
-public class InventoryReservationTests : IClassFixture<TestDatabaseFixture>
+// tests/Erp.Integration.Tests/InventoryReservationTests.cs
+[Collection("Integration")]   // shares the factory, so Erp_Test exists and no other class runs concurrently
+public class InventoryReservationTests
 {
-    private readonly TestDatabaseFixture _fx;
-    public InventoryReservationTests(TestDatabaseFixture fx) => _fx = fx;
+    private readonly CustomWebAppFactory _factory;
+    public InventoryReservationTests(CustomWebAppFactory factory) => _factory = factory;
 
     [Fact]
     public async Task Two_concurrent_reservations_for_the_last_units_only_one_wins()
@@ -192,7 +198,7 @@ public class InventoryReservationTests : IClassFixture<TestDatabaseFixture>
     // --- test helpers: each opens a real connection + a COMMITTED transaction against the test DB ---
     private async Task<bool> ReserveInOwnCommittedTransaction(long itemId, int qty)
     {
-        await using var conn = new SqlConnection(_fx.ConnectionString);
+        await using var conn = new SqlConnection(CustomWebAppFactory.TestConnectionString);
         await conn.OpenAsync();
         await using var tx = (SqlTransaction)await conn.BeginTransactionAsync();
         var service = new StockReservationService();          // the REAL Inventory implementation (Phase 7)
@@ -225,7 +231,8 @@ public class InventoryReservationTests : IClassFixture<TestDatabaseFixture>
 - **Optimistic concurrency:** load an order twice, update it once (bumping `RowVersion`), then update the
   stale copy; assert a `ConcurrencyException` (rowcount 0).
 - **Round-trip mapping:** insert an order via the repo, load it back; assert the strongly-typed IDs,
-  `Money`, and status survived the trip (proves the Dapper `TypeHandler`s work).
+  `Money`, and status survived the trip (proves the repository's unwrap-and-rewrap at the database boundary
+  is symmetric — `order.CustomerId.Value` out, `new CustomerId(...)` back in).
 - **Balance is reversed on cancel-after-approve:** approve an order (customer balance goes up by the
   total), then cancel it; assert `OutstandingBalance` returns to its original value *and* the reservation
   was released. This guards the matched debit/credit pair from [Phase 8](08-approval-cancellation.md) — a
@@ -254,72 +261,139 @@ public async Task Cancelling_an_approved_order_restores_the_customer_balance()
 HTTP. (Recall the `public partial class Program {}` we added in [Phase 1](01-solution-setup.md) — this
 is why.)
 
-`CustomWebAppFactory` is a tiny subclass of `WebApplicationFactory<Program>` that overrides configuration
-to point the app at the **test** database (the same `Erp_Test` connection string as the fixture), so the
-booted API reads/writes test data, never dev data:
+`CustomWebAppFactory` is a small subclass of `WebApplicationFactory<Program>`. It has **three** jobs, and
+each one corresponds to a trap that will otherwise cost you an afternoon:
 
 ```csharp
+// tests/Erp.Integration.Tests/CustomWebAppFactory.cs
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+
+namespace Erp.Integration.Tests;
+
 public sealed class CustomWebAppFactory : WebApplicationFactory<Program>
 {
-    protected override void ConfigureWebHost(IWebHostBuilder builder) =>
-        builder.UseSetting("ConnectionStrings:ErpDb",
-            "Server=(localdb)\\MSSQLLocalDB;Database=Erp_Test;Trusted_Connection=True;TrustServerCertificate=True");
+    public const string TestConnectionString =
+        "Server=(localdb)\\MSSQLLocalDB;Database=Erp_Test;Trusted_Connection=True;TrustServerCertificate=True";
+
+    public const string TestApiKey = "test-suite-key";
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        // (1) Development, so appsettings.Development.json loads — that's where Jwt:SigningKey lives.
+        //     Without it the app boots with an empty signing key and every login throws.
+        builder.UseEnvironment("Development");
+
+        // (2) Point at the TEST database, never your dev one.
+        builder.UseSetting("ConnectionStrings:ErpDb", TestConnectionString);
+
+        // (3) Give the test suite its own API key, as if it were another client app.
+        builder.UseSetting("ApiKeys:tests", TestApiKey);
+    }
+
+    // Every client this factory hands out already carries the API key.
+    protected override void ConfigureClient(HttpClient client)
+    {
+        client.DefaultRequestHeaders.Add("X-Api-Key", TestApiKey);
+        base.ConfigureClient(client);
+    }
 }
 ```
 
+> ⚠️ **The trap that bites everyone: `X-Api-Key`.** The gate from [Phase 4c §11](04c-jwt-refresh-apikey.md)
+> runs in front of *every* request, including `/auth/login`. Boot the app in a test, call `/auth/login`, and
+> you get a `401` whose body says `"Missing or invalid API key."` — which looks exactly like a broken login.
+>
+> Notice how we fix it: the test suite gets **its own key**, registered like any other client, and
+> `ConfigureClient` attaches it. We do *not* exempt tests from the middleware. A test that skips the gate
+> isn't exercising the pipeline your users hit, and the one thing an integration test exists to do is exercise
+> the real pipeline.
+
+All the integration tests share one `Erp_Test` database, so they must not run **in parallel** against it — a
+race between two test classes would look exactly like a flaky concurrency bug. xUnit serializes classes that
+share a collection:
+
 ```csharp
-public class SalesOrderWorkflowTests : IClassFixture<CustomWebAppFactory>
+// tests/Erp.Integration.Tests/IntegrationCollection.cs
+[CollectionDefinition("Integration")]
+public sealed class IntegrationCollection : ICollectionFixture<CustomWebAppFactory> { }
+```
+
+```csharp
+// tests/Erp.Integration.Tests/SalesOrderWorkflowTests.cs
+using System.Net;
+using System.Net.Http.Json;
+using FluentAssertions;
+
+namespace Erp.Integration.Tests;
+
+[Collection("Integration")]   // ← shares the one factory; classes run one at a time
+public class SalesOrderWorkflowTests
 {
     private readonly CustomWebAppFactory _factory;
     public SalesOrderWorkflowTests(CustomWebAppFactory factory) => _factory = factory;
 
+    // Tiny local shapes for reading the JSON back. We deliberately do NOT reuse the API's own DTOs —
+    // a test that shares types with the code it tests can't catch a contract change.
+    private sealed record LoginResponse(string AccessToken, string RefreshToken, string Username, string Role);
+    private sealed record CreatedResponse(long Id);
+    private sealed record DetailResponse(string Status);
+
+    // Log in and return a client carrying both the API key (from the factory) and the bearer token.
+    private async Task<HttpClient> LoggedInAs(string username)
+    {
+        var client = _factory.CreateClient();
+        var login = await client.PostAsJsonAsync("/auth/login", new { username, password = "Password123!" });
+        login.StatusCode.Should().Be(HttpStatusCode.OK);
+        var session = (await login.Content.ReadFromJsonAsync<LoginResponse>())!;
+        client.DefaultRequestHeaders.Authorization = new("Bearer", session.AccessToken);
+        return client;
+    }
+
     [Fact]
     public async Task Create_submit_approve_happy_path()
     {
-        var client = _factory.CreateClient();
+        var client = await LoggedInAs("manager");
 
-        // 1) Log in as a manager to get a token.
-        var login = await client.PostAsJsonAsync("/auth/login", new { username = "manager", password = "Password123!" });
-        var token = (await login.Content.ReadFromJsonAsync<LoginResult>())!.AccessToken;
-        client.DefaultRequestHeaders.Authorization = new("Bearer", token);
-
-        // 2) Create a draft for Acme (healthy credit).
+        // Create a draft for Acme (healthy credit).
         var create = await client.PostAsJsonAsync("/sales-orders",
             new { customerId = 1, lines = new[] { new { itemId = 1, quantity = 2 } } });
         create.StatusCode.Should().Be(HttpStatusCode.Created);
         var id = (await create.Content.ReadFromJsonAsync<CreatedResponse>())!.Id;
 
-        // 3) Submit → reserves inventory.
+        // Submit → reserves inventory.
         (await client.PostAsync($"/sales-orders/{id}/submit", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        // 4) Approve (manager) → Approved.
+        // Approve (manager) → Approved.
         (await client.PostAsync($"/sales-orders/{id}/approve", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        // 5) Read back → status Approved.
-        var dto = await client.GetFromJsonAsync<SalesOrderDetailDto>($"/sales-orders/{id}");
+        // Read back → status Approved.
+        var dto = await client.GetFromJsonAsync<DetailResponse>($"/sales-orders/{id}");
         dto!.Status.Should().Be("Approved");
     }
 
     [Fact]
     public async Task SalesRep_cannot_approve()
     {
-        var client = _factory.CreateClient();
-        // log in as 'rep' (SalesRep) ... create + submit an order ...
-        var approve = await client.PostAsync($"/sales-orders/{id}/approve", null);
+        var manager = await LoggedInAs("manager");
+        var id = await CreateAndSubmit(manager, customerId: 1, itemId: 1, qty: 1);
+
+        var rep = await LoggedInAs("rep");
+        var approve = await rep.PostAsync($"/sales-orders/{id}/approve", null);
         approve.StatusCode.Should().Be(HttpStatusCode.Forbidden);   // 403 — role gate works end-to-end
     }
 
     [Fact]
     public async Task Replaying_a_rotated_refresh_token_revokes_the_whole_session()
     {
-        var client = _factory.CreateClient();
+        var client = _factory.CreateClient();   // no bearer token needed — the refresh token IS the credential
         var login = (await (await client.PostAsJsonAsync("/auth/login",
-            new { username = "rep", password = "Password123!" })).Content.ReadFromJsonAsync<LoginResult>())!;
+            new { username = "rep", password = "Password123!" })).Content.ReadFromJsonAsync<LoginResponse>())!;
 
         // Rotate once — the first refresh token is now spent, and we hold a fresh pair.
         var rotated = await client.PostAsJsonAsync("/auth/refresh", new { refreshToken = login.RefreshToken });
         rotated.StatusCode.Should().Be(HttpStatusCode.OK);
-        var fresh = (await rotated.Content.ReadFromJsonAsync<LoginResult>())!;
+        var fresh = (await rotated.Content.ReadFromJsonAsync<LoginResponse>())!;
 
         // Replay the OLD (spent) token → reuse detected → 401, and the entire family is revoked...
         (await client.PostAsJsonAsync("/auth/refresh", new { refreshToken = login.RefreshToken }))

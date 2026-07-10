@@ -47,15 +47,16 @@ this phase:
 Erp.slnx
 ├── src/
 │   ├── Shared/
-│   │   ├── Erp.Shared.BuildingBlocks/   # Entity, AggregateRoot, ValueObject, IDomainEvent, DomainException
-│   │   ├── Erp.Shared.Common/           # Result/Error, IClock, PagedResult, IStockReservation contract
+│   │   ├── Erp.Shared.BuildingBlocks/   # Entity, AggregateRoot, IDomainEvent, DomainException
+│   │   ├── Erp.Shared.Common/           # IClock, PagedResult, and the interfaces modules depend on:
+│   │   │                                #   IDbConnectionFactory, ICurrentUser, IStockReservation
 │   │   ├── Erp.Shared.Messaging/        # IRequest, ICommand, IQuery, IRequestHandler, ISender, behaviors
-│   │   └── Erp.Shared.Infrastructure/   # Dapper connection factory, JWT/auth, ICurrentUser, Carter wiring,
-│   │                                    #   global error handling, AddSharedInfrastructure()
+│   │   └── Erp.Shared.Infrastructure/   # the implementations: SqlConnectionFactory, JWT/password services,
+│   │                                    #   CurrentUser, AddSharedInfrastructure()
 │   │
 │   ├── Modules/
 │   │   └── Sales/  (Erp.Modules.Sales)
-│   │       ├── Domain/                  # SalesOrder aggregate, Customer, Product, value objects, events
+│   │       ├── Domain/                  # SalesOrder aggregate, Customer, Item, value objects, events
 │   │       ├── Features/                # one folder per feature (two files each)
 │   │       │   ├── CreateSalesOrder/    #   CreateSalesOrderHandler.cs + CreateSalesOrderEndpoint.cs (Phase 6)
 │   │       │   ├── SubmitSalesOrder/    #   (Phase 7)
@@ -64,7 +65,7 @@ Erp.slnx
 │   │       │   ├── UpdateSalesOrder/    #   (Phase 9)
 │   │       │   ├── GetSalesOrder/       #   (Phase 10)
 │   │       │   └── SearchSalesOrders/   #   (Phase 10)
-│   │       ├── Infrastructure/          # Dapper repositories, TypeHandlers, Sql/ scripts
+│   │       ├── Infrastructure/          # Dapper repositories + Sql/ scripts
 │   │       └── DependencyInjection.cs   # AddSalesModule(): registers this module's handlers/validators/repos
 │   │
 │   └── Erp.Api/
@@ -145,12 +146,12 @@ add events later; it's a harmless edge, since `BuildingBlocks` depends on nothin
 | Folder | Why it exists | Why *here* |
 |---|---|---|
 | `Shared.BuildingBlocks` | `Entity`, `AggregateRoot`, `IDomainEvent`, `DomainException`. | Generic scaffolding every module's domain reuses; depends on nothing. |
-| `Shared.Common` | `Result`/`Error`, `IClock`, `PagedResult`, and cross-module **contracts** like `IStockReservation`. | Pure, shared types both modules may depend on without depending on each other. |
+| `Shared.Common` | `IClock`, `PagedResult`, and the **interfaces** modules code against: `IDbConnectionFactory`, `ICurrentUser`, and cross-module contracts like `IStockReservation`. | Pure, dependency-free types both modules may depend on without depending on each other. |
 | `Shared.Messaging` | The hand-rolled mediator contracts + `Sender` + behaviors. | Every module sends/handles through one mediator. |
-| `Shared.Infrastructure` | Dapper connection factory, JWT token service, `ICurrentUser`, Carter/auth/error wiring. | Framework/crypto/db plumbing; a module's Domain never sees it. |
-| `Sales/Domain` | The `SalesOrder` that knows how to submit/approve itself; `Customer`, `Product`. | Pure business objects; depend only on `BuildingBlocks`. |
+| `Shared.Infrastructure` | The **implementations** of those interfaces: `SqlConnectionFactory`, the JWT and password services, `CurrentUser` (which reads `HttpContext`). | Framework/crypto/db plumbing; a module's Domain never sees it. |
+| `Sales/Domain` | The `SalesOrder` that knows how to submit/approve itself; `Customer`, `Item`. | Pure business objects; depend only on `BuildingBlocks`. |
 | `Sales/Features/<Feature>` | One folder per feature, **two files** (handler + endpoint). | Everything for "create a sales order" together, not scattered by technical kind. |
-| `Sales/Infrastructure` | Dapper repositories, ID `TypeHandler`s, `Sql/` scripts. | This module's data access; owned, not shared. |
+| `Sales/Infrastructure` | Dapper repositories and the module's `Sql/` scripts. | This module's data access; owned, not shared. |
 | `Sales/DependencyInjection.cs` | `AddSalesModule()` — the module's single registration seam. | The one public way the host plugs the module in. |
 
 *(Authentication gets its own home under the host later, when we add login in Phase 4 — the business modules
@@ -217,9 +218,16 @@ Everything above compiles on its own — no other project, no packages. That's t
 
 ## 5. NuGet packages (install what this phase needs)
 
-Right now the only thing that has to run is the **host**. The `dotnet new web` template already gives us a minimal API with 
-a single endpoint. We'll replace that with a proper `GET /health` endpoint later in this phase. For now, we add exactly 
-**one** package: **Swashbuckle**, so we can *browse* the running app in a Swagger UI instead of only curling it.
+Right now the only thing that has to run is the **host**. The `dotnet new web` template already gives us a
+minimal API with a single endpoint. We'll replace that with a proper `GET /health` endpoint later in this
+phase. For now, we add exactly **one** package: **Swashbuckle**, so we can *browse* the running app in a
+Swagger UI instead of only curling it.
+
+> ❓ **"Doesn't .NET ship OpenAPI support now?"** It does — since .NET 9, `Microsoft.AspNetCore.OpenApi`
+> generates the OpenAPI *document* out of the box, and Swashbuckle is no longer in the default template. But
+> a document is a JSON file, not a page you can click. We want the **Swagger UI** — the interactive page with
+> an **Authorize** button, which we'll be leaning on hard from [Phase 4](04-jwt-auth.md) onward to paste a
+> token and fire real requests. Swashbuckle still gives us both in one package, so that's what we take.
 
 ### 5b. One version per package everywhere: Central Package Management
 
@@ -265,24 +273,25 @@ With CPM on, a `.csproj` lists the package with **no** `Version` attribute—the
 Most projects should stop here. They automatically inherit the version defined in
 `Directory.Packages.props`.
 
-> 💡 **Need a different version for one project?** It's uncommon, but sometimes a project needs to stay on
-> an older or newer package version (for example, during a gradual migration). In that case, **don't** add
-> `Version="..."` back to the `PackageReference`. Instead, override the central version:
+> 💡 **Need a different version for one project?** It's uncommon, but sometimes a project has to stay on an
+> older or newer package version — during a gradual migration, say. Don't put `Version="..."` back on the
+> `PackageReference`; that's the thing CPM forbids. Use `VersionOverride` instead. The central line still
+> declares what everyone *else* gets:
 
 ```xml
-<!-- Directory.Packages.props -->
+<!-- Directory.Packages.props — the version the whole solution uses -->
 <PackageVersion Include="Dapper" Version="2.1.79" />
 ```
 
 ```xml
-<!-- src/LegacyTool/LegacyTool.csproj -->
+<!-- src/LegacyTool/LegacyTool.csproj — this one project opts out -->
 <ItemGroup>
-  <PackageReference Include="Dapper"
-                    VersionOverride="2.1.35" />
+  <PackageReference Include="Dapper" VersionOverride="2.1.35" />
 </ItemGroup>
 ```
 
-The rest of the solution uses **Dapper 2.1.79**, while `LegacyTool` alone uses **2.1.35**.
+The rest of the solution uses **Dapper 2.1.79**, while `LegacyTool` alone uses **2.1.35**. We never need
+this in our solution — it's here so you recognise it when you meet it in someone else's.
 
 Now install the package for this phase:
 

@@ -84,8 +84,8 @@ public sealed class DatabaseHealthCheck(IDbConnectionFactory factory) : IHealthC
     {
         try
         {
-            using var conn = factory.Create();
-            await ((SqlConnection)conn).OpenAsync(ct);
+            using var conn = factory.Create();   // a DbConnection — no cast, no SqlClient in sight
+            await conn.OpenAsync(ct);
             return HealthCheckResult.Healthy();
         }
         catch (Exception ex) { return HealthCheckResult.Unhealthy("Database unreachable", ex); }
@@ -111,7 +111,7 @@ text. That was structured logging the whole time; a sink just makes it searchabl
 > ✅ **Now built in [Phase 4 §10](04c-jwt-refresh-apikey.md).** Short access tokens backed by rotating refresh tokens, with
 > reuse detection and revoke-all-sessions. Two hardening extras were left as flagged follow-ups: delivering the
 > refresh token as an `HttpOnly` cookie for browser clients (versus the response body), and a periodic cleanup
-> of revoked/expired rows (exercise #7 below).
+> of revoked/expired rows (exercise #8 below).
 
 ### Row-level authorization
 
@@ -168,10 +168,11 @@ exactly *why* §1 moved secrets out of `appsettings.json`: a shared image must n
 > security boundary on its own. It buys reproducibility, not correctness. Solo dev on one machine where
 > everything already runs? You don't need it yet.
 
-> 📎 **The first place Docker genuinely earns its keep here: tests.** **Testcontainers** (`Testcontainers.MsSql`)
+> 💡 **The first place Docker genuinely earns its keep here: tests.** **Testcontainers** (`Testcontainers.MsSql`)
 > spins up a real SQL Server container *per integration-test run* and disposes it after — replacing the
-> hand-managed `Erp_Test` LocalDB fixture from [Phase 12](12-testing.md) with a disposable, identical database
-> on any laptop or CI runner. Your concurrency test now proves the same thing everywhere.
+> hand-managed `Erp_Test` LocalDB database from [Phase 12](12-testing.md) with a disposable, identical database
+> on any laptop or CI runner. No more "drop `Erp_Test` and try again"; your concurrency test proves the same
+> thing everywhere.
 
 ## 3. Redis — a shared store for when one process isn't enough
 
@@ -218,28 +219,28 @@ output caching across instances.
 
 ## 4. More extension exercises
 
-[Phase 13 §5](13-wrap-up-checklist.md) had six. Here are more, ordered roughly by how far they push past the
+[Phase 13 §5](13-wrap-up-checklist.md) had seven. Here are more, ordered roughly by how far they push past the
 base build. Same rule: try it *before* reading how.
 
-7. **Refresh-token hardening** — the two follow-ups [Phase 4 §10](04c-jwt-refresh-apikey.md) flagged: deliver the refresh
+8. **Refresh-token hardening** — the two follow-ups [Phase 4 §10](04c-jwt-refresh-apikey.md) flagged: deliver the refresh
    token to a browser client as an `HttpOnly; Secure; SameSite` cookie instead of the response body, and add a
    scheduled cleanup (`DELETE … WHERE RevokedUtc < …`) so revoked/expired rows don't accumulate. (Reinforces:
    the XSS threat model, and that housekeeping is separate from correctness.)
-8. **Per-IP login rate limit** — partition the §1 limiter by client IP so one attacker can't lock everyone
+9. **Per-IP login rate limit** — partition the §1 limiter by client IP so one attacker can't lock everyone
    out. Then notice it only holds per-instance, and reason through what §3 would take to make it global.
    (Reinforces: why in-process state and horizontal scale conflict.)
-9. **Dockerized integration tests** — swap the [Phase 12](12-testing.md) LocalDB fixture for
-   `Testcontainers.MsSql`. The reservation-race test now runs identically on any CI runner. (Reinforces:
-   reproducible environments; the fixture seam you already built.)
-10. **Cache the item catalog** — put `IDistributedCache` in front of the item/category read and evict on the
+10. **Dockerized integration tests** — swap [Phase 12](12-testing.md)'s LocalDB `Erp_Test` for
+    `Testcontainers.MsSql`. The reservation-race test now runs identically on any CI runner. (Reinforces:
+    reproducible environments; the `CustomWebAppFactory` seam you already built.)
+11. **Cache the item catalog** — put `IDistributedCache` in front of the item/category read and evict on the
     (rare) item write. Prove the invalidation by changing a price and re-reading. (Reinforces: cache-aside, and
     that invalidation — not caching — is the hard part.)
-11. **Reliable cross-system reaction (the outbox)** — the one promise [Phase 8](08-approval-cancellation.md)'s
+12. **Reliable cross-system reaction (the outbox)** — the one promise [Phase 8](08-approval-cancellation.md)'s
     after-commit dispatch can't make: if the process dies between commit and the side effect, the event is
     lost. Write each domain event to an `Outbox` table *in the same transaction* as the state change, and drain
     it with a background reader. (Reinforces: "after commit, best-effort" and "guaranteed delivery" are
     different guarantees.)
-12. **A second business module** — build `Purchasing` (buy stock from suppliers, raising `OnHand`) as its own
+13. **A second business module** — build `Purchasing` (buy stock from suppliers, raising `OnHand`) as its own
     module with its own schema, reusing the shared kernel untouched. If you can add it without editing Sales,
     the walls are real. (Reinforces: the whole point — the third module should be as easy as the second.)
 

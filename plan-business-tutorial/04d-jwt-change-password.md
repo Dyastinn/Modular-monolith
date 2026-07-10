@@ -25,7 +25,7 @@
 Two loose ends from Part 3 point at the *same* missing endpoint:
 
 - **The expiry dead-end.** Login refuses an expired password — *"Your password has expired. Please reset it
-  before signing in"* (§9) — but there's nowhere to reset it, and refresh fails too (its hard cap **is** that
+  before signing in"* (§10) — but there's nowhere to reset it, and refresh fails too (its hard cap **is** that
   expiry date). A user whose 90 days lapse is simply locked out. Forever.
 - **The compromised-password case.** A logged-in user who suspects their password leaked has no way to rotate
   it and boot every other session — even though the machinery for that (the `SecurityStamp`, §10) already exists.
@@ -87,6 +87,16 @@ It's a host/platform slice like login and refresh, so it lives in `Erp.Api/Auth/
 guards top to bottom — they mirror login's, with one **deliberate omission**:
 
 ```csharp
+// src/Erp.Api/Auth/ChangePassword/ChangePasswordHandler.cs
+using System.Security.Authentication;   // AuthenticationException
+using Erp.Shared.Common;                // IUserRepository
+using Erp.Shared.Common.Data;           // IDbConnectionFactory
+using Erp.Shared.Infrastructure;        // IPasswordHasher
+using Erp.Shared.Messaging;             // ICommand, ICommandHandler, Unit
+using FluentValidation;
+
+namespace Erp.Api.Auth;
+
 public sealed record ChangePasswordCommand(string Username, string CurrentPassword, string NewPassword)
     : ICommand<Unit>;
 
@@ -117,7 +127,7 @@ public sealed class ChangePasswordHandler(
             throw new AuthenticationException("Invalid username or password.");
 
         // NOTE: deliberately NO PasswordExpiresUtc check here. An expired password is *exactly* the case this
-        // endpoint exists to fix, so the current credential must still get the user through (unlike login §9).
+        // endpoint exists to fix, so the current credential must still get the user through (unlike login, §10).
 
         var newHash = hasher.Hash(cmd.NewPassword);
 
@@ -160,6 +170,15 @@ public sealed class ChangePasswordHandler(
 ### The endpoint
 
 ```csharp
+// src/Erp.Api/Auth/ChangePassword/ChangePasswordEndpoint.cs
+using Carter;
+using Erp.Shared.Messaging;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+
+namespace Erp.Api.Auth;
+
 public sealed record ChangePasswordRequest(string Username, string CurrentPassword, string NewPassword);
 
 public sealed class ChangePasswordEndpoint : ICarterModule
@@ -194,7 +213,7 @@ The turnstile, walked end to end:
 
 1. `rep`'s 90 days lapse — `PasswordExpiresUtc` is now in the past.
 2. `POST /auth/login {rep, <old password>}` → **401** *"Your password has expired. Please reset it before
-   signing in."* (§9). The door login points at now exists.
+   signing in."* (§10). The door login points at now exists.
 3. `POST /auth/change-password {rep, <old password>, <new password>}` → API key OK → current password verifies
    → the proc runs: new hash, **new `SecurityStamp`**, `PasswordExpiresUtc` pushed 90 days out → **204 No Content**.
 4. Any refresh tokens `rep` still held are now dead on their next use (stamp mismatch, §10) — a clean slate.

@@ -85,6 +85,13 @@ this service computes, it's the user's `PasswordExpiresUtc`, which the handler r
 passes in:
 
 ```csharp
+// src/Shared/Erp.Shared.Infrastructure/Security/RefreshTokenService.cs
+using System.Security.Cryptography;   // RandomNumberGenerator, SHA256
+using System.Text;                    // Encoding
+using Microsoft.Extensions.Configuration;
+
+namespace Erp.Shared.Infrastructure;
+
 public interface IRefreshTokenService
 {
     (string RawToken, string TokenHash) Generate();          // a new random token + its hash
@@ -151,6 +158,11 @@ from [Phase 4b](04b-jwt-login.md); `Shared.Infrastructure` implements it with Da
 [Phase 3](03-database-schema.md) procs:
 
 ```csharp
+// src/Shared/Erp.Shared.Common/Security/IRefreshTokenRepository.cs
+using System.Data;   // IDbTransaction
+
+namespace Erp.Shared.Common;
+
 public sealed record RefreshTokenRecord(
     long Id, string TokenHash, long UserId, Guid FamilyId, Guid SecurityStamp,
     DateTime ExpiresUtc, DateTime AbsoluteExpiresUtc, DateTime? RevokedUtc);
@@ -175,9 +187,16 @@ read, so it opens its **own** connection through `IDbConnectionFactory` (no tran
 every write instead runs on the handler's **transaction** (`tx.Connection!`, `transaction: tx`), which is what
 lets a rotation add-the-new and revoke-the-old atomically.
 
-`Erp.Shared.Infrastructure/Security/RefreshTokenRepository.cs`:
+`Erp.Shared.Infrastructure/Identity/RefreshTokenRepository.cs`:
 
 ```csharp
+using System.Data;              // CommandType, IDbTransaction
+using Dapper;                   // ExecuteAsync, QuerySingleOrDefaultAsync, CommandDefinition
+using Erp.Shared.Common;        // RefreshTokenRecord, IRefreshTokenRepository
+using Erp.Shared.Common.Data;   // IDbConnectionFactory
+
+namespace Erp.Shared.Infrastructure;
+
 public sealed class RefreshTokenRepository(IDbConnectionFactory factory) : IRefreshTokenRepository
 {
     // WRITE — runs on the handler's transaction (rotation must be atomic with the revoke).
@@ -240,7 +259,7 @@ Register both the service and the store in the composition root **now**, so this
 log in and refresh:
 
 ```csharp
-// Program.cs — the auth platform, alongside IUserRepository / IClock (Phase 4b)
+// AddSharedInfrastructure() — the auth platform, alongside IUserRepository / IClock (Phase 4b)
 services.AddSingleton<IRefreshTokenService, RefreshTokenService>();     // generate / hash / sliding expiry
 services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();  // one Dapper proc call per method
 ```
@@ -361,6 +380,15 @@ Each rung maps to a real attack or edge case; the code below is just those six s
 host/platform slice, so it lives in `Erp.Api/Auth/Refresh/`:
 
 ```csharp
+// src/Erp.Api/Auth/Refresh/RefreshHandler.cs
+using System.Security.Authentication;   // AuthenticationException
+using Erp.Shared.Common;                // IUserRepository, IRefreshTokenRepository, IClock
+using Erp.Shared.Common.Data;           // IDbConnectionFactory
+using Erp.Shared.Infrastructure;        // IJwtTokenService, IRefreshTokenService
+using Erp.Shared.Messaging;             // ICommand, ICommandHandler
+
+namespace Erp.Api.Auth;
+
 public sealed record RefreshCommand(string RefreshToken) : ICommand<LoginResult>;
 
 public sealed class RefreshHandler(
@@ -467,19 +495,22 @@ Without looking ahead, try to build it using what you've already learned.
 
 Your endpoint should:
 
-- Accept a refresh token from the request body.
-- Create a `RefreshCommand`.
-- Send the command using `IMediator`.
+- Accept a refresh token from the request body, as a small `RefreshRequest` record.
+- Build a `RefreshCommand` from it.
+- Send the command using `ISender`.
 - Return the `LoginResult` from the handler.
-- Return an appropriate `401 Unauthorized` response when the refresh fails.
+- Allow anonymous callers — think about why, before you read the next section.
 
 You already have everything needed:
 
-- `RefreshCommand`
-- `RefreshHandler`
-- `LoginResult`
-- `IMediator`
-- Carter endpoint registration
+- `RefreshCommand` and `RefreshHandler` (just above)
+- `LoginResult` (from [Part 2](04b-jwt-login.md), now carrying a refresh token)
+- `ISender` — the mediator interface from [Phase 2](02-mediator-own-vs-free.md)
+- Carter's `ICarterModule`, auto-discovered by `app.MapCarter()`
+
+> ❓ **Where does the `401` come from?** You don't write it. `RefreshHandler` throws
+> `AuthenticationException` on every failure path, and [Phase 11](11-cross-cutting.md)'s global exception
+> handler is what maps that exception to a `401`. The endpoint stays a two-line adapter — that's the point.
 
 The request flow should look like this:
 
@@ -507,30 +538,37 @@ Generate new access token
 Return LoginResult
 ```
 
-If you can implement `RefreshEndpoint.cs` without referring to the next section, you've successfully connected the API layer to your Vertical Slice using CQRS and the Mediator pattern.
+If you can implement `RefreshEndpoint.cs` without referring to the next section, you've successfully connected
+the HTTP edge to your vertical slice through the mediator.
 
 ## Answer Key
 
 Your implementation should look similar to the following:
 
 ```csharp
+// src/Erp.Api/Auth/Refresh/RefreshEndpoint.cs
 using Carter;
-using static Erp.Shared.Messaging.Contracts;
+using Erp.Shared.Messaging;              // ISender
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 
-namespace Erp.Api.Auth.Refresh;
+namespace Erp.Api.Auth;
 
-public sealed class RefreshEndPoint : ICarterModule
+// The wire shape — a JSON body of { "refreshToken": "..." }. Kept separate from RefreshCommand so the
+// HTTP contract and the mediator contract can evolve independently.
+public sealed record RefreshRequest(string RefreshToken);
+
+public sealed class RefreshEndpoint : ICarterModule
 {
     public void AddRoutes(IEndpointRouteBuilder app) =>
-        app.MapPost("/auth/refresh",
-            async (RefreshCommand cmd, ISender sender, CancellationToken ct) =>
-            {
-                var result = await sender.Send(cmd, ct);
-                return Results.Ok(result);
-            })
-        .AllowAnonymous();   // Refreshing an expired access token is impossible if authorization is required.
+        app.MapPost("/auth/refresh", async (RefreshRequest body, ISender sender, CancellationToken ct) =>
+            Results.Ok(await sender.Send(new RefreshCommand(body.RefreshToken), ct)))
+        .AllowAnonymous();   // the ACCESS token is expired by now — the refresh token IS the credential
 }
 ```
+
+We'll add the two **logout** routes to this same Carter module in a moment, once their handlers exist.
 
 ### Why is `AllowAnonymous()` required?
 
@@ -629,9 +667,13 @@ public sealed class LogoutAllHandler(ICurrentUser currentUser, IRefreshTokenRepo
 }
 ```
 
-### The endpoints
+### The endpoints — all three routes in one Carter module
+
+Now grow the `RefreshEndpoint` you wrote above. All three routes are about the refresh token, so they share a
+module; `RefreshRequest` is reused for the two that take one in the body:
 
 ```csharp
+// src/Erp.Api/Auth/Refresh/RefreshEndpoint.cs — the finished version
 public sealed record RefreshRequest(string RefreshToken);
 
 public sealed class RefreshEndpoint : ICarterModule
@@ -648,7 +690,8 @@ public sealed class RefreshEndpoint : ICarterModule
             return Results.NoContent();
         }).AllowAnonymous();
 
-        // logout-all acts on the current user, so it DOES require a valid access token.
+        // logout-all acts on the current user, so it DOES require a valid access token —
+        // it's the one route here that needs to know WHO you are (it reads ICurrentUser).
         app.MapPost("/auth/logout-all", async (ISender sender, CancellationToken ct) =>
         {
             await sender.Send(new LogoutAllCommand(), ct);
@@ -656,6 +699,17 @@ public sealed class RefreshEndpoint : ICarterModule
         }).RequireAuthorization();
     }
 }
+```
+
+### Register this part's handlers
+
+Same trap as [Part 2](04b-jwt-login.md): these slices live in the **host** assembly, so no module scan finds
+them. Three more lines in `Program.cs`, next to the login registration:
+
+```csharp
+builder.Services.AddScoped<IRequestHandler<RefreshCommand, LoginResult>, RefreshHandler>();
+builder.Services.AddScoped<IRequestHandler<LogoutCommand, Unit>, LogoutHandler>();
+builder.Services.AddScoped<IRequestHandler<LogoutAllCommand, Unit>, LogoutAllHandler>();
 ```
 
 > ⚠️ **Honest caveats — don't skip these.**
@@ -853,7 +907,7 @@ Now the client sends **both** headers on every call — the API key (which app) 
 bearer token (which user):
 
 ```bash
-curl http://localhost:5xxx/sales/ping?name=world \
+curl "http://localhost:5234/sales/ping?name=world" \
      -H "X-Api-Key: <your-api-key>" \
      -H "Authorization: Bearer eyJ..."
 # no X-Api-Key at all → 401 before authentication ever runs, even on /auth/login
@@ -903,9 +957,33 @@ affecting the website, or vice versa.
 > before any page ran — or the `<clientKey>` a partner had to pass into your old SOAP / `[WebMethod]` service
 > before you'd answer. Same idea, now expressed as one middleware at the very front of the pipeline.
 
-> ℹ️ **Let the tooling through.** This gate is blunt — it will 401 the **Swagger UI** and any **health-check**
-> endpoint too. Simplest fixes: register `UseMiddleware<ApiKeyMiddleware>()` *after* you map Swagger/health, or
-> have the middleware wave through a small allow-list of paths (`/swagger`, `/health`) in Development.
+> ⚠️ **The gate will break Swagger's "Try it out" — and the fix isn't the one you'd guess.** `IsExempt` lets
+> the `/swagger` *page itself* load, so it looks like everything is fine. But when you hit **Try it out**, the
+> page fires a request at `/sales-orders`, and *that* path is not exempt. You get
+> `401 {"error":"Missing or invalid API key."}` from a UI that never asked you for a key.
+>
+> Don't widen the exemption — that would punch a hole straight through the gate you just built. Instead, teach
+> Swagger to **send the header**, the same way it already knows to send the bearer token. Add a second security
+> definition next to the `Bearer` one from [Part 2](04b-jwt-login.md):
+>
+> ```csharp
+> // Program.cs, inside AddSwaggerGen(options => { ... })
+> options.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
+> {
+>     Name = "X-Api-Key",
+>     Type = SecuritySchemeType.ApiKey,
+>     In = ParameterLocation.Header,
+>     Description = "The client application's API key (Phase 4 §11)."
+> });
+> options.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
+> {
+>     { new OpenApiSecuritySchemeReference("ApiKey", doc, null), new List<string>() }
+> });
+> ```
+>
+> Now Swagger's **Authorize** button shows two boxes — paste the API key in one, the JWT in the other — and
+> every "Try it out" carries both headers. This is the honest version: the tooling adapts to the security
+> model, not the other way around.
 
 ### The honest caveat you must not skip
 
@@ -925,18 +1003,20 @@ affecting the website, or vice versa.
 > - it lets you tell clients apart — issue one key per app and you can **rate-limit or revoke a single client**
 >   without touching the others.
 >
-> What it must **never** do is replace user auth. The API key is the outer, coarse gate; **JWT plus the §9
-> checks are the real security.** Treat a leaked API key as something to rotate, not as a catastrophic breach.
+> What it must **never** do is replace user auth. The API key is the outer, coarse gate; **the JWT plus the
+> §10 rotation and reuse checks are the real security.** Treat a leaked API key as something to rotate, not as
+> a catastrophic breach.
 >
 > 🔑 **Where an API key *is* a true secret:** server-to-server callers, a **backend-for-frontend**, a
 > mobile/desktop app's own backend, or a trusted partner integration — anywhere the key lives on a machine the
 > public can't read. That's when it becomes a genuine security boundary rather than simply identifying a client
 > application.
 
-> 🔑 **Scaling past one key.** One shared string is fine to learn with. For several clients, store a *set* of
-> keys — and, exactly like refresh tokens (§10), store their **hashes**, not the raw values, so a config/DB leak
-> yields nothing usable. Look each incoming key up by its SHA-256 hash; the middleware shape above doesn't
-> change, only where `_expected` comes from. Rotate keys on a schedule, and immediately if one leaks.
+> 🔑 **Scaling further.** The map above already handles a handful of clients. Past that, move the keys out of
+> config and into a table — and, exactly like refresh tokens (§10), store their **hashes**, not the raw values,
+> so a config or database leak yields nothing usable. Look each incoming key up by its SHA-256 hash. The
+> middleware's shape doesn't change at all; only where `_keys` is loaded from. Rotate keys on a schedule, and
+> immediately if one leaks.
 
 ---
 

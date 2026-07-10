@@ -46,6 +46,49 @@ which is exactly when it makes sense, not before.
 > logging, validation, and error handling **once**, and every endpoint gets them. Add another endpoint and
 > it's covered automatically. That leverage is the payoff of Phase 2.
 
+### The behavior we deliberately don't write: a `TransactionBehavior`
+
+Once you've seen how cheap a behavior is, an idea becomes almost irresistible: the `ICommand<>` marker from
+[Phase 2](02-mediator-own-vs-free.md) makes it trivial to wrap **every command** in a database transaction.
+One class, and no handler ever writes `BeginTransaction()` again:
+
+```csharp
+// The tempting version. We are NOT going to build this.
+public sealed class TransactionBehavior<TRequest, TResponse>(IDbConnectionFactory factory)
+    : IPipelineBehavior<TRequest, TResponse> where TRequest : ICommand<TResponse>
+{
+    public async Task<TResponse> Handle(TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken ct)
+    {
+        using var conn = factory.Create();
+        await conn.OpenAsync(ct);
+        using var tx = conn.BeginTransaction();
+        try   { var result = await next(); tx.Commit(); return result; }
+        catch { tx.Rollback(); throw; }
+    }
+}
+```
+
+Plenty of real codebases do exactly this. Here's why we don't, and it isn't dogma:
+
+- **The handler still needs the transaction object.** Look at any write you've built: `orders.AddAsync(order,
+  tx, ct)`, `stock.TryReserveAsync(..., tx, ct)`. Every repository call takes `tx`. A behavior that opens the
+  transaction has to get it *back down* to the handler somehow — an ambient scope, a scoped service, an
+  `AsyncLocal`. You've replaced one visible variable with invisible machinery, and now "which transaction am
+  I on?" is a question you answer by reading framework code.
+- **It transacts things that shouldn't be.** `LoginCommand` is an `ICommand`, and it opens a transaction to
+  write one refresh-token row. Fine. But so is a command that only *reads* and returns a projection, and now
+  it holds locks for nothing. The marker says "changes state," not "needs a transaction."
+- **The boundary stops being a decision.** [Phase 7](07-submit-reserve-concurrency.md)'s submit and
+  [Phase 6](06-create-order.md)'s create both wrap their writes — but they open the transaction at *different
+  moments*, after different read-only validation. That placement is a real design choice each handler makes,
+  and Phase 3b's rule ("validate first, then `BeginTransaction()`") is precisely a rule about *where* the
+  boundary goes. A behavior forces one answer on every slice.
+
+So this course keeps `BeginTransaction()` written out, by hand, in the handler that owns it — visible in the
+same file as the writes it protects. **Logging and validation are genuinely uniform across every request;
+transactions are not.** That's the whole test for whether something belongs in a behavior: *would every
+request want exactly this, in exactly this place?* Two yeses and one no.
+
 ## 3. The ValidationBehavior
 
 Cross-cutting behaviors are shared by *every* module, so they live in `Erp.Shared.Messaging`. Back in
@@ -64,9 +107,16 @@ public static IServiceCollection AddMessaging(this IServiceCollection services)
 }
 ```
 
-`Erp.Shared.Messaging/Behaviors/ValidationBehavior.cs`:
+Both behaviors go in one file, `src/Shared/Erp.Shared.Messaging/Behaviors/Behaviors.cs`:
 
 ```csharp
+// src/Shared/Erp.Shared.Messaging/Behaviors/Behaviors.cs
+using System.Diagnostics;                 // Stopwatch (for LoggingBehavior, below)
+using FluentValidation;                   // IValidator, ValidationContext, ValidationException
+using Microsoft.Extensions.Logging;       // ILogger<T>
+
+namespace Erp.Shared.Messaging;
+
 public sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValidator<TRequest>> validators)
     : IPipelineBehavior<TRequest, TResponse> where TRequest : IRequest<TResponse>
 {
@@ -134,6 +184,15 @@ We map each exception type to an HTTP status, in one place, using ASP.NET Core's
 `Erp.Api/GlobalExceptionHandler.cs`:
 
 ```csharp
+// src/Erp.Api/GlobalExceptionHandler.cs
+using System.Security.Authentication;              // AuthenticationException
+using Erp.Shared.BuildingBlocks;                   // DomainException
+using Erp.Shared.Common;                           // NotFoundException, ForbiddenException, ConcurrencyException
+using Microsoft.AspNetCore.Diagnostics;            // IExceptionHandler
+using ValidationException = FluentValidation.ValidationException;   // disambiguate from System.ComponentModel's
+
+namespace Erp.Api;
+
 public sealed class GlobalExceptionHandler(
     ILogger<GlobalExceptionHandler> log,
     IHostEnvironment env) : IExceptionHandler          // IHostEnvironment tells us Development vs Production
@@ -223,12 +282,26 @@ in `Erp.Shared.Common` so every module and the host can throw and catch them, an
 `Erp.Shared.BuildingBlocks` (it's part of the domain vocabulary every module reuses):
 
 ```csharp
-public class DomainException(string message) : Exception(message);          // Domain
-public class NotFoundException(string message) : Exception(message);        // Application
-public class ForbiddenException(string message) : Exception(message);       // Application
-public class ConcurrencyException(string message) : Exception(message);     // Application
-// ValidationException comes from FluentValidation; AuthenticationException from System.Security.Authentication
+// src/Shared/Erp.Shared.BuildingBlocks/BuildingBlocks.cs — domain vocabulary (you wrote this in Phase 1 §4b)
+public class DomainException(string message) : Exception(message);        // "a business rule said no"
 ```
+
+```csharp
+// src/Shared/Erp.Shared.Common/Exceptions.cs — the transport-shaped ones the global handler maps
+namespace Erp.Shared.Common;
+
+public class NotFoundException(string message) : Exception(message);      // "that row doesn't exist"
+public class ForbiddenException(string message) : Exception(message);     // "you're known, but not allowed"
+public class ConcurrencyException(string message) : Exception(message);   // "someone changed it under you"
+
+// ValidationException comes from FluentValidation; AuthenticationException from System.Security.Authentication.
+```
+
+> 🔑 **Why `DomainException` lives somewhere different from the other three.** `DomainException` is a *domain*
+> word — a `SalesOrder` throws it, and the pure domain may only reference `BuildingBlocks`. The other three
+> describe the shape of a *failed request* ("not found," "forbidden," "conflict"), which is a
+> handler-and-host concern, so they sit in `Common` where the host can reach them too. Put
+> `NotFoundException` in `BuildingBlocks` and you've quietly told the domain that HTTP exists.
 
 ## 7. Registering everything (the composition root, filled in)
 
@@ -246,28 +319,33 @@ services.AddScoped<IJwtTokenService, JwtTokenService>();
 services.AddSingleton<IRefreshTokenService, RefreshTokenService>();  // refresh token generate/hash/expiry (Phase 4 §10)
 services.AddScoped<IUserRepository, UserRepository>();          // Login/refresh (host/platform concern)
 services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
+services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();   // shared: any module's aggregate (Phase 8 §6)
 
 // The auth slices live in the HOST assembly (Erp.Api/Auth), NOT a module — and the handler scan in
-// AddSalesModule only scans the Sales assembly. So register the host's own handlers + validator explicitly,
+// AddSalesModule only scans the Sales assembly. So register the host's own handlers + validators explicitly,
 // or sender.Send(new LoginCommand(...)) fails at runtime with "no service for IRequestHandler<LoginCommand,…>".
 services.AddScoped<IRequestHandler<LoginCommand, LoginResult>, LoginHandler>();
 services.AddScoped<IValidator<LoginCommand>, LoginValidator>();
-services.AddScoped<IRequestHandler<RefreshCommand, LoginResult>, RefreshHandler>();      // Phase 4 §10
+services.AddScoped<IRequestHandler<RefreshCommand, LoginResult>, RefreshHandler>();          // Phase 4 §10
 services.AddScoped<IRequestHandler<LogoutCommand, Unit>, LogoutHandler>();
 services.AddScoped<IRequestHandler<LogoutAllCommand, Unit>, LogoutAllHandler>();
+services.AddScoped<IRequestHandler<ChangePasswordCommand, Unit>, ChangePasswordHandler>();   // Phase 4 Part 4
+services.AddScoped<IValidator<ChangePasswordCommand>, ChangePasswordValidator>();
 
 // AddSalesModule (Erp.Modules.Sales) — scans this assembly, registers ITS pieces:
 services.AddValidatorsFromAssembly(salesAssembly);
-// + handler scanning (Phase 2)
-services.AddScoped<ISalesOrderRepository, SalesOrderRepository>();
+// + IRequestHandler<,> scanning and IDomainEventHandler<> scanning (Phase 2 §5, Phase 8 §6)
+services.AddScoped<ISalesOrderRepository, SalesOrderRepository>();   // Phase 6 §6
 services.AddScoped<ICustomerRepository, CustomerRepository>();
 services.AddScoped<IItemRepository, ItemRepository>();
-services.AddScoped<IDomainEventDispatcher, DomainEventDispatcher>();
-// + register this module's Dapper TypeHandlers at startup
 
 // AddInventoryModule (Erp.Modules.Inventory):
 services.AddScoped<IStockReservation, StockReservationService>();   // the contract Sales calls (Phase 7)
 ```
+
+Read that list top to bottom and you can see the module walls in it: the **shared** block registers things
+every module may use, each **module** block registers only its own, and `IStockReservation` is the single
+place the two modules meet. Nothing in `AddSalesModule` knows the word `Inventory`.
 
 ## 8. How error handling changes a request flow
 
@@ -291,14 +369,15 @@ This is the phase that makes every earlier feature's *unhappy* path tidy. Re-run
 earlier and confirm they now come back as proper HTTP problems, not raw 500s:
 
 ```bash
+AUTH=(-H "X-Api-Key: $KEY" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json")
+
 # Business rule → 422 (Phase 6's over-limit order): Beta ordering 100 Widgets
-curl -X POST http://localhost:5xxx/sales-orders -H "Authorization: Bearer $TOKEN" \
-     -H "Content-Type: application/json" -d '{"customerId":2,"lines":[{"itemId":1,"quantity":100}]}'
+curl -X POST "$BASE/sales-orders" "${AUTH[@]}" \
+     -d '{"customerId":2,"lines":[{"itemId":1,"quantity":100}]}'
 # → 422 { "title": "Business rule violated", "detail": "Order total ₱2,500.00 would exceed..." }
 
 # Malformed input → 400 with field errors (empty lines)
-curl -X POST http://localhost:5xxx/sales-orders -H "Authorization: Bearer $TOKEN" \
-     -H "Content-Type: application/json" -d '{"customerId":2,"lines":[]}'
+curl -X POST "$BASE/sales-orders" "${AUTH[@]}" -d '{"customerId":2,"lines":[]}'
 # → 400 { "title": "Validation failed", "errors": ["An order needs at least one line."] }
 ```
 

@@ -12,8 +12,8 @@ The part of your code that is about the *business* — orders, customers, money,
 databases or websites. *Analogy: the actual recipe, separate from the oven and the plates.*
 
 **Business rule**
-A statement about what the business allows. "Only draft orders can be submitted." "Orders over $50,000 need
-approval." *Analogy: the rules of a board game.*
+A statement about what the business allows. "Only draft orders can be submitted." "Orders over ₱50,000 are
+flagged as high-value." *Analogy: the rules of a board game.*
 
 **Invariant**
 A rule that must *always* be true about an object, no matter what. "An order's total always equals the sum of
@@ -157,15 +157,15 @@ can react later. *Analogy: a "Sold!" bell that rings — anyone listening can re
 A rare special class for stateless domain *logic* that spans *multiple* aggregates and belongs to none of
 them — and does **no** I/O (no database, no network). Example: a policy that spreads a whole-order discount
 across its lines. Used sparingly. *Analogy: a translator you hire only when two departments need to talk.*
-*(Note: something that merely **looks up data**, like `IPricingService` reading a price list, is a **read
-port / data access**, not a domain service — the I/O is the tell.)*
+*(Note: something that merely **looks up data** — a class that reads item prices out of a table, say — is a
+**read port / data access**, not a domain service. The I/O is the tell.)*
 
 **Repository**
 The object that saves and loads *one kind* of aggregate. `ISalesOrderRepository` loads and saves
 `SalesOrder`s. *Analogy: the filing clerk for one specific cabinet.*
 
 **Strongly-typed ID**
-A distinct type per thing — `SalesOrderId`, `CustomerId`, `ProductId` — instead of a plain `long`. The
+A distinct type per thing — `SalesOrderId`, `CustomerId`, `ItemId` — instead of a plain `long`. The
 compiler stops you passing a customer's id where an order's id is expected. *Analogy: color-coded keys — the
 red key won't fit the blue lock.*
 
@@ -223,6 +223,57 @@ paths. *Analogy: the bank teller (careful) vs. the ATM screen (fast).*
 **CQRS-lite (what we build)**
 Separate command and query *code*, but the *same one database*. We do **not** build separate databases, event
 sourcing, or eventual consistency (the heavy stuff full CQRS adds).
+
+---
+
+## Security words
+
+**Authentication** vs **authorization**
+Authentication answers *who are you?* (login). Authorization answers *are you allowed to do this?* (roles).
+Two different questions, in that order. *Analogy: the bouncer checks your ID, then checks whether your ticket
+covers the VIP room.*
+
+**JWT (JSON Web Token)**
+A short, signed string the server hands you at login and you send back on every later request. It carries your
+identity and role *inside it*, and the signature means the server can trust it without looking anything up.
+*Analogy: a festival wristband — the gate staff read it and wave you through; they don't phone the box office.*
+
+**Claim**
+One fact inside a JWT: `sub` (which user), `name`, `role`. *Analogy: the printed line on the wristband saying
+"VIP."*
+
+**Access token**
+The short-lived JWT (15 minutes here) you attach to every request. Short on purpose: a stolen one expires fast.
+
+**Refresh token**
+A long-lived, single-use secret you trade in for a fresh access token when the old one expires — so the user
+isn't forced to log in every 15 minutes. It's stored in the database (hashed), unlike the access token.
+
+**Rotation and reuse detection**
+Every refresh **rotates**: you hand in your token and get a brand-new one, and the old one is dead. If a dead
+token is ever presented again, that means someone copied it — so we revoke the whole chain of tokens descended
+from it. *Analogy: a cloakroom ticket you swap for a new one each visit; if two people turn up with the same
+old ticket, something's wrong and the coat gets held.*
+
+**`SecurityStamp`**
+A random value stored on the user row and baked into every refresh token. Changing the password changes the
+stamp, which instantly invalidates every outstanding refresh token on every device. *Analogy: rekeying the
+lock — every old key stops working at once.*
+
+**API key (`X-Api-Key`)**
+A secret identifying the **calling application** (the web app, the mobile app) rather than the user. It gates
+even anonymous endpoints like `/auth/login`, which a JWT cannot. *Analogy: the wristband says who you are; the
+key on the delivery door says which company's van you drove up in.*
+
+**Password hash / salt**
+We never store passwords. We store the output of a slow, one-way function (PBKDF2) fed the password plus a
+random per-user **salt**, so identical passwords hash differently and guessing is expensive. *Analogy: you
+can't un-bake a cake, and every cake got a different pinch of salt.*
+
+**`ICurrentUser`**
+The interface a handler uses to ask "who is calling?" without touching `HttpContext`. It's how data-dependent
+authorization ("only your own customers") stays testable. *Analogy: asking the front desk who's in the lobby,
+instead of walking out to look.*
 
 ---
 

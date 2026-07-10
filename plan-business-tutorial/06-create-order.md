@@ -43,6 +43,15 @@ The whole feature is **two files** in `Modules/Sales/Features/CreateSalesOrder/`
 (request + response + Carter endpoint). Here's the top of `CreateSalesOrderHandler.cs`:
 
 ```csharp
+// src/Modules/Sales/Features/CreateSalesOrder/CreateSalesOrderHandler.cs
+using Erp.Modules.Sales.Domain;
+using Erp.Shared.Common;        // NotFoundException, ICurrentUser
+using Erp.Shared.Common.Data;   // IDbConnectionFactory
+using Erp.Shared.Messaging;     // ICommand, ICommandHandler
+using FluentValidation;
+
+namespace Erp.Modules.Sales.Features;
+
 public sealed record CreateSalesOrderLineDto(long ItemId, int Quantity);
 
 public sealed record CreateSalesOrderCommand(
@@ -77,6 +86,11 @@ The `SalesOrder` repository interface belongs to the **module** (it's specific t
 `Shared` because every module needs it:
 
 ```csharp
+// src/Modules/Sales/Domain/Ports.cs — the data-access ports this module declares
+using System.Data;   // IDbTransaction
+
+namespace Erp.Modules.Sales.Domain;
+
 public interface ISalesOrderRepository
 {
     Task<string> NextOrderNumberAsync(CancellationToken ct);
@@ -103,11 +117,22 @@ public interface IItemRepository
 public sealed record ItemForOrder(long ItemId, bool IsActive, Money UnitPrice, ItemCategory Category);
 ```
 
-> ❓ **You might be wondering: "Why does the interface live in Application, but the implementation in
-> Infrastructure?"** The dependency rule. The handler (Application) needs *a way to load a customer*, so
-> Application *declares the interface*. The actual Dapper/SQL code (Infrastructure) *implements* it. The
-> handler depends on the interface, never on SQL. The rule of thumb: **the layer that needs a capability
-> owns the interface for it; the layer that can talk to the outside world implements it.**
+> ❓ **You might be wondering: "Why does the interface live in `Domain/` but the implementation in
+> `Infrastructure/`?"** It's the dependency rule from [Phase 1](01-solution-setup.md), and it's the same
+> port/adapter move you've now seen three times — `IDbConnectionFactory` in [Phase 3b](03b-data-access.md),
+> `ICurrentUser` and `IUserRepository` in [Phase 4b](04b-jwt-login.md), and these repositories here. The
+> domain needs *a way to load a customer*, so the domain **declares** the interface. The Dapper/SQL code
+> **implements** it, one folder over. The domain never learns SQL exists.
+>
+> The rule of thumb: **whoever needs a capability owns the interface for it; whoever can talk to the outside
+> world implements it.** Note this is *not* a Clean Architecture "Application layer" — there is no such
+> project here. The port sits inside the module that needs it, right next to the aggregate it serves.
+
+> 🔑 **These are aggregate-specific, never a generic `Repository<T>`.** `ISalesOrderRepository` speaks in
+> `SalesOrder`s and hands back whole aggregates; `IItemRepository` returns a purpose-built read shape
+> (`ItemForOrder`) that exists only because *this* handler needs an item's price and category together. A
+> generic `Repository<T>` with `GetById`/`Add`/`Update` would force every caller into the same shape and
+> quietly push the "load the category too" decision back up into the handler.
 
 ## 5. The handler — where the business rules come together
 
@@ -225,6 +250,14 @@ Look at what the handler *does* vs. what it *decides*:
 `Modules/Sales/Infrastructure/SalesOrderRepository.cs` (abbreviated to the create path):
 
 ```csharp
+// src/Modules/Sales/Infrastructure/SalesOrderRepository.cs
+using System.Data;              // CommandType, IDbTransaction
+using Dapper;                   // ExecuteAsync, ExecuteScalarAsync, CommandDefinition
+using Erp.Modules.Sales.Domain;
+using Erp.Shared.Common.Data;   // IDbConnectionFactory
+
+namespace Erp.Modules.Sales.Infrastructure;
+
 public sealed class SalesOrderRepository(IDbConnectionFactory factory) : ISalesOrderRepository
 {
     public async Task<long> AddAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct)
@@ -265,7 +298,32 @@ public sealed class SalesOrderRepository(IDbConnectionFactory factory) : ISalesO
 
 The repository maps the aggregate to proc parameters and runs them **on the passed-in transaction**. It
 contains **no business rules** — pure persistence. Note it converts domain types to primitives at the
-boundary: `order.CustomerId.Value`, `(int)order.Status`, `line.UnitPrice.Amount`.
+boundary: `order.CustomerId.Value`, `(int)order.Status`, `line.UnitPrice.Amount`. That unwrapping is the
+whole price of the strongly-typed IDs from [Phase 5](05-domain-model.md), and it's paid here, once.
+
+### Register the three repositories
+
+`AddSalesModule()` already discovers *handlers* and *validators* by scanning the assembly
+([Phase 2](02-mediator-own-vs-free.md)) — but nothing tells the container which class implements
+`ISalesOrderRepository`. Add those three lines now, or the very first request fails with *"No service for type
+`ISalesOrderRepository` has been registered."*
+
+```csharp
+// src/Modules/Sales/DependencyInjection.cs, inside AddSalesModule()
+services.AddScoped<ISalesOrderRepository, SalesOrderRepository>();
+services.AddScoped<ICustomerRepository, CustomerRepository>();
+services.AddScoped<IItemRepository, ItemRepository>();
+```
+
+> ❓ **Why not scan for these too?** We could — a reflection loop matching `IFoo` to `Foo` isn't hard. But
+> repository registration is exactly the place you later want to say something *specific* (wrap one in a
+> cache, swap one for a fake in a test host, register one as a singleton). Three explicit lines are a list
+> you can read; a convention is a rule you have to reverse-engineer. Handlers are numerous and uniform, so
+> they get the scan. Repositories are few and load-bearing, so they get named.
+
+`CustomerRepository` and `ItemRepository` are the same one-proc-call shape as `AddAsync` above —
+`sales.usp_Customer_GetById` and `sales.usp_Item_GetByIds`, both pure reads, so both open their own
+connection through the factory rather than taking a transaction ([Phase 3b](03b-data-access.md)).
 
 ## 7. Wrapping the write in a transaction
 
@@ -312,6 +370,15 @@ stock across several rows in one transaction.
 Carter `ICarterModule` living right next to its handler:
 
 ```csharp
+// src/Modules/Sales/Features/CreateSalesOrder/CreateSalesOrderEndpoint.cs
+using Carter;
+using Erp.Shared.Messaging;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+
+namespace Erp.Modules.Sales.Features;
+
 public sealed class CreateSalesOrderEndpoint : ICarterModule
 {
     public void AddRoutes(IEndpointRouteBuilder app) =>
@@ -346,7 +413,7 @@ central route list.
 A SalesRep logged in as `rep` sends:
 
 ```http
-POST /sales-orders     Authorization: Bearer <token>
+POST /sales-orders     X-Api-Key: <key>     Authorization: Bearer <token>
 { "customerId": 2, "lines": [ { "itemId": 1, "quantity": 100 } ] }
 ```
 
@@ -354,6 +421,7 @@ Customer 2 is *Beta Industries* — credit limit ₱5,000, already owes ₱4,500
 Item 1 is *Widget* at ₱25. 100 × ₱25 = **₱2,500**. Watch:
 
 ```
+0. ApiKeyMiddleware matches X-Api-Key against a known client → allowed through (Phase 4c §11).
 1. Auth middleware validates the token → caller is 'rep', role SalesRep.
 2. Endpoint builds CreateSalesOrderCommand, calls sender.Send.
 3. (Once wired in Phase 11) LoggingBehavior logs "Handling CreateSalesOrderCommand".
@@ -375,14 +443,22 @@ business outcome** — because the rules live in the right places.
 
 ### Checkpoint — create a real order ✅
 
-Log in as `rep` (Phase 4), then create a valid order:
+Log in as `rep` (Phase 4), then create a valid order. Every request now carries **both** headers — the API key
+(which app) and the bearer token (which user), exactly as [Phase 4c §11](04c-jwt-refresh-apikey.md) set up:
 
 ```bash
-TOKEN=... # accessToken from POST /auth/login
-curl -X POST http://localhost:5xxx/sales-orders -H "Authorization: Bearer $TOKEN" \
+BASE=http://localhost:5234       # your port
+KEY=web-live-abc123              # the API key you configured
+TOKEN=...                        # accessToken from POST /auth/login
+
+curl -X POST "$BASE/sales-orders" \
+     -H "X-Api-Key: $KEY" -H "Authorization: Bearer $TOKEN" \
      -H "Content-Type: application/json" \
      -d '{"customerId":1,"lines":[{"itemId":1,"quantity":2}]}'      # Acme, 2 Widgets → 201 Created { id }
 ```
+
+> ⚠️ Forget the `X-Api-Key` and you get `401 {"error":"Missing or invalid API key."}` — which looks exactly
+> like an expired token but isn't. When a request 401s from here on, check the key before you check the token.
 
 Verify it landed: `SELECT OrderNumber, Status, TotalAmount FROM sales.SalesOrder;` shows one `Draft`
 (Status 0) order totalling ₱50. Try the blocked customer (`"customerId":3`, Gamma) or an over-limit order
@@ -397,7 +473,7 @@ order returns `201` and a rule-breaking one writes nothing, **Phase 6 is done an
 | `CreateSalesOrderCommand` | The inputs, as one immutable request. |
 | `CreateSalesOrderValidator` | Input well-formedness, before any work. |
 | `CreateSalesOrderHandler` | Orchestrates the use case; delegates every rule to the domain. |
-| `ISalesOrderRepository` etc. | Application's declared needs; Infrastructure supplies the SQL. |
+| `ISalesOrderRepository` etc. | Ports the module's `Domain/` declares; the module's `Infrastructure/` supplies the SQL. |
 | `IDbConnectionFactory` + `IDbTransaction` | Makes the transaction boundary explicit; commit on success, roll back on throw. |
 | `ICurrentUser` | Supplies the caller (to stamp `CreatedBy` and check category roles). |
 | Endpoint | Thin HTTP adapter; enforces coarse "must be a sales role" auth. |

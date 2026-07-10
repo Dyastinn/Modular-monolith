@@ -8,7 +8,10 @@ using ValidationException = FluentValidation.ValidationException;
 namespace Erp.Api;
 
 // Maps each exception type to an HTTP status, in one place (Phase 11 §5).
-public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> log) : IExceptionHandler
+// IHostEnvironment tells us Development vs Production — the only thing that changes the 500 detail.
+public sealed class GlobalExceptionHandler(
+    ILogger<GlobalExceptionHandler> log,
+    IHostEnvironment env) : IExceptionHandler
 {
     public async ValueTask<bool> TryHandleAsync(HttpContext ctx, Exception ex, CancellationToken ct)
     {
@@ -23,14 +26,25 @@ public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> log) 
             _                       => (StatusCodes.Status500InternalServerError, "Unexpected error")
         };
 
+        // Always log full detail server-side, regardless of environment.
         if (status == StatusCodes.Status500InternalServerError)
             log.LogError(ex, "Unhandled exception");
+
+        // The 500 detail is the only environment-sensitive bit: the real stack trace while developing, a
+        // bland message in production so we never leak internals. Business errors (422/404/409/…) carry
+        // messages meant for the user, so they show verbatim in both.
+        string? detail = status switch
+        {
+            StatusCodes.Status500InternalServerError when env.IsDevelopment() => ex.ToString(),
+            StatusCodes.Status500InternalServerError                          => "An unexpected error occurred.",
+            _                                                                 => ex.Message
+        };
 
         var problem = new
         {
             title,
             status,
-            detail = status == 500 ? "An unexpected error occurred." : ex.Message,   // don't leak internals on 500
+            detail,
             errors = ex is ValidationException v ? v.Errors.Select(e => e.ErrorMessage) : null
         };
 

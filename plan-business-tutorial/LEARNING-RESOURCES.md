@@ -27,50 +27,57 @@
 
 ## Concept-by-concept referrals
 
-### Interfaces & Dependency Injection (needed from Phase 1 on)
+### Interfaces & Dependency Injection (needed from [Phase 1](01-solution-setup.md) on)
 - Search Microsoft Learn for **"Dependency injection in .NET"** — the official guide. Read just the
   intro and the first example.
 - Search for **"C# interfaces"** on Microsoft Learn.
 - 🎯 **Practice:** make an `IAnimal` interface with a `Speak()` method, then a `Dog` and a `Cat` that
   implement it differently. Feel how the caller can hold an `IAnimal` without knowing which one.
 
-### async / await (needed from Phase 2 on)
+### async / await (needed from [Phase 2](02-mediator-own-vs-free.md) on)
 - Search Microsoft Learn for **"Asynchronous programming with async and await"**.
 - 🎯 Don't go deep. You only need "await means wait for the answer." Come back to the theory later.
 
-### Records, structs, enums (Phase 3)
-- Microsoft Learn: search **"C# records"**, **"C# struct types"**, **"C# enumeration types"**.
-- 🎯 **Practice:** make `readonly record struct Money(decimal Amount)` and try to create a
-  `Money(-5)` — then add the check that throws. That *is* Phase 3's value-object idea in miniature.
-
-### ASP.NET Core, Minimal APIs & Carter (the web endpoints, Phase 1 & 4)
+### ASP.NET Core, Minimal APIs & Carter (the web endpoints — [Phase 1](01-solution-setup.md) & [2](02-mediator-own-vs-free.md))
 - Search Microsoft Learn for **"Minimal APIs overview"** and **"Tutorial: Create a minimal API"**.
 - Carter: search **"Carter GitHub"** — the README shows the `ICarterModule` pattern we use so each feature
   owns its own endpoint. It's a thin layer *over* minimal APIs, so learn minimal APIs first.
 - 🎯 **Practice:** build a hello-world minimal API with one `GET /hello` that returns `"hi"`, then move that
   route into an `ICarterModule` and call `app.MapCarter()`. That's literally our `/sales/ping` skeleton.
 
-### FluentValidation (input validation, Phase 4)
-- Search **"FluentValidation documentation"** — read just the "Creating your first validator" page.
-- 🎯 **Practice:** write an `AbstractValidator<T>` with two `RuleFor` lines. Notice it only checks *shape*
-  (is the field present/positive?), never *business rules* — that distinction is the whole Phase 4 lesson.
-
-### Dapper & stored procedures (Phases 4–6)
+### Dapper & stored procedures ([Phase 3](03-database-schema.md), [3b](03b-data-access.md), [6](06-create-order.md))
 - Dapper's own docs: search for **"Dapper GitHub"** (the project README is the best tutorial).
 - Stored procedures: Microsoft Learn → **"CREATE PROCEDURE (Transact-SQL)"** and
   **"Stored procedures (Database Engine)"**.
 - 🎯 **Practice:** in SQL Server, create a tiny `Person` table and a `usp_Person_Insert` proc, then
-  call it from a 20-line C# console app using Dapper. Once that works, Phase 4 is 80% familiar.
+  call it from a 20-line C# console app using Dapper. Once that works, Phase 6's repository is 80% familiar.
 
-### Transactions & concurrency (Phase 5 — the hard one)
+### Password hashing & JWTs ([Phase 4](04-jwt-auth.md), all five parts)
+- Microsoft Learn: search **"Rfc2898DeriveBytes.Pbkdf2"** and **"ASP.NET Core JWT bearer authentication"**.
+- For the token format itself, search **"JWT introduction"** — any explainer that shows the three
+  dot-separated parts and stresses that the payload is *signed, not encrypted*.
+- 🎯 **Practice:** paste a token from your own `POST /auth/login` into a JWT decoder website and read the
+  claims. Seeing your own `role: SalesRep` in plain text is the moment "signed, not encrypted" lands.
+
+### Records, structs, enums ([Phase 5](05-domain-model.md))
+- Microsoft Learn: search **"C# records"**, **"C# struct types"**, **"C# enumeration types"**.
+- 🎯 **Practice:** make `readonly record struct Money(decimal Amount)` and try to create a
+  `Money(-5)` — then add the check that throws. That *is* Phase 5's value-object idea in miniature.
+
+### FluentValidation (input validation — [Phase 6](06-create-order.md), wired up in [Phase 11](11-cross-cutting.md))
+- Search **"FluentValidation documentation"** — read just the "Creating your first validator" page.
+- 🎯 **Practice:** write an `AbstractValidator<T>` with two `RuleFor` lines. Notice it only checks *shape*
+  (is the field present/positive?), never *business rules* — that distinction is the whole Phase 6 lesson.
+
+### Transactions & concurrency ([Phase 7](07-submit-reserve-concurrency.md) — the hard one)
 - Microsoft Learn: search **"SQL Server transactions"** and **"Transaction locking and row versioning
   guide"**.
 - Concept to internalize: **race condition**. Search *"race condition explained"* — any beginner
   explanation with the "two people withdraw from one bank account at once" example.
-- 🎯 This is genuinely the hardest concept in the whole project. Re-read Phase 5 Step 3 three times.
-  It's supposed to be hard. Don't feel bad.
+- 🎯 This is genuinely the hardest idea in the whole project. Re-read [Phase 7 §5](07-submit-reserve-concurrency.md)
+  — the naive C# version, then the timeline — three times. It's supposed to be hard. Don't feel bad.
 
-### Unit testing with xUnit (Phase 8)
+### Unit testing with xUnit (starts in [Phase 5 §10](05-domain-model.md), completed in [Phase 12](12-testing.md))
 - Microsoft Learn: search **"Unit testing C# with xUnit"** (there's a tutorial by that name).
 - 🎯 **Practice:** write one test that asserts `2 + 2 == 4` using xUnit and run it. Silly, but it
   teaches you the `[Fact]` + `Assert` rhythm you'll use for the real domain tests.
@@ -87,10 +94,10 @@
 | Modular Monolith | Search *"Modular Monolith Milan Jovanović"* and *"Modular Monolith with DDD Kamil Grzybek"* | The architecture this whole project uses. Grzybek's sample repo is the canonical deep example. |
 | Vertical Slice Architecture | Search *"Vertical Slice Architecture Jimmy Bogard"* | Jimmy Bogard coined the popular version; his talks are approachable. This is how we organize *inside* each module. |
 | Domain-Driven Design (DDD) | *"Domain-Driven Design distilled"* (a famously short, readable book by Vaughn Vernon) | The short one. Avoid the giant "blue book" until much later. |
-| Clean Architecture (for contrast) | *"Clean Architecture Uncle Bob"* — his original blog post is free and short | We deliberately do **not** use its four-layer split — read it to understand *what we replaced and why* (see Phase 0 §3). |
-| CQRS | Microsoft Learn → *"CQRS pattern"* in the Azure Architecture Center | Read it, then re-read our Phase 6 to see why we do the *lite* version. |
+| Clean Architecture (for contrast) | *"Clean Architecture Uncle Bob"* — his original blog post is free and short | We deliberately do **not** use its four-layer split — read it to understand *what we replaced and why* (see [Phase 1 §2](01-solution-setup.md)). |
+| CQRS | Microsoft Learn → *"CQRS pattern"* in the Azure Architecture Center | Read it, then re-read [Phase 2 §2](02-mediator-own-vs-free.md) and [Phase 10](10-queries-search.md) to see why we do the *lite* version. |
 | Mediator pattern | Search *"mediator pattern refactoring guru"* | refactoring.guru has the friendliest diagrams for design patterns. |
-| MediatR (the real library) | Search *"MediatR GitHub"* | We hand-rolled our own; skim theirs to see it's the same shapes. |
+| MediatR (the famous library) | Search *"MediatR GitHub"* | Skim it to see our `Sender.cs` is the same shapes. Note we don't *use* it — it moved to a paid license for larger orgs in 2025, which is why [Phase 2](02-mediator-own-vs-free.md) compares the MIT-licensed `martinothamar/Mediator` instead. |
 
 ---
 

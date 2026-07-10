@@ -33,6 +33,20 @@ builder.Services.AddSwaggerGen(options =>
     {
         { new OpenApiSecuritySchemeReference("Bearer", doc, null), new List<string>() }
     });
+
+    // The ApiKeyMiddleware (Phase 4 §11) gates every non-exempt path, including the ones Swagger's
+    // "Try it out" calls. Without this, every try-it-out returns 401 "Missing or invalid API key".
+    options.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
+    {
+        Name = "X-Api-Key",
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Header,
+        Description = "The client application's API key (see ApiKeys in appsettings.Development.json)."
+    });
+    options.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
+    {
+        { new OpenApiSecuritySchemeReference("ApiKey", doc, null), new List<string>() }
+    });
 });
 
 builder.Services.AddCarter();   // discovers every feature's ICarterModule endpoint

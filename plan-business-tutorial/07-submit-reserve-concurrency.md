@@ -62,9 +62,19 @@ modular monolith's core move: the *absence* of a project reference is what makes
 > `StockReservationService`), and add `builder.Services.AddInventoryModule(builder.Configuration);` next to
 > `AddSalesModule` in `Program.cs`. Notice Sales still has **no** reference to Inventory — they meet only at
 > the `IStockReservation` contract below.
+>
+> **The module also brings its own SQL.** Data ownership follows the module, so
+> `src/Modules/Inventory/Infrastructure/Sql/` gets the three scripts you wrote in
+> [Phase 3](03-database-schema.md) for the `inventory` schema — `001_schema.sql` (the `Inventory` table and its
+> `CHECK`s), `002_procedures.sql` (`usp_Inventory_Reserve` and `usp_Inventory_Release`), and `003_seed.sql`
+> (the stock levels). They run *after* the Sales scripts, since the seed refers to item ids Sales created.
 
 ```csharp
-// Erp.Shared.Common/Contracts/IStockReservation.cs  (the ONLY way Sales touches stock)
+// src/Shared/Erp.Shared.Common/Contracts/IStockReservation.cs  (the ONLY way Sales touches stock)
+using System.Data;   // IDbTransaction
+
+namespace Erp.Shared.Common;
+
 public interface IStockReservation
 {
     // Returns true if the reservation succeeded (stock was available), false otherwise.
@@ -88,7 +98,13 @@ Sales depends only on the interface, so neither module references the other. The
 > "same interface, zero changes." [Phase 13](13-wrap-up-checklist.md) revisits what extraction really costs.
 
 ```csharp
-// Modules/Inventory/Infrastructure/StockReservationService.cs  (Inventory owns this)
+// src/Modules/Inventory/Infrastructure/StockReservationService.cs  (Inventory owns this)
+using System.Data;         // CommandType, IDbTransaction
+using Dapper;              // ExecuteAsync, ExecuteScalarAsync, CommandDefinition
+using Erp.Shared.Common;   // IStockReservation
+
+namespace Erp.Modules.Inventory.Infrastructure;
+
 public sealed class StockReservationService : IStockReservation
 {
     public async Task<bool> TryReserveAsync(long itemId, int qty, IDbTransaction tx, CancellationToken ct)
@@ -122,6 +138,15 @@ just reads whether it reported success.
 `Modules/Sales/Features/SubmitSalesOrder/SubmitSalesOrderHandler.cs`:
 
 ```csharp
+// src/Modules/Sales/Features/SubmitSalesOrder/SubmitSalesOrderHandler.cs
+using Erp.Modules.Sales.Domain;
+using Erp.Shared.BuildingBlocks;   // DomainException
+using Erp.Shared.Common;           // NotFoundException, IStockReservation
+using Erp.Shared.Common.Data;      // IDbConnectionFactory
+using Erp.Shared.Messaging;
+
+namespace Erp.Modules.Sales.Features;
+
 public sealed record SubmitSalesOrderCommand(long OrderId) : ICommand<Unit>;
 
 public sealed class SubmitSalesOrderHandler(
@@ -191,6 +216,42 @@ back lines 1 and 2's reservations too. **Everything, or nothing.**
 
 ## 5. Walk the concurrency scenario (the payoff moment)
 
+### First, the version you would have written
+
+Before the timeline, write the obvious code — the code almost everyone writes, the code that passes every
+test you would think to write:
+
+```csharp
+// DON'T DO THIS. It is wrong, and it will not look wrong.
+var inventory = await stock.GetAsync(line.ItemId.Value, ct);      // read:  OnHand 8, Reserved 0
+if (inventory.OnHand - inventory.Reserved < line.Quantity.Value)  // check: 8 available, need 5 → fine
+    throw new DomainException("Insufficient stock.");
+await stock.ReserveAsync(line.ItemId.Value, line.Quantity.Value, ct);   // act:  Reserved = 5
+```
+
+Read it again. It checks the stock, and only reserves if there's enough. What could go wrong?
+
+**The gap between the check and the act.** Those are three separate trips to the database, and between the
+`if` and the `ReserveAsync`, *anything can happen* — including another salesperson running the exact same
+three lines. Both read `8 available`. Both conclude `5 ≤ 8`. Both reserve 5. You have now promised 10 units
+of an item you have 8 of, and nothing in your C# is wrong, and no unit test will ever catch it, because a
+unit test runs one thread at a time.
+
+This is a **race condition**, and it is not a bug you fix by being careful. You fix it by removing the gap —
+by making the *check* and the *act* the same, indivisible operation. Only the database can do that, which is
+why `usp_Inventory_Reserve` puts the check in the `WHERE` clause of the very `UPDATE` that does the writing:
+
+```sql
+UPDATE inventory.Inventory
+SET Reserved = Reserved + @Qty
+WHERE ItemId = @ItemId AND (OnHand - Reserved) >= @Qty;   -- check and act, one statement, no gap
+SELECT @@ROWCOUNT;                                        -- 1 = you got it, 0 = someone beat you
+```
+
+Now watch it work.
+
+### The timeline
+
 Item 3 (*Restricted Kit*) has `OnHand = 8, Reserved = 0`. Two managers each submit an order for **5**
 units at the same instant (managers, because it's the Controlled category — see the role rule).
 
@@ -228,6 +289,15 @@ couldn't push it negative. This is the bug that unit tests can't catch and integ
 `Modules/Sales/Features/SubmitSalesOrder/SubmitSalesOrderEndpoint.cs`:
 
 ```csharp
+// src/Modules/Sales/Features/SubmitSalesOrder/SubmitSalesOrderEndpoint.cs
+using Carter;
+using Erp.Shared.Messaging;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
+
+namespace Erp.Modules.Sales.Features;
+
 public sealed class SubmitSalesOrderEndpoint : ICarterModule
 {
     public void AddRoutes(IEndpointRouteBuilder app) =>
@@ -269,10 +339,13 @@ public sealed class SubmitSalesOrderEndpoint : ICarterModule
 
 ## 9. Checkpoint — submit reserves stock, over-submit rolls back ✅
 
-Create a draft order (Phase 6), note its id, then submit it:
+Create a draft order (Phase 6), note its id, then submit it (both headers, as always since
+[Phase 4c](04c-jwt-refresh-apikey.md)):
 
 ```bash
-curl -X POST http://localhost:5xxx/sales-orders/{id}/submit -H "Authorization: Bearer $TOKEN"   # → 204 No Content
+ID=1   # the id returned by POST /sales-orders
+curl -X POST "$BASE/sales-orders/$ID/submit" \
+     -H "X-Api-Key: $KEY" -H "Authorization: Bearer $TOKEN"    # → 204 No Content
 ```
 
 Verify the reservation actually happened — the order is now `PendingApproval` and stock moved from `OnHand`

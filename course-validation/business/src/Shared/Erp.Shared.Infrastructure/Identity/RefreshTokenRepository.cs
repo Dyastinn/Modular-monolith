@@ -1,24 +1,11 @@
 using System.Data;
 using Dapper;
+using Erp.Shared.Common;
 using Erp.Shared.Common.Data;
 
 namespace Erp.Shared.Infrastructure;
 
-// The stored refresh token, as the handler needs it (Phase 4 §9).
-public sealed record RefreshTokenRecord(
-    long Id, string TokenHash, long UserId, Guid FamilyId, Guid SecurityStamp,
-    DateTime ExpiresUtc, DateTime AbsoluteExpiresUtc, DateTime? RevokedUtc);
-
-public interface IRefreshTokenRepository
-{
-    Task AddAsync(string tokenHash, long userId, Guid familyId, Guid securityStamp,
-        DateTime expiresUtc, DateTime absoluteExpiresUtc, IDbTransaction tx, CancellationToken ct);
-    Task<RefreshTokenRecord?> GetByHashAsync(string tokenHash, CancellationToken ct);
-    Task RevokeAsync(string tokenHash, string? replacedByHash, IDbTransaction tx, CancellationToken ct);
-    Task RevokeFamilyAsync(Guid familyId, IDbTransaction tx, CancellationToken ct);
-    Task RevokeAllForUserAsync(long userId, IDbTransaction tx, CancellationToken ct);
-}
-
+// The Dapper ADAPTER for the IRefreshTokenRepository port in Erp.Shared.Common/Security (Phase 4 §9).
 public sealed class RefreshTokenRepository(IDbConnectionFactory factory) : IRefreshTokenRepository
 {
     public async Task AddAsync(string tokenHash, long userId, Guid familyId, Guid securityStamp,
