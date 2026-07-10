@@ -411,9 +411,11 @@ public sealed class RefreshHandler(
         // Burn the whole family so neither the thief nor the victim keeps using the lineage.
         if (token.RevokedUtc is not null)
         {
-            using var conn = factory.Create();
-            await conn.OpenAsync(ct);
-            using var breach = conn.BeginTransaction();
+            // Note the names: breachConn / breach. The rotation below opens its own conn / tx, and C# won't
+            // let you reuse the name `conn` in two nested scopes of one method (error CS0136).
+            using var breachConn = factory.Create();
+            await breachConn.OpenAsync(ct);
+            using var breach = breachConn.BeginTransaction();
             try
             {
                 await store.RevokeFamilyAsync(token.FamilyId, breach, ct);

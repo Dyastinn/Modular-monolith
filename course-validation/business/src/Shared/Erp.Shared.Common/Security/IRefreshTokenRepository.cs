@@ -2,7 +2,7 @@ using System.Data;
 
 namespace Erp.Shared.Common;
 
-// The stored refresh token, as the handler needs it (Phase 4 §9).
+// The stored refresh token, as the handler needs it (Phase 4 §10).
 public sealed record RefreshTokenRecord(
     long Id, string TokenHash, long UserId, Guid FamilyId, Guid SecurityStamp,
     DateTime ExpiresUtc, DateTime AbsoluteExpiresUtc, DateTime? RevokedUtc);

@@ -382,6 +382,32 @@ This prevents attackers from discovering valid usernames.
 
 ---
 
+> ⚠️ **What the client actually sees today: a 500, not a 401.** Be clear-eyed about this, because it will
+> surprise you the first time you test a wrong password. `AuthenticationException` is *thrown*, and right now
+> **nothing catches it** — there is no global error handler in the app yet, so ASP.NET treats it as an
+> unhandled exception and returns a **500** (in Development, the developer exception page). The *message* is
+> right; the *status code* isn't, yet.
+>
+> [Phase 11](11-cross-cutting.md) adds a single `GlobalExceptionHandler` that maps `AuthenticationException`
+> → **401**, `DomainException` → **422**, `NotFoundException` → **404**, and so on. That's where the status
+> codes quoted in this phase become literally true. We don't build it here for the same reason we don't build
+> the validator pipeline here: mapping *every* exception type to a status is a **cross-cutting** concern that
+> deserves one home, and writing a half-version now that Phase 11 immediately replaces would teach you a file
+> you'd have to unlearn.
+>
+> Two consequences worth naming, so nothing here is a phantom:
+> - **`LoginValidator` is registered but never runs yet.** FluentValidation validators don't execute
+>   themselves — the `ValidationBehavior` that invokes them is a pipeline behavior, and we add it in
+>   [Phase 11 §3](11-cross-cutting.md). Until then, an empty username simply falls through to "user not
+>   found" and the same generic failure. Writing the validator now is still right: it belongs in the slice,
+>   next to the command it validates.
+> - **The 401s that *are* real today** are the ones produced by **middleware**, not by a throw: the API-key
+>   gate ([Part 3](04c-jwt-refresh-apikey.md)) writes `401` onto the response itself, and the JWT bearer
+>   middleware rejects a missing or tampered token with `401` before any handler runs. Those you can verify
+>   right now.
+
+---
+
 #### Step C — Create the JWT
 
 ```csharp
@@ -664,6 +690,21 @@ MapInboundClaims = false
 that claim no longer exists under the name `sub`, causing `CurrentUser` to fail when it tries to read it.
 
 Turning claim mapping off keeps every claim exactly as it appears inside the JWT.
+
+> ❓ **"Then why is `RoleClaimType = ClaimTypes.Role` — the long URI — and not just `"role"`?"** Good
+> question, and the answer is the whole point of "exactly as it appears inside the JWT." Look back at
+> `JwtTokenService` ([Part 1 §4](04-jwt-auth.md)): we wrote the claims with
+> `new Claim(ClaimTypes.Role, role)`. `ClaimTypes.Role` is a **constant whose value is a long URI**
+> (`http://schemas.microsoft.com/ws/2008/06/identity/claims/role`), and because we build the token by
+> constructing `JwtSecurityToken` directly, that string is what literally lands in the token's payload. So
+> with mapping off, the claim comes back typed with that same long URI — and `RoleClaimType` has to name it
+> for `IsInRole` and `RequireRole` to find it.
+>
+> 🔑 **The rule to remember: whatever you write into the token is exactly what you must read out of it.**
+> `MapInboundClaims = false` doesn't rename anything *for* you — that's the point — so the two ends have to
+> agree. Set `RoleClaimType`/`NameClaimType` to the same constants the token service used, and read `sub`
+> back as `sub`. Change one end and you must change the other; miss it and every role check silently fails
+> with a 403 that looks like a permissions bug.
 
 ---
 

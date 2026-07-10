@@ -167,6 +167,19 @@ public async Task ReplaceLinesAsync(SalesOrder order, IDbTransaction tx, Cancell
 All three steps — delete, insert, update total — run on the same transaction, so a failure leaves the
 order's lines exactly as they were.
 
+> ⚠️ **Notice what this update does *not* check: `RowVersion`.** [Phase 8](08-approval-cancellation.md) just
+> taught you the version-checked `UPDATE` that stops a **lost update** — and `ReplaceLinesAsync` doesn't use
+> it. That's a deliberate scope cut, and you should know exactly what it costs: if two sales reps open the
+> same draft and both save, the second save silently wins. Nobody is told. The transaction still keeps each
+> save *atomic* (you never get half a set of lines), but atomicity is not the same guarantee as "nobody
+> overwrote me" — that was Phase 8's whole point.
+>
+> Closing it is a small, satisfying exercise and reuses machinery you already have: pass `order.RowVersion`
+> into a version-checked `usp_SalesOrder_UpdateTotal` (`WHERE Id = @Id AND RowVersion = @RowVersion`), and
+> throw `ConcurrencyException` on rowcount `0`, exactly as `UpdateStatusAsync` does. It's on the
+> [Phase 13 checklist](13-wrap-up-checklist.md). We leave it out of the base flow only so this slice stays
+> about *re-lining a draft* rather than re-teaching concurrency.
+
 ## 6. The endpoint (Carter module in the feature folder)
 
 `Modules/Sales/Features/UpdateSalesOrder/UpdateSalesOrderEndpoint.cs`:

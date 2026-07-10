@@ -219,6 +219,10 @@ The turnstile, walked end to end:
 4. Any refresh tokens `rep` still held are now dead on their next use (stamp mismatch, §10) — a clean slate.
 5. `POST /auth/login {rep, <new password>}` → **200**, a fresh access + refresh pair. Back in.
 
+> ℹ️ Step 2's **401** is the status *after* [Phase 11](11-cross-cutting.md) adds the global exception handler.
+> Run this trace today and that step returns a 500 carrying the same message — the flow is real, only the
+> status code is waiting on Phase 11. ([Part 2](04b-jwt-login.md) explains why we don't map it here.)
+
 > 💡 The same *change, then log in* dance is what a logged-in user does to rotate a **suspected-leaked**
 > password — the stamp rotation in step 3 kicks every *other* device the instant the change commits, so a thief
 > holding a stolen token is dropped the moment the real user acts.

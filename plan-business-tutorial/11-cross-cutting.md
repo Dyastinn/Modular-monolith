@@ -277,9 +277,8 @@ app.UseExceptionHandler();   // early in the pipeline
 
 ## 6. Defining the exception types
 
-These are tiny; put the generic ones (`NotFoundException`, `ForbiddenException`, `ConcurrencyException`)
-in `Erp.Shared.Common` so every module and the host can throw and catch them, and `DomainException` in
-`Erp.Shared.BuildingBlocks` (it's part of the domain vocabulary every module reuses):
+You've written most of these already, one at a time, in the phase that first needed each. Here they are
+together — the only genuinely new one is `ForbiddenException`, which the mapping above wants a name for:
 
 ```csharp
 // src/Shared/Erp.Shared.BuildingBlocks/BuildingBlocks.cs — domain vocabulary (you wrote this in Phase 1 §4b)
@@ -290,12 +289,19 @@ public class DomainException(string message) : Exception(message);        // "a 
 // src/Shared/Erp.Shared.Common/Exceptions.cs — the transport-shaped ones the global handler maps
 namespace Erp.Shared.Common;
 
-public class NotFoundException(string message) : Exception(message);      // "that row doesn't exist"
-public class ForbiddenException(string message) : Exception(message);     // "you're known, but not allowed"
-public class ConcurrencyException(string message) : Exception(message);   // "someone changed it under you"
+public class NotFoundException(string message) : Exception(message);      // Phase 6 — "that row doesn't exist"
+public class ConcurrencyException(string message) : Exception(message);   // Phase 8 — "someone changed it under you"
+public class ForbiddenException(string message) : Exception(message);     // NEW — "you're known, but not allowed"
 
 // ValidationException comes from FluentValidation; AuthenticationException from System.Security.Authentication.
 ```
+
+> ℹ️ **Nothing in the base build actually throws `ForbiddenException`.** Every "not allowed" case we have is
+> either a role check the *endpoint* already rejected with `RequireRole` (ASP.NET returns 403 before a handler
+> ever runs), or a business rule that is properly a `DomainException`. We define it anyway, because the moment
+> you write your first *data-dependent* authorization rule — "you may only cancel **your own** orders", the
+> [Phase 13 extension exercise #5](13-wrap-up-checklist.md) — the handler needs exactly this word, and it must
+> map to **403**, not 400. Naming the concept now is what keeps that rule out of the validator later.
 
 > 🔑 **Why `DomainException` lives somewhere different from the other three.** `DomainException` is a *domain*
 > word — a `SalesOrder` throws it, and the pure domain may only reference `BuildingBlocks`. The other three

@@ -269,10 +269,10 @@ public sealed class SearchSalesOrdersEndpoint : ICarterModule
 {
     public void AddRoutes(IEndpointRouteBuilder app) =>
         app.MapGet("/sales-orders",
-            async (long? customerId, string? status, int page, int pageSize, ISender sender, CancellationToken ct) =>
+            async (long? customerId, string? status, int? page, int? pageSize, ISender sender, CancellationToken ct) =>
             {
                 var result = await sender.Send(
-                    new SearchSalesOrdersQuery(customerId, status, page == 0 ? 1 : page, pageSize == 0 ? 20 : pageSize), ct);
+                    new SearchSalesOrdersQuery(customerId, status, page ?? 1, pageSize ?? 20), ct);
                 return Results.Ok(result);
             })
             .RequireAuthorization();
@@ -281,6 +281,17 @@ public sealed class SearchSalesOrdersEndpoint : ICarterModule
 
 `.RequireAuthorization()` with no role means "any authenticated user" — reads aren't role-gated here,
 but they *do* require a valid token.
+
+> ⚠️ **Why `int? page` and not `int page`.** All four query parameters are optional — `GET /sales-orders`
+> with no query string should return the first page. But a **non-nullable** `int` parameter is *required* in
+> a minimal API: if the query string omits it, model binding fails and the request dies with a **400** before
+> your handler ever runs. It doesn't quietly default to `0`. So writing `int page` and then "defending" with
+> `page == 0 ? 1 : page` is doubly wrong — the guard is unreachable, and the endpoint rejects the plainest
+> call a client can make. Make the parameter `int?`, and supply the default yourself with `?? 1`.
+>
+> Note this is *separate* from the `Page = 1` default on `SearchSalesOrdersQuery`. That default only applies
+> when C# code constructs the query without the argument; it has no say in how HTTP binds a query string.
+> Two different layers, two different defaults — and the endpoint is the one the client actually meets.
 
 > 🔒 **Row-level authorization (a real ERP gap to be aware of).** As written, *any* logged-in user can read
 > *every* order. In a real ERP a SalesRep usually sees only their own customers' orders, while a Manager

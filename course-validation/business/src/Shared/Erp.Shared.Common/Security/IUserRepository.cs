@@ -14,6 +14,6 @@ public sealed record AppUser(
 public interface IUserRepository
 {
     Task<AppUser?> GetByUsernameAsync(string username, CancellationToken ct);
-    Task<AppUser?> GetByIdAsync(long id, CancellationToken ct);   // used by refresh to reload role/active (Phase 4 §9)
+    Task<AppUser?> GetByIdAsync(long id, CancellationToken ct);   // used by refresh to reload role/active (Phase 4 §10)
     Task ChangePasswordAsync(long userId, string newPasswordHash, IDbTransaction tx, CancellationToken ct);  // Phase 4 Part 4
 }

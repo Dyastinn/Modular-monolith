@@ -146,20 +146,23 @@ Rejected         → (final)
 Drawn as a map (follow the arrows; there's no way back out of the two shaded end states):
 
 ```
-                 submit                approve
-   ┌─────────┐  ────────► ┌──────────────────┐  ────────► ┌──────────┐
-   │  Draft  │            │  PendingApproval │            │ Approved │
-   └────┬────┘            └───┬──────────┬───┘            └────┬─────┘
-        │                     │  reject  │                     │
-        │ cancel              │          │ cancel              │ cancel
-        │                     ▼          │                     │
-        │              ┌────────────┐    │                     │
-        │              │  Rejected  │◄───┘                     │
-        │              │  (final)   │                          │
-        │              └────────────┘                          │
-        ▼                                                      ▼
-   ┌───────────────────────────  Cancelled (final)  ◄──────────┘
-   └──────────────────────────────────────────────┘
+                 submit                            approve
+   ┌─────────┐  ──────────►  ┌─────────────────┐  ──────────►  ┌──────────┐
+   │  Draft  │               │ PendingApproval │               │ Approved │
+   └────┬────┘               └───┬─────────┬───┘               └────┬─────┘
+        │                        │         │                        │
+        │                reject  │         │                        │
+        │                        ▼         │                        │
+        │                  ┌────────────┐  │                        │
+        │                  │  Rejected  │  │                        │
+        │                  │  (final)   │  │                        │
+        │                  └────────────┘  │                        │
+        │                                  │                        │
+        │ cancel                           │ cancel                 │ cancel
+        ▼                                  ▼                        ▼
+   ┌──────────────────────────────────────────────────────────────────────┐
+   │                        Cancelled  (final)                            │
+   └──────────────────────────────────────────────────────────────────────┘
 ```
 
 *Reserved stock is released on the way into `Cancelled`/`Rejected`; the balance charged at `Approved` is
@@ -333,12 +336,18 @@ public sealed class SalesOrder : AggregateRoot<SalesOrderId>
 
 > ⚠️ **A subtlety in `Create`: the id inside `SalesOrderCreated` is provisional.** The order isn't saved yet
 > when `Create()` runs, so the database hasn't handed out its identity — `order.Id` is still `SalesOrderId(0)`
-> at the moment we raise `SalesOrderCreated(order.Id, …)`. Don't rely on that id being real. Two clean fixes,
-> both fine here: **(a)** leave the id *out* of the created event (`SalesOrderCreated(CustomerId, CreatedBy)`
-> is enough — the id only matters once persisted); or **(b)** have the repository stamp `Id` on the aggregate
-> right after `INSERT … SELECT SCOPE_IDENTITY()`, and dispatch events **after commit** (which we already do —
-> [Phase 8 §6](08-approval-cancellation.md)), so any handler reads the persisted id. The trap is *assuming*
-> `SalesOrderCreated.Id` is usable before the order is saved.
+> at the moment we raise `SalesOrderCreated(order.Id, …)`, and it stays `0` forever, because nothing ever
+> writes the real id back onto the in-memory aggregate. Nothing in this course *consumes* that event, so the
+> zero is harmless — but the trap is real: **never assume `SalesOrderCreated.Id` is usable.**
+>
+> Two honest fixes, if you ever add a handler for it. **(a)** Leave the id *out* of the created event —
+> `SalesOrderCreated(CustomerId, CreatedBy)` says everything true at that moment. **(b)** Give the aggregate a
+> way to *receive* its id after the `INSERT` and raise the event then. Note that (b) is more work than it
+> looks: `Id` comes from `Entity<TId>` with a `protected set`, so a repository — which isn't a subclass —
+> physically cannot assign it. You'd have to add a seam for it (an `internal void AssignId(SalesOrderId id)`
+> on the aggregate, say). That's exactly why this course takes the simpler road instead: the repository's
+> `AddAsync` **returns** the new id, and the handler returns *that* ([Phase 6](06-create-order.md)). We never
+> pretend the aggregate knows an id it was never given.
 
 ### Line by line: the `Submit` method
 
@@ -517,9 +526,42 @@ dotnet add tests/Erp.Modules.Sales.UnitTests reference src/Modules/Sales/Erp.Mod
 dotnet add tests/Erp.Modules.Sales.UnitTests package FluentAssertions
 ```
 
-(The `dotnet new xunit` template already pulls in xUnit + the test SDK. CPM adds a `<PackageVersion>` line
-for `FluentAssertions`, and — because the test project references the *module*, not the other way around —
-the module's Domain stays free of any test dependency.)
+(CPM adds a `<PackageVersion>` line for `FluentAssertions`, and — because the test project references the
+*module*, not the other way around — the module's Domain stays free of any test dependency.)
+
+> 📌 **The `xunit` template fights Central Package Management. Fix it before you build.** `dotnet new xunit`
+> writes its four packages **with versions baked in**, which is exactly what [Phase 1 §5b](01-solution-setup.md)
+> forbade. Build now and you get:
+>
+> ```
+> error NU1008: The following PackageReference items cannot define a value for Version:
+>               coverlet.collector, Microsoft.NET.Test.Sdk, xunit, xunit.runner.visualstudio
+> ```
+>
+> This isn't a mistake on your part — the template simply predates CPM. The fix is the one §5b already
+> taught: **move each version out of the `.csproj` and into `Directory.Packages.props`.** Strip the
+> `Version="…"` attribute from all four lines in `tests/Erp.Modules.Sales.UnitTests/…csproj`:
+>
+> ```xml
+> <PackageReference Include="coverlet.collector" />
+> <PackageReference Include="Microsoft.NET.Test.Sdk" />
+> <PackageReference Include="xunit" />
+> <PackageReference Include="xunit.runner.visualstudio" />
+> ```
+>
+> …and add the versions the template chose (yours may be newer — use whatever it generated) to
+> `Directory.Packages.props`:
+>
+> ```xml
+> <!-- Testing -->
+> <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+> <PackageVersion Include="xunit" Version="2.9.3" />
+> <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+> <PackageVersion Include="coverlet.collector" Version="6.0.4" />
+> ```
+>
+> Do the same the next time you scaffold a test project ([Phase 12](12-testing.md) adds the integration one).
+> Annoying once, then never again — and it's a fair price for having every version in a single file.
 
 ### The tests (`tests/Erp.Modules.Sales.UnitTests/SalesOrderTests.cs`)
 

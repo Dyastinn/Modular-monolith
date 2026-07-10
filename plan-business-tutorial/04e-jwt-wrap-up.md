@@ -21,7 +21,7 @@
 2. Client stores both: the access token for requests, the refresh token for later.
 3. POST /sales-orders   X-Api-Key: <key>   Authorization: Bearer <accessToken>
      → ApiKeyMiddleware OKs the client → UseAuthentication validates signature+expiry → HttpContext.User claims
-     → UseAuthorization checks the endpoint's role requirement (here: SalesRep or Manager — ok)
+     → UseAuthorization checks the endpoint's role requirement (here: SalesRep, SalesManager or Admin — ok)
      → endpoint calls sender.Send(command)
      → handler injects ICurrentUser → reads UserId to stamp CreatedByUserId
 4. ...15 minutes pass; the access token expires → the next request gets 401.
@@ -70,6 +70,22 @@ The seed users from [Phase 3](03-database-schema.md), for reference:
 | `rep` | `Password123!` | `SalesRep` |
 | `manager` | `Password123!` | `SalesManager` |
 | `admin` | `Password123!` | `Admin` |
+
+> ⚠️ **Read this before you run the failure cases, or you'll think you broke something.** Two different
+> machines produce the `401`s below, and only one of them exists yet.
+>
+> - **Middleware 401s are live now.** The API-key gate (Step 0) and the JWT bearer middleware (Step 2) write
+>   the status straight onto the response. Those work exactly as printed.
+> - **Thrown-exception 401s are not — yet.** Every failure that comes out of a *handler* — wrong password,
+>   expired password, reuse detection, revoked token — is a thrown `AuthenticationException`, and the app has
+>   no global error handler until [Phase 11](11-cross-cutting.md). Today those requests return a **500** (the
+>   developer exception page in Development) carrying the right *message* but the wrong *status*.
+>
+> So where a step below says `→ 401 Unauthorized "Invalid username or password."`, read it as: **the message
+> is what you should see now; the 401 arrives in Phase 11**, when `GlobalExceptionHandler` maps
+> `AuthenticationException → 401`. Everything else in this checkpoint — the tokens, the rotation, the family
+> revocation, the role gates — is fully real today. (Prefer not to wait? Nothing stops you from skimming
+> [Phase 11 §5](11-cross-cutting.md) and dropping the handler in early; the rest of Phase 11 will still fit.)
 
 ---
 

@@ -283,9 +283,10 @@ curl http://localhost:5234/db-ping      # → { "users": 3 }   (use whatever por
 ```
 
 Three users (the `rep` / `manager` / `admin` seed from Phase 3) means the connection string, the factory, and
-Dapper all work end-to-end. **Delete the `/db-ping` endpoint** once you've seen it green — real data access
-starts in [Phase 4](04-jwt-auth.md), where `IUserRepository` becomes the first repository built on this
-factory.
+the registration in `AddSharedInfrastructure` all work end-to-end. That's the whole pipe: C# can reach the
+database. **Delete the `/db-ping` endpoint** once you've seen it green — real data access starts in
+[Phase 4](04-jwt-auth.md), where `IUserRepository` becomes the first repository built on this factory, and
+where you meet Dapper's API for the first time.
 
 ## 9. Common mistakes & best practices
 

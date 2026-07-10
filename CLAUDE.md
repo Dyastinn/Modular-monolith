@@ -104,7 +104,7 @@ MassTransit · any message broker · microservices · distributed caching · a g
 an `IUnitOfWork` abstraction over the transaction.
 
 > ✅ **The lessons and `course-validation/business/` are in sync** (verified 2026-07-10: solution builds
-> clean, 14 unit + 6 integration tests pass). If you change one, change the other in the same edit — a
+> clean, 14 unit + 7 integration tests pass). If you change one, change the other in the same edit — a
 > reference build that contradicts the lesson is worse than no reference build.
 
 The **only** place these may appear is a lesson's explicit *"when you'd add this later, and why not now"*

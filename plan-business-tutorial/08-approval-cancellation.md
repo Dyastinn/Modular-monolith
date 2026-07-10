@@ -98,6 +98,18 @@ public sealed class ApproveSalesOrderHandler(
 Recall the order table has a `RowVersion` stamp ([Phase 3](03-database-schema.md)). The repository loads
 it with the order and passes it back on update:
 
+> 📦 **A second exception, in the file you started in [Phase 6](06-create-order.md).** The repository below
+> needs a way to say "someone changed this row under me," which is neither a broken business rule nor a
+> missing row. Add it next to `NotFoundException`:
+>
+> ```csharp
+> // src/Shared/Erp.Shared.Common/Exceptions.cs
+> public class ConcurrencyException(string message) : Exception(message);   // "someone changed it under you"
+> ```
+>
+> [Phase 11](11-cross-cutting.md) maps it to an HTTP **409 Conflict** — the status that tells a client
+> "reload and retry," as opposed to "you did something wrong."
+
 ```csharp
 public async Task UpdateStatusAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct)
 {

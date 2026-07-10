@@ -38,11 +38,11 @@ can fulfill it. By the end you'll have secured HTTP endpoints for:
 | `POST /auth/refresh` | anyone with a valid refresh token | Rotate the refresh token, get a fresh access token |
 | `POST /auth/logout` / `/auth/logout-all` | valid refresh token / any logged-in user | Revoke this session / every session |
 | `POST /auth/change-password` | anyone who knows the old password | Change a password, revoking every existing session |
-| `POST /sales-orders` | SalesRep, SalesManager | Create a draft order (with all the create-time checks) |
-| `PUT /sales-orders/{id}` | SalesRep, SalesManager | Edit a *draft* order's lines |
-| `POST /sales-orders/{id}/submit` | SalesRep, SalesManager | Submit for approval + **reserve inventory** |
-| `POST /sales-orders/{id}/approve` | **SalesManager only** | Approve a submitted order |
-| `POST /sales-orders/{id}/cancel` | SalesRep, SalesManager | Cancel + **release reservations** |
+| `POST /sales-orders` | SalesRep, SalesManager, Admin | Create a draft order (with all the create-time checks) |
+| `PUT /sales-orders/{id}` | SalesRep, SalesManager, Admin | Edit a *draft* order's lines |
+| `POST /sales-orders/{id}/submit` | SalesRep, SalesManager, Admin | Submit for approval + **reserve inventory** |
+| `POST /sales-orders/{id}/approve` | **SalesManager**, Admin — *never* a plain SalesRep | Approve a submitted order |
+| `POST /sales-orders/{id}/cancel` | SalesRep, SalesManager, Admin | Cancel + **release reservations** |
 | `GET /sales-orders/{id}` | any logged-in user | Get one order's full detail |
 | `GET /sales-orders` | any logged-in user | Search/filter/page through orders |
 
@@ -51,6 +51,11 @@ can fulfill it. By the end you'll have secured HTTP endpoints for:
 > and **`Admin`**. When this tutorial says "a manager" in plain English, the actual role string is always
 > **`SalesManager`** (never just `"Manager"`). We use the exact strings everywhere in code so a typo can't
 > silently break an authorization check.
+>
+> **`Admin` is a superuser**, so it appears in every `RequireRole(...)` list and also bypasses the
+> category restriction in [Phase 5](05-domain-model.md). That's why the approve endpoint is "SalesManager
+> **or Admin**" rather than literally manager-only — when we say "manager only" in prose, we mean *a
+> SalesRep can't do it*.
 
 ## The business rules we'll enforce
 

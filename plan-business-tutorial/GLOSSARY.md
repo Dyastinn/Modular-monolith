@@ -45,9 +45,11 @@ features, and database schema. One module never reaches into another's internals
 keeps its own files and won't let other departments rummage through them.*
 
 **Shared kernel** (`src/Shared/...`)
-The small set of building blocks *every* module may use: base domain types (`BuildingBlocks`), common helpers
-(`Common`), the mediator (`Messaging`), and database/web plumbing (`Infrastructure`). *Analogy: the building's
-shared utilities — power, plumbing, the front desk.*
+The small set of building blocks the modules lean on: base domain types (`BuildingBlocks`), common helpers and
+**interfaces** (`Common`), and the mediator (`Messaging`). A fourth project, `Infrastructure`, holds the
+*implementations* of those interfaces (SQL Server, JWT, `HttpContext`) — and **no module references it**; only
+the host does. *Analogy: the building's shared utilities. Every floor uses the power sockets (`Common`); nobody
+but the building manager goes down to the generator room (`Infrastructure`).*
 
 **Vertical slice (feature)**
 Everything for one task ("create a sales order") kept together in one small folder — as two files: the handler

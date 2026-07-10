@@ -802,6 +802,21 @@ IRequestHandler<GetSalesOrderQuery, SalesOrderDto>
 
 The `foreach` simply loops over that list and registers each handler with Dependency Injection.
 
+> ❓ **"Why `AddTransient` for handlers, but `AddScoped` for `ISender`?"** These are **lifetimes** — they tell
+> DI how long to reuse one instance.
+>
+> - **Transient** = a brand-new object every time someone asks. A handler is used once, for one request, then
+>   thrown away. It holds no state worth keeping, so a fresh one is the simplest correct answer.
+> - **Scoped** = one object per HTTP request, shared by everything in that request. `ISender` is scoped
+>   because the things it hands to a handler — the database connection factory, `ICurrentUser` — must be the
+>   *same* ones for the whole request.
+> - **Singleton** = one object for the entire application lifetime. We'll use it in [Phase 4](04-jwt-auth.md)
+>   for the password hasher, which is stateless.
+>
+> The rule of thumb: **singleton if stateless and cheap to share, scoped if it must line up with one request,
+> transient otherwise.** Asking for a scoped service from inside a singleton is the classic mistake — DI will
+> throw at startup, which is exactly when you want to find out.
+
 > ⚠️ **`AddValidatorsFromAssembly()` needs an extra package.** That helper comes from
 > **`FluentValidation.DependencyInjectionExtensions`**, not the base `FluentValidation` package. That's
 > why we installed it earlier in this phase. There are no validators yet, so this call simply registers
@@ -929,7 +944,7 @@ A few things are happening here:
 - Because `PingHandler` implements `IRequestHandler<,>`, our assembly scanning automatically discovers and registers it with dependency injection. We don't have to manually write:
 
   ```csharp
-  services.AddScoped<IRequestHandler<PingRequest, string>, PingHandler>();
+  services.AddTransient<IRequestHandler<PingRequest, string>, PingHandler>();
   ```
 
 `PingHandler` implements the bare `IRequestHandler` because a ping is neither a command nor a query. Every

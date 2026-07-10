@@ -79,6 +79,17 @@ public class SalesOrderWorkflowTests
         create.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
     }
 
+    // Regression guard: `page`/`pageSize` must be `int?` on the endpoint. Declared as a non-nullable `int`,
+    // minimal-API model binding treats them as REQUIRED, and this bare call fails with 400 before the
+    // handler ever runs — so the query's `Page = 1` default is never reached. See Phase 10 §6.
+    [Fact]
+    public async Task Search_with_no_query_string_returns_the_first_page()
+    {
+        var client = await LoggedInAs("rep");
+        var search = await client.GetAsync("/sales-orders");
+        search.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     [Fact]
     public async Task Refresh_rotates_and_replaying_a_spent_token_revokes_the_session()
     {

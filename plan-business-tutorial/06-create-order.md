@@ -138,6 +138,24 @@ public sealed record ItemForOrder(long ItemId, bool IsActive, Money UnitPrice, I
 
 This is the meat. Read every line; the comments mark which layer owns each decision.
 
+> 📦 **One tiny file first, or the handler won't compile.** The handler below throws `NotFoundException` when
+> a customer or item isn't there. That type doesn't exist yet — create it now:
+>
+> ```csharp
+> // src/Shared/Erp.Shared.Common/Exceptions.cs
+> namespace Erp.Shared.Common;
+>
+> public class NotFoundException(string message) : Exception(message);   // "that row doesn't exist"
+> ```
+>
+> ❓ **"Why not put it in `BuildingBlocks` next to `DomainException`?"** Because the two say different things.
+> `DomainException` means *a business rule said no* — a `SalesOrder` throws it, and it belongs to the domain's
+> vocabulary. `NotFoundException` means *the row you asked for isn't there*, which is a fact about a failed
+> **request**, not about the business. Keeping it in `Common` means the pure domain never has to know that
+> "not found" is even a category of problem. (Right now nothing catches either one, so a throw becomes an
+> ugly 500. [Phase 11](11-cross-cutting.md) adds the one handler that maps `NotFoundException` → **404** and
+> `DomainException` → **422**. We'll grow this file with one more exception as we hit the need for it.)
+
 ```csharp
 public sealed class CreateSalesOrderHandler(
     ICustomerRepository customers,

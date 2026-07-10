@@ -6,7 +6,7 @@ using Erp.Shared.Messaging;
 
 namespace Erp.Api.Auth;
 
-// Trade a refresh token for a new access token, rotating it and detecting replay of a stolen one (Phase 4 §9).
+// Trade a refresh token for a new access token, rotating it and detecting replay of a stolen one (Phase 4 §10).
 public sealed record RefreshCommand(string RefreshToken) : ICommand<LoginResult>;
 
 public sealed class RefreshHandler(

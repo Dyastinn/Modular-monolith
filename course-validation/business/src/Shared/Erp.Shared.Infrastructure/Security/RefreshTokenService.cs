@@ -4,7 +4,7 @@ using Microsoft.Extensions.Configuration;
 
 namespace Erp.Shared.Infrastructure;
 
-// The random refresh token, its one-way hash, and the sliding-window policy — in one place (Phase 4 §9).
+// The random refresh token, its one-way hash, and the sliding-window policy — in one place (Phase 4 §10).
 // There is deliberately NO AbsoluteExpiry(): a token's hard cap is the user's PasswordExpiresUtc (read from
 // the DB by the handler), not a configured span — a session must never outlive its password.
 public interface IRefreshTokenService

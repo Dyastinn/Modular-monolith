@@ -10,7 +10,7 @@ public sealed class CustomWebAppFactory : WebApplicationFactory<Program>
     public const string TestConnectionString =
         "Server=(localdb)\\MSSQLLocalDB;Database=Erp_Test;Trusted_Connection=True;TrustServerCertificate=True";
 
-    // The ApiKeyMiddleware (Phase 4c §9b) gates EVERY request, including /auth/login. Tests are a client
+    // The ApiKeyMiddleware (Phase 4c §11) gates EVERY request, including /auth/login. Tests are a client
     // app like any other, so they get their own key rather than an exemption — a test that skips the gate
     // wouldn't be exercising the real pipeline.
     public const string TestApiKey = "test-suite-key";

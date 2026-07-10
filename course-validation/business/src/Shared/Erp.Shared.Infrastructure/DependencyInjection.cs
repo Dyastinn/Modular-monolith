@@ -20,10 +20,10 @@ public static class DependencyInjection
 
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, CurrentUser>();
-        services.AddSingleton<IClock, SystemClock>();                       // testable time (Phase 4 §9)
+        services.AddSingleton<IClock, SystemClock>();                       // testable time (Phase 4 §10)
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddScoped<IJwtTokenService, JwtTokenService>();
-        services.AddSingleton<IRefreshTokenService, RefreshTokenService>(); // refresh generate/hash/expiry (Phase 4 §9)
+        services.AddSingleton<IRefreshTokenService, RefreshTokenService>(); // refresh generate/hash/expiry (Phase 4 §10)
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 

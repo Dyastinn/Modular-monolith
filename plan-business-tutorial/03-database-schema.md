@@ -85,9 +85,24 @@ inventory (the Inventory module: stock levels)
 > full foundation here because it's one file to reason about — but nothing breaks if you'd rather add tables
 > phase-by-phase. Either way, **don't try to hold all of it in your head now**; the map above is enough.
 
-Now, the DDL. First create the schemas (`CREATE SCHEMA sales;`, `CREATE SCHEMA inventory;`,
-`CREATE SCHEMA [identity];`), each in the owning project's script. Then build the tables — going one at a
-time, explaining the columns that encode business meaning.
+> 📦 **Create two script folders now.** The DDL below spans two modules, so it lands in two places, and
+> you'll create both in this phase:
+>
+> ```
+> src/Modules/Sales/Infrastructure/Sql/       ← [identity] + sales tables, procs, seed
+> src/Modules/Inventory/Infrastructure/Sql/   ← inventory table, procs, seed
+> ```
+>
+> The `Sales` project already exists from Phase 1. The **`Inventory` project doesn't yet** —
+> [Phase 7](07-submit-reserve-concurrency.md) creates it, when Sales first needs to reserve stock. That's
+> fine: make the plain folder `src/Modules/Inventory/Infrastructure/Sql/` now and put the inventory scripts
+> in it. `.sql` files don't need a `.csproj` to be run by `sqlcmd`, and in Phase 7 the new project simply
+> grows around the scripts that are already sitting there. **We write the schema once, here**, so this phase
+> ends with a complete, seeded database you can actually query.
+
+Now, the DDL. First create the schemas — `CREATE SCHEMA sales;` and `CREATE SCHEMA [identity];` at the top of
+**Sales'** `001_schema.sql`, and `CREATE SCHEMA inventory;` at the top of **Inventory's**. Then build the
+tables — going one at a time, explaining the columns that encode business meaning.
 
 > ⚠️ **`identity` is a T-SQL reserved keyword — bracket it as `[identity]` everywhere.** Because `IDENTITY`
 > is the keyword for auto-increment columns, SQL Server rejects a bare `identity` used as a schema name:
@@ -571,9 +586,9 @@ INSERT INTO sales.Item (Sku, Name, CategoryId, UnitPrice) VALUES
  ('GEN-002', 'Gadget',        1, 40.00),
  ('CTL-001', 'Restricted Kit',2, 500.00);
 
--- This last block belongs to the INVENTORY module's own 003_seed.sql (Phase 7 creates that folder),
--- because inventory.Inventory is the Inventory module's table. It runs after the sales seed above,
--- since it refers to the item ids that seed just created.
+-- This last block belongs to the INVENTORY module's own 003_seed.sql, because inventory.Inventory is the
+-- Inventory module's table. It runs after the sales seed above, since it refers to the item ids that seed
+-- just created.
 INSERT INTO inventory.Inventory (ItemId, OnHand, Reserved) VALUES
  (1, 100, 0),
  (2,  50, 0),
@@ -619,15 +634,28 @@ the connection factory and the transaction pattern; right now we just need somew
 
 ### Run the scripts
 
-Run each module's scripts in dependency order against your dev database. The `sales` scripts go first
-(`inventory.Inventory` seeds item ids that `sales.Item` defines), then `inventory`:
+Create the `Erp` database if it doesn't exist yet, then run each module's scripts in dependency order. **The
+`sales` scripts go first**, because Inventory's seed refers to the item ids that Sales' seed creates:
 
 ```bash
+# Create the database once (the scripts assume it exists):
+sqlcmd -S "(localdb)\MSSQLLocalDB" -Q "IF DB_ID('Erp') IS NULL CREATE DATABASE Erp;"
+
+# Sales first — it owns [identity] and sales:
 sqlcmd -S "(localdb)\MSSQLLocalDB" -d Erp -i src/Modules/Sales/Infrastructure/Sql/001_schema.sql
 sqlcmd -S "(localdb)\MSSQLLocalDB" -d Erp -i src/Modules/Sales/Infrastructure/Sql/002_procedures.sql
 sqlcmd -S "(localdb)\MSSQLLocalDB" -d Erp -i src/Modules/Sales/Infrastructure/Sql/003_seed.sql
-# ...then the three equivalent scripts under src/Modules/Inventory/Infrastructure/Sql/ (Phase 7 creates them).
+
+# Then Inventory — its seed needs the item ids the sales seed just inserted:
+sqlcmd -S "(localdb)\MSSQLLocalDB" -d Erp -i src/Modules/Inventory/Infrastructure/Sql/001_schema.sql
+sqlcmd -S "(localdb)\MSSQLLocalDB" -d Erp -i src/Modules/Inventory/Infrastructure/Sql/002_procedures.sql
+sqlcmd -S "(localdb)\MSSQLLocalDB" -d Erp -i src/Modules/Inventory/Infrastructure/Sql/003_seed.sql
 ```
+
+> ❓ **"No `sqlcmd`?"** It ships with SQL Server and with the free
+> [SQL Server Command Line Utilities](https://aka.ms/sqlcmd). If you'd rather not install it, open the six
+> files in SQL Server Management Studio or Azure Data Studio and execute them against `Erp` **in the order
+> above** — the tool doesn't matter, the order does.
 
 > ⚠️ **Where do the `[identity]` tables live?** There is no `Identity` *module* project — authentication is a
 > host concern, not a business capability, so we never gave it one. Its DDL therefore has to ride along

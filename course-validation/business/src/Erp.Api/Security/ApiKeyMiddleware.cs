@@ -3,7 +3,7 @@ using System.Text;
 
 namespace Erp.Api.Security;
 
-// App-level gate (Phase 4 §9b): every request must carry a valid X-Api-Key identifying a known CLIENT APP,
+// App-level gate (Phase 4 §11): every request must carry a valid X-Api-Key identifying a known CLIENT APP,
 // checked BEFORE authentication. This is orthogonal to the JWT, which identifies the USER, not the app —
 // and it's the one gate that can sit in front of the anonymous /auth/login door.
 //

@@ -117,7 +117,7 @@ Seed logins (all password `Password123!`): **`rep`** (SalesRep), **`manager`** (
 (Admin). Only a manager/admin can approve.
 
 ```
-dotnet test        # 14 domain unit tests + 6 integration/e2e tests (uses a separate Erp_Test database)
+dotnet test        # 14 domain unit tests + 7 integration/e2e tests (uses a separate Erp_Test database)
 ```
 
 > [`plan-business-tutorial/`](plan-business-tutorial/) is the *teaching* material;

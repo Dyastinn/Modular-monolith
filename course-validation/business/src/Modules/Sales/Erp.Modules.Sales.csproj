@@ -1,17 +1,18 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- The feature slices host Carter endpoints, so this module needs the ASP.NET shared framework and
-       Carter. (Phase 1 §5's package list omits these from Sales even though the endpoints live here —
-       a small gap in the tutorial; added explicitly.) -->
+  <!-- The feature slices host Carter endpoints, so this module needs the ASP.NET shared framework.
+       Taught in plan-business-tutorial/02-mediator-own-vs-free.md §4, Step 1. -->
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
+  <!-- Deliberately NO reference to Erp.Shared.Infrastructure: a module codes against the interfaces in
+       Erp.Shared.Common (IDbConnectionFactory, ICurrentUser), never the implementations. Only Erp.Api
+       references Infrastructure. See plan-business-tutorial/01-solution-setup.md §3. -->
   <ItemGroup>
     <ProjectReference Include="..\..\Shared\Erp.Shared.BuildingBlocks\Erp.Shared.BuildingBlocks.csproj" />
     <ProjectReference Include="..\..\Shared\Erp.Shared.Common\Erp.Shared.Common.csproj" />
     <ProjectReference Include="..\..\Shared\Erp.Shared.Messaging\Erp.Shared.Messaging.csproj" />
-    <ProjectReference Include="..\..\Shared\Erp.Shared.Infrastructure\Erp.Shared.Infrastructure.csproj" />
   </ItemGroup>
 
   <!-- Ship each module's SQL as embedded resources so the host's DatabaseInitializer can apply them

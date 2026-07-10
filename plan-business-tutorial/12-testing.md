@@ -137,10 +137,16 @@ the rules in the domain. **These should be the bulk of your tests.**
 > dotnet add tests/Erp.Integration.Tests reference src/Erp.Api/Erp.Api.csproj
 > dotnet add tests/Erp.Integration.Tests package FluentAssertions
 > dotnet add tests/Erp.Integration.Tests package Microsoft.AspNetCore.Mvc.Testing   # WebApplicationFactory (§5)
-> dotnet add tests/Erp.Integration.Tests package Microsoft.Data.SqlClient
+> dotnet add tests/Erp.Integration.Tests package Microsoft.Data.SqlClient           # SqlConnection, in the helpers
+> dotnet add tests/Erp.Integration.Tests package Dapper                             # ExecuteScalarAsync, in the helpers
 > ```
 > (Referencing `Erp.Api` transitively brings in the modules, so the tests can call the real
 > `StockReservationService` and boot the real host. CPM adds the `<PackageVersion>` lines.)
+>
+> 📌 **Same `NU1008` as last time.** `dotnet new xunit` again writes `xunit`, `xunit.runner.visualstudio`,
+> `Microsoft.NET.Test.Sdk`, and `coverlet.collector` **with versions**. Strip the four `Version="…"`
+> attributes from the new `.csproj` — the `<PackageVersion>` lines are already in `Directory.Packages.props`
+> from [Phase 5 §10](05-domain-model.md), so this time there's nothing to add.
 
 `Erp.Integration.Tests` runs against a **separate test database**, `Erp_Test` — never your dev DB. Setting it
 up costs you nothing extra: the app already applies each module's `Infrastructure/Sql/` scripts on startup
@@ -175,28 +181,31 @@ public class InventoryReservationTests
     private readonly CustomWebAppFactory _factory;
     public InventoryReservationTests(CustomWebAppFactory factory) => _factory = factory;
 
+    private const long RestrictedKitId = 3;   // seeded with OnHand=8, Reserved=0
+
     [Fact]
     public async Task Two_concurrent_reservations_for_the_last_units_only_one_wins()
     {
-        // Arrange: item 3 has OnHand=8, Reserved=0 (from seed). Two callers each want 5.
+        // Arrange: this test COMMITS, so a previous run may have left Reserved > 0. Start from a known state.
+        await ResetReservation(RestrictedKitId);
 
         // Act: fire both reservations at (nearly) the same time. NOTE: each opens and COMMITS its own
         // transaction (real concurrency), NOT rolls back — see the caveat below.
-        var a = ReserveInOwnCommittedTransaction(itemId: 3, qty: 5);
-        var b = ReserveInOwnCommittedTransaction(itemId: 3, qty: 5);
+        var a = ReserveInOwnCommittedTransaction(RestrictedKitId, qty: 5);
+        var b = ReserveInOwnCommittedTransaction(RestrictedKitId, qty: 5);
         bool[] results = await Task.WhenAll(a, b);
 
         // Assert: exactly one succeeded; the other saw insufficient stock.
         results.Count(r => r).Should().Be(1);
 
         // And the invariant held: Reserved never exceeded OnHand.
-        (await GetReserved(itemId: 3)).Should().Be(5);   // one winner reserved 5; 3 remain available
+        (await GetReserved(RestrictedKitId)).Should().Be(5);   // one winner reserved 5; 3 remain available
 
-        await ResetReservation(itemId: 3);   // manual cleanup — we committed, so there's nothing to roll back
+        await ResetReservation(RestrictedKitId);   // manual cleanup — we committed, so there's nothing to roll back
     }
 
-    // --- test helpers: each opens a real connection + a COMMITTED transaction against the test DB ---
-    private async Task<bool> ReserveInOwnCommittedTransaction(long itemId, int qty)
+    // --- test helpers: each opens its own real connection against the test DB ---
+    private static async Task<bool> ReserveInOwnCommittedTransaction(long itemId, int qty)
     {
         await using var conn = new SqlConnection(CustomWebAppFactory.TestConnectionString);
         await conn.OpenAsync();
@@ -207,17 +216,34 @@ public class InventoryReservationTests
         return reserved;
     }
 
-    // Bodies elided for brevity — each is a one-line Dapper query on a fresh connection:
-    private Task<int> GetReserved(long itemId) => /* SELECT Reserved FROM inventory.Inventory WHERE ItemId=@itemId */ ;
-    private Task ResetReservation(long itemId) => /* UPDATE inventory.Inventory SET Reserved = 0 WHERE ItemId=@itemId */ ;
+    private static async Task<int> GetReserved(long itemId)
+    {
+        await using var conn = new SqlConnection(CustomWebAppFactory.TestConnectionString);
+        await conn.OpenAsync();
+        return await conn.ExecuteScalarAsync<int>(
+            "SELECT Reserved FROM inventory.Inventory WHERE ItemId=@itemId", new { itemId });
+    }
+
+    private static async Task ResetReservation(long itemId)
+    {
+        await using var conn = new SqlConnection(CustomWebAppFactory.TestConnectionString);
+        await conn.OpenAsync();
+        await conn.ExecuteAsync(
+            "UPDATE inventory.Inventory SET Reserved = 0 WHERE ItemId=@itemId", new { itemId });
+    }
 }
 ```
 
-> 🧪 **Note:** `ReserveInOwnCommittedTransaction`, `GetReserved`, and `ResetReservation` are little **test
-> helpers** you write once in this class (their bodies are trivial Dapper calls on the fixture's connection
-> string). The star is `new StockReservationService()` — the *actual* Inventory implementation from
+> 🧪 **The star is `new StockReservationService()`** — the *actual* Inventory implementation from
 > [Phase 7](07-submit-reserve-concurrency.md), calling the *actual* atomic proc. We use the real thing on
-> purpose: **a fake can't have a race condition, so a fake would prove nothing here.**
+> purpose: **a fake can't have a race condition, so a fake would prove nothing here.** The three helpers are
+> plain Dapper calls on the fixture's connection string; note they're the only place in the whole suite that
+> reaches past the API and touches a table directly, which is fair — we're asserting on a database invariant,
+> not on a business outcome.
+>
+> Notice the `ResetReservation` at the **top**. Because this test commits, it leaves `Reserved = 5` behind if
+> it ever fails midway — and the *next* run would then start from 5, reserve nothing, and fail for a
+> completely different reason. Arranging from a known state is what makes a committing test re-runnable.
 
 > ⚠️ **Caveat, and it catches people.** Most integration tests wrap each test in a transaction they *roll
 > back* afterwards, which keeps tests isolated from each other. But this one must

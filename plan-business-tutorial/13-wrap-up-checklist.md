@@ -79,7 +79,7 @@ Erp/                                         # repo root
 │   │       ├── Identity/                     #   UserRepository, RefreshTokenRepository — Phase 4
 │   │       └── DependencyInjection.cs        #   AddSharedInfrastructure() + AddMessaging()
 │   ├── Modules/
-│   │   ├── Sales/  (Erp.Modules.Sales)       # → Shared.{BuildingBlocks, Common, Messaging, Infrastructure}
+│   │   ├── Sales/  (Erp.Modules.Sales)       # → Shared.{BuildingBlocks, Common, Messaging} — NOT Infrastructure
 │   │   │   ├── Domain/                        #   pure C#, depends only on BuildingBlocks
 │   │   │   │   ├── SalesOrder.cs, SalesOrderLine.cs
 │   │   │   │   ├── Customer.cs, ItemCategory.cs, ItemForOrder.cs
@@ -100,7 +100,7 @@ Erp/                                         # repo root
 │   │   │   │   ├── EventHandlers/            #   e.g. SalesOrderApprovedAuditHandler (Phase 8)
 │   │   │   │   └── Sql/ 001_schema.sql, 002_procedures.sql, 003_seed.sql   # the `sales` + `[identity]` schemas
 │   │   │   └── DependencyInjection.cs         #   AddSalesModule()
-│   │   └── Inventory/  (Erp.Modules.Inventory) # → Shared.{Common, Infrastructure}  (Phase 7)
+│   │   └── Inventory/  (Erp.Modules.Inventory) # → Shared.Common only  (Phase 7)
 │   │       ├── Infrastructure/
 │   │       │   ├── StockReservationService.cs #   implements IStockReservation
 │   │       │   └── Sql/ 001_schema.sql, 002_procedures.sql, 003_seed.sql   # the `inventory` schema
@@ -252,6 +252,11 @@ as "in production." Here's the honest gap list, grouped, so you know what a real
       `sales.usp_SalesOrder_NextNumber` ([Phase 3](03-database-schema.md)), not a naive `MAX()+1`.
 - [x] Matched money/stock pairs — ✅ approval charges the balance and cancellation of an approved order
       reverses it ([Phase 8](08-approval-cancellation.md)); reserve is matched by release.
+- [ ] **Editing a draft is version-checked too.** `UpdateStatusAsync` guards against a lost update with
+      `RowVersion` ([Phase 8](08-approval-cancellation.md)), but `ReplaceLinesAsync`
+      ([Phase 9](09-update-order.md)) does not — two reps editing one draft means the second save silently
+      wins. Add `WHERE Id = @Id AND RowVersion = @RowVersion` to `usp_SalesOrder_UpdateTotal` and throw
+      `ConcurrencyException` on rowcount `0`. Same pattern, one more proc.
 - [ ] **Credit limit counts in-flight orders, not just approved ones.** As built, the credit check weighs
       one order against the *committed* balance, which only moves at approval — so a customer's stack of
       draft/pending orders doesn't yet count (see the ⚠️ note in [Phase 5 §7](05-domain-model.md)). For real
@@ -334,8 +339,16 @@ Stay within the stack; each reinforces a pattern:
    ```
    Add `IStockReservation.DeductAsync`, a `SalesOrder.Fulfill()` domain method (guarded `Approved →
    Fulfilled`), a manager-gated `POST /sales-orders/{id}/fulfill` slice, and the `CK_Inventory_NotOver`
-   constraint keeps you honest throughout. (Reinforces: the reserve→deduct lifecycle, and why *every* stock
-   move is a single atomic statement.)
+   constraint keeps you honest throughout. **Don't forget the schema:** `CK_SalesOrder_Status` currently reads
+   `CHECK (Status BETWEEN 0 AND 4)`, so the database rejects status `5` until you widen it — in a *new*,
+   numbered script (`004_fulfillment.sql`), never by editing `001_schema.sql`:
+   ```sql
+   ALTER TABLE sales.SalesOrder DROP CONSTRAINT CK_SalesOrder_Status;
+   ALTER TABLE sales.SalesOrder ADD CONSTRAINT CK_SalesOrder_Status CHECK (Status BETWEEN 0 AND 5);
+   ```
+   The `Msg 547` you'd otherwise hit is that constraint doing its job — the [Phase 3](03-database-schema.md)
+   backstop catching a status the schema was never told about. (Reinforces: the reserve→deduct lifecycle, why
+   *every* stock move is a single atomic statement, and the append-only migration habit.)
 4. **Customer statement query** — a read that lists a customer's orders with running credit used.
    (Reinforces: CQRS-lite reads.)
 5. **"Only the creator or a manager can cancel"** — a data-dependent authorization rule in the handler

@@ -48,14 +48,18 @@ modular monolith's core move: the *absence* of a project reference is what makes
 
 > 📦 **Create the second module now (Phase 1 deliberately deferred it — here's where we need it):**
 > ```bash
+> # The folder already exists — Phase 3 put the inventory SQL scripts there. The template drops the .csproj
+> # in beside them, which is exactly what we want:
 > dotnet new classlib -n Erp.Modules.Inventory -o src/Modules/Inventory
 > dotnet sln add src/Modules/Inventory
-> # Inventory needs only the shared kernel — NOT Sales (the wall stays up):
-> dotnet add src/Modules/Inventory/Erp.Modules.Inventory.csproj reference src/Shared/Erp.Shared.Common/Erp.Shared.Common.csproj src/Shared/Erp.Shared.Infrastructure/Erp.Shared.Infrastructure.csproj
+> # Inventory needs only the shared kernel — NOT Sales (the wall stays up), and NOT Shared.Infrastructure
+> # (a module sees the interfaces in Common, never the implementations — Phase 1 §3):
+> dotnet add src/Modules/Inventory/Erp.Modules.Inventory.csproj reference src/Shared/Erp.Shared.Common/Erp.Shared.Common.csproj
 > # The host references the new module so it can register it:
 > dotnet add src/Erp.Api/Erp.Api.csproj reference src/Modules/Inventory/Erp.Modules.Inventory.csproj
-> # Inventory runs Dapper against SQL Server, same as Sales:
+> # Inventory runs Dapper against SQL Server, same as Sales. IConfiguration is for AddInventoryModule(config):
 > dotnet add src/Modules/Inventory package Dapper
+> dotnet add src/Modules/Inventory package Microsoft.Extensions.Configuration.Abstractions
 > dotnet add src/Modules/Inventory package Microsoft.Extensions.DependencyInjection.Abstractions
 > ```
 > Give it a `DependencyInjection.cs` with `AddInventoryModule()` (registering `IStockReservation` →
@@ -63,11 +67,12 @@ modular monolith's core move: the *absence* of a project reference is what makes
 > `AddSalesModule` in `Program.cs`. Notice Sales still has **no** reference to Inventory — they meet only at
 > the `IStockReservation` contract below.
 >
-> **The module also brings its own SQL.** Data ownership follows the module, so
-> `src/Modules/Inventory/Infrastructure/Sql/` gets the three scripts you wrote in
+> **The module already brings its own SQL.** Data ownership follows the module, so
+> `src/Modules/Inventory/Infrastructure/Sql/` holds the three scripts you wrote and ran back in
 > [Phase 3](03-database-schema.md) for the `inventory` schema — `001_schema.sql` (the `Inventory` table and its
 > `CHECK`s), `002_procedures.sql` (`usp_Inventory_Reserve` and `usp_Inventory_Release`), and `003_seed.sql`
 > (the stock levels). They run *after* the Sales scripts, since the seed refers to item ids Sales created.
+> Creating the project around them is all that was left to do.
 
 ```csharp
 // src/Shared/Erp.Shared.Common/Contracts/IStockReservation.cs  (the ONLY way Sales touches stock)

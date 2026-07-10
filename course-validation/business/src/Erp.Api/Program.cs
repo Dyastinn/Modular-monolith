@@ -107,7 +107,7 @@ await DatabaseInitializer.RunAsync(app);
 
 app.UseCors("test-console");
 
-// 0) App-level gate: is this even one of our known client apps? (Phase 4 §9b). Placed AFTER UseCors so the
+// 0) App-level gate: is this even one of our known client apps? (Phase 4 §11). Placed AFTER UseCors so the
 // CORS preflight is handled first, and BEFORE authentication so unknown clients are rejected up front.
 app.UseMiddleware<ApiKeyMiddleware>();
 
