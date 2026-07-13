@@ -786,11 +786,11 @@ END
 > table that has one. The high-churn table's history lives in the archive, not in `ChangeLog` — see
 > [Phase 3's audit note](03-database-schema.md).)
 
-> ⚠️ **This is a *maintenance* proc, not a request-path one.** Nothing in login or refresh calls it. You run it
-> on a schedule — a **SQL Agent job**, or a tiny host `BackgroundService` that calls it once a night. It takes
-> a `@RetentionDays` knob purely so dead rows can linger a while for convenience; the reuse window doesn't
-> depend on it, because the `WHERE` keys off `ExpiresUtc` (already past the sliding close), not off how long
-> ago the token was revoked.
+> ⚠️ **This is a *maintenance* proc, not a request-path one.** Nothing in login or refresh calls it — it runs
+> on a timer, off to the side. The `@RetentionDays` knob only controls how long dead rows linger for
+> convenience; the reuse window doesn't depend on it, because the `WHERE` keys off `ExpiresUtc` (already past
+> the sliding close), not off how long ago the token was revoked. *What* pulls the timer is the next thing we
+> build.
 
 > ❓ **You might be wondering: "Why archive at all — why not just delete the past-window rows?"** Because a
 > refresh-token row is a security-relevant fact ("this lineage existed, was minted here, revoked there"), and
@@ -798,6 +798,185 @@ END
 > in the hot table. The archive stores only the **hash**, exactly like the live table, so it's no more
 > sensitive than what you already keep. If you genuinely don't want the history, drop the `OUTPUT … INTO` and
 > the archive table and it becomes a plain `DELETE` — same safety, no log.
+
+#### Running it on a timer — SQL Agent *or* a hosted service
+
+The proc doesn't run itself; something has to call it on a schedule. There are two homes for that schedule —
+the **database** or the **app** — and which you pick turns on one question: **does your SQL Server have SQL
+Agent?**
+
+**Prefer a SQL Agent job when you have Agent.** It's SQL Server's own scheduler, it lives *outside* the app, so
+it keeps sweeping whether the API is deployed, mid-restart, or scaled to zero, and there is exactly **one**
+runner no matter how many app instances you run. You create it once against the server — and this needs a real
+SQL Server, because **LocalDB has no Agent**, so you can't run this against the dev database:
+
+```sql
+-- ⚠️ Real SQL Server only (SQL Agent required) — NOT LocalDB. Creates a nightly purge job. Re-runnable.
+USE msdb;
+GO
+IF EXISTS (SELECT 1 FROM msdb.dbo.sysjobs WHERE name = N'Erp_RefreshToken_Purge')
+    EXEC msdb.dbo.sp_delete_job @job_name = N'Erp_RefreshToken_Purge';   -- drop-and-recreate = idempotent
+GO
+EXEC msdb.dbo.sp_add_job @job_name = N'Erp_RefreshToken_Purge';
+EXEC msdb.dbo.sp_add_jobstep
+    @job_name      = N'Erp_RefreshToken_Purge',
+    @step_name     = N'Archive + purge expired refresh tokens',
+    @subsystem     = N'TSQL',
+    @database_name = N'Erp',
+    @command       = N'EXEC [identity].usp_RefreshToken_Purge @RetentionDays = 7;';
+EXEC msdb.dbo.sp_add_schedule
+    @schedule_name     = N'Erp_RefreshToken_Purge_Daily',
+    @freq_type         = 4,        -- daily
+    @freq_interval     = 1,        -- every 1 day
+    @active_start_time = 30000;    -- 03:00:00  (hhmmss)
+EXEC msdb.dbo.sp_attach_schedule @job_name = N'Erp_RefreshToken_Purge', @schedule_name = N'Erp_RefreshToken_Purge_Daily';
+EXEC msdb.dbo.sp_add_jobserver   @job_name = N'Erp_RefreshToken_Purge';   -- run it on this server
+GO
+```
+
+With that job in place the database sweeps itself nightly and the app needs **no cleanup code at all** — if
+this is your setup, you can skip the rest of this section.
+
+**Use an in-process hosted service when you *don't* have Agent.** That's our case in dev (LocalDB), and also the
+situation on some managed/serverless SQL tiers. A **hosted background service** is the portable, app-owned
+fallback: a class the host starts when the app boots, loops in, and signals to stop on shutdown. It's the
+version you can actually run against your LocalDB right now to watch the sweep work. If you've never written
+one, this is the whole shape.
+
+**First, feel the trap.** Your instinct is to inject the repository straight into the service:
+
+```csharp
+// ❌ This won't even start.
+public sealed class RefreshTokenCleanupService(IRefreshTokenRepository store) : BackgroundService { ... }
+```
+
+At startup the DI container throws:
+
+```text
+Cannot consume scoped service 'IRefreshTokenRepository' from singleton 'RefreshTokenCleanupService'.
+```
+
+A hosted service is created **once, for the app's whole life** — it's a singleton. But the repository (and the
+`IDbConnectionFactory` behind it) is **scoped** — built to live and die with a single request
+([Phase 3b](03b-data-access.md)). Handing a scoped service to a singleton is a **captive dependency**: the
+singleton would clutch one repository (and one connection) open forever. The container refuses rather than let
+you leak. So the service holds the **scope *factory*** instead, and opens a fresh, short-lived scope on each
+tick — exactly the lifetime a single sweep should have.
+
+**The one new repository method.** The sweep is a proc call like any other, so it's a one-liner on the store
+(the `IRefreshTokenRepository` you built earlier in this section). It's a pure maintenance read/write with no
+caller transaction, so — like `GetByHashAsync` — it opens its **own** connection:
+
+```csharp
+// add to IRefreshTokenRepository (Erp.Shared.Common/Security/IRefreshTokenRepository.cs)
+Task<int> PurgeExpiredAsync(int retentionDays, CancellationToken ct);   // returns rows archived + purged
+
+// add to RefreshTokenRepository (Erp.Shared.Infrastructure/Identity/RefreshTokenRepository.cs)
+public async Task<int> PurgeExpiredAsync(int retentionDays, CancellationToken ct)
+{
+    using var conn = factory.Create();
+    // ExecuteScalar reads the proc's `SELECT @@ROWCOUNT` — how many rows this run moved to the archive.
+    return await conn.ExecuteScalarAsync<int>(new CommandDefinition(
+        "[identity].usp_RefreshToken_Purge",
+        new { RetentionDays = retentionDays },
+        commandType: CommandType.StoredProcedure, cancellationToken: ct));
+}
+```
+
+**The service.** It's a host/platform concern, so it lives in the host — `Erp.Api/Auth/RefreshTokenCleanupService.cs`:
+
+```csharp
+// src/Erp.Api/Auth/RefreshTokenCleanupService.cs
+using Erp.Shared.Common;                          // IRefreshTokenRepository
+using Microsoft.Extensions.DependencyInjection;   // CreateScope, GetRequiredService
+using Microsoft.Extensions.Hosting;               // BackgroundService
+
+namespace Erp.Api.Auth;
+
+public sealed class RefreshTokenCleanupService(
+    IServiceScopeFactory scopeFactory,            // NOT the repo directly — see the captive-dependency note
+    IConfiguration config,
+    ILogger<RefreshTokenCleanupService> logger) : BackgroundService
+{
+    private readonly TimeSpan _interval =
+        TimeSpan.FromHours(double.Parse(config["Jwt:RefreshCleanupIntervalHours"] ?? "6"));
+    private readonly int _retentionDays =
+        int.Parse(config["Jwt:RefreshRetentionDays"] ?? "7");
+
+    // The host calls this once on boot; stoppingToken is signalled on shutdown.
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        // PeriodicTimer beats a Task.Delay loop: no drift, and clean cancellation on shutdown.
+        using var timer = new PeriodicTimer(_interval);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stoppingToken))
+                await SweepOnce(stoppingToken);
+        }
+        catch (OperationCanceledException) { /* normal — the host is shutting down */ }
+    }
+
+    private async Task SweepOnce(CancellationToken ct)
+    {
+        try
+        {
+            // Singleton service, scoped repository → open a fresh scope per tick, never capture one.
+            using var scope = scopeFactory.CreateScope();
+            var store = scope.ServiceProvider.GetRequiredService<IRefreshTokenRepository>();
+
+            var archived = await store.PurgeExpiredAsync(_retentionDays, ct);
+            if (archived > 0)
+                logger.LogInformation("Refresh-token sweep archived {Count} expired rows.", archived);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // One failed sweep (a transient DB blip) must NOT kill the loop — log it and try again next tick.
+            logger.LogError(ex, "Refresh-token cleanup sweep failed; retrying next interval.");
+        }
+    }
+}
+```
+
+Three things carry the design, and each maps to a line above:
+
+- **Scope per tick, not a captured repository.** The `IServiceScopeFactory` is the singleton-safe way to reach
+  a scoped service; `using var scope` disposes it — and its connection — the moment the sweep ends.
+- **`PeriodicTimer` + the outer `try/catch (OperationCanceledException)`.** On shutdown the host cancels
+  `stoppingToken`, `WaitForNextTickAsync` throws, and we swallow *that one* exception as the normal stop signal.
+- **The inner `try/catch` in `SweepOnce`.** A cleanup that dies on the first transient error is worse than
+  useless — it goes quiet and the table grows again. Catching *inside* the loop keeps the timer alive; only a
+  real cancellation gets out.
+
+**Register it** in `Program.cs`, next to the other auth wiring — `AddHostedService` tells the host to start it
+on boot:
+
+```csharp
+builder.Services.AddHostedService<RefreshTokenCleanupService>();   // the refresh-token sweep, on a timer
+```
+
+The two knobs default sensibly (a sweep every 6 hours, archiving anything a week past its window), so nothing
+else is required. To tune them, they ride the same `Jwt` config section as the rest of the token policy:
+
+```json
+{
+  "Jwt": {
+    "RefreshCleanupIntervalHours": 6,
+    "RefreshRetentionDays": 7
+  }
+}
+```
+
+> ⚠️ **Scaled out? Two hosted instances = two sweepers — harmless, but redundant.** Each runs its own timer,
+> yet `usp_RefreshToken_Purge` is one atomic `DELETE`, so whichever fires first archives the rows and the other
+> archives zero. No locks needed — the atomic statement *is* the coordination. That mild redundancy is the
+> concrete reason to reach for the **SQL Agent job above** once you're on a server that has Agent: one
+> scheduler, outside the app, firing exactly once regardless of instance count. The hosted service is the
+> portable fallback; the Agent job is the tidier answer when it's available.
+
+> 🚫 **Out of scope on purpose:** this whole retention mechanism — the archive table, the purge proc, and this
+> service — is *operational hardening* that sits alongside the [Phase 3 audit layer](03a-database-queries/README.md),
+> not part of the request path. It's taught here because it's where the refresh-token story actually finishes;
+> it isn't exercised by the base build's tests.
 
 ## 11. A second gate — requiring an API key from the frontend
 

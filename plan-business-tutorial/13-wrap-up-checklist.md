@@ -242,9 +242,10 @@ as "in production." Here's the honest gap list, grouped, so you know what a real
       **instantly voids every refresh token** via the user's `SecurityStamp`, and a token's absolute lifetime
       is capped by the DB-driven `PasswordExpiresUtc`, so a session can never outlive its password. The table
       is kept small by an **archive-on-retention** sweep (`usp_RefreshToken_Purge`) that moves past-window
-      tokens out of the hot table without weakening reuse detection — also in that section. (One hardening
-      extra remains, flagged there: delivering the refresh token as an `HttpOnly` cookie for browser clients.
-      To deploy the sweep, point a SQL Agent job or a host `BackgroundService` at the proc.)
+      tokens out of the hot table without weakening reuse detection — also in that section, driven by either a
+      **SQL Agent job** (preferred where Agent exists) or an in-process **hosted service** (the portable
+      default, since LocalDB has no Agent), both built there. (One hardening extra remains, flagged there:
+      delivering the refresh token as an `HttpOnly` cookie for browser clients.)
 
 ### Correctness & data
 - [x] Every multi-step write is in a transaction — ✅ you did this. Double-check no new feature skips it.

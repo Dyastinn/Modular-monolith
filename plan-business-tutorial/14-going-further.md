@@ -223,11 +223,11 @@ output caching across instances.
 base build. Same rule: try it *before* reading how.
 
 8. **Refresh-token hardening** — the follow-up [Phase 4 §10](04c-jwt-refresh-apikey.md) flagged: deliver the refresh
-   token to a browser client as an `HttpOnly; Secure; SameSite` cookie instead of the response body. Then wire
-   the already-built `usp_RefreshToken_Purge` sweep to an actual scheduler (a SQL Agent job, or a host
-   `BackgroundService` that calls it nightly), and confirm it never touches a still-in-window token.
-   (Reinforces: the XSS threat model, and that the sweep's *timing* — not just its existence — is a security
-   decision.)
+   token to a browser client as an `HttpOnly; Secure; SameSite` cookie instead of the response body. (The
+   retention sweep itself — the `usp_RefreshToken_Purge` proc plus *both* drivers, a SQL Agent job and an
+   in-process hosted service — is already built in §10; if you deployed the hosted version, try swapping to the
+   Agent job and reason through why one runner beats N redundant sweepers at scale.) (Reinforces: the XSS threat
+   model, and that a schedule's *home* — app vs. database — is a real trade-off.)
 9. **Per-IP login rate limit** — partition the §1 limiter by client IP so one attacker can't lock everyone
    out. Then notice it only holds per-instance, and reason through what §3 would take to make it global.
    (Reinforces: why in-process state and horizontal scale conflict.)

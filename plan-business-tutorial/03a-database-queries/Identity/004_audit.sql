@@ -99,8 +99,9 @@ GO
 -- replayable) token is NEVER removed — reuse detection keeps its full window.
 -- A single DELETE ... OUTPUT ... INTO does the move atomically (this is also
 -- why RefreshToken must have no trigger: OUTPUT INTO forbids one on the target).
--- Call it from a scheduled job (SQL Agent, or a host BackgroundService); nothing
--- on the request path touches it.
+-- Call it from a scheduler: a SQL Agent job (preferred where Agent exists) or an
+-- in-process hosted BackgroundService (portable / LocalDB). Both are built in
+-- Phase 4 §10. Nothing on the request path touches it.
 CREATE OR ALTER PROCEDURE [identity].usp_RefreshToken_Purge
     @RetentionDays INT = 7   -- how long dead rows linger in the hot table before archiving
 AS
