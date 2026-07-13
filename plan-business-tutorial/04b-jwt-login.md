@@ -510,6 +510,15 @@ builder.Services.AddScoped<IRequestHandler<LoginCommand, LoginResult>, LoginHand
 builder.Services.AddScoped<IValidator<LoginCommand>, LoginValidator>();
 ```
 
+> 🔑 **Why `Program.cs` is the right home for these — and not drift.** The rule across the whole course: a
+> service is registered in the `DependencyInjection.cs` of the project that *owns its implementation* —
+> `AddSalesModule()` for a Sales adapter, `AddSharedInfrastructure()` for a shared one (that's where the three
+> platform services below land). But `LoginHandler`, and the refresh/logout/change-password slices you'll add
+> in Parts 3–4, are owned by the **host**, `Erp.Api` — and the host's composition root *is* `Program.cs`. There
+> is no module or shared DI file they could belong to, so this is their correct home. We also keep them spelled
+> out by hand rather than tucking them behind an `AddAuthSlices()` helper: these lines *are* the "nothing scans
+> the host" lesson, and hiding them would bury the trap you just learned to avoid.
+
 The handler's three dependencies are platform services, so they belong in `AddSharedInfrastructure()`
 alongside `IDbConnectionFactory` from [Phase 3b](03b-data-access.md) — **all three, or login fails at the
 first request** with *"No service for type `IPasswordHasher` has been registered."* We built them in
@@ -1030,16 +1039,23 @@ It checks whether the authenticated user belongs to the specified role.
 
 ### Register the service
 
-Register both services in `Program.cs`:
+`CurrentUser` is a `Erp.Shared.Infrastructure` adapter — exactly like `PasswordHasher`, `JwtTokenService`,
+and `UserRepository`, which we registered in `AddSharedInfrastructure()` earlier in Step 4. So its
+registration goes in the *same place*, next to its siblings, not in `Program.cs`:
 
 ```csharp
-builder.Services.AddHttpContextAccessor();
-builder.Services.AddScoped<ICurrentUser, CurrentUser>();
+// AddSharedInfrastructure() (Erp.Shared.Infrastructure/DependencyInjection.cs)
+services.AddHttpContextAccessor();
+services.AddScoped<ICurrentUser, CurrentUser>();
 ```
 
-`IHttpContextAccessor` allows Infrastructure to access the current HTTP request.
+`IHttpContextAccessor` lets the adapter read the current HTTP request; `Erp.Shared.Infrastructure` is the one
+shared project allowed to touch ASP.NET, so this call has a home here. `CurrentUser` is then registered as the
+implementation of `ICurrentUser`, so any handler can request the port through dependency injection.
 
-`CurrentUser` is registered as the implementation of `ICurrentUser`, allowing any handler to request it through dependency injection.
+> 🔑 This is the same rule from Step 4: a registration lives with the project that owns its implementation.
+> `CurrentUser` is owned by `Erp.Shared.Infrastructure`, so — unlike the auth handlers, which the host owns and
+> `Program.cs` keeps — it belongs in `AddSharedInfrastructure()`, not the composition root.
 
 ---
 
