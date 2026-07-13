@@ -613,10 +613,14 @@ anything configured in the app. They're easy to blur together, so here they are 
 
 ### Logout and logout-all
 
-Logging out is just *revoking* — one device, or every device:
+Logging out is just *revoking* — one device, or every device. Both handlers go **in the same file** as the
+refresh handler you wrote above, `Auth/Refresh/RefreshHandler.cs`, appended below it. There's no separate
+`Logout` folder and no `LogoutEndpoint.cs`: all three commands act on the refresh-token lineage, so they're
+one slice — and in a moment they'll share one endpoint module too.
 
 ```csharp
-// Erp.Api/Auth/Logout — anonymous: the access token may already be expired, and that's fine here.
+// src/Erp.Api/Auth/Refresh/RefreshHandler.cs (continued, below RefreshHandler)
+// Log out one session — anonymous: the access token may already be expired, and that's fine here.
 public sealed record LogoutCommand(string RefreshToken) : ICommand<Unit>;
 public sealed class LogoutHandler(IRefreshTokenService refreshTokens, IRefreshTokenRepository store, IDbConnectionFactory factory)
     : ICommandHandler<LogoutCommand, Unit>
