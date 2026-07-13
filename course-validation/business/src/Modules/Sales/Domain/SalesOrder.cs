@@ -2,6 +2,39 @@ using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Domain;
 
+// Everything that IS the SalesOrder aggregate lives here: the root, its child line, the lifecycle it
+// moves through, the events it raises, and the one policy constant it consults. They share a file
+// because they share a reason to change — the sales order's own rules (Phase 5 §4, §6, §8).
+
+public enum SalesOrderStatus
+{
+    Draft = 0,            // being edited
+    PendingApproval = 1,  // submitted, inventory reserved, awaiting a manager
+    Approved = 2,         // manager approved; will be fulfilled
+    Cancelled = 3,        // cancelled; reservations released
+    Rejected = 4          // manager rejected; reservations released
+}
+
+public static class SalesOrderStatusRules
+{
+    private static readonly Dictionary<SalesOrderStatus, SalesOrderStatus[]> _allowed = new()
+    {
+        [SalesOrderStatus.Draft]           = new[] { SalesOrderStatus.PendingApproval, SalesOrderStatus.Cancelled },
+        [SalesOrderStatus.PendingApproval] = new[] { SalesOrderStatus.Approved, SalesOrderStatus.Rejected, SalesOrderStatus.Cancelled },
+        [SalesOrderStatus.Approved]        = new[] { SalesOrderStatus.Cancelled },
+        [SalesOrderStatus.Cancelled]       = Array.Empty<SalesOrderStatus>(),
+        [SalesOrderStatus.Rejected]        = Array.Empty<SalesOrderStatus>(),
+    };
+
+    public static bool CanTransitionTo(this SalesOrderStatus from, SalesOrderStatus to) =>
+        _allowed[from].Contains(to);
+}
+
+public static class ApprovalPolicy
+{
+    public static readonly Money Threshold = new(50_000m);  // orders over ₱50,000 are flagged high-value
+}
+
 public sealed class SalesOrder : AggregateRoot<SalesOrderId>
 {
     private readonly List<SalesOrderLine> _lines = new();
@@ -119,57 +152,6 @@ public sealed class SalesOrderLine
     { ItemId = itemId; Quantity = qty; UnitPrice = unitPrice; }
 
     public void IncreaseQuantity(Quantity extra) => Quantity = new Quantity(Quantity.Value + extra.Value);
-}
-
-public sealed class Customer
-{
-    public CustomerId Id { get; }
-    public string Name { get; }
-    public bool IsBlocked { get; }
-    public Money CreditLimit { get; }
-    public Money OutstandingBalance { get; }
-
-    public Customer(CustomerId id, string name, bool isBlocked, Money creditLimit, Money outstanding)
-    { Id = id; Name = name; IsBlocked = isBlocked; CreditLimit = creditLimit; OutstandingBalance = outstanding; }
-
-    public void EnsureNotBlocked()
-    {
-        if (IsBlocked)
-            throw new DomainException($"Customer '{Name}' is blocked and cannot place orders.");
-    }
-
-    public void EnsureWithinCreditLimit(Money orderTotal)
-    {
-        if (OutstandingBalance + orderTotal > CreditLimit)
-            throw new DomainException(
-                $"Order total {orderTotal.Amount:C} would exceed the credit limit. " +
-                $"Available credit: {(CreditLimit.Amount - OutstandingBalance.Amount):C}.");
-    }
-}
-
-public sealed class ItemCategory
-{
-    public long Id { get; }
-    public string Name { get; }
-    public int MaxQuantityPerOrder { get; }
-    public string? RequiredRole { get; }   // null = anyone
-
-    public ItemCategory(long id, string name, int maxQuantityPerOrder, string? requiredRole)
-    { Id = id; Name = name; MaxQuantityPerOrder = maxQuantityPerOrder; RequiredRole = requiredRole; }
-
-    public void EnsureRoleAllowed(string callerRole)
-    {
-        if (RequiredRole is not null && !string.Equals(callerRole, RequiredRole, StringComparison.OrdinalIgnoreCase)
-            && !string.Equals(callerRole, "Admin", StringComparison.OrdinalIgnoreCase))
-            throw new DomainException($"Category '{Name}' requires role '{RequiredRole}'.");
-    }
-
-    public void EnsureQuantityAllowed(int quantityOnOrder)
-    {
-        if (quantityOnOrder > MaxQuantityPerOrder)
-            throw new DomainException(
-                $"Category '{Name}' allows at most {MaxQuantityPerOrder} units per order (requested {quantityOnOrder}).");
-    }
 }
 
 // Domain events (Phase 5 §8). IDomainEvent lives in BuildingBlocks; we just implement it.

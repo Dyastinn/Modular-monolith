@@ -2,10 +2,7 @@ using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Domain;
 
-public readonly record struct SalesOrderId(long Value);
-public readonly record struct CustomerId(long Value);
-public readonly record struct ItemId(long Value);
-public readonly record struct UserId(long Value);
+// The domain's value objects (Phase 5 §3a): compared by value, immutable, invalid states unrepresentable.
 
 public readonly record struct Quantity
 {
@@ -14,6 +11,7 @@ public readonly record struct Quantity
         Value = value > 0 ? value : throw new DomainException("Quantity must be greater than zero.");
 }
 
+// ₱ — a plain non-negative amount.
 public readonly record struct Money
 {
     public decimal Amount { get; }
@@ -27,33 +25,4 @@ public readonly record struct Money
     public static bool operator <(Money a, Money b) => a.Amount < b.Amount;
     public static bool operator >=(Money a, Money b) => a.Amount >= b.Amount;
     public static bool operator <=(Money a, Money b) => a.Amount <= b.Amount;
-}
-
-public enum SalesOrderStatus
-{
-    Draft = 0,            // being edited
-    PendingApproval = 1,  // submitted, inventory reserved, awaiting a manager
-    Approved = 2,         // manager approved; will be fulfilled
-    Cancelled = 3,        // cancelled; reservations released
-    Rejected = 4          // manager rejected; reservations released
-}
-
-public static class SalesOrderStatusRules
-{
-    private static readonly Dictionary<SalesOrderStatus, SalesOrderStatus[]> _allowed = new()
-    {
-        [SalesOrderStatus.Draft]           = new[] { SalesOrderStatus.PendingApproval, SalesOrderStatus.Cancelled },
-        [SalesOrderStatus.PendingApproval] = new[] { SalesOrderStatus.Approved, SalesOrderStatus.Rejected, SalesOrderStatus.Cancelled },
-        [SalesOrderStatus.Approved]        = new[] { SalesOrderStatus.Cancelled },
-        [SalesOrderStatus.Cancelled]       = Array.Empty<SalesOrderStatus>(),
-        [SalesOrderStatus.Rejected]        = Array.Empty<SalesOrderStatus>(),
-    };
-
-    public static bool CanTransitionTo(this SalesOrderStatus from, SalesOrderStatus to) =>
-        _allowed[from].Contains(to);
-}
-
-public static class ApprovalPolicy
-{
-    public static readonly Money Threshold = new(50_000m);  // orders over ₱50,000 are flagged high-value
 }

@@ -46,35 +46,38 @@ names its file in a top comment, so you always know where it belongs:
 
 ```
 src/Modules/Sales/Domain/
-├── SalesOrderId.cs, CustomerId.cs, ItemId.cs, UserId.cs   # strongly-typed IDs (§3)
-├── ValueObjects/
-│   ├── Money.cs                                           # §3
-│   └── Quantity.cs                                        # §3
-├── SalesOrderStatus.cs  +  SalesOrderStatusRules.cs       # the state machine (§4)
-├── ItemCategory.cs                                        # §5
-├── Customer.cs                                            # §7
-├── SalesOrder.cs  +  SalesOrderLine.cs                    # the aggregate (§6)
-├── SalesOrderEvents.cs                                    # domain events (§8)
-└── ApprovalPolicy.cs                                      # the threshold constant (§8)
+├── Ids.cs             # the four strongly-typed IDs (§3a)
+├── ValueObjects.cs    # Money, Quantity (§3a)
+├── SalesOrder.cs      # the aggregate — plus its line, its state machine, its events, and its
+│                      #   approval threshold, all built up across §4, §6, and §8
+├── ItemCategory.cs    # its own entity (§5)
+└── Customer.cs        # its own entity (§7)
 ```
+
+> 🔑 **Why six files and not one per type?** Group by *cohesion*, not by kind. Everything that exists
+> only to serve the `SalesOrder` aggregate — its child `SalesOrderLine`, the state machine it moves
+> through, the events it raises, the one threshold it consults — lives in `SalesOrder.cs`, because they
+> all change for the same reason: the sales order's own rules. `Customer` and `ItemCategory` are their
+> own entities with their own reasons to change, so they get their own files. The IDs and value objects
+> are cross-cutting primitives, grouped by kind. You'll build `SalesOrder.cs` up in pieces — the state
+> machine first (§4), then the aggregate (§6), then the events (§8) — so don't be surprised when §4 asks
+> you to start a file whose namesake class doesn't arrive until §6.
 
 The base types the domain builds on — `AggregateRoot<TId>`, `Entity<TId>`, `IDomainEvent`, `DomainException` —
 already live in `Erp.Shared.BuildingBlocks` (you wrote them in [Phase 1 §4b](01-solution-setup.md)). If the
 `where TId : struct` constraint or the `Raise`/`DomainEvents` pair isn't fresh, reread that section now —
 this phase uses all of it. The domain uses those and
-nothing else. (Folder names like `ValueObjects/` are just organisation; put files wherever reads clearly —
-what matters is that they're all under the module's `Domain/`.)
+nothing else. (These filenames are just organisation — split or merge them however reads clearly; what
+matters is that they're all under the module's `Domain/`.)
 
 ## 3a. Strongly-typed IDs and value objects
 
-Every file in this section lives in the `Erp.Modules.Sales.Domain` namespace and needs
-`using Erp.Shared.BuildingBlocks;` for `DomainException`, `IDomainEvent`, and `AggregateRoot<TId>`. We show
-that header once here rather than repeating it on every block:
+Every file in the `Domain/` folder lives in the `Erp.Modules.Sales.Domain` namespace. Most also need
+`using Erp.Shared.BuildingBlocks;` for `DomainException`, `IDomainEvent`, and `AggregateRoot<TId>` — the
+bare ID structs are the exception, since they reference none of those. Here are the IDs, in their own file:
 
 ```csharp
-// src/Modules/Sales/Domain/SalesOrderId.cs (one small file each, or group them — your call)
-using Erp.Shared.BuildingBlocks;
-
+// src/Modules/Sales/Domain/Ids.cs (grouped — they're the same one-line pattern; split them if you prefer)
 namespace Erp.Modules.Sales.Domain;
 
 public readonly record struct SalesOrderId(long Value);
@@ -91,10 +94,15 @@ public readonly record struct UserId(long Value);
 > [Phase 6 §6](06-create-order.md). Keeping the unwrapping *in the repository* is the point: it's the only
 > place that ever deals in bare `long`s.
 
-Value objects that make invalid states impossible (`Domain/ValueObjects/`):
+Value objects that make invalid states impossible — both go in one `ValueObjects.cs`, which *does* need
+the `BuildingBlocks` header (for `DomainException`):
 
 ```csharp
-// src/Modules/Sales/Domain/ValueObjects/Quantity.cs
+// src/Modules/Sales/Domain/ValueObjects.cs
+using Erp.Shared.BuildingBlocks;
+
+namespace Erp.Modules.Sales.Domain;
+
 public readonly record struct Quantity
 {
     public int Value { get; }
@@ -102,7 +110,7 @@ public readonly record struct Quantity
         Value = value > 0 ? value : throw new DomainException("Quantity must be greater than zero.");
 }
 
-// src/Modules/Sales/Domain/ValueObjects/Money.cs   (₱ — a plain non-negative amount)
+// ₱ — a plain non-negative amount.
 public readonly record struct Money
 {
     public decimal Amount { get; }
@@ -121,8 +129,15 @@ public readonly record struct Money
 
 ## 4. The status state machine
 
+This is the **first piece of `SalesOrder.cs`** — the file's namesake class arrives in §6, but the lifecycle
+it moves through belongs right next to it, so we start the file here:
+
 ```csharp
-// src/Modules/Sales/Domain/SalesOrderStatus.cs
+// src/Modules/Sales/Domain/SalesOrder.cs — start of the file (the aggregate itself comes in §6)
+using Erp.Shared.BuildingBlocks;   // AggregateRoot<TId>, DomainException, IDomainEvent — used further down
+
+namespace Erp.Modules.Sales.Domain;
+
 public enum SalesOrderStatus
 {
     Draft = 0,            // being edited
@@ -170,7 +185,7 @@ reversed if an approved order is later cancelled. The diagram is the "what's leg
 ([Phases 7–8](07-submit-reserve-concurrency.md)) attach the side effects to each arrow.*
 
 ```csharp
-// src/Modules/Sales/Domain/SalesOrderStatusRules.cs
+// src/Modules/Sales/Domain/SalesOrder.cs (continued)
 public static class SalesOrderStatusRules
 {
     private static readonly Dictionary<SalesOrderStatus, SalesOrderStatus[]> _allowed = new()
@@ -240,11 +255,7 @@ always a decision that escaped.
 This is the centerpiece. Read the comments — every design choice is deliberate.
 
 ```csharp
-// src/Modules/Sales/Domain/SalesOrder.cs
-using Erp.Shared.BuildingBlocks;   // AggregateRoot<TId>, DomainException
-
-namespace Erp.Modules.Sales.Domain;
-
+// src/Modules/Sales/Domain/SalesOrder.cs (continued — same file the state machine started in §4)
 public sealed class SalesOrder : AggregateRoot<SalesOrderId>
 {
     private readonly List<SalesOrderLine> _lines = new();
@@ -381,7 +392,7 @@ public void Submit()
 ### The `SalesOrderLine`
 
 ```csharp
-// src/Modules/Sales/Domain/SalesOrderLine.cs
+// src/Modules/Sales/Domain/SalesOrder.cs (continued)
 public sealed class SalesOrderLine
 {
     public ItemId ItemId { get; }
@@ -458,7 +469,7 @@ public sealed class Customer
 ## 8. Domain events and the approval policy
 
 ```csharp
-// src/Modules/Sales/Domain/SalesOrderEvents.cs
+// src/Modules/Sales/Domain/SalesOrder.cs (continued)
 // IDomainEvent already lives in Erp.Shared.BuildingBlocks (Phase 1), next to Entity/AggregateRoot —
 // every module's events reuse it. We do NOT redeclare it here; we just implement it.
 public sealed record SalesOrderCreated(SalesOrderId Id, CustomerId CustomerId, UserId CreatedBy) : IDomainEvent;
@@ -469,7 +480,7 @@ public sealed record SalesOrderCancelled(SalesOrderId Id) : IDomainEvent;
 ```
 
 ```csharp
-// src/Modules/Sales/Domain/ApprovalPolicy.cs
+// src/Modules/Sales/Domain/SalesOrder.cs (continued)
 public static class ApprovalPolicy
 {
     public static readonly Money Threshold = new(50_000m);  // orders over ₱50,000 are flagged high-value
