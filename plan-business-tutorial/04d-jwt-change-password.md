@@ -167,6 +167,26 @@ public sealed class ChangePasswordHandler(
 > scoring, "can't reuse your last 5") is closer to a business rule and, in a bigger system, belongs in the
 > domain or a dedicated service — not smuggled into the validator. We keep the shape rule here and name the line.
 
+> ❓ **"Then why isn't change-password a domain method?"** Because **identity isn't a domain in this build.**
+> `AppUser` is a plain record Dapper reads, living in `Erp.Shared`/`Erp.Api` as platform plumbing every module
+> leans on — not a module whose domain owns its rules and enforces them from *inside* an entity. Contrast that
+> with `SalesOrder`: the **next phase** gives *it* a rich domain, where a rule like *"can this order be
+> approved?"* becomes a method on the entity itself, throwing if the move is illegal. Change-password has no
+> such home here, and that's on purpose — the one part of it that's genuinely *behavior*, the password
+> **policy**, is exactly the piece left out just above; the rest is shape (the validator), an atomic write (the
+> proc), and coordination (this handler). The thing that *looks* like behavior — "rotating the stamp logs you
+> out everywhere" — is an **atomicity** invariant (it has to be one write), which is why it sits in the proc and
+> not a business `if`. Spend the domain machinery on `SalesOrder`, where the course is actually teaching it, and
+> keep auth a thin, honest slice.
+
+> 🚫 **When identity outgrows "plumbing," give it its own module.** The day account security becomes a
+> first-class concern — real password policy, lockout, MFA, an audit trail of every credential change — the
+> clean move is to carve an **`Identity` module** shaped exactly like `Sales`: its own schema, its own domain,
+> and a `user.ChangePassword(newHash)` method that enforces policy and rotates the `SecurityStamp` from inside
+> the entity. This slice would then shrink to the same *load → call the domain method → save* shape every
+> `Sales` handler has. Nothing here blocks that later: the seam this endpoint already leans on — `IUserRepository`
+> and the proc — is right where the module wall would fall.
+
 ### The endpoint
 
 ```csharp
