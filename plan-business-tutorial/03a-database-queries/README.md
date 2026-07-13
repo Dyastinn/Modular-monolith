@@ -26,11 +26,20 @@ file, or a CI step that just re-runs the folder. So every statement here is writ
 > the base lesson). Both get you "safe to re-run"; they just put the safety in different places. Use these
 > guarded scripts when you *don't* have a tracking runner; use the plain lesson scripts + DbUp when you do.
 
-## 2. Every table gets an audit trigger — **logs only, no business logic**
+## 2. Most tables get an audit trigger — **logs only, no business logic**
 
-Each schema has a `ChangeLog` table, and each real table has one `AFTER INSERT, UPDATE, DELETE` trigger
-that writes one row per change (which table, which key, insert/update/delete, when, and which DB login).
-See `*/004_audit.sql`.
+Each schema has a `ChangeLog` table, and each **low-churn** table has one `AFTER INSERT, UPDATE, DELETE`
+trigger that writes one row per change (which table, which key, insert/update/delete, when, and which DB
+login). See `*/004_audit.sql`.
+
+> **`RefreshToken` is the deliberate exception — it gets *no* trigger.** Its rows churn (one insert per
+> login and per rotation, one update per revoke), so a per-row trigger would grow `ChangeLog` faster than
+> the table it audits. More importantly, we can't just delete a token when it's revoked: Phase 4's reuse
+> detection depends on a revoked row **staying put** until it can no longer be replayed. So its history is
+> handled by *archive-on-retention* instead — a scheduled `usp_RefreshToken_Purge` moves spent, past-window
+> tokens into `RefreshTokenArchive` and clears them from the hot table. Same "record what happened" goal, a
+> shape that fits a high-churn table. The *why* is taught in [Phase 4 §10](../04c-jwt-refresh-apikey.md);
+> the runnable SQL is in `Identity/004_audit.sql`.
 
 > ⚠️ **Read this carefully — it's the one place this course puts a trigger, and the boundary matters.**
 > These triggers exist **only to write an append-only audit trail** — a safety net for the DBA ("who

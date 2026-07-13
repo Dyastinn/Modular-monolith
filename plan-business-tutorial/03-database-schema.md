@@ -180,6 +180,13 @@ Four columns carry the security design, and Phase 4 explains each in action:
   configured span — it's copied from the user's `PasswordExpiresUtc`, so a refresh token can never outlive
   the password it belongs to.
 
+> ❓ **"Won't this table grow forever?"** Every login and every rotation inserts a row, and revoking sets
+> `RevokedUtc` rather than deleting — so yes, left alone it grows. We keep spent rows *on purpose* (Phase 4's
+> reuse detection needs a revoked row to still be there when a stolen token is replayed), but only until they
+> can no longer be replayed. A retention job then archives the past-window rows out of this hot table.
+> [Phase 4 §10](04c-jwt-refresh-apikey.md) builds it — and explains why deleting *on revoke* would quietly
+> break the theft trap.
+
 ### Customers (blocking + credit limit)
 
 ```sql
@@ -716,9 +723,12 @@ statement is guarded** —
 > pick the one that matches your deploy. Don't stack both on the same script: with DbUp, the guards are
 > just noise; without it, they're the whole safety net.
 
-**The `03a` scripts also add one thing this base schema doesn't: an audit trigger on every table.** Each
-schema gets a `ChangeLog` table, and each real table gets one `AFTER INSERT, UPDATE, DELETE` trigger that
-writes a row saying *which table, which key, insert/update/delete, when, and which DB login*.
+**The `03a` scripts also add one thing this base schema doesn't: an audit trigger on the low-churn tables.**
+Each schema gets a `ChangeLog` table, and each such table gets one `AFTER INSERT, UPDATE, DELETE` trigger that
+writes a row saying *which table, which key, insert/update/delete, when, and which DB login*. The one table
+that *doesn't* get a trigger is `[identity].RefreshToken` — it churns too fast, and its rows have to be kept
+(not deleted) while they're still replay-relevant, so its history is handled by a retention job instead of a
+trigger. That's [Phase 4 §10](04c-jwt-refresh-apikey.md)'s story, and it's what keeps that table small.
 
 > ⚠️ **A trigger — in a course that's told you all logic belongs in the domain? Read the boundary
 > carefully, because it's exactly where "no hidden DB logic" gets precise.** The rule this course actually

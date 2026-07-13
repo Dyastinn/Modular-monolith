@@ -109,9 +109,9 @@ text. That was structured logging the whole time; a sink just makes it searchabl
 ### Refresh tokens — already in the base course
 
 > ✅ **Now built in [Phase 4 §10](04c-jwt-refresh-apikey.md).** Short access tokens backed by rotating refresh tokens, with
-> reuse detection and revoke-all-sessions. Two hardening extras were left as flagged follow-ups: delivering the
-> refresh token as an `HttpOnly` cookie for browser clients (versus the response body), and a periodic cleanup
-> of revoked/expired rows (exercise #8 below).
+> reuse detection, revoke-all-sessions, and an archive-on-retention sweep (`usp_RefreshToken_Purge`) that keeps
+> the token table small without breaking reuse detection. One hardening follow-up remains: delivering the
+> refresh token as an `HttpOnly` cookie for browser clients (versus the response body) — exercise #8 below.
 
 ### Row-level authorization
 
@@ -222,10 +222,12 @@ output caching across instances.
 [Phase 13 §5](13-wrap-up-checklist.md) had seven. Here are more, ordered roughly by how far they push past the
 base build. Same rule: try it *before* reading how.
 
-8. **Refresh-token hardening** — the two follow-ups [Phase 4 §10](04c-jwt-refresh-apikey.md) flagged: deliver the refresh
-   token to a browser client as an `HttpOnly; Secure; SameSite` cookie instead of the response body, and add a
-   scheduled cleanup (`DELETE … WHERE RevokedUtc < …`) so revoked/expired rows don't accumulate. (Reinforces:
-   the XSS threat model, and that housekeeping is separate from correctness.)
+8. **Refresh-token hardening** — the follow-up [Phase 4 §10](04c-jwt-refresh-apikey.md) flagged: deliver the refresh
+   token to a browser client as an `HttpOnly; Secure; SameSite` cookie instead of the response body. Then wire
+   the already-built `usp_RefreshToken_Purge` sweep to an actual scheduler (a SQL Agent job, or a host
+   `BackgroundService` that calls it nightly), and confirm it never touches a still-in-window token.
+   (Reinforces: the XSS threat model, and that the sweep's *timing* — not just its existence — is a security
+   decision.)
 9. **Per-IP login rate limit** — partition the §1 limiter by client IP so one attacker can't lock everyone
    out. Then notice it only holds per-instance, and reason through what §3 would take to make it global.
    (Reinforces: why in-process state and horizontal scale conflict.)

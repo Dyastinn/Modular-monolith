@@ -724,14 +724,80 @@ builder.Services.AddScoped<IRequestHandler<LogoutAllCommand, Unit>, LogoutAllHan
 >   storage is exposed to XSS. The safer delivery is an `HttpOnly; Secure; SameSite` cookie the browser sends
 >   automatically and scripts can't read. This API-first tutorial returns it in the response body for
 >   simplicity; for a browser client, prefer the cookie.
-> - **Revoked/expired rows accumulate.** A periodic cleanup (a scheduled job or a `DELETE … WHERE RevokedUtc <
->   …` proc) keeps the table small. Housekeeping, not correctness — noted, out of scope here.
+> - **Revoked/expired rows accumulate** — kept on purpose, then swept on a schedule. The very next section
+>   builds this, because the *timing* of the sweep is a security decision, not just housekeeping.
 > - **An expired password would be a dead end — so the next part fixes it.** Once `PasswordExpiresUtc` passes,
 >   refresh fails *and* login rejects the password (both by design — the DB policy governs both). The escape
 >   hatch is a **change/reset-password** flow over `usp_AppUser_ChangePassword` (which rotates the stamp and
 >   pushes the expiry). We build exactly that next, in [Part 4](04d-jwt-change-password.md) — including the
 >   subtle reason it must be anonymous. (A full **forgot-password** path — an emailed reset token for users who
 >   *don't* know the old password — stays a [Phase 13](13-wrap-up-checklist.md) extension.)
+
+### Keeping the table small — and why *not* on revoke
+
+Every login and every rotation writes a `RefreshToken` row, and revoking only stamps `RevokedUtc` — nothing
+is deleted. So the table grows without bound if you leave it alone. The obvious fix looks like "delete a token
+the moment it's revoked." **Don't** — and the reason is the whole point of this section, so feel it before you
+reach for the broom.
+
+Reuse detection (the trap you just built) works by finding an **already-revoked row** when a spent token is
+replayed. Delete the row on revoke and that replay finds *nothing* — the handler takes the harmless
+`"Invalid refresh token"` branch instead of burning the family. Walk the theft trace with the row deleted, in
+the case where the **thief refreshes first**:
+
+| Step | Rows kept until past-window (correct) | Deleted on revoke (the tempting bug) |
+|---|---|---|
+| Thief refreshes stolen `A2` → gets `A3'`, `A2` revoked | `A2` stays, marked revoked | `A2` row **gone** |
+| Victim replays her own `A2` | row found + revoked → **burn family**, `A3'` dies, thief evicted | row missing → `"Invalid"`, **nothing burned** |
+| Net result | thief locked out ✅ | **thief keeps a live, undetected session** ❌ |
+
+A revoked token has to **linger** for as long as replaying it should still spring the trap. So the sweep isn't
+housekeeping you can schedule carelessly — its *timing* is part of the security design.
+
+The safe rule: keep every token until its **sliding window has closed** (`ExpiresUtc` is in the past), because
+after that a replay would be expiry-rejected anyway and the row can no longer produce a useful reuse signal.
+*Then* a scheduled job moves those past-window rows out of the hot table into an archive — small live table,
+full history retained. That job is one proc, from [Phase 3's companion SQL](03a-database-queries/Identity/004_audit.sql):
+
+```sql
+-- Archive + purge every token whose sliding window closed at least @RetentionDays ago.
+-- Keyed off ExpiresUtc, so a still-replayable token is NEVER removed — reuse detection keeps its full window.
+CREATE OR ALTER PROCEDURE [identity].usp_RefreshToken_Purge
+    @RetentionDays INT = 7
+AS
+BEGIN
+    SET NOCOUNT ON;
+    DELETE t
+    OUTPUT deleted.Id, deleted.TokenHash, deleted.UserId, deleted.FamilyId,
+           deleted.SecurityStamp, deleted.ExpiresUtc, deleted.AbsoluteExpiresUtc,
+           deleted.CreatedUtc, deleted.RevokedUtc, deleted.ReplacedByHash
+      INTO [identity].RefreshTokenArchive
+           (Id, TokenHash, UserId, FamilyId, SecurityStamp, ExpiresUtc,
+            AbsoluteExpiresUtc, CreatedUtc, RevokedUtc, ReplacedByHash)
+    FROM [identity].RefreshToken AS t
+    WHERE t.ExpiresUtc < DATEADD(day, -@RetentionDays, SYSUTCDATETIME());
+    SELECT @@ROWCOUNT;   -- rows archived + purged this run
+END
+```
+
+> 🔑 **One atomic statement.** `DELETE … OUTPUT … INTO` archives and removes each row in a single pass, so a
+> crash mid-sweep can't lose a row between two tables — there's no window where it's deleted but not yet
+> archived. (It's also why `RefreshToken` carries no audit trigger: `OUTPUT INTO` refuses to run against a
+> table that has one. The high-churn table's history lives in the archive, not in `ChangeLog` — see
+> [Phase 3's audit note](03-database-schema.md).)
+
+> ⚠️ **This is a *maintenance* proc, not a request-path one.** Nothing in login or refresh calls it. You run it
+> on a schedule — a **SQL Agent job**, or a tiny host `BackgroundService` that calls it once a night. It takes
+> a `@RetentionDays` knob purely so dead rows can linger a while for convenience; the reuse window doesn't
+> depend on it, because the `WHERE` keys off `ExpiresUtc` (already past the sliding close), not off how long
+> ago the token was revoked.
+
+> ❓ **You might be wondering: "Why archive at all — why not just delete the past-window rows?"** Because a
+> refresh-token row is a security-relevant fact ("this lineage existed, was minted here, revoked there"), and
+> keeping the hashed history lets you answer "was this token ever real?" after the fact without paying for it
+> in the hot table. The archive stores only the **hash**, exactly like the live table, so it's no more
+> sensitive than what you already keep. If you genuinely don't want the history, drop the `OUTPUT … INTO` and
+> the archive table and it becomes a plain `DELETE` — same safety, no log.
 
 ## 11. A second gate — requiring an API key from the frontend
 

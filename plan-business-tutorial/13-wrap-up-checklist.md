@@ -240,9 +240,11 @@ as "in production." Here's the honest gap list, grouped, so you know what a real
 - [x] **Refresh tokens** — ✅ built in [Phase 4 §10](04c-jwt-refresh-apikey.md): short (15 min) access tokens backed by
       rotating refresh tokens with reuse detection and a revoke-all-sessions endpoint. A password change
       **instantly voids every refresh token** via the user's `SecurityStamp`, and a token's absolute lifetime
-      is capped by the DB-driven `PasswordExpiresUtc`, so a session can never outlive its password. (Two
-      hardening extras remain, both flagged in that section: delivering the refresh token as an `HttpOnly`
-      cookie for browser clients, and a periodic cleanup of revoked/expired rows.)
+      is capped by the DB-driven `PasswordExpiresUtc`, so a session can never outlive its password. The table
+      is kept small by an **archive-on-retention** sweep (`usp_RefreshToken_Purge`) that moves past-window
+      tokens out of the hot table without weakening reuse detection — also in that section. (One hardening
+      extra remains, flagged there: delivering the refresh token as an `HttpOnly` cookie for browser clients.
+      To deploy the sweep, point a SQL Agent job or a host `BackgroundService` at the proc.)
 
 ### Correctness & data
 - [x] Every multi-step write is in a transaction — ✅ you did this. Double-check no new feature skips it.
