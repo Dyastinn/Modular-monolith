@@ -124,11 +124,14 @@ Each phase builds directly on the one before it, and each ends with something yo
 | 2 | [02-mediator-own-vs-free.md](02-mediator-own-vs-free.md) | Your own mediator **vs** the free GitHub one — decide | ~1 hr |
 | 3 | [03-database-schema.md](03-database-schema.md) | Tables, stored procedures, seed data | ~1–1.5 hr |
 | 3b | [03b-data-access.md](03b-data-access.md) | Connection factory + ADO.NET transactions | ~30–45 min |
-| 4 | [04-jwt-auth.md](04-jwt-auth.md) | **Part 1** — password hashing + the access-token service | ~45 min |
-| 4b | [04b-jwt-login.md](04b-jwt-login.md) | **Part 2** — login slice, token validation, `ICurrentUser`, role authorization | ~1 hr |
-| 4c | [04c-jwt-refresh-apikey.md](04c-jwt-refresh-apikey.md) | **Part 3** — rotating refresh tokens (reuse detection) + the API-key gate | ~45 min |
-| 4d | [04d-jwt-change-password.md](04d-jwt-change-password.md) | **Part 4** — change/reset password over the DB proc (and why it's anonymous) | ~30 min |
-| 4e | [04e-jwt-wrap-up.md](04e-jwt-wrap-up.md) | **Part 5** — full request-flow trace, checkpoint, common mistakes | ~20 min |
+| 4 | [04-jwt-auth.md](04-jwt-auth.md) | **Part 1** — password hashing + the access-token service | ~50 min |
+| 4b | [04b-jwt-login.md](04b-jwt-login.md) | **Part 2** — login slice, token validation, `ICurrentUser`, role authorization | ~1–1.25 hr |
+| 4c | [04c-jwt-refresh-apikey.md](04c-jwt-refresh-apikey.md) | **Part 3** — rotating refresh tokens (reuse detection) + the API-key gate | ~55 min |
+| 4d | [04d-jwt-change-password.md](04d-jwt-change-password.md) | **Part 4** — change/reset password over the DB proc (and why it's anonymous) | ~40 min |
+| 4e | [04e-jwt-wrap-up.md](04e-jwt-wrap-up.md) | **Part 5** — full request-flow trace, end-to-end checkpoint, common mistakes | ~20 min |
+
+> 🔑 **Phase 4 is the long one, so each of its five parts ends in its own runnable checkpoint** — you never
+> carry more than one part's worth of unverified code. Part 5 then runs every door in one pass.
 | 5 | [05-domain-model.md](05-domain-model.md) | The `SalesOrder` aggregate + business rules | ~1.5–2 hr |
 | 6 | [06-create-order.md](06-create-order.md) | Create-order slice: blocking, credit, category, quantity | ~2 hr |
 | 7 | [07-submit-reserve-concurrency.md](07-submit-reserve-concurrency.md) | Submit + atomic inventory reservation + rollback | ~1.5–2 hr |

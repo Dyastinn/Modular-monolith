@@ -5,7 +5,7 @@
 > 2. [Login, validation & authorization](04b-jwt-login.md)
 > 3. **Refresh tokens & the API-key gate** ← you are here
 > 4. [Changing & resetting a password](04d-jwt-change-password.md)
-> 5. [Request flow, checkpoint & common mistakes](04e-jwt-wrap-up.md)
+> 5. [Request flow, end-to-end checkpoint & common mistakes](04e-jwt-wrap-up.md)
 
 > Builds on [Part 2](04b-jwt-login.md): you can already log in, validate tokens, read the caller through `ICurrentUser`, and authorize by role. Two problems remain — a 15-minute access token means re-typing your password constantly (§10 fixes it with refresh tokens), and the anonymous login door faces the raw internet (§11 adds a client gate).
 
@@ -1019,6 +1019,125 @@ affecting the website, or vice versa.
 > so a config or database leak yields nothing usable. Look each incoming key up by its SHA-256 hash. The
 > middleware's shape doesn't change at all; only where `_keys` is loaded from. Rotate keys on a schedule, and
 > immediately if one leaks.
+
+---
+
+## Checkpoint — the gate, the rotation, and the trap for a thief ✅
+
+Part 3 added two independent things, so prove them in that order: first the **API-key gate** (which now sits
+in front of everything), then **rotation and reuse detection**.
+
+Run the app, and set both variables — from here on, *every* call carries the key:
+
+```bash
+BASE=http://localhost:5234
+KEY=web-live-abc123        # ← whichever key you actually configured in §11
+```
+
+**1) The gate fires before login itself.** This is the whole point of an app-level key: it guards the
+anonymous door that a JWT structurally cannot.
+
+```bash
+curl -i -X POST "$BASE/auth/login" -H "Content-Type: application/json" \
+     -d '{"username":"rep","password":"Password123!"}'
+# → 401 Unauthorized   { "error": "Missing or invalid API key." }
+#   We never reached LoginHandler. A wrong key looks identical.
+```
+
+This 401 is written by the middleware itself, so — unlike the handler-thrown ones — it is **already correct
+today**, before Phase 11.
+
+**2) Log in with the key, and notice what's new in the response.**
+
+```bash
+curl -s -X POST "$BASE/auth/login" -H "X-Api-Key: $KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"username":"rep","password":"Password123!"}'
+# → {"accessToken":"eyJ...","refreshToken":"3Yb2...","username":"rep","role":"SalesRep"}
+```
+
+A `refreshToken` now sits beside the access token — §10 extended `LoginResult` to four members. Save both:
+
+```bash
+ACCESS=<paste accessToken>
+REFRESH=<paste refreshToken>
+```
+
+**3) Rotation: spend the refresh token, get a brand-new pair.**
+
+```bash
+curl -s -X POST "$BASE/auth/refresh" -H "X-Api-Key: $KEY" \
+     -H "Content-Type: application/json" \
+     -d "{\"refreshToken\":\"$REFRESH\"}"
+# → 200 OK, a DIFFERENT accessToken and a DIFFERENT refreshToken
+```
+
+Compare the two refresh tokens: they must not match. That difference *is* the rotation. Save the new one as
+`REFRESH2`.
+
+**4) Reuse detection: replay the token you just spent.** This is the moment the design earns its keep —
+pretend you're a thief who copied `REFRESH` before the real client used it.
+
+```bash
+curl -i -X POST "$BASE/auth/refresh" -H "X-Api-Key: $KEY" \
+     -H "Content-Type: application/json" \
+     -d "{\"refreshToken\":\"$REFRESH\"}"
+# → "Refresh token reuse detected — session revoked. Please log in again."
+```
+
+Now the part people miss. `REFRESH2` — the *honest* client's perfectly good token, which you never replayed —
+is dead too:
+
+```bash
+curl -i -X POST "$BASE/auth/refresh" -H "X-Api-Key: $KEY" \
+     -H "Content-Type: application/json" \
+     -d "{\"refreshToken\":\"$REFRESH2\"}"
+# → "Refresh token reuse detected — session revoked. Please log in again."
+```
+
+Trace *why* it reports reuse rather than "invalid": revoking the family stamped `RevokedUtc` on **every**
+token in the lineage, `REFRESH2` included. So when it arrives, the handler finds a row whose `RevokedUtc` is
+set and takes the very same reuse branch. (You'd only see `Invalid refresh token.` for a token the database
+has never heard of — a typo, or one from a different login.)
+
+That is deliberate, and it's the trade-off worth understanding: when two copies of one lineage exist, the
+server **cannot tell the thief from the victim**, so it burns the family and makes both log in again. A
+brief annoyance for the real user; a dead end for the thief.
+
+> ⚠️ Steps 3 and 4's failures are thrown `AuthenticationException`s, so **today they arrive as a 500** with
+> the right message. [Phase 11](11-cross-cutting.md) turns them into 401s. Read the message, not the status —
+> the same caveat as [Part 2](04b-jwt-login.md).
+
+**5) Logout revokes the session.** That family is now burned, so log in again to get a fresh pair — call its
+refresh token `REFRESH3` — and hand it to logout:
+
+```bash
+curl -i -X POST "$BASE/auth/logout" -H "X-Api-Key: $KEY" \
+     -H "Content-Type: application/json" -d "{\"refreshToken\":\"$REFRESH3\"}"
+# → 204 No Content
+
+# Refreshing with it now fails: logout revoked the whole family.
+curl -i -X POST "$BASE/auth/refresh" -H "X-Api-Key: $KEY" \
+     -H "Content-Type: application/json" -d "{\"refreshToken\":\"$REFRESH3\"}"
+# → "Refresh token reuse detected — session revoked. Please log in again."
+```
+
+> ℹ️ Logout is **idempotent**: hand it a token the database doesn't know, or one already revoked, and it still
+> returns `204`. Logging out twice is not an error, and a logout endpoint that leaked "that token doesn't
+> exist" would be a small oracle for an attacker.
+
+### You're done when
+
+| # | You proved | Expected |
+|---|---|---|
+| 1 | The API-key gate runs before authentication | no/bad key, even on `/auth/login` → **401** `Missing or invalid API key.` |
+| 2 | Login now issues a **pair** | **200** + `accessToken` **and** `refreshToken` |
+| 3 | Refresh **rotates** | **200**, with a *different* refresh token than you sent |
+| 4 | Reuse burns the whole family | replaying a spent token fails — **and so does the rotated one** |
+| 5 | Logout revokes | **204**, after which that token can't refresh |
+
+If all five rows match, the session machinery is real: short access tokens, rotating refresh tokens, replay
+detection, and an outer gate that knows which *app* is calling.
 
 ---
 

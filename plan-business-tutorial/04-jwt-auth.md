@@ -5,7 +5,7 @@
 > 2. [Login, validation & authorization](04b-jwt-login.md)
 > 3. [Refresh tokens & the API-key gate](04c-jwt-refresh-apikey.md)
 > 4. [Changing & resetting a password](04d-jwt-change-password.md)
-> 5. [Request flow, checkpoint & common mistakes](04e-jwt-wrap-up.md)
+> 5. [Request flow, end-to-end checkpoint & common mistakes](04e-jwt-wrap-up.md)
 
 
 > Nothing here assumes you've done auth before. We go slowly. By the end of all five parts you can log in,
@@ -13,22 +13,27 @@
 
 ---
 
-> ⏱️ **Time for all five parts:** ~3–3.5 hr (this Part 1 is ~45 min). Everything is new: hashing,
+> ⏱️ **Time for all five parts:** ~3.5–4 hr (this Part 1 is ~50 min). Everything is new: hashing,
 > tokens, claims, middleware order, the `MapInboundClaims` gotcha, and refresh-token rotation with reuse
-> detection ([Part 3](04c-jwt-refresh-apikey.md)). Go slow; rushing auth is how subtle security bugs
-> sneak in.
+> detection ([Part 3](04c-jwt-refresh-apikey.md)). Each part ends with its own runnable checkpoint — budget
+> ~10 minutes each for those, and don't skip them. Go slow; rushing auth is how subtle security bugs sneak in.
 
 ## 1. What we're building
 
 **Across all five parts**, you'll end up with a complete authentication system:
 
-| Part | What it adds |
-|---|---|
-| **1** (this file) | Password hashing (`IPasswordHasher`) and access-token creation (`IJwtTokenService`) — the two ingredients login needs |
-| [**2**](04b-jwt-login.md) | The `POST /auth/login` slice, token *validation* on incoming requests, `ICurrentUser`, and role-based authorization |
-| [**3**](04c-jwt-refresh-apikey.md) | **Refresh tokens** with rotation and reuse detection, logout endpoints, and the **API-key gate** that keeps unknown client apps out even before authentication |
-| [**4**](04d-jwt-change-password.md) | `POST /auth/change-password`, and the surprising reason it must be anonymous |
-| [**5**](04e-jwt-wrap-up.md) | The full request-flow trace, the runnable checkpoint, and the mistakes people make |
+| Part | What it adds | Ends with a checkpoint proving… |
+|---|---|---|
+| **1** (this file) | Password hashing (`IPasswordHasher`) and access-token creation (`IJwtTokenService`) — the two ingredients login needs | a password verifies, and a signed token mints + decodes |
+| [**2**](04b-jwt-login.md) | The `POST /auth/login` slice, token *validation* on incoming requests, `ICurrentUser`, and role-based authorization | you can log in, and the token gates a real endpoint |
+| [**3**](04c-jwt-refresh-apikey.md) | **Refresh tokens** with rotation and reuse detection, logout endpoints, and the **API-key gate** that keeps unknown client apps out even before authentication | the gate fires before login; refresh rotates; a replay burns the family |
+| [**4**](04d-jwt-change-password.md) | `POST /auth/change-password`, and the surprising reason it must be anonymous | an anonymous change works, and voids every session |
+| [**5**](04e-jwt-wrap-up.md) | The full request-flow trace, one end-to-end run of *all* the doors, and the mistakes people make | the whole gate, in one pass |
+
+> 🔑 **Each part ends in something you can run.** Phase 4 is the longest phase in the course, and a single
+> checkpoint at the very end would leave you debugging five parts at once. Don't skip a part's checkpoint to
+> "catch up at the end" — the whole reason they're there is so a failure has only one part's worth of code to
+> hide in.
 
 **This part builds two services and nothing else.** They're the pieces login will assemble in Part 2:
 a `PasswordHasher` that can store and check a password safely, and a `JwtTokenService` that can mint a signed,
@@ -842,6 +847,82 @@ eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiI0MiIsInJvbGUiOiJTYWxlc1JlcCJ9.3Rk...
 >
 > For this course we use `JwtSecurityTokenHandler` because it is easier to read
 > and understand when learning JWT authentication for the first time.
+
+---
+
+## Checkpoint — mint a real token and read it back ✅
+
+There's still no login endpoint (that's Part 2), so we prove the *service* the same way
+[Phase 3b](03b-data-access.md) proved the connection factory: with a **throwaway endpoint** you delete
+straight afterwards. Drop this in `Program.cs`:
+
+```csharp
+// Program.cs — TEMPORARY. Delete after this checkpoint.
+// Add: using System.IdentityModel.Tokens.Jwt;  and  using Erp.Shared.Infrastructure;
+app.MapGet("/dev/token", (IConfiguration config) =>
+{
+    var token = new JwtTokenService(config).CreateAccessToken(1, "rep", "SalesRep");
+
+    // Read the token back WITHOUT validating it — proving anyone can read a JWT's payload.
+    var decoded = new JwtSecurityTokenHandler().ReadJwtToken(token);
+    return Results.Ok(new
+    {
+        token,
+        claims = decoded.Claims.Select(c => $"{c.Type} = {c.Value}")
+    });
+});
+```
+
+We `new` up `JwtTokenService` by hand here on purpose — nothing has registered it with DI yet, and Part 2 is
+where it joins the container. `IConfiguration` is the one thing ASP.NET registers for you.
+
+Run the app and call it:
+
+```bash
+curl -s http://localhost:5234/dev/token
+```
+
+You should get a three-part, dot-separated string and a claim list very much like this:
+
+```
+token:  eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ...   ← header . payload . signature
+
+sub = 1
+http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name = rep
+http://schemas.microsoft.com/ws/2008/06/identity/claims/role = SalesRep
+jti = 3d90da04-…
+exp = 1783695743
+iss = Erp.Api
+aud = Erp.Client
+```
+
+Three things just proved themselves, and each is worth a moment:
+
+- **The signing key is being read and used.** Blank out `Jwt:SigningKey` in
+  `appsettings.Development.json` and call again: you get
+  `ArgumentException: IDX10703: Cannot create a 'SymmetricSecurityKey', key length is zero` — and if you
+  delete the setting altogether, an `ArgumentNullException` from `Encoding.UTF8.GetBytes(null)`. Ugly, and
+  exactly what you want: a missing secret should fail loudly and immediately, not sign tokens with nothing.
+  ([Phase 14](14-going-further.md) shows how to make that failure happen at *startup* rather than on the
+  first request.) Put the key back before moving on.
+- **The payload is readable by anyone.** `ReadJwtToken` never checked a signature; it just base64-decoded the
+  middle section. This is the "signed, not encrypted" point made concrete — **never put a secret in a JWT.**
+  What the signature buys you is that nobody can *change* those claims without you noticing.
+- **Look hard at those claim names.** `sub` came out as `sub`, but `name` and `role` came out as long
+  `http://schemas…` URIs. That's not a bug and it's not random: `ClaimTypes.Name` and `ClaimTypes.Role` are
+  C# constants whose *values* are those URIs, and we passed them straight into `new Claim(...)`. Remember
+  this — in [Part 2](04b-jwt-login.md) it explains why token *validation* has to be told
+  `RoleClaimType = ClaimTypes.Role`, and it's the single most common reason role checks mysteriously fail.
+
+**Now delete the `/dev/token` endpoint.** It hands out a valid token for user 1 to anyone who asks; it was a
+diagnostic, not a feature.
+
+> ⚠️ **`exp = 1783695743`?** JWT timestamps are **Unix epoch seconds** (seconds since 1970-01-01 UTC), not a
+> readable date — that's the spec, not our choice. It should land ~15 minutes ahead of now, matching
+> `Jwt:AccessTokenMinutes`.
+
+Both halves of Part 1 now work: passwords hash and verify (§3's checkpoint), and tokens mint and decode. Part
+2 assembles them into a login.
 
 ---
 

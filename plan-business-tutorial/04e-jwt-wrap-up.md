@@ -5,7 +5,7 @@
 > 2. [Login, validation & authorization](04b-jwt-login.md)
 > 3. [Refresh tokens & the API-key gate](04c-jwt-refresh-apikey.md)
 > 4. [Changing & resetting a password](04d-jwt-change-password.md)
-> 5. **Request flow, checkpoint & common mistakes** ← you are here
+> 5. **Request flow, end-to-end checkpoint & common mistakes** ← you are here
 
 > Builds on Parts [1](04-jwt-auth.md)–[4](04d-jwt-change-password.md). Everything is now in place: passwords, tokens, login, validation, `ICurrentUser`, authorization, refresh tokens, the API-key gate, and change/reset password. This part traces how they combine on a real request, gives you a checkpoint to prove it works, and collects the pitfalls.
 
@@ -55,8 +55,8 @@ KEY=web-live-abc123                # ← replace with a key you actually configu
 
 Three prerequisites, or the steps below won't behave:
 
-- **Add `.RequireAuthorization()` to the `/sales/ping` endpoint** from [Phase 2](02-mediator-own-vs-free.md) —
-  that's the protected endpoint Step 2 leans on.
+- **`/sales/ping` must carry `.RequireAuthorization()`** — you added that in
+  [Part 2's checkpoint](04b-jwt-login.md); it's the protected endpoint Step 2 leans on.
 - **Every command carries `-H "X-Api-Key: $KEY"`** — the §11 gate runs *first*, so a request without it never
   even reaches login (that's Step 0's whole point).
 - The commands capture tokens with **`jq`**. If you don't have it, drop the `jq` lines and just copy the
@@ -280,8 +280,20 @@ behind exactly this gate (API key → authenticate → authorize).
 > Swagger's **Authorize** button now takes **two** values — paste your `X-Api-Key` in one box and, after
 > logging in, the access token in the other. Then every "Try it out" carries both headers.
 
-> ℹ️ You just changed `rep`'s password to `NewPassword456!`. Either **re-seed** (re-run the Phase 3 seed) or
-> **remember the new password** for the rest of the run, since later checkpoints assume `Password123!`.
+> ⚠️ **You just changed `rep`'s password to `NewPassword456!` — change it back before you go on.** Every later
+> phase's `curl` assumes `Password123!`:
+>
+> ```bash
+> curl -i -X POST "$BASE/auth/change-password" -H "X-Api-Key: $KEY" \
+>      -H "Content-Type: application/json" \
+>      -d '{"username":"rep","currentPassword":"NewPassword456!","newPassword":"Password123!"}'
+> # → 204 No Content
+> ```
+>
+> **Re-running the Phase 3 seed will not do it.** That script `INSERT`s users; it doesn't update them. Run it
+> again and it either trips the `UNIQUE` constraint on `Username` or, with the `IF NOT EXISTS` guards from
+> [03a](03a-database-queries/README.md), does nothing at all. The row is already there. Going back through
+> your own endpoint is the only sanctioned path — which is the point.
 
 ## 15. Common mistakes & best practices
 

@@ -229,3 +229,58 @@ been read and reviewed in course order. The `03a-database-queries/` companion wa
 Three defects were verified by **reproducing them**, not by reading: `CS0136` on the refresh handler, the
 `400` on a bare `GET /sales-orders`, and `NU1008` from `dotnet new xunit` under CPM. The search fix is now
 guarded by an integration test that was confirmed to fail before the fix.
+
+---
+
+## Per-part checkpoints for Phase 4 — 2026-07-10
+
+Phase 4 is ~3.5 hours across five files and had **one** checkpoint, at the very end of Part 5. A reader whose
+login failed there had five parts of unverified code to search. Added a runnable checkpoint to each part, and
+verified every command against the running reference API before writing it down.
+
+### 🔴 Found while writing them — `IPasswordHasher` and `IJwtTokenService` were never registered
+Both are built in Part 1 and injected by `LoginHandler` in Part 2, but the only `AddSingleton`/`AddScoped`
+lines for them appear in **Phase 11**'s consolidated composition root. Following the lessons in order,
+`POST /auth/login` would throw *"No service for type `IPasswordHasher` has been registered."* on the first
+request. Part 2's registration block now adds all three (`IPasswordHasher`, `IJwtTokenService`,
+`IUserRepository`) with an explanation of why the hasher is a singleton and the repository scoped.
+
+### What each checkpoint proves
+- **Part 1** — a throwaway `/dev/token` endpoint (same trick as Phase 3b's `/db-ping`) mints a token and reads
+  it back with `ReadJwtToken`. Verified the endpoint compiles from `Erp.Api` (`System.IdentityModel.Tokens.Jwt`
+  arrives transitively through `Erp.Shared.Infrastructure`) and captured the real claim list. It shows `sub`
+  surviving as `sub` while `name`/`role` carry the long `http://schemas…` URIs — which is exactly the setup for
+  Part 2's `MapInboundClaims` lesson. Also verified the failure mode: a blank `Jwt:SigningKey` gives
+  `ArgumentException: IDX10703 … key length is zero`, a missing one an `ArgumentNullException`.
+- **Part 2** — adds `.RequireAuthorization()` to `/sales/ping` (previously only mentioned as a prerequisite in
+  Part 5), then proves anonymous → 401, garbage token → 401, valid token → 200, and that both login failures
+  return the *same* generic message. No API key yet, and login returns **no** `refreshToken` — both true only
+  at this point in the course.
+- **Part 3** — the API-key gate, rotation, reuse detection, and logout.
+- **Part 4** — the anonymous change-password, and that rotating `SecurityStamp` *is* the global logout.
+
+### 🟠 Two of my own claims were wrong until I ran them
+- I first wrote that replaying a spent refresh token kills the family, so the honest client's rotated token
+  then reports *"Invalid refresh token."* It does not: `RevokeFamilyAsync` stamps `RevokedUtc` on **every**
+  token in the lineage, so the rotated one takes the same reuse branch and reports *"Refresh token reuse
+  detected."* Confirmed against the running API; the lesson now explains why.
+- A troubleshooting note blamed the `MapInboundClaims` trap for a 401 on `/sales/ping`. It cannot be —
+  that endpoint only asks "are you authenticated?" and never reads `ICurrentUser` or a role. Rewritten to
+  point at `ValidIssuer`/`ValidAudience`/`IssuerSigningKey`, and to say plainly that the claim-name trap only
+  surfaces once a role check or `UserId` read exists.
+
+### 🟠 Fixed — "re-run the Phase 3 seed" was bad advice
+Part 5 told readers to re-seed after changing `rep`'s password. The seed `INSERT`s users; it never updates
+them, so re-running it either trips the `UNIQUE` constraint on `Username` or (with the `03a` guards) does
+nothing. Both Part 4 and Part 5 now restore the password through the change-password endpoint, which is the
+only sanctioned path — and, as a bonus, pushes `PasswordExpiresUtc` 90 days out.
+
+### Verified live against the reference API
+Started `Erp.Api` on LocalDB and ran every command: no key → `401 {"error":"Missing or invalid API key."}`;
+login → `accessToken`/`refreshToken`/`username`/`role`; refresh → a different refresh token; replay → reuse
+detected; the rotated token → reuse detected; logout → `204`, idempotent on a repeat **and** on an unknown
+token; change-password anonymously on an **expired** password → `204`, then login → `200`.
+
+> 💡 Incidental: the local dev `Erp` database had `rep` and `admin` with a lapsed `PasswordExpiresUtc`, so
+> they could not log in. Repaired through the change-password endpoint (the very flow Part 4 teaches). All
+> three seed users now authenticate and expire ~90 days out. `Erp_Test` was untouched.

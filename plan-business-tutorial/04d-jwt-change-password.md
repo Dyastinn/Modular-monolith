@@ -5,7 +5,7 @@
 > 2. [Login, validation & authorization](04b-jwt-login.md)
 > 3. [Refresh tokens & the API-key gate](04c-jwt-refresh-apikey.md)
 > 4. **Changing & resetting a password** ← you are here
-> 5. [Request flow, checkpoint & common mistakes](04e-jwt-wrap-up.md)
+> 5. [Request flow, end-to-end checkpoint & common mistakes](04e-jwt-wrap-up.md)
 
 > Builds on [Part 3](04c-jwt-refresh-apikey.md). The database already ships `usp_AppUser_ChangePassword`
 > ([Phase 3](03-database-schema.md)), which rotates the password hash, the `SecurityStamp`, and the 90-day
@@ -239,6 +239,104 @@ The turnstile, walked end to end:
 > 🧭 **From WebForms.** This is your old **Change Password** page (the `ChangePassword` control) minus the
 > server-rendered form: the same *old-password + new-password* contract, now a JSON endpoint. The "Forgot
 > Password?" wizard that emailed a reset link is the piece we're explicitly leaving for later.
+
+---
+
+## Checkpoint — change a password, and watch every session die ✅
+
+Two claims to prove, and the second is the interesting one: that the endpoint works **without a token**, and
+that a password change silently voids every refresh token the user holds — *without* the handler ever touching
+the refresh-token table.
+
+```bash
+BASE=http://localhost:5234
+KEY=web-live-abc123
+```
+
+**1) Take a refresh token minted under the *current* security stamp.**
+
+```bash
+curl -s -X POST "$BASE/auth/login" -H "X-Api-Key: $KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"username":"rep","password":"Password123!"}'
+# save the refreshToken from the response as REFRESH
+```
+
+**2) Change the password — note there is no `Authorization` header anywhere.**
+
+```bash
+curl -i -X POST "$BASE/auth/change-password" -H "X-Api-Key: $KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"username":"rep","currentPassword":"Password123!","newPassword":"Temp_Pass_123!"}'
+# → 204 No Content
+```
+
+Anonymous, and it worked. The **current password** was the credential; the API key was the only header
+standing between this call and the open internet.
+
+**3) The refresh token from step 1 is now dead.**
+
+```bash
+curl -i -X POST "$BASE/auth/refresh" -H "X-Api-Key: $KEY" \
+     -H "Content-Type: application/json" -d "{\"refreshToken\":\"$REFRESH\"}"
+# → "Credentials changed. Please log in again."
+```
+
+Sit with that for a second. `ChangePasswordHandler` never opened the `RefreshToken` table. It changed one
+row in `AppUser` — and because `usp_AppUser_ChangePassword` rotated `SecurityStamp`, the stamp the token
+recorded at mint time no longer agrees with the user's. **That disagreement is the logout**, and it applies
+to every device at once, with no sweep and no bookkeeping.
+
+**4) The old password is gone; the new one works.**
+
+```bash
+curl -i -X POST "$BASE/auth/login" -H "X-Api-Key: $KEY" -H "Content-Type: application/json" \
+     -d '{"username":"rep","password":"Password123!"}'
+# → "Invalid username or password."   (the same generic message as an unknown user)
+
+curl -i -X POST "$BASE/auth/login" -H "X-Api-Key: $KEY" -H "Content-Type: application/json" \
+     -d '{"username":"rep","password":"Temp_Pass_123!"}'
+# → 200 OK   a fresh access + refresh pair
+```
+
+**5) Put `rep` back, because every later phase assumes `Password123!`.**
+
+```bash
+curl -i -X POST "$BASE/auth/change-password" -H "X-Api-Key: $KEY" \
+     -H "Content-Type: application/json" \
+     -d '{"username":"rep","currentPassword":"Temp_Pass_123!","newPassword":"Password123!"}'
+# → 204 No Content
+```
+
+> ⚠️ **Change it *back with the endpoint* — don't try to "just re-run the seed."** The seed inserts users; it
+> doesn't update them. Re-running it either fails on the `UNIQUE` constraint or (if you added the
+> `IF NOT EXISTS` guards) does nothing at all. The row already exists, and the only sanctioned way to change a
+> password is the proc you just built. Two round-trips through your own endpoint is the correct answer, and
+> it's a small taste of why "just restore from the script" is rarely the fix in a real system.
+>
+> Notice the round-trip also pushed `rep`'s `PasswordExpiresUtc` **90 days into the future**, which is exactly
+> how you'd rescue an account whose password had lapsed.
+
+### You're done when
+
+| # | You proved | Expected |
+|---|---|---|
+| 1 | Change-password needs **no** access token | anonymous call → **204 No Content** |
+| 2 | The current password is the credential | wrong `currentPassword` → the generic *Invalid username or password.* |
+| 3 | The stamp rotation *is* the logout | a refresh token minted before the change → *Credentials changed.* |
+| 4 | The new password is live, the old one isn't | old → generic failure; new → **200** with a fresh pair |
+| 5 | You restored `rep` to `Password123!` | **204**, and login with `Password123!` → **200** |
+
+> ⚠️ As in Parts 2 and 3, the failures above are thrown `AuthenticationException`s and so arrive as **500s**
+> until [Phase 11](11-cross-cutting.md) maps them to 401. The **204**s are real today. And the validator rules
+> (`MinimumLength(8)`, new ≠ current) don't fire yet either — `ValidationBehavior` is what runs them, and it
+> lands in Phase 11 too.
+
+> 💡 **Want to see the expiry rescue for real?** Push the date into the past and watch the dead-end open, then
+> close: `UPDATE [identity].AppUser SET PasswordExpiresUtc = DATEADD(day,-1,SYSUTCDATETIME()) WHERE Username='rep';`
+> Now login says *"Your password has expired"* and **refresh fails too** — but change-password still lets `rep`
+> back in, and pushes the expiry 90 days out. That's the whole reason this endpoint is anonymous, demonstrated
+> in three commands.
 
 ---
 

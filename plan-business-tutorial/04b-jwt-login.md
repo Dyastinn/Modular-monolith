@@ -5,7 +5,7 @@
 > 2. **Login, validation & authorization** ← you are here
 > 3. [Refresh tokens & the API-key gate](04c-jwt-refresh-apikey.md)
 > 4. [Changing & resetting a password](04d-jwt-change-password.md)
-> 5. [Request flow, checkpoint & common mistakes](04e-jwt-wrap-up.md)
+> 5. [Request flow, end-to-end checkpoint & common mistakes](04e-jwt-wrap-up.md)
 
 > In [Part 1](04-jwt-auth.md), we learned how passwords are securely hashed and how a JWT access token is
 > created.
@@ -508,12 +508,28 @@ second reflection loop:
 // Program.cs — the auth slices live in the HOST assembly, so the module scans don't see them.
 builder.Services.AddScoped<IRequestHandler<LoginCommand, LoginResult>, LoginHandler>();
 builder.Services.AddScoped<IValidator<LoginCommand>, LoginValidator>();
-
-// ...and the repository the handler depends on (this one is a shared-infrastructure service):
-builder.Services.AddScoped<IUserRepository, UserRepository>();
 ```
 
-Parts 3 and 4 add one more line each, as they add the refresh, logout, and change-password handlers.
+The handler's three dependencies are platform services, so they belong in `AddSharedInfrastructure()`
+alongside `IDbConnectionFactory` from [Phase 3b](03b-data-access.md) — **all three, or login fails at the
+first request** with *"No service for type `IPasswordHasher` has been registered."* We built them in
+[Part 1](04-jwt-auth.md) but never registered them; that debt comes due now:
+
+```csharp
+// AddSharedInfrastructure() (Erp.Shared.Infrastructure/DependencyInjection.cs)
+services.AddSingleton<IPasswordHasher, PasswordHasher>();   // stateless + no dependencies → singleton
+services.AddScoped<IJwtTokenService, JwtTokenService>();
+services.AddScoped<IUserRepository, UserRepository>();      // Dapper over the [identity] procs
+```
+
+> ❓ **Why is the hasher a singleton but the token service scoped?** Recall the lifetimes from
+> [Phase 2](02-mediator-own-vs-free.md): singleton if stateless and cheap to share, scoped if it must line up
+> with one request. `PasswordHasher` holds nothing at all — one instance serves the whole app forever.
+> `JwtTokenService` is scoped mostly for consistency with everything else that takes injected services; it
+> would work as a singleton too. `UserRepository` is scoped because it depends on the scoped
+> `IDbConnectionFactory`, and a singleton may never depend on a scoped service.
+
+Parts 3 and 4 add one more handler registration each, as they add refresh, logout, and change-password.
 
 ## 7. Step 5 — Wiring token validation into the app
 
@@ -2142,13 +2158,99 @@ To avoid mistakes, define role names as constants in one place and reuse them th
 
 ---
 
-At this point, users can:
+## Checkpoint — log in, and watch the token gate a real endpoint ✅
 
-- log in,
-- receive a JWT,
-- call protected endpoints,
-- be authenticated by ASP.NET Core,
-- be exposed through `ICurrentUser`,
-- and be authorized using roles and business rules.
+You now have a complete (if short-lived) authentication system, so prove it before adding refresh tokens on
+top. There is **no API key yet** — that gate arrives in [Part 3](04c-jwt-refresh-apikey.md) — so none of these
+calls carries one.
 
-In the next part we'll complete the authentication system by adding **refresh tokens**, allowing users to stay signed in securely without keeping long-lived access tokens.
+**First, give yourself something to protect.** The `/sales/ping` endpoint from
+[Phase 2](02-mediator-own-vs-free.md) is still wide open. Add one line to `PingEndpoint.cs`:
+
+```csharp
+app.MapGet("/sales/ping", async (string name, ISender sender, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new PingRequest(name), ct)))
+   .RequireAuthorization();   // ← NEW: any authenticated user; no particular role
+```
+
+Run the app. Set `BASE` to whatever port it printed:
+
+```bash
+BASE=http://localhost:5234
+```
+
+**1) The protected endpoint refuses an anonymous caller.**
+
+```bash
+curl -i "$BASE/sales/ping?name=world"
+# → 401 Unauthorized      (no token at all)
+
+curl -i "$BASE/sales/ping?name=world" -H "Authorization: Bearer not.a.jwt"
+# → 401 Unauthorized      (garbage token: the signature can't verify)
+```
+
+Both 401s come from the **JWT bearer middleware**, before any handler runs.
+
+**2) Log in.**
+
+```bash
+curl -s -X POST "$BASE/auth/login" -H "Content-Type: application/json" \
+     -d '{"username":"rep","password":"Password123!"}'
+# → {"accessToken":"eyJ...","username":"rep","role":"SalesRep"}
+```
+
+No `refreshToken` in that response — this is the first pass, exactly as §5 promised. Copy the `accessToken`
+into a shell variable (or paste it by hand):
+
+```bash
+ACCESS=<paste the accessToken here>
+```
+
+**3) The same endpoint now lets you through.**
+
+```bash
+curl -i "$BASE/sales/ping?name=world" -H "Authorization: Bearer $ACCESS"
+# → 200 OK   "pong: world"
+```
+
+That's the whole loop: the server verified a password *once*, and the wristband got you past the gate on a
+request that never mentioned your password.
+
+**4) A wrong password is refused — and tells you nothing useful.**
+
+```bash
+curl -i -X POST "$BASE/auth/login" -H "Content-Type: application/json" \
+     -d '{"username":"rep","password":"WRONG"}'
+
+curl -i -X POST "$BASE/auth/login" -H "Content-Type: application/json" \
+     -d '{"username":"nobody","password":"WRONG"}'
+```
+
+Both must produce the **same** message — `Invalid username or password.` — because a different answer for
+"no such user" would let an attacker enumerate your usernames (§5). As the ⚠️ note above explains, the
+**status code** on both is a **500** today, not the 401 it will become once
+[Phase 11](11-cross-cutting.md) maps `AuthenticationException`. Check the *message*, not the status.
+
+### You're done when
+
+| # | You proved | Expected |
+|---|---|---|
+| 1 | A protected endpoint rejects anonymous and forged callers | no token → **401**; `Bearer not.a.jwt` → **401** |
+| 2 | Login issues an access token | **200** + `accessToken`, `username`, `role` (no refresh token yet) |
+| 3 | The token gates the endpoint | valid token → **200** `pong: world` |
+| 4 | Login failure is generic | both wrong-password and unknown-user → the *same* message |
+
+> 🧪 **Step 3 gives you a 401 even with a freshly-minted token?** Then the token you *made* and the token you
+> *validate* disagree about something. The three usual suspects, all in §7's `TokenValidationParameters`:
+> `ValidIssuer` / `ValidAudience` must match the `Issuer` / `Audience` your `JwtTokenService` wrote, and
+> `IssuerSigningKey` must be built from the same `Jwt:SigningKey`. Both halves read the same `appsettings`
+> section, so a mismatch usually means a typo'd key name resolving to `null`.
+>
+> Note the `MapInboundClaims` trap from §7 is *not* what bites here — `/sales/ping` only asks "are you
+> authenticated?", and it never reads `ICurrentUser`. That trap surfaces the moment you add a **role** check
+> or read `UserId`, which is why the ⚠️ in §7 matters even though everything looks fine right now.
+
+If all four rows match, Part 2 is done. Users can log in, receive a JWT, call protected endpoints, be
+authenticated by ASP.NET Core, be read through `ICurrentUser`, and be authorized by role.
+
+In the next part we'll complete the authentication system by adding **refresh tokens**, so users stay signed in securely without holding long-lived access tokens.
