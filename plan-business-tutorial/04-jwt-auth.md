@@ -131,6 +131,23 @@ A valid access token remains valid until it expires.
 That's why access tokens are intentionally short-lived, and why we'll introduce **refresh tokens** later in
 this phase.
 
+> ❓ **"If the server can't instantly forget a token, why use JWTs here at all?"** Fair question, and worth
+> being honest about. This app is a **single backend talking to one database.** For that shape a plain
+> **server-side session** — a cookie holding an opaque id that points at a session row the server stores — is
+> genuinely *simpler*: to log someone out everywhere you just delete their rows, and the "can't instantly
+> revoke" cost you just read about never arises. JWTs earn their keep when identity has to be verified by
+> **more than one party without a shared session store**: separate services that each validate the token with
+> only a public key, a mobile app or SPA hitting a standalone API, or "Sign in with Google"-style third-party
+> access. That's the real trade — a session is trivial to revoke but every verifier needs to reach the same
+> store; a JWT needs no shared store but can't be un-issued before it expires.
+
+> 🔑 **So why teach JWT on a monolith?** Because the *concepts* are the transferable skill. Stateless auth,
+> claims, roles, refresh-token rotation, reuse detection — you'll meet all of these in real API work, and JWT
+> is where they live. We're optimizing for the auth knowledge you'll carry to other jobs, not for the bare
+> minimum *this* app could get away with (which really would be a session cookie). Carry one rule of thumb out
+> of here: **reach for JWT when multiple services or parties must verify identity without sharing a session
+> store; with one backend and one database, a session is usually simpler and just as safe.**
+
 ---
 
 ### What is a claim?
