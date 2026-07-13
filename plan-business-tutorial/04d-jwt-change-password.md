@@ -244,8 +244,21 @@ The turnstile, walked end to end:
 > status code is waiting on Phase 11. ([Part 2](04b-jwt-login.md) explains why we don't map it here.)
 
 > 💡 The same *change, then log in* dance is what a logged-in user does to rotate a **suspected-leaked**
-> password — the stamp rotation in step 3 kicks every *other* device the instant the change commits, so a thief
-> holding a stolen token is dropped the moment the real user acts.
+> password — the stamp rotation in step 3 voids every *other* device's **refresh** tokens the instant the change
+> commits, so a thief can no longer renew their access, and their foothold ends when the current access token does.
+
+> ⚠️ **"Instant" has a ≤15-minute tail — say so plainly.** Rotating the stamp kills every outstanding *refresh*
+> token immediately, but it does **not** reach back and cancel an *access* token that's already been minted.
+> Nothing re-checks the `SecurityStamp` on an ordinary authenticated request — that's the whole bargain of
+> stateless auth ([Part 1](04-jwt-auth.md)): the token is trusted on signature + `exp` alone, no database hit.
+> So a thief holding a stolen **access token** keeps using it for up to its remaining lifetime — **≤15 min**
+> (`Jwt:AccessTokenMinutes`) — *after* the victim changes the password; they just can't refresh into a new one
+> once it lapses. That residual window is exactly why the access token is kept deliberately short: the shorter
+> it is, the smaller the slice of time a change-password (or a logout) can't retroactively close. Erasing the
+> tail entirely means re-checking the stamp in the database on *every* request — which hands back the
+> statelessness we chose in Part 1. The base build doesn't take that trade; it accepts a ≤15-minute tail and
+> keeps the token short. So "boot every other session" and "instant global logout," above, are true for
+> **refresh** — read them as *"every session dies within one access-token lifetime,"* not *"the same instant."*
 
 > ⚠️ **What a production reset flow adds — and why we stop here.** This is a *change*-password endpoint: it
 > needs the **old** password. That covers the expired-but-remembered case and deliberate rotation, which is
