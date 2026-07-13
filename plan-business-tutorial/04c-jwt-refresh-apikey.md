@@ -47,6 +47,19 @@ Two defenses, and you need both:
 > the **ticket stub** you swap at the gate for tomorrow's wristband — and the gate tears the stub as it hands
 > you the new one. Present a stub that's already torn and security knows it was copied.
 
+> ❓ **"So does the client log in again every 15 minutes?" — no, and this trips up everyone.** The login
+> response hands the client *both* tokens at once (`LoginResult` below), so the user types a password **exactly
+> once**. After that the client runs on autopilot: it attaches the access token to every request, and when one
+> comes back `401` — the 15-minute wristband has expired — it **silently** posts the refresh token to
+> `POST /auth/refresh`, gets a fresh pair back, and retries the original request. No password, no login screen;
+> the user never notices. The *only* time a human re-types a password is when that silent refresh **also** fails
+> — the refresh token expired (7 idle days), was revoked, or tripped reuse detection. So "log in" is rare and
+> "refresh" is constant, and they are **not** the same act: you never authenticate twice in a row. If both
+> tokens are dead, that's still **one** login, not two. Two rules keep the client honest: send the refresh token
+> *only* to `/auth/refresh` (never as the `Bearer` on ordinary calls), and after every refresh **store the new
+> refresh token and discard the old** — replay the old one and you'll spring the very reuse trap you're about to
+> build. (This course has no front-end project — that's the whole client contract in one paragraph.)
+
 ### A family's whole life, in one trace
 
 The word **family** does a lot of work above, so pin it down before the code piles on: a *family* is **every
@@ -737,6 +750,89 @@ builder.Services.AddScoped<IRequestHandler<LogoutAllCommand, Unit>, LogoutAllHan
 >   subtle reason it must be anonymous. (A full **forgot-password** path — an emailed reset token for users who
 >   *don't* know the old password — stays a [Phase 13](13-wrap-up-checklist.md) extension.)
 
+### How a client actually drives all this — for the picture, not to build 🚫
+
+You've now written all three server routes, but rotation and the 15-minute access token only *click* once you
+see the client that consumes them. So here's the whole client side as one small module. **This is an overview,
+not a task.** This is a back-end course with no front-end project, and nothing later depends on your typing a
+line of it — read it to connect the dots, then move on. (It happens to be JavaScript because that's where these
+tokens usually land; the shape is the same in any client.)
+
+The trick is that *every* request the app makes goes through **one wrapper**. That wrapper attaches the access
+token, and when the server answers `401` — because the 15-minute token expired — it silently refreshes **once**
+and replays the request. The password is typed exactly once, at login; everything after is automatic until the
+refresh token itself dies.
+
+```js
+// auth.js — ILLUSTRATIVE. The entire client contract for the three routes you just built.
+//   login   → POST /auth/login    {username,password} → {accessToken, refreshToken, ...}
+//   refresh → POST /auth/refresh   {refreshToken}      → {accessToken, refreshToken, ...}  (rotates!)
+
+let accessToken = null;                                    // in memory; short-lived, so a closed tab loses nothing
+const getRefresh = () => localStorage.getItem("refresh");  // ⚠️ prefer the HttpOnly cookie from the caveat above
+const save = (a, r) => { accessToken = a; localStorage.setItem("refresh", r); };
+
+// The ONE time a human types a password. Both tokens come back together — one login, two tokens.
+export async function login(username, password) {
+  const res = await fetch("/auth/login", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  });
+  if (!res.ok) throw new Error("Invalid credentials");
+  const { accessToken: a, refreshToken: r } = await res.json();
+  save(a, r);
+}
+
+// Single-flight refresh: if ten requests 401 at once, ONE refresh runs and the rest await it. Without this
+// lock each would rotate the token, and the second would replay a now-spent one — your own app springing the
+// reuse trap. (That's the "retry false-positive" caveat above, self-inflicted at scale.)
+let inFlight = null;
+function refresh() {
+  inFlight ??= (async () => {
+    const res = await fetch("/auth/refresh", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ refreshToken: getRefresh() }),
+    });
+    if (!res.ok) return false;                 // refresh token dead → a real re-login is needed
+    const { accessToken: a, refreshToken: r } = await res.json();
+    save(a, r);                                // ROTATION: keep the NEW pair, discard the old
+    return true;
+  })();
+  inFlight.finally(() => { inFlight = null; });
+  return inFlight;
+}
+
+// Every API call goes through here. This is where "refresh every 15 minutes" becomes invisible.
+export async function authFetch(path, opts = {}) {
+  const send = () => fetch(path, {
+    ...opts, headers: { ...opts.headers, Authorization: `Bearer ${accessToken}` },
+  });
+  let res = await send();
+  if (res.status === 401) {                    // access token expired…
+    if (await refresh()) res = await send();   // …refresh silently, then replay the original request
+    else window.location.href = "/login";      // both tokens dead → ONE trip to the login screen
+  }
+  return res;
+}
+```
+
+The app never thinks about tokens again — it just calls `authFetch`, and the refresh happens underneath it:
+
+```js
+await login("alice", "hunter2");   // once, at the start
+await authFetch("/ping");          // every call after — the 15-minute refresh is invisible
+```
+
+That single wrapper is the answer to the three questions a reader always asks here:
+
+- **"Do I authenticate twice?"** No — `login()` runs once and saves *both* tokens from one response.
+- **"Every 15 minutes?"** No — `authFetch` reacts to a `401` and calls `refresh()` silently; no password.
+- **"What if both are expired?"** `refresh()` returns `false` → one redirect to the login screen. **One** login, never two.
+
+> 🔑 The two client rules that keep rotation honest, both visible above: send the refresh token **only** to
+> `/auth/refresh` (never as the `Bearer` on ordinary calls), and after each refresh **store the new token and
+> drop the old**. Break either and the client re-presents a spent token — tripping the very trap you built.
+
 ### Keeping the table small — and why *not* on revoke
 
 Every login and every rotation writes a `RefreshToken` row, and revoking only stamps `RevokedUtc` — nothing
@@ -1312,7 +1408,21 @@ ACCESS=<paste accessToken>
 REFRESH=<paste refreshToken>
 ```
 
-**3) Rotation: spend the refresh token, get a brand-new pair.**
+**3) The access token opens a protected door.** Login handed back an `accessToken` — prove it actually
+authenticates by calling an endpoint that demands one. `/sales/ping` got `.RequireAuthorization()` back in
+[Part 2](04b-jwt-login.md), so now that §11's gate sits in front of it, the call carries *both* headers: the
+API key (which app) and the bearer token (which user).
+
+```bash
+curl -i "$BASE/sales/ping?name=world" -H "X-Api-Key: $KEY" -H "Authorization: Bearer $ACCESS"
+# → 200 OK   "pong: world"
+```
+
+Drop the `Authorization` header and the same call is a **401** from the JWT bearer middleware — the access
+token is doing real work, not just riding along in the login response. (Drop `X-Api-Key` instead and you
+never even reach authentication; that's step 1's gate.)
+
+**4) Rotation: spend the refresh token, get a brand-new pair.**
 
 ```bash
 curl -s -X POST "$BASE/auth/refresh" -H "X-Api-Key: $KEY" \
@@ -1324,7 +1434,7 @@ curl -s -X POST "$BASE/auth/refresh" -H "X-Api-Key: $KEY" \
 Compare the two refresh tokens: they must not match. That difference *is* the rotation. Save the new one as
 `REFRESH2`.
 
-**4) Reuse detection: replay the token you just spent.** This is the moment the design earns its keep —
+**5) Reuse detection: replay the token you just spent.** This is the moment the design earns its keep —
 pretend you're a thief who copied `REFRESH` before the real client used it.
 
 ```bash
@@ -1353,11 +1463,11 @@ That is deliberate, and it's the trade-off worth understanding: when two copies 
 server **cannot tell the thief from the victim**, so it burns the family and makes both log in again. A
 brief annoyance for the real user; a dead end for the thief.
 
-> ⚠️ Steps 3 and 4's failures are thrown `AuthenticationException`s, so **today they arrive as a 500** with
+> ⚠️ Steps 4 and 5's failures are thrown `AuthenticationException`s, so **today they arrive as a 500** with
 > the right message. [Phase 11](11-cross-cutting.md) turns them into 401s. Read the message, not the status —
 > the same caveat as [Part 2](04b-jwt-login.md).
 
-**5) Logout revokes the session.** That family is now burned, so log in again to get a fresh pair — call its
+**6) Logout revokes the session.** That family is now burned, so log in again to get a fresh pair — call its
 refresh token `REFRESH3` — and hand it to logout:
 
 ```bash
@@ -1381,12 +1491,13 @@ curl -i -X POST "$BASE/auth/refresh" -H "X-Api-Key: $KEY" \
 |---|---|---|
 | 1 | The API-key gate runs before authentication | no/bad key, even on `/auth/login` → **401** `Missing or invalid API key.` |
 | 2 | Login now issues a **pair** | **200** + `accessToken` **and** `refreshToken` |
-| 3 | Refresh **rotates** | **200**, with a *different* refresh token than you sent |
-| 4 | Reuse burns the whole family | replaying a spent token fails — **and so does the rotated one** |
-| 5 | Logout revokes | **204**, after which that token can't refresh |
+| 3 | The access token authenticates | `/sales/ping` with both headers → **200** `pong: world`; drop the bearer → **401** |
+| 4 | Refresh **rotates** | **200**, with a *different* refresh token than you sent |
+| 5 | Reuse burns the whole family | replaying a spent token fails — **and so does the rotated one** |
+| 6 | Logout revokes | **204**, after which that token can't refresh |
 
-If all five rows match, the session machinery is real: short access tokens, rotating refresh tokens, replay
-detection, and an outer gate that knows which *app* is calling.
+If all six rows match, the session machinery is real: short access tokens that actually open protected doors,
+rotating refresh tokens, replay detection, and an outer gate that knows which *app* is calling.
 
 ---
 
