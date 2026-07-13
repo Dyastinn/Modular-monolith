@@ -179,3 +179,7 @@ Nothing gets skipped and nothing is assumed. **Every phase answers the same five
 > the console is there to *exercise* what you build, not replace the typing.
 
 Ready. Open [01-solution-setup.md](01-solution-setup.md).
+
+---
+
+Next: [Phase 1 — Solution Setup](01-solution-setup.md) → · New to C#? Start with [Foundations — the C# on-ramp](00a-FOUNDATIONS.md).

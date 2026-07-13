@@ -401,4 +401,4 @@ If you can answer these without notes, this tutorial did its job:
 5. Point to the single decision (from Phase 2) that would make swapping the mediator engine — or later
    splitting this into its own service — a localized change.
 
-← Back to [the tutorial overview](00-START-HERE.md) · onward to [Phase 14 — Going Further](14-going-further.md).
+← Previous: [Phase 12 — Testing the business rules](12-testing.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 14 — Going Further](14-going-further.md) →

@@ -356,4 +356,6 @@ behind exactly this gate (API key → authenticate → authorize).
 10. Why is `/auth/change-password` **anonymous** rather than `.RequireAuthorization()` — and why does verifying
     the *current* password make that safe (arguably safer than a token check)?
 
-> 👉 Next: [Phase 5 — The SalesOrder domain model and its business rules](05-domain-model.md).
+---
+
+← Previous: [Phase 4 (Part 4 of 5) — Changing & Resetting a Password](04d-jwt-change-password.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 5 — The SalesOrder domain model](05-domain-model.md) →

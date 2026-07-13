@@ -1095,4 +1095,6 @@ way out — and the one registered *first* is the outermost, so it's first in an
 3. What do the `ICommand`/`IQuery` markers buy us if they contain no code?
 4. In `LoggingBehavior( ValidationBehavior( handler ) )`, which runs first, and how is that controlled?
 
-> 👉 Next: [Phase 3 — The database: schema, stored procedures, seed data](03-database-schema.md).
+---
+
+← Previous: [Phase 1 — Solution Setup](01-solution-setup.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 3 — Database: schema, stored procedures, seed data](03-database-schema.md) →

@@ -937,5 +937,6 @@ Both halves of Part 1 now work: passwords hash and verify (§3's checkpoint), an
 5. `IPasswordHasher` and `IJwtTokenService` are both interfaces sitting in front of a single implementation.
    What does the login handler gain from that, given it's the only caller?
 
-> 👉 Next: **[Phase 4 (Part 2 of 5) — Login, Validation & Authorization](04b-jwt-login.md)**, where we build
-> the login slice, validate JWTs on incoming requests, and use them to authenticate and authorize users.
+---
+
+← Previous: [Phase 3b — Data Access: connections & transactions](03b-data-access.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 4 (Part 2 of 5) — Login, Validation & Authorization](04b-jwt-login.md) →

@@ -779,4 +779,6 @@ of exactly these `[identity]` tables.
 3. Why do we copy `UnitPrice` onto the order line instead of always reading it from `Item`?
 4. Name two `CHECK` constraints and the bad data each one makes impossible.
 
-> 👉 Next: [Phase 3b — Data Access: Connections & Transactions](03b-data-access.md).
+---
+
+← Previous: [Phase 2 — Your own mediator vs. the free one](02-mediator-own-vs-free.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 3b — Data Access: connections & transactions](03b-data-access.md) →

@@ -264,4 +264,4 @@ plumbing is the problem, and not before.
 4. Why does an in-memory rate limiter break when you add a second instance, and what fixes it?
 5. What can an outbox guarantee that Phase 8's after-commit dispatch cannot?
 
-← Back to [Phase 13 — Wrap-up](13-wrap-up-checklist.md) · or [the tutorial overview](00-START-HERE.md).
+← Previous: [Phase 13 — Wrap-up & production-readiness checklist](13-wrap-up-checklist.md) · [Tutorial overview](00-START-HERE.md) · **You've reached the end — 🎉 congratulations.**

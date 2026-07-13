@@ -376,4 +376,6 @@ couldn't.
 3. Where does the rollback "happen" in the code — what triggers it?
 4. Why reserve at submit rather than at approval?
 
-> 👉 Next: [Phase 8 — Approval & cancellation (roles, state machine, release, optimistic concurrency)](08-approval-cancellation.md).
+---
+
+← Previous: [Phase 6 — The Create Sales Order slice](06-create-order.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 8 — Approval & cancellation](08-approval-cancellation.md) →

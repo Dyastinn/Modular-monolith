@@ -462,4 +462,6 @@ verifiable** — the full order lifecycle now works end to end.
 3. Why is releasing stock guarded by `hadReservation`?
 4. Which authorization here is endpoint-level and why is that the right place for it?
 
-> 👉 Next: [Phase 9 — Updating a draft order's lines](09-update-order.md).
+---
+
+← Previous: [Phase 7 — Submit + atomic inventory reservation](07-submit-reserve-concurrency.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 9 — Updating a draft order's lines](09-update-order.md) →

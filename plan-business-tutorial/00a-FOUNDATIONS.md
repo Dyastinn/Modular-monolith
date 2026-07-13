@@ -320,3 +320,7 @@ Nobody learns this in one pass. Seniors just had more passes than you. That's th
 
 Now go back to [00-START-HERE.md](00-START-HERE.md) for the plan, then start building in
 [01-solution-setup.md](01-solution-setup.md). You've got this.
+
+---
+
+← Previous: [Overview — Start Here](00-START-HERE.md) · Next: [Phase 1 — Solution Setup](01-solution-setup.md) →

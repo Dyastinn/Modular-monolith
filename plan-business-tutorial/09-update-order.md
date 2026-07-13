@@ -266,4 +266,6 @@ order" — with its lines untouched. If a draft re-lines cleanly and a submitted
 3. Why is a little duplication between the create and update handlers acceptable here?
 4. Why take the id from the route and the lines from the body?
 
-> 👉 Next: [Phase 10 — Queries: get one and search with paging](10-queries-search.md).
+---
+
+← Previous: [Phase 8 — Approval & cancellation](08-approval-cancellation.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 10 — Queries: get one and search with paging](10-queries-search.md) →

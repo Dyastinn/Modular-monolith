@@ -1141,4 +1141,4 @@ detection, and an outer gate that knows which *app* is calling.
 
 ---
 
-> 👉 Next: [Phase 4 (Part 4 of 5) — Changing & Resetting a Password](04d-jwt-change-password.md) — expose the change-password proc as a slice, and see why it must be anonymous to rescue an expired login.
+← Previous: [Phase 4 (Part 2 of 5) — Login, Validation & Authorization](04b-jwt-login.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 4 (Part 4 of 5) — Changing & Resetting a Password](04d-jwt-change-password.md) →

@@ -377,4 +377,6 @@ less machinery a read needed than a write.
 3. Why does the API speak status *names* while the database stores *numbers*?
 4. Why cap `PageSize`, and where is that enforced?
 
-> 👉 Next: [Phase 11 — Cross-cutting concerns: validation, error handling, logging](11-cross-cutting.md).
+---
+
+← Previous: [Phase 9 — Updating a draft order's lines](09-update-order.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 11 — Cross-cutting concerns](11-cross-cutting.md) →

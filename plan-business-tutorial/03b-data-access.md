@@ -312,4 +312,6 @@ where you meet Dapper's API for the first time.
 3. What does `Commit()` do, and what happens to your rows if you `Rollback()` instead — or never commit at all?
 4. Why does a module depend on `IDbConnectionFactory` instead of newing up a `SqlConnection` itself?
 
-> 👉 Next: [Phase 4 — JWT authentication & authorization](04-jwt-auth.md).
+---
+
+← Previous: [Phase 3 — Database: schema, stored procedures, seed data](03-database-schema.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 4 (Part 1 of 5) — Passwords & Access Tokens](04-jwt-auth.md) →

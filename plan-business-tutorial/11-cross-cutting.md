@@ -425,4 +425,6 @@ Development, **Phase 11 is done and verifiable** — the app now behaves profess
 3. Why is `LoggingBehavior` registered before `ValidationBehavior`?
 4. Why can a handler safely assume its input is already valid?
 
-> 👉 Next: [Phase 12 — Testing the business rules](12-testing.md).
+---
+
+← Previous: [Phase 10 — Queries: get one and search with paging](10-queries-search.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 12 — Testing the business rules](12-testing.md) →

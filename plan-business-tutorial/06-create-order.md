@@ -527,4 +527,6 @@ order returns `201` and a rule-breaking one writes nothing, **Phase 6 is done an
 3. Why accumulate category quantity across the whole order instead of per line?
 4. Trace what happens (and why) when Beta Industries orders 100 Widgets.
 
-> 👉 Next: [Phase 7 — Submit for approval + atomic inventory reservation + rollback](07-submit-reserve-concurrency.md).
+---
+
+← Previous: [Phase 5 — The SalesOrder domain model](05-domain-model.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 7 — Submit + atomic inventory reservation](07-submit-reserve-concurrency.md) →

@@ -2254,3 +2254,7 @@ If all four rows match, Part 2 is done. Users can log in, receive a JWT, call pr
 authenticated by ASP.NET Core, be read through `ICurrentUser`, and be authorized by role.
 
 In the next part we'll complete the authentication system by adding **refresh tokens**, so users stay signed in securely without holding long-lived access tokens.
+
+---
+
+← Previous: [Phase 4 (Part 1 of 5) — Passwords & Access Tokens](04-jwt-auth.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 4 (Part 3 of 5) — Refresh Tokens & the API-key Gate](04c-jwt-refresh-apikey.md) →

@@ -489,4 +489,6 @@ that catches the bugs unit tests can't, and proof the architecture holds end to 
 3. Why is a "SalesRep gets 403 on approve" e2e test valuable?
 4. What replaces EF migrations for setting up the test database?
 
-> 👉 Next: [Phase 13 — Wrap-up & production-readiness checklist](13-wrap-up-checklist.md).
+---
+
+← Previous: [Phase 11 — Cross-cutting concerns](11-cross-cutting.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 13 — Wrap-up & production-readiness checklist](13-wrap-up-checklist.md) →

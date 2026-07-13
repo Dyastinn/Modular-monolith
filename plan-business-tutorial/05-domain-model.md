@@ -639,4 +639,6 @@ pipeline — a different level. These pure-domain tests are the fast, foundation
 4. Where does the *fact* of the caller's role come from, and where is it *judged*, for a category
    restriction?
 
-> 👉 Next: [Phase 6 — The Create Sales Order slice, end to end](06-create-order.md).
+---
+
+← Previous: [Phase 4 (Part 5 of 5) — Request Flow, Checkpoint & Common Mistakes](04e-jwt-wrap-up.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 6 — The Create Sales Order slice](06-create-order.md) →

@@ -340,6 +340,4 @@ curl -i -X POST "$BASE/auth/change-password" -H "X-Api-Key: $KEY" \
 
 ---
 
-> 👉 Next: [Phase 4 (Part 5 of 5) — Request Flow, Checkpoint & Common Mistakes](04e-jwt-wrap-up.md) — trace a
-> full authenticated request end to end, verify everything works (now including a password reset), and review
-> the pitfalls.
+← Previous: [Phase 4 (Part 3 of 5) — Refresh Tokens & the API-key Gate](04c-jwt-refresh-apikey.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 4 (Part 5 of 5) — Request Flow, Checkpoint & Common Mistakes](04e-jwt-wrap-up.md) →

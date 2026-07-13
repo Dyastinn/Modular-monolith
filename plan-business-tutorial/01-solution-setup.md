@@ -482,4 +482,6 @@ rooms to a house that already has power.
 4. Why does this phase install only Swashbuckle and no other packages?
 5. What does Central Package Management give you, and where do package versions live once it's on?
 
-> 👉 Next: [Phase 2 — Your own mediator vs. the free one on GitHub](02-mediator-own-vs-free.md).
+---
+
+← Previous: [Overview — Start Here](00-START-HERE.md) · Next: [Phase 2 — Your own mediator vs. the free one](02-mediator-own-vs-free.md) →
