@@ -359,6 +359,13 @@ Stay within the stack; each reinforces a pattern:
    auth.)
 6. **Audit trail table** — a domain-event handler that writes every status change to an `OrderAudit`
    table. (Reinforces: after-commit event dispatch.)
+7. **Returns / credit memo (signed amounts)** — a *new document type* that reverses a prior sale: negative
+   line quantities and a negative total that neutralizes an approved order's charge against the customer
+   balance. This is where the `Money`/`Quantity` non-negative guards from [Phase 5 §3a](05-domain-model.md)
+   stop applying — model the credit document's amounts as **signed** value objects (drop the `≥ 0` / `> 0`
+   check *for that document*, or give it its own `CreditAmount`/`ReturnedQuantity` type) and move the balance
+   the opposite way. (Reinforces: value objects encode *per-document* invariants, not universal ones; and the
+   matched-pair balance move from [Phase 8](08-approval-cancellation.md), run in reverse.)
 7. **Forgot-password (emailed reset) flow** — the base build already ships `POST /auth/change-password`
    ([Phase 4 Part 4](04d-jwt-change-password.md)), but it needs the *current* password. Add the path for users
    who've forgotten it: a `POST /auth/forgot-password` that mints a single-use, time-boxed reset token (stored

@@ -383,6 +383,19 @@ public readonly record struct Money
 }
 ```
 
+> ⚠️ **These non-negative guards are a scoped example, not a claim that money and quantity are *always*
+> positive.** They aren't — in a real ERP (SAP included), **returns** and **credit memos** carry negative
+> amounts on purpose: a credit memo neutralizes last month's billing with a −₱ figure, and a returns order
+> moves stock the other way. `Money` and `Quantity` reject negatives *here* because of **scope**: this
+> tutorial builds exactly one document — the **create-a-sales-order** flow — and within it every price,
+> total, and line quantity genuinely is ≥ 0. Real ERPs keep the negatives in *separate document types*: a
+> standard sales-order line stays positive even in SAP; a returns order or credit memo is where the sign
+> flips, and there you'd model the amounts as **signed** value objects (drop the guard, or give the credit
+> document its own type). So the transferable lesson is the *technique* — a value object that refuses to hold
+> a value its own document considers invalid; *which* values count as invalid is always yours to decide, per
+> type. A returns/credit-memo slice is out of scope for this build and parked as an extension on the
+> [Phase 13 checklist](13-wrap-up-checklist.md).
+
 ## 4. The status state machine
 
 The status enum and its rules are the first two files in the `SalesOrders/` folder — the aggregate's
