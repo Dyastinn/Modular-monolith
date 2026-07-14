@@ -2,39 +2,6 @@ using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Domain;
 
-// Everything that IS the SalesOrder aggregate lives here: the root, its child line, the lifecycle it
-// moves through, the events it raises, and the one policy constant it consults. They share a file
-// because they share a reason to change — the sales order's own rules (Phase 5 §4, §6, §8).
-
-public enum SalesOrderStatus
-{
-    Draft = 0,            // being edited
-    PendingApproval = 1,  // submitted, inventory reserved, awaiting a manager
-    Approved = 2,         // manager approved; will be fulfilled
-    Cancelled = 3,        // cancelled; reservations released
-    Rejected = 4          // manager rejected; reservations released
-}
-
-public static class SalesOrderStatusRules
-{
-    private static readonly Dictionary<SalesOrderStatus, SalesOrderStatus[]> _allowed = new()
-    {
-        [SalesOrderStatus.Draft]           = new[] { SalesOrderStatus.PendingApproval, SalesOrderStatus.Cancelled },
-        [SalesOrderStatus.PendingApproval] = new[] { SalesOrderStatus.Approved, SalesOrderStatus.Rejected, SalesOrderStatus.Cancelled },
-        [SalesOrderStatus.Approved]        = new[] { SalesOrderStatus.Cancelled },
-        [SalesOrderStatus.Cancelled]       = Array.Empty<SalesOrderStatus>(),
-        [SalesOrderStatus.Rejected]        = Array.Empty<SalesOrderStatus>(),
-    };
-
-    public static bool CanTransitionTo(this SalesOrderStatus from, SalesOrderStatus to) =>
-        _allowed[from].Contains(to);
-}
-
-public static class ApprovalPolicy
-{
-    public static readonly Money Threshold = new(50_000m);  // orders over ₱50,000 are flagged high-value
-}
-
 public sealed class SalesOrder : AggregateRoot<SalesOrderId>
 {
     private readonly List<SalesOrderLine> _lines = new();
@@ -140,23 +107,3 @@ public sealed class SalesOrder : AggregateRoot<SalesOrderId>
         Status = to;
     }
 }
-
-public sealed class SalesOrderLine
-{
-    public ItemId ItemId { get; }
-    public Quantity Quantity { get; private set; }
-    public Money UnitPrice { get; }
-    public Money LineTotal => UnitPrice * Quantity.Value;
-
-    public SalesOrderLine(ItemId itemId, Quantity qty, Money unitPrice)
-    { ItemId = itemId; Quantity = qty; UnitPrice = unitPrice; }
-
-    public void IncreaseQuantity(Quantity extra) => Quantity = new Quantity(Quantity.Value + extra.Value);
-}
-
-// Domain events (Phase 5 §8). IDomainEvent lives in BuildingBlocks; we just implement it.
-public sealed record SalesOrderCreated(SalesOrderId Id, CustomerId CustomerId, UserId CreatedBy) : IDomainEvent;
-public sealed record SalesOrderSubmitted(SalesOrderId Id, CustomerId CustomerId, Money Total) : IDomainEvent;
-public sealed record SalesOrderApproved(SalesOrderId Id, CustomerId CustomerId, Money Total, UserId Approver) : IDomainEvent;
-public sealed record SalesOrderRejected(SalesOrderId Id) : IDomainEvent;
-public sealed record SalesOrderCancelled(SalesOrderId Id) : IDomainEvent;

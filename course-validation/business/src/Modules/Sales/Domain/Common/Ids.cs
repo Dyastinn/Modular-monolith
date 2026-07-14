@@ -1,7 +1,7 @@
 namespace Erp.Modules.Sales.Domain;
 
-// Strongly-typed IDs (Phase 5 §3a). Grouped here because they're the same one-line pattern;
-// split into one file each if you prefer — the lesson leaves that to you.
+// Strongly-typed IDs (Phase 5 §3a). Cross-cutting primitives — shared by every aggregate, so they
+// live in Common/ rather than in any one aggregate's folder.
 public readonly record struct SalesOrderId(long Value);
 public readonly record struct CustomerId(long Value);
 public readonly record struct ItemId(long Value);

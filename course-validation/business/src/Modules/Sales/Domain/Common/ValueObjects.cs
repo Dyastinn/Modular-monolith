@@ -2,7 +2,7 @@ using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Domain;
 
-// The domain's value objects (Phase 5 §3a): compared by value, immutable, invalid states unrepresentable.
+// Cross-cutting value objects (Phase 5 §3a): compared by value, immutable, invalid states unrepresentable.
 
 public readonly record struct Quantity
 {

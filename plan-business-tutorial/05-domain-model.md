@@ -46,29 +46,169 @@ names its file in a top comment, so you always know where it belongs:
 
 ```
 src/Modules/Sales/Domain/
-├── Ids.cs             # the four strongly-typed IDs (§3a)
-├── ValueObjects.cs    # Money, Quantity (§3a)
-├── SalesOrder.cs      # the aggregate — plus its line, its state machine, its events, and its
-│                      #   approval threshold, all built up across §4, §6, and §8
-├── ItemCategory.cs    # its own entity (§5)
-└── Customer.cs        # its own entity (§7)
+├── SalesOrders/                    # the SalesOrder aggregate — one file per type
+│   ├── SalesOrder.cs               #   the aggregate root (§6)
+│   ├── SalesOrderLine.cs           #   its child entity (§6)
+│   ├── SalesOrderStatus.cs         #   the status enum (§4)
+│   ├── SalesOrderStatusRules.cs    #   the legal-transition table (§4)
+│   ├── SalesOrderEvents.cs         #   the five domain events (§8)
+│   └── ApprovalPolicy.cs           #   the high-value threshold (§8)
+├── Customers/
+│   └── Customer.cs                 # §7
+├── ItemCategories/
+│   └── ItemCategory.cs             # §5
+└── Common/                         # cross-cutting primitives, shared by every aggregate
+    ├── Ids.cs                      #   the four strongly-typed IDs (§3a)
+    └── ValueObjects.cs             #   Money, Quantity (§3a)
 ```
 
-> 🔑 **Why six files and not one per type?** Group by *cohesion*, not by kind. Everything that exists
-> only to serve the `SalesOrder` aggregate — its child `SalesOrderLine`, the state machine it moves
-> through, the events it raises, the one threshold it consults — lives in `SalesOrder.cs`, because they
-> all change for the same reason: the sales order's own rules. `Customer` and `ItemCategory` are their
-> own entities with their own reasons to change, so they get their own files. The IDs and value objects
-> are cross-cutting primitives, grouped by kind. You'll build `SalesOrder.cs` up in pieces — the state
-> machine first (§4), then the aggregate (§6), then the events (§8) — so don't be surprised when §4 asks
-> you to start a file whose namesake class doesn't arrive until §6.
+> 🔑 **Why a folder per aggregate?** Because the *folder* becomes the aggregate boundary — the exact thing
+> this whole course is about drawing cleanly. Everything that belongs to the `SalesOrder` aggregate — its
+> child line, the state machine it moves through, the events it raises, the one threshold it consults —
+> lives together under `SalesOrders/`, so "what is part of this aggregate?" is answered by *what's in the
+> folder*. Yet each type still gets its own file, so tools like "go to file" work and the one-type-per-file
+> `SA1402` analyzer stays happy. `Customer` and `ItemCategory` are their own entities, so they get their own
+> folders. The IDs and value objects belong to no single aggregate — they're shared vocabulary — so they sit
+> in `Common/`. (This is the "folder per aggregate" layout compared in the box below; we adopt it as the
+> course's default because it scales as the module grows and keeps the aggregate boundary visible in the
+> file tree.)
 
 The base types the domain builds on — `AggregateRoot<TId>`, `Entity<TId>`, `IDomainEvent`, `DomainException` —
 already live in `Erp.Shared.BuildingBlocks` (you wrote them in [Phase 1 §4b](01-solution-setup.md)). If the
 `where TId : struct` constraint or the `Raise`/`DomainEvents` pair isn't fresh, reread that section now —
-this phase uses all of it. The domain uses those and
-nothing else. (These filenames are just organisation — split or merge them however reads clearly; what
-matters is that they're all under the module's `Domain/`.)
+this phase uses all of it. The domain uses those and nothing else.
+
+> ⚠️ **Folders are organisation, not namespaces.** Every file below — no matter which folder it's in — stays
+> in the flat `namespace Erp.Modules.Sales.Domain`. The `SalesOrders/` folder does *not* become a
+> `…Domain.SalesOrders` namespace. That's a deliberate choice: the physical layout can change (and just did,
+> if you followed the course's earlier drafts) without a single `using` moving in the handlers or repositories
+> that consume these types. Folders are for humans reading the tree; the namespace is the compile-time
+> contract, and it stays put.
+
+### Other layouts you'll meet in production
+
+Folder-per-aggregate is what we landed on, but it's a judgment call, not a law. Walk into three shops and
+you'll find three answers to "where do domain types go," each with a real reason behind it. Here are the ones
+you'll actually run into:
+
+| Layout | What it is | Pros | Cons |
+|---|---|---|---|
+| **One type per file** | `SalesOrder.cs`, `SalesOrderLine.cs`, `SalesOrderStatus.cs`, … flat in `Domain/`, one class each. The C# community default; StyleCop's `SA1402` enforces it. | Any type is one filename away (`Ctrl-T`, "go to file"). Tiny diffs, almost no merge conflicts. Matches every tool's expectations out of the box. | Nothing groups an aggregate's parts — its story is smeared across a dozen files, and `Domain/` becomes one long wall of names with no visible boundaries. |
+| **Cohesion grouping** | The aggregate and everything that serves it in *one file*; independent entities get their own. | The whole `SalesOrder` reads top-to-bottom in one place. Fewest files to hold in your head. | `SalesOrder.cs` holds types not named `SalesOrder` — which trips `SA1402` and surprises a newcomer hunting for a `SalesOrderStatus.cs` that isn't there. Files grow large over time. |
+| **Folder per aggregate** *(this course)* | A `SalesOrders/` folder, one type per file inside; shared primitives in `Common/`. | Cohesion *and* one-type-per-file: the **folder** is the aggregate boundary, the files stay tool-friendly and `SA1402`-clean. Scales cleanly as an aggregate sprouts parts. | More tree to navigate; a folder holding a single small entity (`Customers/Customer.cs`) can feel ceremonious until the module grows. |
+| **Nested child entities** | `SalesOrderLine` declared *inside* `SalesOrder` as a nested class, reached as `SalesOrder.Line`. | The compiler now enforces "a line only exists through its order" — you can't `new` one from outside. Ownership is unmissable. | Verbose call sites, awkward with Dapper/serialisation, and rare enough that most C# devs do a double-take. |
+
+Here's the same domain — the exact types you're about to write — arranged each way, so the trade-offs stop
+being abstract.
+
+**One type per file** — strict `SA1402`. Even each event is its own file; the folder is a wall of names:
+
+```
+Domain/
+├── SalesOrderId.cs
+├── CustomerId.cs
+├── ItemId.cs
+├── UserId.cs
+├── Money.cs
+├── Quantity.cs
+├── SalesOrderStatus.cs
+├── SalesOrderStatusRules.cs
+├── ApprovalPolicy.cs
+├── SalesOrder.cs
+├── SalesOrderLine.cs
+├── SalesOrderCreated.cs
+├── SalesOrderSubmitted.cs
+├── SalesOrderApproved.cs
+├── SalesOrderRejected.cs
+├── SalesOrderCancelled.cs
+├── Customer.cs
+└── ItemCategory.cs          # 18 files for one module's domain
+```
+
+**Cohesion grouping** — five files; the aggregate and all its satellites travel together in `SalesOrder.cs`:
+
+```
+Domain/
+├── Ids.cs             # SalesOrderId, CustomerId, ItemId, UserId
+├── ValueObjects.cs    # Money, Quantity
+├── SalesOrder.cs      # SalesOrder + SalesOrderLine + SalesOrderStatus
+│                      #   + SalesOrderStatusRules + the 5 events + ApprovalPolicy
+├── Customer.cs
+└── ItemCategory.cs
+```
+
+**Folder per aggregate** — *what this course uses.* One type per file *inside* a per-aggregate folder. The
+folder gives cohesion, the files stay `SA1402`-clean; shared primitives sit in their own `Common/`:
+
+```
+Domain/
+├── SalesOrders/
+│   ├── SalesOrder.cs
+│   ├── SalesOrderLine.cs
+│   ├── SalesOrderStatus.cs
+│   ├── SalesOrderStatusRules.cs
+│   ├── SalesOrderEvents.cs
+│   └── ApprovalPolicy.cs
+├── Customers/
+│   └── Customer.cs
+├── ItemCategories/
+│   └── ItemCategory.cs
+└── Common/
+    ├── Ids.cs
+    └── ValueObjects.cs      # Money, Quantity
+```
+
+**Nested child entities** — the *folder* looks like cohesion grouping, but the difference lives in the code:
+`SalesOrderLine` moves *inside* `SalesOrder`, so it's only reachable as `SalesOrder.Line` and can't be `new`ed
+from outside the aggregate:
+
+```csharp
+// SalesOrder.cs
+public sealed class SalesOrder : AggregateRoot<SalesOrderId>
+{
+    private readonly List<Line> _lines = new();
+    // ...factory, Submit(), Approve()... exactly as you'll write them below...
+
+    public sealed class Line          // nested — the outside world says SalesOrder.Line
+    {
+        public ItemId ItemId { get; }
+        public Quantity Quantity { get; private set; }
+        public Money UnitPrice { get; }
+        public Money LineTotal => UnitPrice * Quantity.Value;
+
+        // internal so ONLY SalesOrder can build one — the compiler enforces "no orphan lines"
+        internal Line(ItemId itemId, Quantity qty, Money unitPrice)
+        { ItemId = itemId; Quantity = qty; UnitPrice = unitPrice; }
+    }
+}
+```
+
+Two more you'll hear argued about, which we deliberately skip. **`partial class` across files** — splitting
+one aggregate over `SalesOrder.Behaviour.cs` and `SalesOrder.State.cs` — sounds like the best of both worlds,
+but a class you have to reassemble from four files is usually *harder* to reason about; reach for it only when
+a single type is genuinely enormous. And **domain-in-the-slice**, the strict-VSA purist's move of pushing each
+entity into the feature that owns it: we reject it here for a concrete reason — `SalesOrder` is used by *six*
+slices (create, submit, approve, cancel, update, get). A type shared by many slices belongs to the module, not
+to any one of them; burying it in `CreateSalesOrder/` would force the other five to reach across a slice
+boundary to find it. Same logic that keeps cross-module contracts up in `Shared`: a shared thing lives one
+level above the things that share it.
+
+> ⚠️ **The tooling has an opinion — and folder-per-aggregate mostly keeps it happy.** Turn on StyleCop or the
+> equivalent `.editorconfig` analyzers and **`SA1402` fails the build on more than one type per file**. That's
+> the rule that rules out cohesion grouping (a `SalesOrder.cs` full of other types), and it's a big reason we
+> went with folder-per-aggregate instead — one type per file *is* its default. We do keep three pragmatic
+> exceptions where the types are trivial and always change together: `Common/Ids.cs` (four one-line ID
+> structs), `Common/ValueObjects.cs` (`Money` + `Quantity`), and `SalesOrders/SalesOrderEvents.cs` (the five
+> event records). If your team runs `SA1402` strictly, split those too, or suppress the rule for just those
+> files — either is fine, as long as it's a decision the team makes on purpose rather than three developers
+> silently picking three and letting the folder drift into a mix nobody can predict.
+
+> 🔑 **The honest takeaway:** none of these is *correct* with the rest *wrong*. What matters is that the layout
+> maps to how the code actually changes, and that the whole team follows the same one. We picked
+> folder-per-aggregate because the folder makes the aggregate boundary visible — which is the very thing this
+> course teaches you to draw — and it scales without a rewrite as the module grows. A tiny throwaway module
+> might reasonably stay flat with one-type-per-file; a huge one leans even harder on the folders. Pick
+> deliberately, write it down, stay consistent.
 
 ## 3a. Strongly-typed IDs and value objects
 
@@ -77,7 +217,7 @@ Every file in the `Domain/` folder lives in the `Erp.Modules.Sales.Domain` names
 bare ID structs are the exception, since they reference none of those. Here are the IDs, in their own file:
 
 ```csharp
-// src/Modules/Sales/Domain/Ids.cs (grouped — they're the same one-line pattern; split them if you prefer)
+// src/Modules/Sales/Domain/Common/Ids.cs (grouped — same one-line pattern; split them if you prefer)
 namespace Erp.Modules.Sales.Domain;
 
 public readonly record struct SalesOrderId(long Value);
@@ -98,7 +238,7 @@ Value objects that make invalid states impossible — both go in one `ValueObjec
 the `BuildingBlocks` header (for `DomainException`):
 
 ```csharp
-// src/Modules/Sales/Domain/ValueObjects.cs
+// src/Modules/Sales/Domain/Common/ValueObjects.cs
 using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Domain;
@@ -129,13 +269,11 @@ public readonly record struct Money
 
 ## 4. The status state machine
 
-This is the **first piece of `SalesOrder.cs`** — the file's namesake class arrives in §6, but the lifecycle
-it moves through belongs right next to it, so we start the file here:
+The status enum and its rules are the first two files in the `SalesOrders/` folder — the aggregate's
+lifecycle, sitting right beside the aggregate that lives it:
 
 ```csharp
-// src/Modules/Sales/Domain/SalesOrder.cs — start of the file (the aggregate itself comes in §6)
-using Erp.Shared.BuildingBlocks;   // AggregateRoot<TId>, DomainException, IDomainEvent — used further down
-
+// src/Modules/Sales/Domain/SalesOrders/SalesOrderStatus.cs
 namespace Erp.Modules.Sales.Domain;
 
 public enum SalesOrderStatus
@@ -185,7 +323,9 @@ reversed if an approved order is later cancelled. The diagram is the "what's leg
 ([Phases 7–8](07-submit-reserve-concurrency.md)) attach the side effects to each arrow.*
 
 ```csharp
-// src/Modules/Sales/Domain/SalesOrder.cs (continued)
+// src/Modules/Sales/Domain/SalesOrders/SalesOrderStatusRules.cs
+namespace Erp.Modules.Sales.Domain;
+
 public static class SalesOrderStatusRules
 {
     private static readonly Dictionary<SalesOrderStatus, SalesOrderStatus[]> _allowed = new()
@@ -211,7 +351,7 @@ public static class SalesOrderStatusRules
 A small domain type carrying the category rules from the schema:
 
 ```csharp
-// src/Modules/Sales/Domain/ItemCategory.cs
+// src/Modules/Sales/Domain/ItemCategories/ItemCategory.cs
 public sealed class ItemCategory
 {
     public long Id { get; }
@@ -255,7 +395,11 @@ always a decision that escaped.
 This is the centerpiece. Read the comments — every design choice is deliberate.
 
 ```csharp
-// src/Modules/Sales/Domain/SalesOrder.cs (continued — same file the state machine started in §4)
+// src/Modules/Sales/Domain/SalesOrders/SalesOrder.cs
+using Erp.Shared.BuildingBlocks;   // AggregateRoot<TId>, DomainException
+
+namespace Erp.Modules.Sales.Domain;
+
 public sealed class SalesOrder : AggregateRoot<SalesOrderId>
 {
     private readonly List<SalesOrderLine> _lines = new();
@@ -392,7 +536,7 @@ public void Submit()
 ### The `SalesOrderLine`
 
 ```csharp
-// src/Modules/Sales/Domain/SalesOrder.cs (continued)
+// src/Modules/Sales/Domain/SalesOrders/SalesOrderLine.cs
 public sealed class SalesOrderLine
 {
     public ItemId ItemId { get; }
@@ -410,7 +554,7 @@ public sealed class SalesOrderLine
 ## 7. The `Customer` domain type (blocking + credit)
 
 ```csharp
-// src/Modules/Sales/Domain/Customer.cs
+// src/Modules/Sales/Domain/Customers/Customer.cs
 public sealed class Customer
 {
     public CustomerId Id { get; }
@@ -469,7 +613,7 @@ public sealed class Customer
 ## 8. Domain events and the approval policy
 
 ```csharp
-// src/Modules/Sales/Domain/SalesOrder.cs (continued)
+// src/Modules/Sales/Domain/SalesOrders/SalesOrderEvents.cs
 // IDomainEvent already lives in Erp.Shared.BuildingBlocks (Phase 1), next to Entity/AggregateRoot —
 // every module's events reuse it. We do NOT redeclare it here; we just implement it.
 public sealed record SalesOrderCreated(SalesOrderId Id, CustomerId CustomerId, UserId CreatedBy) : IDomainEvent;
@@ -480,7 +624,7 @@ public sealed record SalesOrderCancelled(SalesOrderId Id) : IDomainEvent;
 ```
 
 ```csharp
-// src/Modules/Sales/Domain/SalesOrder.cs (continued)
+// src/Modules/Sales/Domain/SalesOrders/ApprovalPolicy.cs
 public static class ApprovalPolicy
 {
     public static readonly Money Threshold = new(50_000m);  // orders over ₱50,000 are flagged high-value

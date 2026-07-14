@@ -80,13 +80,13 @@ Erp/                                         # repo root
 │   │       └── DependencyInjection.cs        #   AddSharedInfrastructure() + AddMessaging()
 │   ├── Modules/
 │   │   ├── Sales/  (Erp.Modules.Sales)       # → Shared.{BuildingBlocks, Common, Messaging} — NOT Infrastructure
-│   │   │   ├── Domain/                        #   pure C#, depends only on BuildingBlocks
-│   │   │   │   ├── SalesOrder.cs, SalesOrderLine.cs
-│   │   │   │   ├── Customer.cs, ItemCategory.cs, ItemForOrder.cs
-│   │   │   │   ├── ValueObjects.cs           #   Money, Quantity, the strongly-typed IDs
-│   │   │   │   ├── SalesOrderStatus.cs       #   enum + transition rules
-│   │   │   │   ├── ApprovalPolicy.cs, Events.cs
-│   │   │   │   └── Ports.cs                   #   ISalesOrderRepository, ICustomerRepository, IItemRepository
+│   │   │   ├── Domain/                        #   pure C#, depends only on BuildingBlocks; FOLDER PER AGGREGATE
+│   │   │   │   ├── SalesOrders/               #     SalesOrder, SalesOrderLine, SalesOrderStatus(+Rules),
+│   │   │   │   │                              #       SalesOrderEvents, ApprovalPolicy
+│   │   │   │   ├── Customers/                 #     Customer.cs
+│   │   │   │   ├── ItemCategories/            #     ItemCategory.cs
+│   │   │   │   ├── Common/                    #     Ids.cs (typed IDs), ValueObjects.cs (Money, Quantity)
+│   │   │   │   └── Ports.cs                   #   ISalesOrderRepository, ICustomerRepository, IItemRepository (+ ItemForOrder)
 │   │   │   ├── Features/                      #   TWO files per feature (Handler + Endpoint)
 │   │   │   │   ├── CreateSalesOrder/          #     (Phase 6)
 │   │   │   │   ├── SubmitSalesOrder/          #     (Phase 7)
