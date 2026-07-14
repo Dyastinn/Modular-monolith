@@ -82,7 +82,7 @@ The prose should read like a patient senior engineer explaining something at a w
   phase has the Checkpoint and Check Yourself; don't drop them.
 - **Consistent analogies** — don't invent competing ones: mediator = *post office*; atomicity = *turnstile*;
   JWT = *festival wristband*; modules = *islands / locked floors*; VSA = *taco drawer*; value object = *any
-  $10 bill is as good as any other* (per `GLOSSARY.md` — money in the lessons is ₱, but this analogy is $).
+  ₱1,000 bill is as good as any other* (per `GLOSSARY.md`).
 - **Callout conventions:** 💡 analogy · ❓ "you might be wondering" · ⚠️ honest caveat/limitation · 🔑 key
   point · 🚫 out of scope · 🧭 "from WebForms" translation · ✅/❌ best practice · 📦 "create this project now".
   Reuse these; don't invent new emoji semantics. (📎 used to mean "link to the slow version in a sibling

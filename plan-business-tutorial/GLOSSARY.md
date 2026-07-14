@@ -141,7 +141,7 @@ orders*. *Analogy: two people named John Smith are still two different people.*
 
 **Value object**
 A business object defined purely by its values, immutable. `Money(10)` is `Money(10)` — interchangeable.
-*Analogy: any $10 bill is as good as any other.*
+*Analogy: any ₱1,000 bill is as good as any other.*
 
 **Aggregate**
 A cluster of related objects that must stay consistent together and are treated as one unit. A `SalesOrder`

@@ -204,15 +204,59 @@ to any one of them; burying it in `CreateSalesOrder/` would force the other five
 boundary to find it. Same logic that keeps cross-module contracts up in `Shared`: a shared thing lives one
 level above the things that share it.
 
-> ⚠️ **The tooling has an opinion — and folder-per-aggregate mostly keeps it happy.** Turn on StyleCop or the
-> equivalent `.editorconfig` analyzers and **`SA1402` fails the build on more than one type per file**. That's
-> the rule that rules out cohesion grouping (a `SalesOrder.cs` full of other types), and it's a big reason we
-> went with folder-per-aggregate instead — one type per file *is* its default, so almost every file already
-> complies. We keep exactly one pragmatic exception, where the types are trivial and always change together:
-> `SalesOrders/SalesOrderEvents.cs` holds all five event records in one file. If your team runs `SA1402`
-> strictly, split that one too (a file per event) or suppress the rule for just it — either is fine, as long
-> as it's a decision the team makes on purpose rather than three developers silently picking three and letting
-> the folder drift into a mix nobody can predict.
+> ⚠️ **The tooling has an opinion — but it only fits the `Domain/`, so scope it there.** Turn on StyleCop or
+> the equivalent `.editorconfig` analyzers and **`SA1402` fails the build on more than one type per file**.
+> Inside `Domain/` that's a good fit and a reason we went with folder-per-aggregate — one type per file *is*
+> its default, so almost every file already complies (the one exception is `SalesOrders/SalesOrderEvents.cs`,
+> which keeps all five trivial event records together; split it per-event if your team runs the rule strictly).
+>
+> **But do not enable `SA1402` solution-wide** — it collides with grouping this codebase does *on purpose* in
+> more than one place. Every Vertical Slice you'll build from [Phase 6](06-create-order.md) on packs its
+> Command/Query, DTOs, validator, and handler into **one** file so the whole slice reads top-to-bottom
+> ([`GetSalesOrderHandler.cs`](10-queries-search.md) alone holds six types). And several `Shared` files gather
+> a small family of related abstractions on purpose: `Erp.Shared.Messaging/Contracts.cs` holds the entire
+> mediator vocabulary (~nine marker interfaces), and `Erp.Shared.BuildingBlocks` keeps `Entity`,
+> `AggregateRoot`, `IDomainEvent`, and `DomainException` together. `SA1402` would fight all of those. So don't
+> switch it on globally — turn it **off by default and on only inside the aggregate domains**, the one place
+> one-type-per-file actually fits:
+>
+> ```ini
+> # .editorconfig — one-type-per-file fits the domain; slices and Shared group on purpose
+> [*.cs]
+> dotnet_diagnostic.SA1402.severity = none
+>
+> [**/Domain/**.cs]
+> dotnet_diagnostic.SA1402.severity = warning
+> ```
+>
+> The real failure mode isn't the "wrong" layout, it's three developers silently picking three conventions
+> and letting the tree drift into a mix nobody can predict. Decide once, encode it, move on.
+
+> ❓ **First time seeing a `.editorconfig`? Here's the whole idea in one place.** It's a plain-text file —
+> literally named `.editorconfig` — that you drop at the solution root to tell the compiler, the analyzers,
+> *and* every editor (Visual Studio, VS Code, Rider) how to treat your code. You edit it by hand in any text
+> editor. Its shape is a `[glob]` header followed by `key = value` lines, and it **cascades**: a file deeper
+> in the tree overrides a shallower one, and the most specific glob wins — which is exactly how the
+> `[**/Domain/**.cs]` section above sharpened the blanket `[*.cs]` rule. Put `root = true` at the top of the
+> outermost one so the search stops climbing there.
+>
+> To create one: make a file called `.editorconfig` next to `Erp.slnx` and start typing. You need no package
+> for .NET's built-in rules (the `IDE####` and `CA####` rules and `dotnet format` ship in the SDK); only
+> StyleCop's `SA####` rules need the `StyleCop.Analyzers` NuGet added. Beyond flipping analyzers on and off,
+> the same file drives:
+>
+> - **Formatting** — `indent_size = 4`, `indent_style = space`, `end_of_line = crlf`, `insert_final_newline = true`,
+>   `charset = utf-8`. (`dotnet format` will rewrite files to match.)
+> - **Language style** — `var` vs. explicit types, expression-bodied members, file-scoped namespaces, `this.`
+>   qualification, and the like (the `csharp_style_*` / `dotnet_style_*` keys).
+> - **Naming conventions** — e.g. interfaces must start with `I`, private fields `_camelCase` — enforced as a
+>   warning or an error.
+> - **Severity per rule** — every rule takes `= none | silent | suggestion | warning | error`, so you dial
+>   each to taste; CI's *treat-warnings-as-errors* then turns the `warning`s into hard build failures.
+>
+> One agreed `.editorconfig` is how a team stops re-litigating tabs, `var`, and file layout in every code
+> review and lets the build enforce the answer instead. You won't need more of it in this course than the
+> few lines above — but now the file won't look like magic when a real project hands you a 200-line one.
 
 > 🔑 **The honest takeaway:** none of these is *correct* with the rest *wrong*. What matters is that the layout
 > maps to how the code actually changes, and that the whole team follows the same one. We picked
@@ -253,7 +297,53 @@ public readonly record struct UserId(long Value);
 > [Phase 6 §6](06-create-order.md). Keeping the unwrapping *in the repository* is the point: it's the only
 > place that ever deals in bare `long`s.
 
-Value objects that make invalid states impossible — one file each in `Common/`, both needing the
+> ❓ **"Unwraps it at the boundary" — what does that actually mean?** This is the sentence people re-read, so
+> let's take it slowly. Two worlds meet at the database, and they speak different languages. Inside your domain
+> everything is a `CustomerId`. Inside the `Customer` *table*, that column is just a plain number — a SQL
+> `bigint` — and Dapper (the little library that copies values between a SQL row and your C# objects) only
+> knows the primitive types SQL knows. It has never heard of `CustomerId`. So *someone* has to translate
+> between "a `CustomerId`" and "a bare `long`," and that translating is all the words **wrap** and **unwrap**
+> mean:
+>
+> - **Unwrap** — going *in* to the database: pull the raw `long` out of the id so Dapper can send it.
+>   That's what `order.CustomerId.Value` does; `.Value` is just the property you declared back in
+>   `record struct CustomerId(long Value)`, and it hands you the plain number inside.
+> - **Wrap** — coming *back out*: take the raw `long` the query returned and put the type back on, with
+>   `new CustomerId(row.CustomerId)`, before any other code sees it.
+>
+> ```csharp
+> // A preview of the Phase 6 repository — NOT a file to create yet; here only to make wrap/unwrap concrete.
+> // Going in: unwrap CustomerId → long, because Dapper can only send a plain number:
+> new { CustomerId = order.CustomerId.Value };
+> // Coming back: wrap long → CustomerId, so everything downstream holds the strong type again:
+> var customerId = new CustomerId(row.CustomerId);
+> ```
+>
+> Now "keep the unwrapping *in the repository*" reads plainly: this translation happens in **exactly one
+> file** — the only file that ever talks to SQL. Everywhere else in the module (handlers, the aggregate,
+> endpoints) only ever holds a `CustomerId`, so the compiler protection from the paragraph above covers your
+> *whole* codebase, not just parts of it. A naked `long` exists for a single instant, right at the border, and
+> is wrapped back into a proper id before it travels anywhere.
+>
+> 💡 Picture the repository as the **customs desk** at a border. Inside the country (your domain) everyone
+> carries a passport — a `CustomerId`. Outside (the database) there are only anonymous numbers. The customs
+> desk is the one place that stamps a number into a passport on the way in and reads the passport back into a
+> number on the way out. You don't check passports in the middle of a city street — only at the border. That's
+> why the `.Value` / `new CustomerId(…)` dance belongs in the repository and nowhere else.
+
+Those four ids are the simplest instance of a bigger idea you'll lean on all phase: the **value object** —
+a small, immutable type that has no identity of its own and is compared by its *contents*, not by which
+instance it happens to be. `CustomerId(42)` carries one thing, a number, and two of them are equal exactly
+when their numbers match — which is why `readonly record struct` is the perfect fit: a `record` gives you
+that value-based equality for free, and `struct` keeps it a lightweight value rather than a heap object.
+💡 It's the *any-₱1,000-bill-is-as-good-as-any-other* idea from the glossary — you never care *which* ₱1,000
+bill you're holding, only that it's ₱1,000; likewise you never care which `CustomerId(42)` you have, only
+that it's 42.
+
+`Money` and `Quantity` push that same idea one step further. An id just *wraps* a number; a value object can
+also *guard* it — refuse to exist in an invalid state at all. Their constructors throw **before** a bad value
+can ever be stored, so "negative money" and "a quantity of zero" stop being bugs you check for later and
+become states your program literally cannot represent. One file each in `Common/`, both needing the
 `BuildingBlocks` header (for `DomainException`):
 
 ```csharp
