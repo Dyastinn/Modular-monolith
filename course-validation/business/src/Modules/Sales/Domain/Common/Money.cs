@@ -2,16 +2,7 @@ using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Domain;
 
-// Cross-cutting value objects (Phase 5 §3a): compared by value, immutable, invalid states unrepresentable.
-
-public readonly record struct Quantity
-{
-    public int Value { get; }
-    public Quantity(int value) =>
-        Value = value > 0 ? value : throw new DomainException("Quantity must be greater than zero.");
-}
-
-// ₱ — a plain non-negative amount.
+// ₱ — a plain non-negative amount. A cross-cutting value object: compared by value, immutable.
 public readonly record struct Money
 {
     public decimal Amount { get; }

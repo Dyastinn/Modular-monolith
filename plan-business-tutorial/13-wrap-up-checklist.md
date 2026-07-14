@@ -81,11 +81,11 @@ Erp/                                         # repo root
 │   ├── Modules/
 │   │   ├── Sales/  (Erp.Modules.Sales)       # → Shared.{BuildingBlocks, Common, Messaging} — NOT Infrastructure
 │   │   │   ├── Domain/                        #   pure C#, depends only on BuildingBlocks; FOLDER PER AGGREGATE
-│   │   │   │   ├── SalesOrders/               #     SalesOrder, SalesOrderLine, SalesOrderStatus(+Rules),
-│   │   │   │   │                              #       SalesOrderEvents, ApprovalPolicy
-│   │   │   │   ├── Customers/                 #     Customer.cs
-│   │   │   │   ├── ItemCategories/            #     ItemCategory.cs
-│   │   │   │   ├── Common/                    #     Ids.cs (typed IDs), ValueObjects.cs (Money, Quantity)
+│   │   │   │   ├── SalesOrders/               #     SalesOrder, SalesOrderId, SalesOrderLine, SalesOrderStatus
+│   │   │   │   │                              #       (+Rules), SalesOrderEvents, ApprovalPolicy
+│   │   │   │   ├── Customers/                 #     Customer, CustomerId
+│   │   │   │   ├── ItemCategories/            #     ItemCategory
+│   │   │   │   ├── Common/                    #     ItemId, UserId (foreign refs), Money, Quantity
 │   │   │   │   └── Ports.cs                   #   ISalesOrderRepository, ICustomerRepository, IItemRepository (+ ItemForOrder)
 │   │   │   ├── Features/                      #   TWO files per feature (Handler + Endpoint)
 │   │   │   │   ├── CreateSalesOrder/          #     (Phase 6)

@@ -48,18 +48,22 @@ names its file in a top comment, so you always know where it belongs:
 src/Modules/Sales/Domain/
 ├── SalesOrders/                    # the SalesOrder aggregate — one file per type
 │   ├── SalesOrder.cs               #   the aggregate root (§6)
+│   ├── SalesOrderId.cs             #   its identity type — the aggregate owns its own id (§3a)
 │   ├── SalesOrderLine.cs           #   its child entity (§6)
 │   ├── SalesOrderStatus.cs         #   the status enum (§4)
 │   ├── SalesOrderStatusRules.cs    #   the legal-transition table (§4)
 │   ├── SalesOrderEvents.cs         #   the five domain events (§8)
 │   └── ApprovalPolicy.cs           #   the high-value threshold (§8)
 ├── Customers/
-│   └── Customer.cs                 # §7
+│   ├── Customer.cs                 # §7
+│   └── CustomerId.cs               #   the Customer entity owns its own id (§3a)
 ├── ItemCategories/
 │   └── ItemCategory.cs             # §5
-└── Common/                         # cross-cutting primitives, shared by every aggregate
-    ├── Ids.cs                      #   the four strongly-typed IDs (§3a)
-    └── ValueObjects.cs             #   Money, Quantity (§3a)
+└── Common/                         # shared vocabulary owned by NO single aggregate
+    ├── ItemId.cs                   #   a reference to an item (owned by the catalog) (§3a)
+    ├── UserId.cs                   #   a reference to a user (owned by Identity) (§3a)
+    ├── Money.cs                    #   value object (§3a)
+    └── Quantity.cs                 #   value object (§3a)
 ```
 
 > 🔑 **Why a folder per aggregate?** Because the *folder* becomes the aggregate boundary — the exact thing
@@ -68,9 +72,12 @@ src/Modules/Sales/Domain/
 > lives together under `SalesOrders/`, so "what is part of this aggregate?" is answered by *what's in the
 > folder*. Yet each type still gets its own file, so tools like "go to file" work and the one-type-per-file
 > `SA1402` analyzer stays happy. `Customer` and `ItemCategory` are their own entities, so they get their own
-> folders. The IDs and value objects belong to no single aggregate — they're shared vocabulary — so they sit
-> in `Common/`. (This is the "folder per aggregate" layout compared in the box below; we adopt it as the
-> course's default because it scales as the module grows and keeps the aggregate boundary visible in the
+> folders. The ids follow ownership too: an aggregate owns its identity type, so `SalesOrderId` sits in
+> `SalesOrders/` and `CustomerId` in `Customers/`. But `ItemId` and `UserId` name things the Sales module
+> *doesn't* own — an item lives in the catalog, a user in Identity — so Sales holds only a *reference* to them
+> by id; those shared ids live in `Common/`, next to the value objects (`Money`, `Quantity`) that belong to no
+> single aggregate either. (This is the "folder per aggregate" layout compared in the box below; we adopt it as
+> the course's default because it scales as the module grows and keeps the aggregate boundary visible in the
 > file tree.)
 
 The base types the domain builds on — `AggregateRoot<TId>`, `Entity<TId>`, `IDomainEvent`, `DomainException` —
@@ -144,18 +151,22 @@ folder gives cohesion, the files stay `SA1402`-clean; shared primitives sit in t
 Domain/
 ├── SalesOrders/
 │   ├── SalesOrder.cs
+│   ├── SalesOrderId.cs           # the aggregate owns its id
 │   ├── SalesOrderLine.cs
 │   ├── SalesOrderStatus.cs
 │   ├── SalesOrderStatusRules.cs
 │   ├── SalesOrderEvents.cs
 │   └── ApprovalPolicy.cs
 ├── Customers/
-│   └── Customer.cs
+│   ├── Customer.cs
+│   └── CustomerId.cs
 ├── ItemCategories/
 │   └── ItemCategory.cs
-└── Common/
-    ├── Ids.cs
-    └── ValueObjects.cs      # Money, Quantity
+└── Common/                       # shared vocabulary owned by no single aggregate
+    ├── ItemId.cs                 #   reference to an item (owned by the catalog)
+    ├── UserId.cs                 #   reference to a user (owned by Identity)
+    ├── Money.cs
+    └── Quantity.cs
 ```
 
 **Nested child entities** — the *folder* looks like cohesion grouping, but the difference lives in the code:
@@ -196,12 +207,12 @@ level above the things that share it.
 > ⚠️ **The tooling has an opinion — and folder-per-aggregate mostly keeps it happy.** Turn on StyleCop or the
 > equivalent `.editorconfig` analyzers and **`SA1402` fails the build on more than one type per file**. That's
 > the rule that rules out cohesion grouping (a `SalesOrder.cs` full of other types), and it's a big reason we
-> went with folder-per-aggregate instead — one type per file *is* its default. We do keep three pragmatic
-> exceptions where the types are trivial and always change together: `Common/Ids.cs` (four one-line ID
-> structs), `Common/ValueObjects.cs` (`Money` + `Quantity`), and `SalesOrders/SalesOrderEvents.cs` (the five
-> event records). If your team runs `SA1402` strictly, split those too, or suppress the rule for just those
-> files — either is fine, as long as it's a decision the team makes on purpose rather than three developers
-> silently picking three and letting the folder drift into a mix nobody can predict.
+> went with folder-per-aggregate instead — one type per file *is* its default, so almost every file already
+> complies. We keep exactly one pragmatic exception, where the types are trivial and always change together:
+> `SalesOrders/SalesOrderEvents.cs` holds all five event records in one file. If your team runs `SA1402`
+> strictly, split that one too (a file per event) or suppress the rule for just it — either is fine, as long
+> as it's a decision the team makes on purpose rather than three developers silently picking three and letting
+> the folder drift into a mix nobody can predict.
 
 > 🔑 **The honest takeaway:** none of these is *correct* with the rest *wrong*. What matters is that the layout
 > maps to how the code actually changes, and that the whole team follows the same one. We picked
@@ -212,17 +223,25 @@ level above the things that share it.
 
 ## 3a. Strongly-typed IDs and value objects
 
-Every file in the `Domain/` folder lives in the `Erp.Modules.Sales.Domain` namespace. Most also need
-`using Erp.Shared.BuildingBlocks;` for `DomainException`, `IDomainEvent`, and `AggregateRoot<TId>` — the
-bare ID structs are the exception, since they reference none of those. Here are the IDs, in their own file:
+Every file in the `Domain/` folder lives in the `Erp.Modules.Sales.Domain` namespace (folders don't change
+that — see the ⚠️ above). Most files also need `using Erp.Shared.BuildingBlocks;` for `DomainException`,
+`IDomainEvent`, and `AggregateRoot<TId>` — the bare ID structs are the exception, since they reference none of
+those. Here are the four ids, each placed by *who owns it*: the two the Sales module owns sit with their
+aggregate; the two it merely references live in `Common/`. (Each is its own one-line file; the `namespace`
+line is shown once but repeats in every file.)
 
 ```csharp
-// src/Modules/Sales/Domain/Common/Ids.cs (grouped — same one-line pattern; split them if you prefer)
+// src/Modules/Sales/Domain/SalesOrders/SalesOrderId.cs
 namespace Erp.Modules.Sales.Domain;
-
 public readonly record struct SalesOrderId(long Value);
+
+// src/Modules/Sales/Domain/Customers/CustomerId.cs
 public readonly record struct CustomerId(long Value);
+
+// src/Modules/Sales/Domain/Common/ItemId.cs   — a reference to an item the catalog owns, not Sales
 public readonly record struct ItemId(long Value);
+
+// src/Modules/Sales/Domain/Common/UserId.cs   — a reference to a user Identity owns, not Sales
 public readonly record struct UserId(long Value);
 ```
 
@@ -234,11 +253,11 @@ public readonly record struct UserId(long Value);
 > [Phase 6 §6](06-create-order.md). Keeping the unwrapping *in the repository* is the point: it's the only
 > place that ever deals in bare `long`s.
 
-Value objects that make invalid states impossible — both go in one `ValueObjects.cs`, which *does* need
-the `BuildingBlocks` header (for `DomainException`):
+Value objects that make invalid states impossible — one file each in `Common/`, both needing the
+`BuildingBlocks` header (for `DomainException`):
 
 ```csharp
-// src/Modules/Sales/Domain/Common/ValueObjects.cs
+// src/Modules/Sales/Domain/Common/Quantity.cs
 using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Domain;
@@ -249,6 +268,13 @@ public readonly record struct Quantity
     public Quantity(int value) =>
         Value = value > 0 ? value : throw new DomainException("Quantity must be greater than zero.");
 }
+```
+
+```csharp
+// src/Modules/Sales/Domain/Common/Money.cs
+using Erp.Shared.BuildingBlocks;
+
+namespace Erp.Modules.Sales.Domain;
 
 // ₱ — a plain non-negative amount.
 public readonly record struct Money
