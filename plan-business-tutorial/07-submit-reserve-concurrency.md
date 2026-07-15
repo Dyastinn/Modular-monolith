@@ -91,6 +91,13 @@ public interface IStockReservation
 The **Inventory module** implements it by calling its atomic proc from [Phase 3](03-database-schema.md);
 Sales depends only on the interface, so neither module references the other. The Api wires them together.
 
+> ❓ **Why `Shared`, and not inside Inventory itself?** Because at this size, one neutral home for the one
+> cross-module contract is the *simplest* wall to see: Sales's `.csproj` has no line pointing at Inventory, so
+> Sales plainly can't call it. That stays clear for a handful of modules. Once a system grows enough that a
+> shared `Contracts` folder becomes a junk drawer nobody owns, there's a different arrangement — each module
+> owns and publishes its own contract, with the compiler enforcing the wall via `internal`. That's an
+> optional, post-course refactor; [Phase 15](15-scaling-the-wall.md) walks through it, pain first.
+
 > ⚠️ **Honest note on the `IDbTransaction tx` in this contract.** Passing a database transaction across the
 > contract lets Sales and Inventory share **one** transaction — perfect and correct *inside a single-database
 > monolith*, which is exactly what we have. But it's worth naming what that means for the "you could extract

@@ -17,8 +17,9 @@ and a `src/` skeleton).
 
 | Path | What it is |
 |---|---|
-| `plan-business-tutorial/` | **The course.** The only course. Phases 0–14, plus `00a-FOUNDATIONS.md`, `GLOSSARY.md`, `LEARNING-RESOURCES.md`. Hands-on, production-*shaped*: JWT, roles, credit limits, concurrency — the reader builds it themselves. |
-| `course-validation/business/` | A complete, runnable reference implementation of the tutorial, plus `FINDINGS.md` (a validation log). Not teaching material; it's there to check the lessons against reality. |
+| `plan-business-tutorial/` | **The course.** The only course. Phases 0–15 (Phase 15 is *optional* and the one phase that changes the taught architecture), plus `00a-FOUNDATIONS.md`, `GLOSSARY.md`, `LEARNING-RESOURCES.md`. Hands-on, production-*shaped*: JWT, roles, credit limits, concurrency — the reader builds it themselves. |
+| `course-validation/business/` | A complete, runnable reference implementation of the tutorial, plus `FINDINGS.md` (a validation log). Not teaching material; it's there to check the lessons against reality. Matches Phases 0–14. |
+| `course-validation/business-phase15/` | The **same** build with the **optional Phase 15** refactor applied (per-module contracts + `internal`). Exists only to back `15-scaling-the-wall.md`; deliberately diverges from the base build's "contract in `Shared`, neither module references the other." Not a stray folder — don't delete it. |
 | `README.md` | The front door. Keep it in sync with any structural change. |
 
 **The tutorial is self-contained and it is the whole product.** There are no companion courses, no sibling
@@ -106,6 +107,12 @@ an `IUnitOfWork` abstraction over the transaction.
 > ✅ **The lessons and `course-validation/business/` are in sync** (verified 2026-07-10: solution builds
 > clean, 14 unit + 7 integration tests pass). If you change one, change the other in the same edit — a
 > reference build that contradicts the lesson is worse than no reference build.
+>
+> ✅ **`course-validation/business-phase15/` backs the optional Phase 15** (per-module contracts + `internal`;
+> verified 2026-07-15: builds clean, 14 unit + 7 integration tests pass). It is a copy of the base build with
+> *only* the Phase 15 changes applied. The base build stays at the Phases 0–14 design on purpose — do **not**
+> "fix" the base build to match Phase 15, and keep the two in sync (mirror base changes into the copy,
+> preserving its per-module-contract differences).
 
 The **only** place these may appear is a lesson's explicit *"when you'd add this later, and why not now"*
 discussion (Phase 13's checklist and Phase 14's extensions). Never as part of the built solution.
@@ -121,6 +128,9 @@ discussion (Phase 13's checklist and Phase 14's extensions). Never as part of th
 1. **Modules are islands.** `Sales` never references `Inventory` (or vice-versa). Cross-module work goes
    through a **published contract in `Shared`** (e.g. `IStockReservation`) or an **integration event** —
    never a direct `using` or a cross-schema SQL `JOIN`/FK. The absent project reference *is* the wall.
+   *(The **one** sanctioned exception is the optional Phase 15 / `business-phase15` variant, where a module
+   owns its contract and the wall becomes `internal` + a one-way reference instead of an absent one. That is
+   the only place a module-to-module project reference is allowed, and only there.)*
 2. **Keep the Domain pure.** Inside a module, `Features/` and `Infrastructure/` depend on `Domain/`;
    `Domain/` depends only on `Shared.BuildingBlocks`. No SQL, web, Carter, Dapper, or `HttpContext` in the
    domain. Ever.

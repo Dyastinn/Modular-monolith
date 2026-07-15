@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Phase 15: this module now OWNS its cross-module contract (Contracts/IStockReservation.cs, public);
+       everything else here is `internal`. It no longer references Erp.Shared.Common (the contract used to
+       live there) and still has NO reference to Erp.Modules.Sales — a consumer references THIS assembly, not
+       the other way round. See plan-business-tutorial/15-scaling-the-wall.md. -->
+
+  <!-- The concurrency integration test news-up the internal StockReservationService directly, so it must be
+       granted access to this assembly's internals. Name only the assemblies you trust. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Erp.Integration.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Infrastructure\Sql\**\*.sql" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>

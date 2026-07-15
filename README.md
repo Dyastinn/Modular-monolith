@@ -123,3 +123,8 @@ dotnet test        # 14 domain unit tests + 7 integration/e2e tests (uses a sepa
 > [`plan-business-tutorial/`](plan-business-tutorial/) is the *teaching* material;
 > `course-validation/business/` is the finished code you can run and read alongside it. Build it yourself
 > first — the reference build is there to check your work, not to replace the typing.
+
+> An **optional** second reference build,
+> [`course-validation/business-phase15/`](course-validation/business-phase15/), applies the Phase 15 refactor
+> (per-module contracts + `internal`) on top of the base build. It exists only to back
+> [Phase 15](plan-business-tutorial/15-scaling-the-wall.md); the base build above is what Phases 0–14 describe.

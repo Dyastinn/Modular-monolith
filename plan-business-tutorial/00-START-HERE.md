@@ -142,6 +142,7 @@ Each phase builds directly on the one before it, and each ends with something yo
 | 12 | [12-testing.md](12-testing.md) | Unit + integration tests for the business rules | ~2 hr |
 | 13 | [13-wrap-up-checklist.md](13-wrap-up-checklist.md) | Recap + production-readiness checklist | ~30 min (read) |
 | 14 | [14-going-further.md](14-going-further.md) | *Optional.* Harden what you built; when Docker and Redis start earning their keep | ~1 hr (read) |
+| 15 | [15-scaling-the-wall.md](15-scaling-the-wall.md) | *Optional, and it changes the architecture.* Per-module contracts + `internal`, for when the shared kernel stops scaling | ~40 min (read) |
 
 > ⏱️ **Total: roughly 18–22 hours of focused, hands-on time** — think two to three unhurried days, or a
 > couple of evenings a week for a few weeks. These are *typing-and-understanding* estimates for someone

@@ -86,7 +86,7 @@ Erp/                                         # repo root
 │   │   │   │   ├── Customers/                 #     Customer, CustomerId
 │   │   │   │   ├── ItemCategories/            #     ItemCategory
 │   │   │   │   ├── Common/                    #     ItemId, UserId (foreign refs), Money, Quantity
-│   │   │   │   └── Ports.cs                   #   ISalesOrderRepository, ICustomerRepository, IItemRepository (+ ItemForOrder)
+│   │   │   │   └── Ports/                     #   ISalesOrderRepository, ICustomerRepository, IItemRepository (+ ItemForOrder)
 │   │   │   ├── Features/                      #   TWO files per feature (Handler + Endpoint)
 │   │   │   │   ├── CreateSalesOrder/          #     (Phase 6)
 │   │   │   │   ├── SubmitSalesOrder/          #     (Phase 7)

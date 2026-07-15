@@ -81,12 +81,14 @@ public sealed class CreateSalesOrderValidator : AbstractValidator<CreateSalesOrd
 
 ## 4. The repository interfaces (the module declares what it needs)
 
-The `SalesOrder` repository interface belongs to the **module** (it's specific to this aggregate), in
-`Modules/Sales/Domain` (a "port"); the generic data plumbing it uses — `IDbConnectionFactory` — comes from
-`Shared` because every module needs it:
+The `SalesOrder` repository interface belongs to the **module** (it's specific to this aggregate), and it
+lives in `Modules/Sales/Domain`. The three repository interfaces are the same *kind* of thing — the
+data-access "ports" this module declares — so they're grouped together under a `Ports/` folder, one file
+each, rather than scattered among the entity folders. The generic data plumbing they use —
+`IDbConnectionFactory` — comes from `Shared` because every module needs it. All three, shown together:
 
 ```csharp
-// src/Modules/Sales/Domain/Ports.cs — the data-access ports this module declares
+// Domain/Ports/ISalesOrderRepository.cs — the SalesOrder aggregate's data-access port
 using System.Data;   // IDbTransaction
 
 namespace Erp.Modules.Sales.Domain;
@@ -98,6 +100,13 @@ public interface ISalesOrderRepository
     Task<SalesOrder?> GetAsync(SalesOrderId id, CancellationToken ct);
     Task UpdateStatusAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct);
 }
+```
+
+```csharp
+// Domain/Ports/ICustomerRepository.cs — the Customer aggregate's data-access port
+using System.Data;   // IDbTransaction
+
+namespace Erp.Modules.Sales.Domain;
 
 public interface ICustomerRepository
 {
@@ -106,6 +115,12 @@ public interface ICustomerRepository
     // reverses it (−). Money forbids negatives, so a balance *delta* can't be a Money. (Phase 8)
     Task AdjustBalanceAsync(CustomerId id, decimal delta, IDbTransaction tx, CancellationToken ct);
 }
+```
+
+```csharp
+// Domain/Ports/IItemRepository.cs — the ItemCategory aggregate's data-access port
+
+namespace Erp.Modules.Sales.Domain;
 
 public interface IItemRepository
 {
