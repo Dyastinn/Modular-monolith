@@ -575,9 +575,6 @@ public sealed class SalesOrder : AggregateRoot<SalesOrderId>
     // Total is COMPUTED — it can never disagree with the lines.
     public Money Total => _lines.Aggregate(Money.Zero, (sum, l) => sum + l.LineTotal);
 
-    // The approval threshold is the ORDER'S own knowledge (a surfaced high-value flag — see §8).
-    public bool RequiresApproval => Total > ApprovalPolicy.Threshold;
-
     private SalesOrder() { }   // for the repository to rehydrate from the DB
 
     public static SalesOrder Create(string orderNumber, CustomerId customerId, UserId createdBy)
@@ -589,7 +586,6 @@ public sealed class SalesOrder : AggregateRoot<SalesOrderId>
             CreatedBy = createdBy,
             Status = SalesOrderStatus.Draft
         };
-        order.Raise(new SalesOrderCreated(order.Id, customerId, createdBy));
         return order;
     }
 
@@ -617,26 +613,22 @@ public sealed class SalesOrder : AggregateRoot<SalesOrderId>
             throw new DomainException("Cannot submit an order with no lines.");
         // Transition throws (before changing Status) if the move is illegal, e.g. not a Draft.
         Transition(SalesOrderStatus.PendingApproval);
-        Raise(new SalesOrderSubmitted(Id, CustomerId, Total));
     }
 
     public void Approve(UserId approver)
     {
         Transition(SalesOrderStatus.Approved);
         ApprovedBy = approver;
-        Raise(new SalesOrderApproved(Id, CustomerId, Total, approver));
     }
 
     public void Reject()
     {
         Transition(SalesOrderStatus.Rejected);
-        Raise(new SalesOrderRejected(Id));
     }
 
     public void Cancel()
     {
         Transition(SalesOrderStatus.Cancelled);
-        Raise(new SalesOrderCancelled(Id));
     }
 
     // Single guarded gate for EVERY status change.
@@ -649,20 +641,12 @@ public sealed class SalesOrder : AggregateRoot<SalesOrderId>
 }
 ```
 
-> ⚠️ **A subtlety in `Create`: the id inside `SalesOrderCreated` is provisional.** The order isn't saved yet
-> when `Create()` runs, so the database hasn't handed out its identity — `order.Id` is still `SalesOrderId(0)`
-> at the moment we raise `SalesOrderCreated(order.Id, …)`, and it stays `0` forever, because nothing ever
-> writes the real id back onto the in-memory aggregate. Nothing in this course *consumes* that event, so the
-> zero is harmless — but the trap is real: **never assume `SalesOrderCreated.Id` is usable.**
->
-> Two honest fixes, if you ever add a handler for it. **(a)** Leave the id *out* of the created event —
-> `SalesOrderCreated(CustomerId, CreatedBy)` says everything true at that moment. **(b)** Give the aggregate a
-> way to *receive* its id after the `INSERT` and raise the event then. Note that (b) is more work than it
-> looks: `Id` comes from `Entity<TId>` with a `protected set`, so a repository — which isn't a subclass —
-> physically cannot assign it. You'd have to add a seam for it (an `internal void AssignId(SalesOrderId id)`
-> on the aggregate, say). That's exactly why this course takes the simpler road instead: the repository's
-> `AddAsync` **returns** the new id, and the handler returns *that* ([Phase 6](06-create-order.md)). We never
-> pretend the aggregate knows an id it was never given.
+> 🔑 **Two things are deliberately missing from this class — you'll add them in [§8](#8-domain-events-and-the-approval-policy).**
+> As written, `SalesOrder` already compiles and enforces every *state* rule. But it's silent — nothing yet
+> announces that an order was created, submitted, or approved — and it has no high-value flag. Both need types
+> we haven't defined: the five **domain events** and the **`ApprovalPolicy`** threshold. We write those in §8
+> and then come straight back to this class to wire them in. Building the aggregate in two passes keeps a rule
+> the whole course lives by: never type a line that references a type you haven't met yet.
 
 ### Line by line: the `Submit` method
 
@@ -672,7 +656,7 @@ public void Submit()
     if (_lines.Count == 0)                          // (a) an empty order makes no sense to submit
         throw new DomainException("Cannot submit an order with no lines.");
     Transition(SalesOrderStatus.PendingApproval);  // (b) legal move? Draft→PendingApproval only — mutates last.
-    Raise(new SalesOrderSubmitted(Id, CustomerId, Total));  // (c) announce it happened
+    // (c) announce it happened — Raise(new SalesOrderSubmitted(...)) — added in §8, once the event type exists.
 }
 ```
 
@@ -682,9 +666,10 @@ public void Submit()
   Cancelled, `Transition` throws *before* assigning `Status`, and nothing changes. The order defends
   itself. **Guards before mutation** is the discipline: validate everything *first*, change state *after*,
   so a throw can never leave the object stranded in a half-updated, broken state.
-- **(c)** Record the fact. The *inventory reservation* is **not** done here — that's an
-  atomicity-under-concurrency concern the handler + SQL own (Phase 7). The domain *expresses* "this got
-  submitted"; it does not reach into a database. Keep that boundary sharp.
+- **(c)** Record the fact — as a *domain event*. That line doesn't exist yet (`SalesOrderSubmitted` arrives
+  in §8); what matters right now is *where* it belongs and what it is **not**. The *inventory reservation* is
+  **not** done here — that's an atomicity-under-concurrency concern the handler + SQL own (Phase 7). The
+  domain *expresses* "this got submitted"; it does not reach into a database. Keep that boundary sharp.
 
 > ❓ **You might be wondering: "Why doesn't `Submit()` reserve the inventory right here? It's part of
 > submitting."** Because reserving stock safely requires an *atomic database operation* — and the domain
@@ -790,6 +775,56 @@ public static class ApprovalPolicy
     public static readonly Money Threshold = new(50_000m);  // orders over ₱50,000 are flagged high-value
 }
 ```
+
+### Wire the events and the flag into the aggregate
+
+The events and `ApprovalPolicy` now exist, so go back to `SalesOrder.cs` (§6) and add the two things we left
+out there. First, the high-value flag — a computed property, right under `Total`:
+
+```csharp
+// add to SalesOrder, just below the Total property:
+// The approval threshold is the ORDER'S own knowledge (a surfaced high-value flag — see the ⚠️ below).
+public bool RequiresApproval => Total > ApprovalPolicy.Threshold;
+```
+
+Then raise the matching event as the **last** step of each behaviour method, so an order is only announced
+once it has actually been created or moved:
+
+```csharp
+// Create(): just before `return order;`
+order.Raise(new SalesOrderCreated(order.Id, customerId, createdBy));
+
+// Submit(): last line
+Raise(new SalesOrderSubmitted(Id, CustomerId, Total));
+
+// Approve(): last line, after `ApprovedBy = approver;`
+Raise(new SalesOrderApproved(Id, CustomerId, Total, approver));
+
+// Reject(): last line
+Raise(new SalesOrderRejected(Id));
+
+// Cancel(): last line
+Raise(new SalesOrderCancelled(Id));
+```
+
+Each `Raise` goes **after** the guards and the state change on purpose — the same *guards-before-mutation*
+discipline from §6, now with an *announce-last* corollary: a method that throws must never emit an event for
+something that didn't happen.
+
+> ⚠️ **A subtlety in `Create`: the id inside `SalesOrderCreated` is provisional.** The order isn't saved yet
+> when `Create()` runs, so the database hasn't handed out its identity — `order.Id` is still `SalesOrderId(0)`
+> at the moment we raise `SalesOrderCreated(order.Id, …)`, and it stays `0` forever, because nothing ever
+> writes the real id back onto the in-memory aggregate. Nothing in this course *consumes* that event, so the
+> zero is harmless — but the trap is real: **never assume `SalesOrderCreated.Id` is usable.**
+>
+> Two honest fixes, if you ever add a handler for it. **(a)** Leave the id *out* of the created event —
+> `SalesOrderCreated(CustomerId, CreatedBy)` says everything true at that moment. **(b)** Give the aggregate a
+> way to *receive* its id after the `INSERT` and raise the event then. Note that (b) is more work than it
+> looks: `Id` comes from `Entity<TId>` with a `protected set`, so a repository — which isn't a subclass —
+> physically cannot assign it. You'd have to add a seam for it (an `internal void AssignId(SalesOrderId id)`
+> on the aggregate, say). That's exactly why this course takes the simpler road instead: the repository's
+> `AddAsync` **returns** the new id, and the handler returns *that* ([Phase 6](06-create-order.md)). We never
+> pretend the aggregate knows an id it was never given.
 
 > ⚠️ **What the approval threshold does — and doesn't — do in this tutorial (read this).** In *this*
 > build, **every** submitted order routes through a manager: `Submit()` always moves `Draft →
