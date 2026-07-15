@@ -477,7 +477,38 @@ public static class SalesOrderStatusRules
 
 ## 5. The `ItemCategory` rules (restrictions + limits)
 
-A small domain type carrying the category rules from the schema:
+The phase is about to lean on this type, so first: what *is* a category, and why does the domain have one?
+
+An **item category** is a grouping of items that share the same *ordering rules*. Not a marketing label or a
+catalog folder — a bucket whose whole reason to exist is that everything inside it is ordered under the same
+policy. The seed you wrote back in [Phase 3](03-database-schema.md) defines exactly two:
+
+| Category | `MaxQuantityPerOrder` | `RequiredRole` |
+|---|---|---|
+| `General` | 1000 | *none* — anyone can order it |
+| `Controlled` | 5 | `SalesManager` only |
+
+Every `Item` points at one category, so "Widget" and "Gadget" are `General` while the "Restricted Kit" is
+`Controlled`. That's the point of a category: it's where the rules live that apply to a *kind* of item rather
+than to one specific product. Two of them, both real business rules:
+
+- **A per-order quantity cap** (`MaxQuantityPerOrder`). At most 5 `Controlled` items on a single order — even
+  a `SalesManager` can't dump 500 restricted kits onto one document.
+- **A role restriction** (`RequiredRole`, `null` = anyone). Only a `SalesManager` may order from `Controlled`
+  at all; a plain `SalesRep` is refused. `General` has no restriction, so anyone can order it.
+
+> 💡 Think of a pharmacy. Painkillers sit on the open shelf — anyone, any quantity. The controlled cabinet
+> behind the counter needs a pharmacist *and* caps how much leaves per visit. `General` vs. `Controlled` is
+> that same shelf-vs-cabinet split, written as data rather than as a sign taped to a wall.
+
+Here's why it's a domain type and not a check buried in a validator: both of those are **"is this operation
+allowed?"** questions, and by the "where logic lives" split that kind of rule belongs in the **domain**, as a
+method on the thing it's a rule about. So the category answers its *own* questions. It doesn't hand its
+`RequiredRole` out to some validator and hope the validator remembers to consult it — it exposes
+`EnsureRoleAllowed` and `EnsureQuantityAllowed`, and anyone placing an order has to pass through them. A rule
+that lives on the category can't be enforced in one slice and silently forgotten in the next.
+
+A small domain type carrying exactly that:
 
 ```csharp
 // src/Modules/Sales/Domain/ItemCategories/ItemCategory.cs
