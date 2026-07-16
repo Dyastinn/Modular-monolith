@@ -519,6 +519,15 @@ builder.Services.AddScoped<IValidator<LoginCommand>, LoginValidator>();
 > out by hand rather than tucking them behind an `AddAuthSlices()` helper: these lines *are* the "nothing scans
 > the host" lesson, and hiding them would bury the trap you just learned to avoid.
 
+> ❓ **"Wait — `AddScoped` here, but Phase 2's module scan registered handlers with `AddTransient`. Which is
+> right?"** Both, and don't read meaning into the difference. A handler is resolved exactly **once per
+> request** — the mediator asks for it a single time — so "new instance every ask" (transient) and "one
+> instance per request" (scoped) produce the identical object with the identical lifetime in practice.
+> Handlers hold no state of their own either way. The scan uses transient because it's the safe default for
+> stateless workers; these host lines use scoped to read like the platform registrations around them. If the
+> asymmetry bothers you, make them all transient — what actually matters is the rule from Phase 2: *never* a
+> singleton for anything that depends on a scoped service.
+
 The handler's three dependencies are platform services, so they belong in `AddSharedInfrastructure()`
 alongside `IDbConnectionFactory` from [Phase 3b](03b-data-access.md) — **all three, or login fails at the
 first request** with *"No service for type `IPasswordHasher` has been registered."* We built them in
@@ -2170,7 +2179,22 @@ A typo usually won't produce an error.
 
 Instead, the authorization check simply won't match.
 
-To avoid mistakes, define role names as constants in one place and reuse them throughout the application.
+This course deliberately writes the **literal strings** everywhere — there are only three, each appears right
+next to the `RequireRole(...)` it guards, and seeing the exact string is part of learning what the check
+compares. In a larger codebase, the step up is a constants class —
+
+```csharp
+public static class Roles
+{
+    public const string SalesRep     = "SalesRep";
+    public const string SalesManager = "SalesManager";
+    public const string Admin        = "Admin";
+}
+```
+
+— so `RequireRole(Roles.SalesManager)` turns a silent typo into a compile error. Either way, the rule that
+actually matters is the one above: **one exact spelling, used everywhere** — never `"Manager"` when the
+stored role is `SalesManager`.
 
 ---
 

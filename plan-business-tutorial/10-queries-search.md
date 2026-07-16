@@ -118,6 +118,16 @@ public sealed class GetSalesOrderHandler(IDbConnectionFactory factory)
 The handler depends on `IDbConnectionFactory`, **not** `ISalesOrderRepository`. The repository is a
 write-side tool (it deals in aggregates); reads don't need it.
 
+> ❓ **"Hold on — the write handlers throw `NotFoundException` for a missing order, but this one just returns
+> `null`. Which is it?"** Both, on purpose, and here's the convention so your team doesn't invent three:
+> **queries return `null`, commands throw.** For a query, "no such order" is a perfectly normal *answer* —
+> the endpoint is the one place that knows the HTTP dialect, so it translates `null` into a `404` right there
+> (`dto is null ? Results.NotFound() : Results.Ok(dto)`, in §6). For a command, a missing row means the use
+> case *cannot proceed* — the handler is three steps from opening a transaction, and throwing aborts the whole
+> operation in one move, with the global handler ([Phase 11](11-cross-cutting.md)) mapping it to `404`.
+> Same status code either way; the difference is whether "not there" is a result (query) or a failure
+> (command). Pick up this pair as the house rule and don't mix them.
+
 ## 4. Search with filters and paging
 
 `Modules/Sales/Features/SearchSalesOrders/SearchSalesOrdersHandler.cs`:

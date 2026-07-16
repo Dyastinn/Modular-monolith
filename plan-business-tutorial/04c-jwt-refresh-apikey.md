@@ -737,6 +737,15 @@ builder.Services.AddScoped<IRequestHandler<LogoutAllCommand, Unit>, LogoutAllHan
 >   the family. Strict rotation errs toward security. If that hurts real users, soften it with a short grace
 >   window (a just-revoked token may re-rotate to its *recorded* replacement, via `ReplacedByHash`) or an
 >   idempotency key. Understand the tradeoff before loosening it.
+> - **Two *simultaneous* refreshes of the same token can both slip past the reuse check.** The handler's
+>   check-then-rotate is itself a small read-then-write gap — the very shape [Phase 7](07-submit-reserve-concurrency.md)
+>   teaches you to distrust. If the victim and a thief present the same token in the same instant, both can
+>   read `RevokedUtc IS NULL`, both rotate, and — because `usp_RefreshToken_Revoke` is guarded with
+>   `AND RevokedUtc IS NULL` — the second revoke is a silent no-op: two live tokens, one family, no alarm.
+>   The window is milliseconds and the *next* refresh from either copy still trips the trap, so the base
+>   build accepts it. The hardening, when you want it, is the same medicine as Phase 7: make the revoke a
+>   **compare-and-swap** — have the proc `SELECT @@ROWCOUNT`, and if the handler's revoke reports `0` rows,
+>   somebody else just spent this token first → treat it as reuse and burn the family.
 > - **Where the client stores the refresh token matters.** In a browser SPA, a refresh token in JS-readable
 >   storage is exposed to XSS. The safer delivery is an `HttpOnly; Secure; SameSite` cookie the browser sends
 >   automatically and scripts can't read. This API-first tutorial returns it in the response body for
@@ -1249,6 +1258,30 @@ app.UseMiddleware<ApiKeyMiddleware>();   // 0) is this even one of our known cli
 app.UseAuthentication();                 // 1) who is the user?
 app.UseAuthorization();                  // 2) are they allowed to do this?
 ```
+
+> ℹ️ **One more line if a browser page will ever call this API — CORS.** `curl` and Swagger live on the same
+> origin as the API, so they never hit this. But a page served from *anywhere else* — including the
+> [test console](../course-validation/business/test-console/index.html) you open straight from disk — makes a
+> **cross-origin** request, and the browser refuses to deliver the response unless the API opts in. That's
+> CORS (Cross-Origin Resource Sharing): a browser-enforced rule that a page from origin X may only read
+> responses from origin Y if Y says so. Two lines of registration and one of wiring:
+>
+> ```csharp
+> // with the other services:
+> builder.Services.AddCors(o => o.AddPolicy("test-console", p =>
+>     p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
+>
+> // in the pipeline — BEFORE the API-key middleware, so the OPTIONS preflight is answered first:
+> app.UseCors("test-console");
+> app.UseMiddleware<ApiKeyMiddleware>();
+> ```
+>
+> The order matters for the same preflight reason as the middleware's `IsOptions` escape hatch: the browser's
+> `OPTIONS` probe must be answered by CORS before any gate can 401 it. And `AllowAnyOrigin` is acceptable
+> *here* only because our credentials travel in explicit headers (`X-Api-Key`, `Authorization`) that a foreign
+> page can't forge onto a user's behalf — there are **no cookies**. The moment you adopt the `HttpOnly`-cookie
+> delivery from §10's storage caveat, an any-origin policy becomes dangerous; you'd lock it to your real
+> client origins instead. Skip this box entirely if nothing browser-based will call your build.
 
 Now the client sends **both** headers on every call — the API key (which app) *and*, once logged in, the
 bearer token (which user):

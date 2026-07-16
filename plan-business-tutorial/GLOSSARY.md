@@ -59,7 +59,16 @@ file (Command, Result, Validator, Handler) and the endpoint file (Request, Respo
 **Contract (published interface)**
 The *only* sanctioned way one module talks to another synchronously: a small interface in the shared kernel
 that one module implements and another calls (e.g. `IStockReservation`). *Analogy: the request slip you send
-through another department's front desk — you never walk into their filing room.*
+through another department's front desk — you never walk into their filing room.* *(The optional
+[Phase 15](15-scaling-the-wall.md) refactor moves each contract out of the shared kernel and into the module
+that owns it — same idea, different home.)*
+
+**Port**
+An interface a module (or the platform) declares for a capability *it* needs — `ISalesOrderRepository`,
+`IDbConnectionFactory`, `ICurrentUser` — implemented by its own Infrastructure or by the host, never by
+another module. **A port is not a contract:** a port is how you reach *your own* plumbing; a contract is a
+promise *between modules*. The tell is who implements it. *Analogy: the wall socket — you code against the
+socket's shape and never care which generator is behind the wall.*
 
 **Integration event**
 A published announcement one module makes that other modules can subscribe to ("SalesOrderCancelled"). Used
@@ -114,6 +123,12 @@ each department's floor, instead of one giant switchboard in the lobby.*
 **FluentValidation**
 A small library for writing input-validation rules ("CustomerId must be > 0") in one readable place. *Analogy:
 a checklist the mailroom runs before a form is allowed further in.*
+
+**Middleware**
+A step in the HTTP pipeline that every request passes through *before* any endpoint runs — the API-key gate,
+authentication, CORS. Each piece can inspect the request, wave it through, or reject it on the spot; the order
+they're wired in is the order they run. *Analogy: the sequence of checkpoints at an airport — ticket check,
+then security, then the gate — and you can't reorder them without chaos.*
 
 ---
 
@@ -213,6 +228,26 @@ stock AND reserve it" atomic. *Analogy: a turnstile that lets exactly one person
 **Optimistic concurrency / `rowversion`**
 A safety check: "only save my change if nobody else changed this since I loaded it." *Analogy: "I'll sign this
 contract only if it's still the exact copy I read."*
+
+**Idempotent**
+Safe to run more than once with the same end result — a guarded `CREATE TABLE` that no-ops if the table
+exists, a logout that returns success for an already-revoked token. Anything that might be retried or re-run
+should be idempotent. *Analogy: pressing the elevator call button five times still summons one elevator.*
+
+**Saga**
+How a multi-step operation stays correct when its steps *can't* share one database transaction (they cross
+services or databases): each step gets a compensating "undo," and a failure runs the undos instead of a
+rollback. This course never needs one — its one cross-module write shares a transaction — but extracting
+Inventory into its own service would turn "reserve stock" into exactly this ([Phase 7](07-submit-reserve-concurrency.md)'s
+honest note). *Analogy: booking a flight and a hotel separately — if the hotel falls through, you don't
+"roll back" the flight; you cancel it.*
+
+**Outbox**
+A table where events are written *in the same transaction* as the state change they announce, then sent by a
+background reader. It upgrades "best-effort, after commit" ([Phase 8](08-approval-cancellation.md)) to
+"guaranteed, eventually" — the event can't be lost between the commit and the send. A
+[Phase 14](14-going-further.md) extension. *Analogy: the out-tray on your desk — the letter is safely written
+and sitting there even if the mail cart doesn't come until tomorrow.*
 
 ---
 

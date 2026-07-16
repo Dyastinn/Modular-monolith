@@ -35,9 +35,9 @@ public sealed class SalesOrder : AggregateRoot<SalesOrderId>
         return order;
     }
 
-    // Rebuild a persisted order from the database (read side of the repository). Sets state directly
-    // WITHOUT raising events — this is loading history, not a new business fact.
-    // (The tutorial leaves GetAsync's body "omitted, same shape"; this is the rehydration seam it implies.)
+    // Rebuild a persisted order from the database (used only by the repository). Sets state directly
+    // WITHOUT re-running guards or raising events — this is loading history, not a new business fact.
+    // Taught in plan-business-tutorial/06-create-order.md §6b, alongside the repository's GetAsync.
     public static SalesOrder Rehydrate(
         SalesOrderId id, string orderNumber, CustomerId customerId, SalesOrderStatus status,
         UserId createdBy, UserId? approvedBy, byte[] rowVersion, IEnumerable<SalesOrderLine> lines)

@@ -112,6 +112,7 @@ Erp/                                         # repo root
 │       │   └── ChangePassword/                #     ChangePasswordHandler.cs + Endpoint (Phase 4 Part 4)
 │       ├── Security/ApiKeyMiddleware.cs       #   the client-app gate, first in the pipeline (Phase 4 §11)
 │       ├── GlobalExceptionHandler.cs          #   maps exceptions → HTTP status (Phase 11)
+│       ├── DatabaseInitializer.cs             #   applies each module's embedded SQL scripts on boot (Phase 12 §4)
 │       ├── Program.cs                         #   composition root; ends with `public partial class Program {}`
 │       ├── appsettings.json
 │       └── appsettings.Development.json
@@ -126,8 +127,10 @@ Erp/                                         # repo root
 
 ## 1b. Expected output — a full run of the finished app
 
-With the database created (each module's `Infrastructure/Sql/` scripts applied) and real password hashes in
-the seed ([Phase 4](04-jwt-auth.md)), `dotnet run --project src/Erp.Api` gives you `Now listening on…`. Here
+With real password hashes in the seed ([Phase 4](04-jwt-auth.md)), `dotnet run --project src/Erp.Api` gives
+you `Now listening on…` — and the startup `DatabaseInitializer` ([Phase 12 §4](12-testing.md)) creates the
+database and applies each module's `Infrastructure/Sql/` scripts on the way up, so there's nothing to run by
+hand first. Here
 is the whole lifecycle against the seed data, with the responses you should get:
 
 ```http
@@ -234,7 +237,7 @@ as "in production." Here's the honest gap list, grouped, so you know what a real
       `POST /auth/change-password` slice over `usp_AppUser_ChangePassword` that verifies the current password,
       rotates the security stamp (re-login everywhere), and — being anonymous — doubles as the way back in from
       an expired password. The remaining gap is the **forgot-password** path for users who *don't* know the old
-      password (an emailed, single-use, time-boxed reset token + rate limiting) — exercise #7 below.
+      password (an emailed, single-use, time-boxed reset token + rate limiting) — exercise #8 below.
 - [ ] Rate-limiting on `/auth/login` to slow brute-force attempts (ASP.NET Core has built-in rate
       limiting — no new dependency).
 - [x] **Refresh tokens** — ✅ built in [Phase 4 §10](04c-jwt-refresh-apikey.md): short (15 min) access tokens backed by
@@ -277,8 +280,11 @@ as "in production." Here's the honest gap list, grouped, so you know what a real
 - [ ] **Structured logging** to a real sink (the built-in `ILogger` + a provider — still no new
       framework needed).
 - [ ] A **health check** that verifies the database is reachable, not just that the app started.
-- [ ] Each module's `Infrastructure/Sql/` scripts run automatically on deploy (DbUp or a simple runner),
-      tracked in a `SchemaVersions` table.
+- [x] Each module's `Infrastructure/Sql/` scripts apply automatically — ✅ the startup `DatabaseInitializer`
+      from [Phase 12 §4](12-testing.md) rebuilds/patches dev and test on every boot (guarded, embedded
+      scripts). The remaining gap for production: run them as a **tracked deploy step** (DbUp +
+      `SchemaVersions`, [Phase 3 §7](03-database-schema.md)) so a schema change runs once, *before* app
+      instances start, instead of racing them.
 - [ ] Configuration validated at startup (fail fast if the connection string or signing key is missing).
 
 ### Authorization depth
@@ -366,7 +372,7 @@ Stay within the stack; each reinforces a pattern:
    check *for that document*, or give it its own `CreditAmount`/`ReturnedQuantity` type) and move the balance
    the opposite way. (Reinforces: value objects encode *per-document* invariants, not universal ones; and the
    matched-pair balance move from [Phase 8](08-approval-cancellation.md), run in reverse.)
-7. **Forgot-password (emailed reset) flow** — the base build already ships `POST /auth/change-password`
+8. **Forgot-password (emailed reset) flow** — the base build already ships `POST /auth/change-password`
    ([Phase 4 Part 4](04d-jwt-change-password.md)), but it needs the *current* password. Add the path for users
    who've forgotten it: a `POST /auth/forgot-password` that mints a single-use, time-boxed reset token (stored
    as a **hash**, exactly like a refresh token — §10) and "sends" it (log it to the console — a real mail
@@ -376,7 +382,7 @@ Stay within the stack; each reinforces a pattern:
    [Phase 4 Part 4](04d-jwt-change-password.md).)
 
 Try one *before* reading how; struggling first is where the learning is. ([Phase 14 §4](14-going-further.md)
-continues the list at #8, for exercises that push past the base stack.)
+continues the list at #9, for exercises that push past the base stack.)
 
 > 👉 **Want the production last mile?** [Phase 14 — Going Further](14-going-further.md) is an optional,
 > out-of-scope appendix: how you'd close the checklist above, containerize with Docker, cache with Redis, and

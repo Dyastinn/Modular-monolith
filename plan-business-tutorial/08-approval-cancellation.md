@@ -20,6 +20,15 @@ Two commands that complete the order lifecycle:
 Plus: **optimistic concurrency** so two managers acting on the same order can't clobber each other, and
 **domain-event dispatch after commit** for side effects (audit logging).
 
+> ℹ️ **What about *reject*?** Sharp eyes will notice the state machine ([Phase 5 §4](05-domain-model.md))
+> allows `PendingApproval → Rejected`, and the domain already carries `Reject()` and a `SalesOrderRejected`
+> event — yet this phase wires **no reject endpoint**, on purpose. A reject slice is a third near-copy of the
+> two you're about to build (role-gated like approve, releases reservations like cancel, *doesn't* touch the
+> balance because approval never happened), so by the end of this phase you'll be able to write it without
+> help — which is exactly why it's [extension exercise #2](13-wrap-up-checklist.md) rather than more pages
+> here. Until you build it, know honestly that `Rejected` is a status no order in the base build can actually
+> reach.
+
 ## 2. Why it's designed this way
 
 - **Approval is role-gated at two levels.** Coarse: the endpoint requires the `SalesManager` role. This

@@ -274,14 +274,19 @@ units at the same instant (managers, because it's the Controlled category — se
   t2     usp_Inventory_Reserve(item3, 5)
          UPDATE ... WHERE (8-0) >= 5  → matches
          Reserved = 5, rowcount = 1  → reserved ✓
+         (A now holds a lock on this row)
   t3                                              BEGIN TRAN
   t4                                              usp_Inventory_Reserve(item3, 5)
-                                                  UPDATE ... WHERE (8-5) >= 5 → 3 >= 5 FALSE
-                                                  rowcount = 0 → NOT reserved ✗
+                                                  UPDATE ... → BLOCKS. A holds the row lock;
+                                                  B's WHERE can't even be evaluated yet. B waits.
   t5     UpdateStatus → PendingApproval
-  t6     COMMIT  (Reserved now 5, durable)
-  t7                                              handler sees rows==0 → throws DomainException
-  t8                                              catch → tx.Rollback()
+  t6     COMMIT  (Reserved = 5 durable;
+         the row lock is released)
+  t7                                              …unblocked. NOW the WHERE evaluates, against
+                                                  A's committed value: (8-5) >= 5 → 3 >= 5 FALSE
+                                                  rowcount = 0 → NOT reserved ✗
+  t8                                              handler sees rows==0 → throws DomainException
+  t9                                              catch → tx.Rollback()
                                                   → B's order stays Draft, gets a 422 "Insufficient stock"
 ```
 
@@ -291,10 +296,45 @@ couldn't push it negative. This is the bug that unit tests can't catch and integ
 ([Phase 12](12-testing.md)).
 
 > ❓ **You might be wondering: "Does the database really stop B from reading stale stock like the C#
-> version did?"** Yes. Each `UPDATE` takes a brief lock on the row. B's `UPDATE` can't evaluate its
-> `WHERE` until A's `UPDATE` (and, for the committed value, A's commit) has released the row. So B
-> evaluates against `Reserved = 5`, sees only 3 available, and correctly fails. The single-statement
+> version did?"** Yes — and t4 is the moment to stare at. B's `UPDATE` arrives while A holds the row lock,
+> so B doesn't read a stale `Reserved = 0` and proceed; it **waits**, and only evaluates its `WHERE` after
+> A's commit has released the row at t6. B then sees `Reserved = 5`, finds only 3 available, and correctly
+> fails. That brief, invisible wait is the whole difference from the C# version — the single-statement
 > update is what makes "check" and "change" inseparable.
+
+### Watch the race with your own eyes (two SSMS windows, five minutes)
+
+You don't have to take the timeline on faith — SQL Server will act it out for you, in slow motion, with you
+playing both managers. Open **two query windows** in SSMS (or Azure Data Studio), both connected to `Erp`.
+
+**Window 1 (Manager A)** — start a transaction, reserve, and *stop before committing*:
+
+```sql
+BEGIN TRAN;
+EXEC inventory.usp_Inventory_Reserve @ItemId = 3, @Qty = 5;   -- returns 1: reserved ✓
+-- do NOT commit yet. You are now "A" at t2 — holding the row lock.
+```
+
+**Window 2 (Manager B)** — run the same reservation:
+
+```sql
+EXEC inventory.usp_Inventory_Reserve @ItemId = 3, @Qty = 5;
+```
+
+Window 2 **hangs**. That spinning "Executing query…" is t4 — B's `UPDATE` is blocked on A's row lock,
+unable to even evaluate its `WHERE`. Now go back to **Window 1** and `COMMIT;`. The instant you do, Window 2
+un-freezes and returns **0** — it evaluated against A's committed `Reserved = 5`, found only 3 available, and
+correctly refused. You just watched t4 → t6 → t7 happen at human speed.
+
+Clean up afterwards (you reserved real seed stock):
+
+```sql
+UPDATE inventory.Inventory SET Reserved = 0 WHERE ItemId = 3;
+```
+
+> 💡 Try the variation too: `ROLLBACK` in Window 1 instead of `COMMIT`, and Window 2 returns **1** — with A's
+> reservation undone, B's `WHERE` saw the original 8 and won the stock instead. The blocked caller doesn't
+> just wait; it waits *for the truth*.
 
 ## 6. The endpoint (Carter module in the feature folder)
 

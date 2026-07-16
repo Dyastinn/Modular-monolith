@@ -129,9 +129,6 @@ Each phase builds directly on the one before it, and each ends with something yo
 | 4c | [04c-jwt-refresh-apikey.md](04c-jwt-refresh-apikey.md) | **Part 3** — rotating refresh tokens (reuse detection) + the API-key gate | ~55 min |
 | 4d | [04d-jwt-change-password.md](04d-jwt-change-password.md) | **Part 4** — change/reset password over the DB proc (and why it's anonymous) | ~40 min |
 | 4e | [04e-jwt-wrap-up.md](04e-jwt-wrap-up.md) | **Part 5** — full request-flow trace, end-to-end checkpoint, common mistakes | ~20 min |
-
-> 🔑 **Phase 4 is the long one, so each of its five parts ends in its own runnable checkpoint** — you never
-> carry more than one part's worth of unverified code. Part 5 then runs every door in one pass.
 | 5 | [05-domain-model.md](05-domain-model.md) | The `SalesOrder` aggregate + business rules | ~1.5–2 hr |
 | 6 | [06-create-order.md](06-create-order.md) | Create-order slice: blocking, credit, category, quantity | ~2 hr |
 | 7 | [07-submit-reserve-concurrency.md](07-submit-reserve-concurrency.md) | Submit + atomic inventory reservation + rollback | ~1.5–2 hr |
@@ -143,6 +140,9 @@ Each phase builds directly on the one before it, and each ends with something yo
 | 13 | [13-wrap-up-checklist.md](13-wrap-up-checklist.md) | Recap + production-readiness checklist | ~30 min (read) |
 | 14 | [14-going-further.md](14-going-further.md) | *Optional.* Harden what you built; when Docker and Redis start earning their keep | ~1 hr (read) |
 | 15 | [15-scaling-the-wall.md](15-scaling-the-wall.md) | *Optional, and it changes the architecture.* Per-module contracts + `internal`, for when the shared kernel stops scaling | ~40 min (read) |
+
+> 🔑 **Phase 4 is the long one, so each of its five parts ends in its own runnable checkpoint** — you never
+> carry more than one part's worth of unverified code. Part 5 then runs every door in one pass.
 
 > ⏱️ **Total: roughly 18–22 hours of focused, hands-on time** — think two to three unhurried days, or a
 > couple of evenings a week for a few weeks. These are *typing-and-understanding* estimates for someone
@@ -166,6 +166,12 @@ Nothing gets skipped and nothing is assumed. **Every phase answers the same five
 - **Go in order.** Each phase assumes the previous one compiles and works.
 - **Type the code, don't paste it.** Fixing the compiler's complaints is where the learning happens.
   [LEARNING-RESOURCES.md](LEARNING-RESOURCES.md) says more about why.
+- **On Windows, run the checkpoint commands in Git Bash.** The checkpoints use `curl` with bash syntax
+  (`VAR=value`, `$(...)`, `jq`) — that's deliberate, because it's copy-pasteable and shows exact headers. Git
+  Bash ships with [Git for Windows](https://git-scm.com/download/win), so you almost certainly already have it
+  (right-click a folder → "Open Git Bash here"). Pasting the same lines into PowerShell **will not work** —
+  PowerShell has different variable syntax and its own `curl` alias. If you'd rather stay in the browser
+  entirely, every checkpoint can also be driven from Swagger or the test console below.
 - **When a term feels shaky,** look it up in [GLOSSARY.md](GLOSSARY.md), then come back.
 - **Resist scope creep.** If you catch yourself adding a cache or a queue "to be safe," stop — that's
   not this tutorial.
@@ -173,7 +179,10 @@ Nothing gets skipped and nothing is assumed. **Every phase answers the same five
 > 🖥️ **You don't have to build a client to test your work.** A **ready-made test console** — a single
 > standalone [`test-console/index.html`](../course-validation/business/test-console/index.html) you just
 > open from disk while the API runs — lets you drive create → edit → submit → approve → cancel from a
-> browser (every one of the sales-order endpoints), watching each rule fire, without writing any front-end. There's also Swagger at `/swagger`. A complete,
+> browser (every one of the sales-order endpoints), watching each rule fire, without writing any front-end.
+> (A page opened from disk calls your API *cross-origin*, so your own build needs the three-line CORS policy
+> from [Phase 4c §11](04c-jwt-refresh-apikey.md) before the console can reach it — the reference build already
+> has it.) There's also Swagger at `/swagger`. A complete,
 > runnable reference implementation of this whole tutorial lives in
 > [`../course-validation/business/`](../course-validation/business/); see the
 > [repo README](../README.md#running-the-reference-build) for the one-command run. Build it yourself first —

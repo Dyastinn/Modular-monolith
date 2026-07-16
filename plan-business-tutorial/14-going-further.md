@@ -111,7 +111,7 @@ text. That was structured logging the whole time; a sink just makes it searchabl
 > ✅ **Now built in [Phase 4 §10](04c-jwt-refresh-apikey.md).** Short access tokens backed by rotating refresh tokens, with
 > reuse detection, revoke-all-sessions, and an archive-on-retention sweep (`usp_RefreshToken_Purge`) that keeps
 > the token table small without breaking reuse detection. One hardening follow-up remains: delivering the
-> refresh token as an `HttpOnly` cookie for browser clients (versus the response body) — exercise #8 below.
+> refresh token as an `HttpOnly` cookie for browser clients (versus the response body) — exercise #9 below.
 
 ### Row-level authorization
 
@@ -219,30 +219,30 @@ output caching across instances.
 
 ## 4. More extension exercises
 
-[Phase 13 §5](13-wrap-up-checklist.md) had seven. Here are more, ordered roughly by how far they push past the
+[Phase 13 §5](13-wrap-up-checklist.md) had eight. Here are more, ordered roughly by how far they push past the
 base build. Same rule: try it *before* reading how.
 
-8. **Refresh-token hardening** — the follow-up [Phase 4 §10](04c-jwt-refresh-apikey.md) flagged: deliver the refresh
+9. **Refresh-token hardening** — the follow-up [Phase 4 §10](04c-jwt-refresh-apikey.md) flagged: deliver the refresh
    token to a browser client as an `HttpOnly; Secure; SameSite` cookie instead of the response body. (The
    retention sweep itself — the `usp_RefreshToken_Purge` proc plus *both* drivers, a SQL Agent job and an
    in-process hosted service — is already built in §10; if you deployed the hosted version, try swapping to the
    Agent job and reason through why one runner beats N redundant sweepers at scale.) (Reinforces: the XSS threat
    model, and that a schedule's *home* — app vs. database — is a real trade-off.)
-9. **Per-IP login rate limit** — partition the §1 limiter by client IP so one attacker can't lock everyone
-   out. Then notice it only holds per-instance, and reason through what §3 would take to make it global.
-   (Reinforces: why in-process state and horizontal scale conflict.)
-10. **Dockerized integration tests** — swap [Phase 12](12-testing.md)'s LocalDB `Erp_Test` for
+10. **Per-IP login rate limit** — partition the §1 limiter by client IP so one attacker can't lock everyone
+    out. Then notice it only holds per-instance, and reason through what §3 would take to make it global.
+    (Reinforces: why in-process state and horizontal scale conflict.)
+11. **Dockerized integration tests** — swap [Phase 12](12-testing.md)'s LocalDB `Erp_Test` for
     `Testcontainers.MsSql`. The reservation-race test now runs identically on any CI runner. (Reinforces:
     reproducible environments; the `CustomWebAppFactory` seam you already built.)
-11. **Cache the item catalog** — put `IDistributedCache` in front of the item/category read and evict on the
+12. **Cache the item catalog** — put `IDistributedCache` in front of the item/category read and evict on the
     (rare) item write. Prove the invalidation by changing a price and re-reading. (Reinforces: cache-aside, and
     that invalidation — not caching — is the hard part.)
-12. **Reliable cross-system reaction (the outbox)** — the one promise [Phase 8](08-approval-cancellation.md)'s
+13. **Reliable cross-system reaction (the outbox)** — the one promise [Phase 8](08-approval-cancellation.md)'s
     after-commit dispatch can't make: if the process dies between commit and the side effect, the event is
     lost. Write each domain event to an `Outbox` table *in the same transaction* as the state change, and drain
     it with a background reader. (Reinforces: "after commit, best-effort" and "guaranteed delivery" are
     different guarantees.)
-13. **A second business module** — build `Purchasing` (buy stock from suppliers, raising `OnHand`) as its own
+14. **A second business module** — build `Purchasing` (buy stock from suppliers, raising `OnHand`) as its own
     module with its own schema, reusing the shared kernel untouched. If you can add it without editing Sales,
     the walls are real. (Reinforces: the whole point — the third module should be as easy as the second.)
 

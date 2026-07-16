@@ -103,7 +103,9 @@ public interface ISalesOrderRepository
 ```
 
 ```csharp
-// Domain/Ports/ICustomerRepository.cs — the Customer aggregate's data-access port
+// Domain/Ports/ICustomerRepository.cs — the Customer entity's data-access port
+// (Customer and ItemCategory are plain entities, not aggregates — no lifecycle, no events — so they
+//  don't extend AggregateRoot. "One repository per aggregate-or-entity you load whole" is the rule.)
 using System.Data;   // IDbTransaction
 
 namespace Erp.Modules.Sales.Domain;
@@ -118,7 +120,7 @@ public interface ICustomerRepository
 ```
 
 ```csharp
-// Domain/Ports/IItemRepository.cs — the ItemCategory aggregate's data-access port
+// Domain/Ports/IItemRepository.cs — the item catalog's data-access port (items + their category rules)
 
 namespace Erp.Modules.Sales.Domain;
 
@@ -280,7 +282,9 @@ Look at what the handler *does* vs. what it *decides*:
 > [Phase 3b](03b-data-access.md). The module just uses Dapper against the `DbConnection` the factory hands
 > out. CPM adds the `<PackageVersion>` line.)
 
-`Modules/Sales/Infrastructure/SalesOrderRepository.cs` (abbreviated to the create path):
+`Modules/Sales/Infrastructure/SalesOrderRepository.cs` — the create path first; loading an order back
+(rehydration) gets its own section, [§6b](#6b-loading-an-order-back-the-rehydrate-factory-and-getasync),
+because it earns one:
 
 ```csharp
 // src/Modules/Sales/Infrastructure/SalesOrderRepository.cs
@@ -325,7 +329,16 @@ public sealed class SalesOrderRepository(IDbConnectionFactory factory) : ISalesO
 
         return newId;   // hand the DB-assigned id back to the handler
     }
-    // GetAsync, UpdateStatusAsync, NextOrderNumberAsync omitted here — same shape.
+
+    public async Task<string> NextOrderNumberAsync(CancellationToken ct)
+    {
+        using var conn = factory.Create();   // pure read — no transaction (Phase 3b)
+        return await conn.ExecuteScalarAsync<string>(new CommandDefinition(
+            "sales.usp_SalesOrder_NextNumber",
+            commandType: CommandType.StoredProcedure, cancellationToken: ct)) ?? string.Empty;
+    }
+
+    // GetAsync is built in §6b just below; UpdateStatusAsync (the version-checked update) in Phase 8.
 }
 ```
 
@@ -333,6 +346,116 @@ The repository maps the aggregate to proc parameters and runs them **on the pass
 contains **no business rules** — pure persistence. Note it converts domain types to primitives at the
 boundary: `order.CustomerId.Value`, `(int)order.Status`, `line.UnitPrice.Amount`. That unwrapping is the
 whole price of the strongly-typed IDs from [Phase 5](05-domain-model.md), and it's paid here, once.
+
+## 6b. Loading an order back: the `Rehydrate` factory and `GetAsync`
+
+Saving was the easy half. Now think about **loading** — [Phase 7](07-submit-reserve-concurrency.md)'s submit
+handler starts with `orders.GetAsync(id)` and expects a full, working `SalesOrder` back: right status, right
+lines, its `RowVersion`, and its real `Id`. Try to write that method and you run straight into a wall you
+built yourself in Phase 5, *on purpose*:
+
+- The constructor is `private`. You can't `new SalesOrder()` from the repository.
+- Every property has a `private set`. You can't assign `Status` from outside.
+- `Id` has a `protected set` — the ⚠️ note in Phase 5 §8 made a point of the fact that the repository
+  *physically cannot* write it.
+- And you can't rebuild the lines through `Create()` + `AddLine()` either: `AddLine` throws unless the order
+  is a **Draft**, so a `PendingApproval` order could never be reloaded that way. The guards that protect the
+  aggregate from bad *business* moves would also block a perfectly legitimate *load*.
+
+That's not a design bug — it's the design working. Every door the repository might sneak through is locked,
+so the aggregate has to *offer* one. The answer is a second static factory next to `Create`, and the reason
+it may do what the repository can't is simple: **it's a member of `SalesOrder` itself**, so the private
+constructor, the private setters, and the protected `Id` are all within its reach. Go back to
+`Domain/SalesOrders/SalesOrder.cs` and add it below `Create`:
+
+```csharp
+// add to SalesOrder.cs, below Create():
+// Rebuild a persisted order from the database (used only by the repository). Sets state directly
+// WITHOUT re-running guards or raising events — this is loading history, not a new business fact.
+public static SalesOrder Rehydrate(
+    SalesOrderId id, string orderNumber, CustomerId customerId, SalesOrderStatus status,
+    UserId createdBy, UserId? approvedBy, byte[] rowVersion, IEnumerable<SalesOrderLine> lines)
+{
+    var order = new SalesOrder
+    {
+        Id = id,                    // legal HERE: a member of the class may use the protected setter
+        OrderNumber = orderNumber,
+        CustomerId = customerId,
+        Status = status,
+        CreatedBy = createdBy,
+        ApprovedBy = approvedBy,
+        RowVersion = rowVersion
+    };
+    order._lines.AddRange(lines);   // straight into the list — no AddLine, no draft-only guard
+    return order;
+}
+```
+
+Two deliberate absences in that method, and both matter:
+
+- **No guards re-run.** `Rehydrate` bypasses `AddLine`'s draft-only check and the `Transition` gate, because
+  the state it's restoring already passed every guard *when it was created* — the database row is the record
+  of that. Re-validating history would wrongly reject legal saved states (the reloaded `PendingApproval`
+  order above).
+- **No events raised.** `Create` raises `SalesOrderCreated` because something *happened*. Loading a row is
+  not a business fact — raise events here and every reload would re-announce an order that was created weeks
+  ago.
+
+> ❓ **"Doesn't a public `Rehydrate` reopen the hole the private setters closed?"** Only partially, and
+> knowingly. Yes, any code *could* call `Rehydrate` and conjure an order in an arbitrary state — but it has
+> to do so loudly, with a method whose name says "I am bypassing the rules to restore saved state." That's a
+> visible, greppable act, not the silent `order.Status = x` drift that public setters invite. (In
+> [Phase 15](15-scaling-the-wall.md)'s `internal`-walled variant you can tighten it further; for the base
+> build, the honest name is the fence.)
+
+With the seam in place, `GetAsync` is ordinary Dapper — read the header, read the lines, wrap the primitives
+back into domain types (the customs desk from Phase 5 §3a, now in the other direction), and hand everything
+to `Rehydrate`:
+
+```csharp
+// SalesOrderRepository.cs (continued) — the flat DB shapes Dapper reads, private to the repository:
+private sealed record HeaderRow(
+    long Id, string OrderNumber, long CustomerId, int Status,
+    long CreatedByUserId, long? ApprovedByUserId, byte[] RowVersion);
+private sealed record LineRow(long ItemId, int Quantity, decimal UnitPrice);
+
+public async Task<SalesOrder?> GetAsync(SalesOrderId id, CancellationToken ct)
+{
+    using var conn = factory.Create();   // pure read — no transaction (Phase 3b)
+
+    var header = await conn.QuerySingleOrDefaultAsync<HeaderRow>(new CommandDefinition(
+        "sales.usp_SalesOrder_GetById", new { Id = id.Value },
+        commandType: CommandType.StoredProcedure, cancellationToken: ct));
+    if (header is null) return null;
+
+    var lineRows = await conn.QueryAsync<LineRow>(new CommandDefinition(
+        "sales.usp_SalesOrderLine_GetByOrder", new { SalesOrderId = id.Value },
+        commandType: CommandType.StoredProcedure, cancellationToken: ct));
+
+    // Wrap the bare primitives back into domain types at the boundary…
+    var lines = lineRows.Select(l =>
+        new SalesOrderLine(new ItemId(l.ItemId), new Quantity(l.Quantity), new Money(l.UnitPrice)));
+
+    // …and let the aggregate rebuild itself.
+    return SalesOrder.Rehydrate(
+        new SalesOrderId(header.Id), header.OrderNumber, new CustomerId(header.CustomerId),
+        (SalesOrderStatus)header.Status, new UserId(header.CreatedByUserId),
+        header.ApprovedByUserId is { } a ? new UserId(a) : null,
+        header.RowVersion ?? Array.Empty<byte>(), lines);
+}
+```
+
+(`header.ApprovedByUserId is { } a` is a pattern that reads "if it isn't null, call the value `a`" — the
+null-safe way to turn a `long?` into a `UserId?`.) Note the `RowVersion` riding along: `GetAsync` is where
+the optimistic-concurrency stamp gets onto the aggregate, so [Phase 8](08-approval-cancellation.md)'s
+version-checked update can hand it back. And the two `Row` records are the same DB-shape-vs-domain-shape
+split you'll meet again on the read side in [Phase 10](10-queries-search.md).
+
+> 🔑 **The division of labor, one more time.** The repository decides *which rows*; the aggregate decides
+> *what an order is*. `GetAsync` never assigns a property — it collects primitives and defers to
+> `Rehydrate`, so even the load path goes through a door the aggregate owns. Contrast that with the ⚠️ note
+> back in §5: on the *create* path there is still no `Rehydrate`-shaped door for pushing the DB-assigned id
+> onto the in-memory order, which is why `AddAsync` returns the id instead.
 
 ### Register the three repositories
 
@@ -499,6 +622,33 @@ Verify it landed: `SELECT OrderNumber, Status, TotalAmount FROM sales.SalesOrder
 order returns `201` and a rule-breaking one writes nothing, **Phase 6 is done and verifiable** (the clean
 `422` body for the rejection arrives with Phase 11).
 
+### 🔍 Debug one request — watch the architecture in the call stack
+
+Now that you have a real slice, spend five minutes *inside* it — this is the fastest way to make the whole
+endpoint → mediator → handler chain stop being abstract. In Visual Studio (VS Code and Rider work the same
+way):
+
+1. Set a **breakpoint** on the first line of `CreateSalesOrderHandler.Handle` (click the margin, or `F9`).
+2. Start with the debugger attached: **F5** (not `dotnet run` in a terminal — that runs without a debugger;
+   in VS Code use *Run → Start Debugging*).
+3. Fire the create request — from Swagger's *Try it out* or the curl above. The IDE freezes the world at
+   your breakpoint.
+4. Open the **Call Stack** window (`Ctrl+Alt+C`). Read it bottom-up: ASP.NET's routing → the Carter
+   endpoint's lambda → `Sender.Send` → the wrapper from [Phase 2](02-mediator-own-vs-free.md) → *your
+   handler*. That stack **is** the architecture — every arrow in this phase's diagrams, live. (After
+   [Phase 11](11-cross-cutting.md), you'll see `LoggingBehavior.Handle` and `ValidationBehavior.Handle`
+   appear between `Send` and the handler — the pipeline nesting made visible.)
+5. Now **F10** (step over) through the handler and watch the Locals window: `customer` fills in after the
+   repository call, `order.Total` grows as lines are added, `tx` appears when the transaction opens. Hover
+   any variable to inspect it.
+6. Try it once on the *unhappy* path: request Gamma (the blocked customer) and step until
+   `customer.EnsureNotBlocked()` throws — you'll see the debugger jump straight out of the handler, past the
+   transaction that never got opened.
+
+Two shortcuts worth knowing forever: **F11** steps *into* a call (use it on `sender.Send` once, to walk
+through the mediator's dispatch yourself), and **Shift+F5** stops debugging. From here on, any time a phase's
+behavior surprises you, this is the move: breakpoint at the handler, F5, and read the call stack.
+
 ## 10. Why each component exists
 
 | Component | Why |
@@ -507,6 +657,7 @@ order returns `201` and a rule-breaking one writes nothing, **Phase 6 is done an
 | `CreateSalesOrderValidator` | Input well-formedness, before any work. |
 | `CreateSalesOrderHandler` | Orchestrates the use case; delegates every rule to the domain. |
 | `ISalesOrderRepository` etc. | Ports the module's `Domain/` declares; the module's `Infrastructure/` supplies the SQL. |
+| `SalesOrder.Rehydrate` + `GetAsync` | The aggregate's own door for being rebuilt from saved rows — no guards re-run, no events raised, and the only place the protected `Id` gets assigned. |
 | `IDbConnectionFactory` + `IDbTransaction` | Makes the transaction boundary explicit; commit on success, roll back on throw. |
 | `ICurrentUser` | Supplies the caller (to stamp `CreatedBy` and check category roles). |
 | Endpoint | Thin HTTP adapter; enforces coarse "must be a sales role" auth. |

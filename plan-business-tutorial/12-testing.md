@@ -148,14 +148,150 @@ the rules in the domain. **These should be the bulk of your tests.**
 > attributes from the new `.csproj` — the `<PackageVersion>` lines are already in `Directory.Packages.props`
 > from [Phase 5 §10](05-domain-model.md), so this time there's nothing to add.
 
-`Erp.Integration.Tests` runs against a **separate test database**, `Erp_Test` — never your dev DB. Setting it
-up costs you nothing extra: the app already applies each module's `Infrastructure/Sql/` scripts on startup
-([Phase 3](03-database-schema.md)), so booting the host against a different connection string is all it takes.
-Point it at `Erp_Test` and the same schemas, procs, and seed data appear there. **This is the payoff of
-"migrations without EF"** — one set of scripts builds dev, test, and production alike.
+### First, make the app build its own database (the step Phase 3 deferred)
 
-That means there's no separate database fixture to write. The `CustomWebAppFactory` in §5 does the whole job,
-and the integration tests below reach the database through the *same* connection string it configures:
+`Erp.Integration.Tests` runs against a **separate test database**, `Erp_Test` — never your dev DB. And that's
+the moment "run the scripts by hand" ([Phase 3 §7](03-database-schema.md)) stops scaling: you'd be re-running
+six `sqlcmd` lines against a second database, again after every schema change, and again on every teammate's
+machine. Phase 3 warned this by-hand step was scaffolding; here's where we replace it. Make the **app apply
+its own scripts at startup**, and "set up the test database" becomes nothing more than booting the host
+against a different connection string. Three small steps:
+
+**1) Ship each module's `Sql/` folder inside its assembly.** Add one `ItemGroup` to *both* module `.csproj`s
+(`Erp.Modules.Sales` and `Erp.Modules.Inventory`). This embeds the `.sql` files as **resources** — baked into
+the compiled DLL — so the runner finds them no matter which working directory the app (or a test host) starts
+from:
+
+```xml
+<ItemGroup>
+  <EmbeddedResource Include="Infrastructure\Sql\**\*.sql" />
+</ItemGroup>
+```
+
+**2) Make every statement safe to re-run.** The initializer below runs **every script on every boot** — there
+is deliberately no `SchemaVersions` table tracking what already ran, so the safety must live in each
+*statement* (the second of Phase 3 §7's "two places to put safe-to-re-run"). If your `Sql/` files are still
+the unguarded versions you typed in Phase 3, swap them for the guarded style from
+[03a-database-queries](03a-database-queries/README.md) — `IF OBJECT_ID(…) IS NULL CREATE TABLE …`,
+`IF NOT EXISTS … INSERT`, `CREATE OR ALTER PROCEDURE` — or copy those files over yours (keeping your real
+password hashes in the seed). An unguarded `CREATE TABLE` fails on the second boot; a guarded one is a no-op.
+
+**3) The initializer.** `Erp.Api/DatabaseInitializer.cs` — creates the database if it doesn't exist, then
+applies each module's embedded scripts in filename order, splitting on `GO` (the T-SQL batch separator, which
+ADO.NET itself doesn't understand):
+
+```csharp
+// src/Erp.Api/DatabaseInitializer.cs
+using System.Reflection;
+using System.Text.RegularExpressions;
+using Microsoft.Data.SqlClient;
+
+namespace Erp.Api;
+
+// Applies each module's embedded Infrastructure/Sql/*.sql scripts on startup — the "migrations without EF"
+// approach from Phase 3 §7. Scripts are idempotent (IF NOT EXISTS guards + CREATE OR ALTER PROCEDURE),
+// so re-running on every boot is safe. Sales runs before Inventory (its seed references Sales items).
+public static class DatabaseInitializer
+{
+    public static async Task RunAsync(WebApplication app)
+    {
+        var log = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("DatabaseInitializer");
+        var connectionString = app.Configuration.GetConnectionString("ErpDb");
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            log.LogWarning("No ErpDb connection string configured — skipping database initialization.");
+            return;
+        }
+
+        try
+        {
+            var csb = new SqlConnectionStringBuilder(connectionString);
+            var dbName = csb.InitialCatalog;
+
+            // 1) Create the database if it doesn't exist (connect to master first).
+            var masterCs = new SqlConnectionStringBuilder(connectionString) { InitialCatalog = "master" }.ConnectionString;
+            await using (var master = new SqlConnection(masterCs))
+            {
+                await master.OpenAsync();
+                await using var create = master.CreateCommand();
+                create.CommandText = $"IF DB_ID(N'{dbName}') IS NULL CREATE DATABASE [{dbName}];";
+                await create.ExecuteNonQueryAsync();
+            }
+
+            // 2) Apply each module's scripts, in module order, in filename order, batch by batch.
+            var assemblies = new[]
+            {
+                typeof(Erp.Modules.Sales.DependencyInjection).Assembly,      // sales + [identity]
+                typeof(Erp.Modules.Inventory.DependencyInjection).Assembly   // inventory
+            };
+
+            await using var conn = new SqlConnection(connectionString);
+            await conn.OpenAsync();
+
+            foreach (var assembly in assemblies)
+            {
+                var scripts = assembly.GetManifestResourceNames()
+                    .Where(n => n.EndsWith(".sql", StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(n => n, StringComparer.OrdinalIgnoreCase);
+
+                foreach (var name in scripts)
+                {
+                    var sql = ReadResource(assembly, name);
+                    foreach (var batch in SplitBatches(sql))
+                    {
+                        await using var cmd = conn.CreateCommand();
+                        cmd.CommandText = batch;
+                        cmd.CommandTimeout = 120;
+                        await cmd.ExecuteNonQueryAsync();
+                    }
+                    log.LogInformation("Applied SQL script {Script}", name);
+                }
+            }
+
+            log.LogInformation("Database '{Db}' is ready.", dbName);
+        }
+        catch (Exception ex)
+        {
+            log.LogError(ex, "Database initialization failed. The API will still start, but data endpoints " +
+                             "will error until SQL Server is reachable and the scripts apply.");
+        }
+    }
+
+    private static string ReadResource(Assembly assembly, string name)
+    {
+        using var stream = assembly.GetManifestResourceStream(name)!;
+        using var reader = new StreamReader(stream);
+        return reader.ReadToEnd();
+    }
+
+    // Split on lines that are just "GO" — the T-SQL batch separator (ADO.NET doesn't understand GO itself).
+    private static IEnumerable<string> SplitBatches(string sql) =>
+        Regex.Split(sql, @"^\s*GO\s*$", RegexOptions.Multiline | RegexOptions.IgnoreCase)
+             .Select(b => b.Trim())
+             .Where(b => b.Length > 0);
+}
+```
+
+Wire it into `Program.cs` with one line, right after `var app = builder.Build();`:
+
+```csharp
+await DatabaseInitializer.RunAsync(app);   // create/patch the database from each module's embedded scripts
+```
+
+Boot the app once and the log shows each script being applied. Notice the module walls survive even here: the
+host doesn't know table names — it just asks each module's assembly for *its own* embedded scripts, Sales
+before Inventory (whose seed references Sales' item ids, the same ordering rule as Phase 3).
+
+> ⚠️ **Startup application is a dev/test convenience, not a deploy strategy.** Re-applying scripts on every
+> boot is perfect for a laptop and a test host. In production you want the schema change to run **once, as a
+> deploy step** — before new app instances start, not racing them — which is exactly the tracked-runner (DbUp)
+> option from [Phase 3 §7](03-database-schema.md). Same scripts, different driver.
+
+With that in place, there's no separate database fixture to write. The `CustomWebAppFactory` in §5 points the
+connection string at `Erp_Test`, the initializer builds it on first boot, and the same schemas, procs, and
+seed data appear there. **This is the payoff of "migrations without EF"** — one set of scripts builds dev,
+test, and production alike. The integration tests below reach the database through the *same* connection
+string the factory configures:
 
 ```csharp
 public const string TestConnectionString =
@@ -262,24 +398,55 @@ public class InventoryReservationTests
 - **Balance is reversed on cancel-after-approve:** approve an order (customer balance goes up by the
   total), then cancel it; assert `OutstandingBalance` returns to its original value *and* the reservation
   was released. This guards the matched debit/credit pair from [Phase 8](08-approval-cancellation.md) — a
-  regression here silently eats a customer's credit limit, so it's worth an explicit test:
+  regression here silently eats a customer's credit limit, so it's worth an explicit test. Here it is in
+  full — it lives in the workflow test class from §5 below (so it can reuse its `LoggedInAs` and
+  `CreatedResponse`), and reads the two numbers straight from the test database with the same one-line
+  Dapper moves as the race test above:
 
 ```csharp
 [Fact]
-public async Task Cancelling_an_approved_order_restores_the_customer_balance()
+public async Task Cancelling_an_approved_order_restores_the_customer_balance_and_the_stock()
 {
-    // Arrange: Acme (customer 1) starts at OutstandingBalance = 10,000 (from seed).
-    var before = await GetOutstandingBalance(customerId: 1);
+    var client = await LoggedInAs("manager");
 
-    // Act: create → submit → approve (balance += total) → cancel (balance -= total, stock released).
-    var id = await CreateSubmitApprove(customerId: 1, itemId: 1, qty: 2);   // 2 × ₱25 = ₱50
-    await Cancel(id);
+    // Arrange: snapshot BOTH sides of the matched pairs before we start. We assert on before/after
+    // deltas, not absolute values — other tests in the run may legitimately have moved these numbers.
+    var balanceBefore  = await GetBalance(customerId: 1);
+    var reservedBefore = await GetReserved(itemId: 1);
 
-    // Assert: balance is back where it started, and nothing is left reserved for those lines.
-    (await GetOutstandingBalance(customerId: 1)).Should().Be(before);
-    (await GetReserved(itemId: 1)).Should().Be(0);
+    // Act: create → submit (reserve) → approve (balance += ₱50) → cancel (balance −= ₱50, stock released).
+    var create = await client.PostAsJsonAsync("/sales-orders",
+        new { customerId = 1, lines = new[] { new { itemId = 1, quantity = 2 } } });   // 2 × ₱25 = ₱50
+    var id = (await create.Content.ReadFromJsonAsync<CreatedResponse>())!.Id;
+    (await client.PostAsync($"/sales-orders/{id}/submit",  null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+    (await client.PostAsync($"/sales-orders/{id}/approve", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+    (await client.PostAsync($"/sales-orders/{id}/cancel",  null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+    // Assert: both reversals held — balance and reservation are back exactly where they started.
+    (await GetBalance(customerId: 1)).Should().Be(balanceBefore);
+    (await GetReserved(itemId: 1)).Should().Be(reservedBefore);
+
+    // Two local helpers — the same "reach past the API only to assert on a DB invariant" move as the
+    // race test's GetReserved/ResetReservation.
+    static async Task<decimal> GetBalance(long customerId)
+    {
+        await using var conn = new SqlConnection(CustomWebAppFactory.TestConnectionString);
+        await conn.OpenAsync();
+        return await conn.ExecuteScalarAsync<decimal>(
+            "SELECT OutstandingBalance FROM sales.Customer WHERE Id=@customerId", new { customerId });
+    }
+    static async Task<int> GetReserved(long itemId)
+    {
+        await using var conn = new SqlConnection(CustomWebAppFactory.TestConnectionString);
+        await conn.OpenAsync();
+        return await conn.ExecuteScalarAsync<int>(
+            "SELECT Reserved FROM inventory.Inventory WHERE ItemId=@itemId", new { itemId });
+    }
 }
 ```
+
+  (The `static` local functions need `using Dapper;` and `using Microsoft.Data.SqlClient;` at the top of the
+  test file — the same two usings the race test already has.)
 
 ## 5. End-to-end tests — the critical workflows
 
@@ -401,10 +568,14 @@ public class SalesOrderWorkflowTests
     [Fact]
     public async Task SalesRep_cannot_approve()
     {
-        var manager = await LoggedInAs("manager");
-        var id = await CreateAndSubmit(manager, customerId: 1, itemId: 1, qty: 1);
-
+        // A rep can create and submit their own order…
         var rep = await LoggedInAs("rep");
+        var create = await rep.PostAsJsonAsync("/sales-orders",
+            new { customerId = 1, lines = new[] { new { itemId = 1, quantity = 1 } } });
+        var id = (await create.Content.ReadFromJsonAsync<CreatedResponse>())!.Id;
+        await rep.PostAsync($"/sales-orders/{id}/submit", null);
+
+        // …but approving it is refused before the handler ever runs.
         var approve = await rep.PostAsync($"/sales-orders/{id}/approve", null);
         approve.StatusCode.Should().Be(HttpStatusCode.Forbidden);   // 403 — role gate works end-to-end
     }

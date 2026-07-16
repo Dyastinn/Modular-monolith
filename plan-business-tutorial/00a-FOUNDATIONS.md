@@ -280,10 +280,26 @@ In this project, when a business rule is broken, the domain *throws* a `DomainEx
 | `=>` | "fat arrow" | "produces" or "goes to." `x => x.Name` = "from x, take Name." |
 | `?` after a type | nullable | "might be nothing." `SalesOrder?` = "a SalesOrder, or null (nothing)." |
 | `??` | null-coalescing | "or else." `a ?? b` = "a, but if a is nothing, use b." |
+| `!` after a value | null-forgiving | "trust me, this isn't nothing." `config["Key"]!` tells the compiler to stop warning that the value might be null — *you* are vouching for it. (See the note below the table.) |
 | `_lines` | leading underscore | a convention meaning "private field, internal to this class." |
 | `//` | comment | a note for humans; the computer ignores it. Read these first! |
 | `public` / `private` | access | `public` = anyone can use it; `private` = only this class can. |
+| `sealed` | no subclasses | "this class can't be inherited from." We mark most classes `sealed` — it says "nothing builds on this," which makes the code easier to reason about. You can read past it. |
+| `= default!` | "assigned later, stop warning" | a placeholder on a property that a factory or the database will fill in before anyone reads it. The `!` is the same null-forgiving mark as above. |
 | `var` | inferred type | "figure out the type for me." `var x = 5;` → x is an int. |
+
+**About that `!` (and why the compiler nags at all):** modern .NET projects turn on **nullable reference
+types** — the compiler tracks which values might be `null` and warns you *before* you get the classic
+`NullReferenceException` at runtime. That's why you see `SalesOrder?` (this genuinely might be nothing —
+handle it) versus `SalesOrder` (the compiler will hold you to it never being nothing). The `!` is the escape
+hatch for the places where you know something the compiler can't — "this config value exists," "this
+transaction always has a connection." Every `!` in this course is a small promise; read it as "checked by a
+human, not the compiler."
+
+You'll also spot `in` and `out` on some generic interfaces (`IRequest<out TResponse>`,
+`IRequestHandler<in TRequest, …>`). Those are **variance** markers — fine print that lets the compiler accept
+related types in more places. You never need to write or reason about them in this course; just don't let
+them stop your eye.
 
 ---
 

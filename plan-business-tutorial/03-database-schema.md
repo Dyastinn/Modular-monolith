@@ -723,6 +723,14 @@ statement is guarded** —
 > pick the one that matches your deploy. Don't stack both on the same script: with DbUp, the guards are
 > just noise; without it, they're the whole safety net.
 
+> ℹ️ **Where our build ends up.** For this phase, running the scripts by hand is exactly right — one
+> database, run once, move on. But know now that the by-hand step is scaffolding, not the final shape: in
+> [Phase 12](12-testing.md), a *second* database (the test one) makes by-hand tedious, and we'll make the
+> **app apply these same scripts itself at startup** — a small `DatabaseInitializer` in the host that embeds
+> each module's `Sql/` folder and re-runs it on every boot. Re-running on every boot only works with the
+> statement-guarded `03a` style, which is the practical reason to adopt those guarded files as your real
+> `Sql/` scripts rather than treating them as a side reference. Nothing to do about it yet.
+
 **The `03a` scripts also add one thing this base schema doesn't: an audit trigger on the low-churn tables.**
 Each schema gets a `ChangeLog` table, and each such table gets one `AFTER INSERT, UPDATE, DELETE` trigger that
 writes a row saying *which table, which key, insert/update/delete, when, and which DB login*. The one table

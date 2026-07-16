@@ -396,6 +396,17 @@ public readonly record struct Money
 > type. A returns/credit-memo slice is out of scope for this build and parked as an extension on the
 > [Phase 13 checklist](13-wrap-up-checklist.md).
 
+> ⚠️ **Two quieter `Money` decisions, so you know they were made.** First, the type wraps a **`decimal`**,
+> never `double` — `double` is binary floating point and cannot represent `0.1` exactly, so pennies leak in
+> long sums; `decimal` is the C# type built for money. Second, **rounding**: in *this* build every unit price
+> has at most two decimals and every quantity is a whole number, so `price × qty` can never produce a third
+> decimal place and the question stays dormant. The moment a real system adds percentage discounts, tax
+> rates, or currency conversion, it wakes up — `(18,2)` columns will silently round whatever you send them
+> (and SQL Server's rounding may not match `Math.Round`'s default *banker's rounding*). The professional
+> answer is to decide the policy explicitly and put it where all money math lives: right here, in `Money`
+> (e.g. a `Round()` applied in the `*` operator), so C# and the database can never disagree by a centavo.
+> Nothing to change now — just know the trap has a name before a discount feature finds it for you.
+
 ## 4. The status state machine
 
 The status enum and its rules are the first two files in the `SalesOrders/` folder — the aggregate's
@@ -647,6 +658,11 @@ public sealed class SalesOrder : AggregateRoot<SalesOrderId>
 > we haven't defined: the five **domain events** and the **`ApprovalPolicy`** threshold. We write those in §8
 > and then come straight back to this class to wire them in. Building the aggregate in two passes keeps a rule
 > the whole course lives by: never type a line that references a type you haven't met yet.
+>
+> A third piece also waits: that `private SalesOrder()` constructor is "for the repository to rehydrate from
+> the DB," but nothing can *reach* it yet — and you might already be wondering how a repository is supposed to
+> rebuild an object whose every setter is private. The answer is a second static factory, `Rehydrate`, and it
+> arrives in [Phase 6 §6b](06-create-order.md), the moment the repository that needs it exists.
 
 ### Line by line: the `Submit` method
 
