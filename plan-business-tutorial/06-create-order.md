@@ -169,9 +169,28 @@ This is the meat. Read every line; the comments mark which layer owns each decis
 > `DomainException` means *a business rule said no* — a `SalesOrder` throws it, and it belongs to the domain's
 > vocabulary. `NotFoundException` means *the row you asked for isn't there*, which is a fact about a failed
 > **request**, not about the business. Keeping it in `Common` means the pure domain never has to know that
-> "not found" is even a category of problem. (Right now nothing catches either one, so a throw becomes an
-> ugly 500. [Phase 11](11-cross-cutting.md) adds the one handler that maps `NotFoundException` → **404** and
-> `DomainException` → **422**. We'll grow this file with one more exception as we hit the need for it.)
+> "not found" is even a category of problem. (We'll grow this file with one more exception as we hit the need
+> for it.)
+>
+> 📦 **And two new arms on the handler — this phase is the first to throw either type.** Open the
+> `GlobalExceptionHandler` you started in [Phase 4b §6b](04b-jwt-login.md) and add them to the `switch`, above
+> the default:
+>
+> ```csharp
+> // src/Erp.Api/GlobalExceptionHandler.cs — the switch grows one arm per new failure kind
+> var (status, title) = ex switch
+> {
+>     NotFoundException       => (StatusCodes.Status404NotFound,            "Resource not found"),   // NEW
+>     AuthenticationException => (StatusCodes.Status401Unauthorized,        "Authentication failed"),
+>     DomainException         => (StatusCodes.Status422UnprocessableEntity, "Business rule violated"), // NEW
+>     _                       => (StatusCodes.Status500InternalServerError, "Unexpected error")
+> };
+> ```
+>
+> …with `using Erp.Shared.BuildingBlocks;` and `using Erp.Shared.Common;` at the top for the two types. Two
+> lines, and every rule you're about to write returns the right status. Note what each one *means* to a
+> client: **404** = "that thing isn't here"; **422** = "I understood you perfectly, and the business says no."
+> A 422 is not an error in your code — it's the system working.
 
 ```csharp
 public sealed class CreateSalesOrderHandler(
@@ -535,12 +554,16 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
+// The wire shape — the JSON body this route accepts (the Request-in, Command-out convention from
+// Phase 4b §6). It reuses CreateSalesOrderLineDto: a line looks the same on the wire either way.
+public sealed record CreateSalesOrderRequest(long CustomerId, IReadOnlyList<CreateSalesOrderLineDto> Lines);
+
 public sealed class CreateSalesOrderEndpoint : ICarterModule
 {
     public void AddRoutes(IEndpointRouteBuilder app) =>
-        app.MapPost("/sales-orders", async (CreateSalesOrderCommand cmd, ISender sender, CancellationToken ct) =>
+        app.MapPost("/sales-orders", async (CreateSalesOrderRequest body, ISender sender, CancellationToken ct) =>
         {
-            var id = await sender.Send(cmd, ct);
+            var id = await sender.Send(new CreateSalesOrderCommand(body.CustomerId, body.Lines), ct);
             return Results.Created($"/sales-orders/{id}", new { id });
         })
         .RequireAuthorization(p => p.RequireRole("SalesRep", "SalesManager", "Admin"));  // logged in, sales role
@@ -557,14 +580,13 @@ central route list.
 
 ## 9. How a real request flows (with sample data)
 
-> ℹ️ **Heads-up on validation & error formatting.** Two cross-cutting pieces the trace below mentions —
-> the `ValidationBehavior` that auto-runs the validator, and the global handler that turns a thrown
-> `DomainException` into a clean HTTP `422` — are built in [Phase 11](11-cross-cutting.md) (that's the
-> cross-cutting phase; the pipeline was designed for them back in Phase 2). If you're building strictly in
-> order, the **happy path fully works now** (a valid order returns `201`), and a *rule violation* still
-> correctly **blocks the write** (the transaction never commits) — it just surfaces as a raw `500` until you
-> wire Phase 11's behaviors, which then make it a tidy `422`. Nothing here is broken; the polish is one phase
-> away.
+> ℹ️ **Heads-up on the validator.** The trace below shows a `ValidationBehavior` step — the piece that
+> *auto-runs* your validator before the handler. It doesn't exist yet; it's a pipeline behavior, and it
+> arrives in [Phase 11](11-cross-cutting.md) (the pipeline was designed for it back in Phase 2). So today a
+> malformed request — an empty `lines` array, say — sails past `CreateSalesOrderValidator` and fails deeper
+> in, less tidily. The **business rules all work now**, though: they're domain methods the handler calls
+> directly, and thanks to the two arms you just added to the `GlobalExceptionHandler`, a violation returns a
+> clean `422`.
 
 A SalesRep logged in as `rep` sends:
 
@@ -582,6 +604,7 @@ Item 1 is *Widget* at ₱25. 100 × ₱25 = **₱2,500**. Watch:
 2. Endpoint builds CreateSalesOrderCommand, calls sender.Send.
 3. (Once wired in Phase 11) LoggingBehavior logs "Handling CreateSalesOrderCommand".
 4. (Once wired in Phase 11) ValidationBehavior: customerId 2 > 0 ✓, 1 line ✓, qty 100 > 0 ✓ → passes.
+   (Today there's no behavior to run it, so the request goes straight to the handler.)
 5. Handler loads Customer 2 → exists.
 6. customer.EnsureNotBlocked() → Beta is not blocked ✓.
 7. Loads Item 1 (Widget, General category, no role restriction, cap 1000).
@@ -590,7 +613,7 @@ Item 1 is *Widget* at ₱25. 100 × ₱25 = **₱2,500**. Watch:
 10. order.AddLine(...) → order Total becomes ₱2,500.
 11. customer.EnsureWithinCreditLimit(₱2,500) → 4500 + 2500 = 7000 > 5000 limit → THROWS ❌
 12. Handler exits via exception; the transaction was never opened (and had it been, the catch/using rolls it back).
-13. The exception becomes an HTTP 422 with "would exceed the credit limit" once Phase 11 formats it.
+13. GlobalExceptionHandler maps the DomainException → HTTP 422 "would exceed the credit limit".
 ```
 
 Change the quantity to `1` (total ₱25): step 11 passes (4500 + 25 = 4525 ≤ 5000), the transaction
@@ -617,10 +640,22 @@ curl -X POST "$BASE/sales-orders" \
 > like an expired token but isn't. When a request 401s from here on, check the key before you check the token.
 
 Verify it landed: `SELECT OrderNumber, Status, TotalAmount FROM sales.SalesOrder;` shows one `Draft`
-(Status 0) order totalling ₱50. Try the blocked customer (`"customerId":3`, Gamma) or an over-limit order
-(Beta with quantity 100) and confirm **no** row is written — the rule blocked the transaction. If a valid
-order returns `201` and a rule-breaking one writes nothing, **Phase 6 is done and verifiable** (the clean
-`422` body for the rejection arrives with Phase 11).
+(Status 0) order totalling ₱50. Now watch a rule fire — the blocked customer (`"customerId":3`, Gamma):
+
+```bash
+curl -i -X POST "$BASE/sales-orders" \
+     -H "X-Api-Key: $KEY" -H "Authorization: Bearer $TOKEN" \
+     -H "Content-Type: application/json" \
+     -d '{"customerId":3,"lines":[{"itemId":1,"quantity":1}]}'
+# → 422 Unprocessable Entity
+#   { "title": "Business rule violated", "status": 422,
+#     "detail": "Customer 'Gamma Traders' is blocked and cannot place orders." }
+```
+
+Try the over-limit order too (Beta, `"customerId":2`, quantity 100) and confirm **no** row is written — the
+rule blocked the transaction. If a valid order returns `201`, a rule-breaking one returns a clean **422** and
+writes nothing, **Phase 6 is done and verifiable**: the domain refused, and the two arms you added to the
+exception handler turned that refusal into the right HTTP answer.
 
 ### 🔍 Debug one request — watch the architecture in the call stack
 
@@ -653,6 +688,7 @@ behavior surprises you, this is the move: breakpoint at the handler, F5, and rea
 
 | Component | Why |
 |---|---|
+| `CreateSalesOrderRequest` | The HTTP body's shape — the public contract, free to differ from the command. |
 | `CreateSalesOrderCommand` | The inputs, as one immutable request. |
 | `CreateSalesOrderValidator` | Input well-formedness, before any work. |
 | `CreateSalesOrderHandler` | Orchestrates the use case; delegates every rule to the domain. |
@@ -686,6 +722,8 @@ behavior surprises you, this is the move: breakpoint at the handler, F5, and rea
 ---
 
 ## ✅ Check Yourself
+
+> Try each one before you look. [Model answers](ANSWER-KEY.md#phase-6-create-sales-order) — but attempting first is what makes them stick.
 
 1. Which checks are in the validator and which in the domain — and what's the dividing principle?
 2. How does an exception mid-handler cause the database changes to roll back — what does the `catch` do,

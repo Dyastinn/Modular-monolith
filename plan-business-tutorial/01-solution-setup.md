@@ -474,6 +474,8 @@ rooms to a house that already has power.
 
 ## ✅ Check Yourself
 
+> Try each one before you look. [Model answers](ANSWER-KEY.md#phase-1-solution-setup) — but attempting first is what makes them stick.
+
 1. Why is the solution split by module + Shared kernel instead of four Clean Architecture layers?
 2. What compiler-level thing stops `Sales` from reaching into `Inventory`?
 3. `IDbConnectionFactory` lives in `Shared.Common`, but `SqlConnectionFactory` lives in

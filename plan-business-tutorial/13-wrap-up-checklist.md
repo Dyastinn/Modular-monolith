@@ -409,6 +409,9 @@ Go build something real. 🚀
 
 If you can answer these without notes, this tutorial did its job:
 
+> Say them out loud first — a fluent answer is the proof, not a recognised one.
+> [Model answers](ANSWER-KEY.md#phase-13-capstone).
+
 1. Walk an order from login through approval, naming which layer enforces each rule and why.
 2. Explain, with the inventory example, why some rules *must* be in SQL and can't be pure C#.
 3. Name three things this module still needs before real production — none of which require a banned

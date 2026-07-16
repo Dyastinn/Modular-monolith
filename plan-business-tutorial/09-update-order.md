@@ -261,6 +261,8 @@ order" — with its lines untouched. If a draft re-lines cleanly and a submitted
 
 ## ✅ Check Yourself
 
+> Try each one before you look. [Model answers](ANSWER-KEY.md#phase-9-update-order) — but attempting first is what makes them stick.
+
 1. Why doesn't the update handler contain a `if (status != Draft)` check?
 2. Why re-run the credit/category checks on update instead of trusting the create-time result?
 3. Why is a little duplication between the create and update handlers acceptable here?

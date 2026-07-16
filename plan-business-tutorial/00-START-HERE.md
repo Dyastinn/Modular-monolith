@@ -16,12 +16,16 @@ introduced. When we reach a mediator, a value object, an atomic SQL guard, or a 
 explain what problem it solves and why the obvious alternative hurts — *before* we write it — and then show
 it doing real work inside a real business feature.
 
-Three reference files sit alongside the phases. Dip into them whenever you like; none is a prerequisite:
+Five reference files sit alongside the phases. Dip into them whenever you like; none is a prerequisite:
 
 - [GLOSSARY.md](GLOSSARY.md) — every term this course uses, in plain English. If a word in a phase feels
   slippery, it's defined here.
 - [00a-FOUNDATIONS.md](00a-FOUNDATIONS.md) — a gentle on-ramp to the C# features we lean on (records,
   `async`/`await`, interfaces, generics). Read it first if C# itself is new to you.
+- [00b-WINDOWS-POWERSHELL.md](00b-WINDOWS-POWERSHELL.md) — every checkpoint translated into PowerShell, if
+  you'd rather not use Git Bash on Windows.
+- [ANSWER-KEY.md](ANSWER-KEY.md) — model answers to every phase's **Check Yourself** questions. Try the
+  questions first; the struggle is the part that teaches.
 - [LEARNING-RESOURCES.md](LEARNING-RESOURCES.md) — where to go deeper on anything here, and how to study it.
 
 ---
@@ -167,11 +171,12 @@ Nothing gets skipped and nothing is assumed. **Every phase answers the same five
 - **Type the code, don't paste it.** Fixing the compiler's complaints is where the learning happens.
   [LEARNING-RESOURCES.md](LEARNING-RESOURCES.md) says more about why.
 - **On Windows, run the checkpoint commands in Git Bash.** The checkpoints use `curl` with bash syntax
-  (`VAR=value`, `$(...)`, `jq`) — that's deliberate, because it's copy-pasteable and shows exact headers. Git
-  Bash ships with [Git for Windows](https://git-scm.com/download/win), so you almost certainly already have it
-  (right-click a folder → "Open Git Bash here"). Pasting the same lines into PowerShell **will not work** —
-  PowerShell has different variable syntax and its own `curl` alias. If you'd rather stay in the browser
-  entirely, every checkpoint can also be driven from Swagger or the test console below.
+  (`VAR=value`, `$(...)`, `jq`) — that's deliberate, because it's copy-pasteable and it's the form you'll meet
+  in every API doc you ever read. Git Bash ships with [Git for Windows](https://git-scm.com/download/win), so
+  you almost certainly already have it (right-click a folder → "Open Git Bash here"). Pasting those same lines
+  into PowerShell **will not work** — different variable syntax, and `curl` there is an alias for a completely
+  different command. Prefer PowerShell? [00b-WINDOWS-POWERSHELL.md](00b-WINDOWS-POWERSHELL.md) has every
+  checkpoint translated. Prefer clicking? Swagger and the test console below drive all of it.
 - **When a term feels shaky,** look it up in [GLOSSARY.md](GLOSSARY.md), then come back.
 - **Resist scope creep.** If you catch yourself adding a cache or a queue "to be safe," stop — that's
   not this tutorial.

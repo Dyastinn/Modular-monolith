@@ -654,6 +654,8 @@ that catches the bugs unit tests can't, and proof the architecture holds end to 
 
 ## ✅ Check Yourself
 
+> Try each one before you look. [Model answers](ANSWER-KEY.md#phase-12-testing) — but attempting first is what makes them stick.
+
 1. Why can almost all the business rules be tested without a database — and what does that tell you about
    the design?
 2. Which single test proves the concurrency guard, and why must it commit rather than roll back?

@@ -418,6 +418,8 @@ couldn't.
 
 ## ✅ Check Yourself
 
+> Try each one before you look. [Model answers](ANSWER-KEY.md#phase-7-submit-and-concurrency) — but attempting first is what makes them stick.
+
 1. Why is one atomic SQL `UPDATE` safe where a C# read-then-write race-conditions?
 2. Why must all the line reservations and the status change share one transaction?
 3. Where does the rollback "happen" in the code — what triggers it?

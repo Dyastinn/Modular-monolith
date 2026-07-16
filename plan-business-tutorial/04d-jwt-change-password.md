@@ -239,9 +239,8 @@ The turnstile, walked end to end:
 4. Any refresh tokens `rep` still held are now dead on their next use (stamp mismatch, §10) — a clean slate.
 5. `POST /auth/login {rep, <new password>}` → **200**, a fresh access + refresh pair. Back in.
 
-> ℹ️ Step 2's **401** is the status *after* [Phase 11](11-cross-cutting.md) adds the global exception handler.
-> Run this trace today and that step returns a 500 carrying the same message — the flow is real, only the
-> status code is waiting on Phase 11. ([Part 2](04b-jwt-login.md) explains why we don't map it here.)
+> ℹ️ Step 2's **401** is your `GlobalExceptionHandler` from [Part 2 §6b](04b-jwt-login.md) mapping the
+> `AuthenticationException` that login throws — no new error-handling code in this part either.
 
 > 💡 The same *change, then log in* dance is what a logged-in user does to rotate a **suspected-leaked**
 > password — the stamp rotation in step 3 voids every *other* device's **refresh** tokens the instant the change
@@ -360,10 +359,11 @@ curl -i -X POST "$BASE/auth/change-password" -H "X-Api-Key: $KEY" \
 | 4 | The new password is live, the old one isn't | old → generic failure; new → **200** with a fresh pair |
 | 5 | You restored `rep` to `Password123!` | **204**, and login with `Password123!` → **200** |
 
-> ⚠️ As in Parts 2 and 3, the failures above are thrown `AuthenticationException`s and so arrive as **500s**
-> until [Phase 11](11-cross-cutting.md) maps them to 401. The **204**s are real today. And the validator rules
-> (`MinimumLength(8)`, new ≠ current) don't fire yet either — `ValidationBehavior` is what runs them, and it
-> lands in Phase 11 too.
+> ⚠️ The failures above are thrown `AuthenticationException`s, so they arrive as **401**s via the
+> [Part 2 §6b](04b-jwt-login.md) handler. But the validator rules (`MinimumLength(8)`, new ≠ current) still
+> **don't fire yet** — writing a validator isn't enough on its own; the `ValidationBehavior` that actually
+> *runs* it is a pipeline behavior, and that lands in [Phase 11](11-cross-cutting.md). Try a 3-character new
+> password today and it'll be accepted.
 
 > 💡 **Want to see the expiry rescue for real?** Push the date into the past and watch the dead-end open, then
 > close: `UPDATE [identity].AppUser SET PasswordExpiresUtc = DATEADD(day,-1,SYSUTCDATETIME()) WHERE Username='rep';`

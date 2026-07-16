@@ -1,8 +1,9 @@
 # Phase 11 — Cross-Cutting Concerns: Validation, Error Handling, Logging
 
-> Self-contained: this phase completes the pipeline the earlier phases were designed around — it's where the
-> `ValidationBehavior`, `LoggingBehavior`, and global error handling you kept seeing "arrives in Phase 11"
-> notes for actually get built and wired. Money is in **Philippine Pesos (₱)**.
+> Self-contained: this phase completes the pipeline the earlier phases were designed around — the
+> `ValidationBehavior` and `LoggingBehavior` the mediator was built to carry finally get written, so every
+> validator you've registered starts running. It also puts the last two arms on the exception handler you've
+> been growing since [Phase 4b](04b-jwt-login.md). Money is in **Philippine Pesos (₱)**.
 
 ---
 
@@ -15,32 +16,34 @@ The wrappers that apply to *every* request, written once:
 
 - A **ValidationBehavior** that runs FluentValidation before any handler.
 - A **LoggingBehavior** that logs and times every request.
-- A **global exception handler** that turns our domain exceptions into clean, consistent HTTP responses
-  (400/403/404/409/422) instead of raw 500s with stack traces.
+- The **finishing touches on the global exception handler** you've been growing since
+  [Phase 4b](04b-jwt-login.md) — the last two arms, and the environment switch that stops it leaking
+  internals in production.
 
 ## 2. Why it's designed this way (the problem, before any code)
 
-Before we write a line, be clear on *what problem* each of these three pieces solves — that's why we build
-them at all:
+Before we write a line, be clear on *what problem* each of these pieces solves — that's why we build them at
+all:
 
-- **The problem error handling solves.** Throughout this tutorial the handlers have thrown meaningful
-  exceptions — `DomainException`, `NotFoundException`, `ConcurrencyException`, `ValidationException`. That
-  was deliberate: a handler stays focused on the happy path and simply *throws* when a rule is broken,
-  instead of cluttering itself with "and now build the right HTTP response." But a thrown exception, left
-  alone, becomes an ugly **500 with a stack trace** — useless to the client and a security leak. So
-  **something central** must catch each exception and translate it to the *right* status (a blocked customer
-  is a `422`, not a `500`). Doing that in every endpoint would be the copy-paste sprawl the mediator exists
-  to kill — so it lives in **one** global handler.
 - **The problem validation-as-a-behavior solves.** We want every command's input checked *before* its
-  handler runs, without each handler remembering to call its validator. A pipeline behavior does it for all
-  of them, once.
+  handler runs, without each handler remembering to call its validator. Every validator you've written so far
+  — `LoginValidator`, `CreateSalesOrderValidator`, `SearchSalesOrdersValidator` — is registered and **has
+  never run**. A pipeline behavior fixes all of them at once, and that's the point: one class, and every
+  command that exists (and every one you add later) gets its input checked.
 - **The problem logging-as-a-behavior solves.** We want a timed record of every request (and every failure)
   without pasting `log.LogInformation` into every handler.
 
-This is also the phase that **completes the pipeline** the whole course was built around: back in Phase 2
-the mediator was designed to wrap handlers in behaviors, but we registered none yet; the feature phases threw
-exceptions that nothing formatted. Now, having *seen* the need across real features, we build the machinery —
-which is exactly when it makes sense, not before.
+This is the phase that **completes the pipeline** the whole course was built around: back in Phase 2 the
+mediator was designed to wrap handlers in behaviors, but we registered none. Now, having *seen* the need
+across a dozen real slices, we build them — which is exactly when it makes sense, not before.
+
+> 🔑 **Error handling is the odd one out here, and that's worth noticing.** You didn't defer it — you've
+> been building it incrementally since [Phase 4b §6b](04b-jwt-login.md), adding one `switch` arm per phase as
+> each new failure type appeared (404/422 in [Phase 6](06-create-order.md), 409 in
+> [Phase 8](08-approval-cancellation.md), 400 in [Phase 10](10-queries-search.md)). That was deliberate:
+> a wrong status code is a *lie your app tells clients*, and lies shouldn't be left standing for seven
+> phases. Behaviors could wait because nothing was wrong without them; error mapping couldn't. §5 finishes
+> the file.
 
 > 💡 This is the concrete answer to "what does the mediator/pipeline actually *buy* me?" — you write
 > logging, validation, and error handling **once**, and every endpoint gets them. Add another endpoint and
@@ -178,10 +181,21 @@ the ordering lesson from [Phase 2](02-mediator-own-vs-free.md).
 > (`CreateSalesOrderCommand`), not its contents — a login command would contain a password. If you ever
 > log request data, scrub sensitive fields first. A logged password is a real breach.
 
-## 5. Global exception handling → consistent HTTP responses
+## 5. Finishing the global exception handler
 
-We map each exception type to an HTTP status, in one place, using ASP.NET Core's `IExceptionHandler`.
-`Erp.Api/GlobalExceptionHandler.cs`:
+You've had this file since [Phase 4b §6b](04b-jwt-login.md), and it's grown an arm at a time:
+
+| Added in | Arm | Means |
+|---|---|---|
+| [Phase 4b](04b-jwt-login.md) | `AuthenticationException` → **401** | "I don't know who you are" |
+| [Phase 6](06-create-order.md) | `NotFoundException` → **404** | "that row isn't here" |
+| [Phase 6](06-create-order.md) | `DomainException` → **422** | "understood you; the business says no" |
+| [Phase 8](08-approval-cancellation.md) | `ConcurrencyException` → **409** | "someone changed it — reload" |
+| [Phase 10](10-queries-search.md) | `ValidationException` → **400** | "that request was malformed" |
+| **this phase** | `ForbiddenException` → **403** | "I know you, and no" |
+| **this phase** | the **dev/prod detail switch** | stop leaking internals on a 500 |
+
+Two things left. Here's the finished file — `Erp.Api/GlobalExceptionHandler.cs`:
 
 ```csharp
 // src/Erp.Api/GlobalExceptionHandler.cs
@@ -241,7 +255,8 @@ public sealed class GlobalExceptionHandler(
 }
 ```
 
-Register it in `Program.cs`:
+The registration in `Program.cs` hasn't changed since Phase 4b — that's the point of having grown one file
+rather than swapping in a new one:
 
 ```csharp
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
@@ -249,6 +264,15 @@ builder.Services.AddProblemDetails();
 // ...
 app.UseExceptionHandler();   // early in the pipeline
 ```
+
+Three additions to notice in the code above, beyond the two new arms:
+
+- **`IHostEnvironment env`** is now injected — that's what makes the detail switch possible.
+- **The `detail` switch** replaces Phase 4b's blunt `detail = ex.Message`, closing the ⚠️ that section left
+  open.
+- **The `errors` field** surfaces FluentValidation's per-field messages, so a 400 tells the client *which*
+  field is wrong rather than just "Validation failed" — newly worth doing now that `ValidationBehavior`
+  (§3) makes validation failures common.
 
 > 🔍 **Why show the real error in Development but hide it in Production?** While *you're building*, an
 > unexpected `500` is something you need to **debug** — the exception message and stack trace tell you which
@@ -262,12 +286,17 @@ app.UseExceptionHandler();   // early in the pipeline
 > where you need it and discretion where it matters.
 
 > 🔑 **The status-code mapping *is* the design.** Each exception type carries business meaning, and the
-> handler translates it to the HTTP language clients understand:
-> - Broke a business rule (blocked customer, over credit) → **422 Unprocessable Entity**.
-> - Malformed input → **400 Bad Request** (with field errors).
-> - Not logged in / bad token → **401**; logged in but wrong role → **403**.
-> - Someone else changed the row → **409 Conflict** (reload & retry).
-> - Anything unexpected → **500**, and we *log the detail but hide it* from the client.
+> handler translates it to the HTTP language clients understand — and each status tells the client to do
+> something *different*:
+> - Broke a business rule (blocked customer, over credit) → **422 Unprocessable Entity**: talk to a human;
+>   retrying won't help.
+> - Malformed input → **400 Bad Request** (with field errors): fix the request and retry.
+> - Not logged in / bad token → **401**: log in. Logged in but wrong role → **403**: give up.
+> - Someone else changed the row → **409 Conflict**: reload & retry.
+> - Anything unexpected → **500**: report a bug — and we *log the detail but hide it* from the client.
+>
+> Collapse them all into a 500 and the client learns nothing — which is exactly the app you had before you
+> wrote the first arm back in Phase 4b.
 
 > ❓ **You might be wondering: "Why hide the detail on a 500 but show it on a 422?"** A 422 is a *known*
 > business outcome — "Customer is blocked" is safe and *helpful* to show. A 500 is an *unexpected* bug;
@@ -369,29 +398,40 @@ Recall Beta Industries ordering 100 Widgets ([Phase 6](06-create-order.md)) — 
 Clean, consistent, informative — and the salesperson sees exactly why. No stack trace, no 500, no
 special code in the endpoint. That's the cross-cutting machinery doing its job.
 
-## 8b. Checkpoint — errors are now clean and consistent ✅
+## 8b. Checkpoint — validation now runs, and 500s stop talking ✅
 
-This is the phase that makes every earlier feature's *unhappy* path tidy. Re-run the rejections you saw
-earlier and confirm they now come back as proper HTTP problems, not raw 500s:
+The interesting proof here is the **newly-working** things, not the ones that already worked. Business rules
+have returned `422` since [Phase 6](06-create-order.md); what changes today is that your validators finally
+*fire*, and your 500s finally shut up in production.
 
 ```bash
 AUTH=(-H "X-Api-Key: $KEY" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json")
 
-# Business rule → 422 (Phase 6's over-limit order): Beta ordering 100 Widgets
+# NEW: malformed input → 400 with field errors. Before this phase, the empty `lines` array sailed past
+# CreateSalesOrderValidator (nothing ran it) and failed messily deeper in.
+curl -X POST "$BASE/sales-orders" "${AUTH[@]}" -d '{"customerId":2,"lines":[]}'
+# → 400 { "title": "Validation failed", "errors": ["An order needs at least one line."] }
+
+# NEW: the paging cap is enforced (Phase 10's validator, now actually running).
+curl "$BASE/sales-orders?pageSize=5000" -H "X-Api-Key: $KEY" -H "Authorization: Bearer $TOKEN"
+# → 400 { "title": "Validation failed",
+#         "errors": ["'Page Size' must be between 1 and 100. You entered 5000."] }
+
+# STILL WORKS (regression check): business rule → 422, as it has since Phase 6.
 curl -X POST "$BASE/sales-orders" "${AUTH[@]}" \
      -d '{"customerId":2,"lines":[{"itemId":1,"quantity":100}]}'
 # → 422 { "title": "Business rule violated", "detail": "Order total ₱2,500.00 would exceed..." }
-
-# Malformed input → 400 with field errors (empty lines)
-curl -X POST "$BASE/sales-orders" "${AUTH[@]}" -d '{"customerId":2,"lines":[]}'
-# → 400 { "title": "Validation failed", "errors": ["An order needs at least one line."] }
 ```
+
+Watch the console while you run those: every request now logs `→ CreateSalesOrderCommand` and
+`← … in 9ms` — the `LoggingBehavior`, applied to slices you wrote weeks ago without touching one of them.
 
 Then confirm the dev-vs-prod switch: run with `ASPNETCORE_ENVIRONMENT=Development` and force an unexpected
 error — the `500` response includes the stack trace. Run again with `ASPNETCORE_ENVIRONMENT=Production` and
-the same error returns only `"An unexpected error occurred."` (the detail is in the server log). If business
-errors return `422`, bad input returns `400` with field messages, and `500`s reveal detail only in
-Development, **Phase 11 is done and verifiable** — the app now behaves professionally on every path.
+the same error returns only `"An unexpected error occurred."` (the detail is in the server log). If bad input
+now returns `400` with field messages, business errors still return `422`, every request is logged and timed,
+and `500`s reveal detail only in Development, **Phase 11 is done and verifiable** — the app behaves
+professionally on every path, and you added that behavior to *every* endpoint without editing one.
 
 ## 9. Why each component exists
 
@@ -399,7 +439,7 @@ Development, **Phase 11 is done and verifiable** — the app now behaves profess
 |---|---|
 | `ValidationBehavior` | Runs input validation for every command in one place; handlers assume clean input. |
 | `LoggingBehavior` | Observability for every request; times and records failures. |
-| `GlobalExceptionHandler` | One place that maps exception types → HTTP statuses; consistent client errors. |
+| `GlobalExceptionHandler` | One place that maps exception types → HTTP statuses; consistent client errors. Grown one arm at a time since [Phase 4b](04b-jwt-login.md), finished here. |
 | Custom exception types | Let handlers throw *meaning* (not-found vs. rule-broken vs. conflict). |
 | `AddSharedInfrastructure`/`Add*Module` | Keep the composition root readable; the shared kernel and each module register themselves. |
 
@@ -418,6 +458,8 @@ Development, **Phase 11 is done and verifiable** — the app now behaves profess
 ---
 
 ## ✅ Check Yourself
+
+> Try each one before you look. [Model answers](ANSWER-KEY.md#phase-11-cross-cutting-concerns) — but attempting first is what makes them stick.
 
 1. What does putting logging/validation/error-handling in behaviors + one handler buy you vs. per
    endpoint?

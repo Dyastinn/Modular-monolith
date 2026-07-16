@@ -1090,6 +1090,8 @@ way out — and the one registered *first* is the outermost, so it's first in an
 
 ## ✅ Check Yourself
 
+> Try each one before you look. [Model answers](ANSWER-KEY.md#phase-2-mediator) — but attempting first is what makes them stick.
+
 1. Name two concrete differences between the hand-rolled mediator and the free library.
 2. Why can the rest of the tutorial ignore which option you chose?
 3. What do the `ICommand`/`IQuery` markers buy us if they contain no code?

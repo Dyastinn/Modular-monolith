@@ -307,6 +307,8 @@ where you meet Dapper's API for the first time.
 
 ## ✅ Check Yourself
 
+> Try each one before you look. [Model answers](ANSWER-KEY.md#phase-3b-data-access) — but attempting first is what makes them stick.
+
 1. What are the two data-access paths, and which one does a plain `SELECT` use?
 2. Why must a write that inserts an order header *and* its lines happen inside a single transaction?
 3. What does `Commit()` do, and what happens to your rows if you `Rollback()` instead — or never commit at all?

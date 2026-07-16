@@ -71,21 +71,16 @@ The seed users from [Phase 3](03-database-schema.md), for reference:
 | `manager` | `Password123!` | `SalesManager` |
 | `admin` | `Password123!` | `Admin` |
 
-> ⚠️ **Read this before you run the failure cases, or you'll think you broke something.** Two different
-> machines produce the `401`s below, and only one of them exists yet.
+> ℹ️ **Two different machines produce the `401`s below — worth knowing which is which when you debug one.**
 >
-> - **Middleware 401s are live now.** The API-key gate (Step 0) and the JWT bearer middleware (Step 2) write
->   the status straight onto the response. Those work exactly as printed.
-> - **Thrown-exception 401s are not — yet.** Every failure that comes out of a *handler* — wrong password,
->   expired password, reuse detection, revoked token — is a thrown `AuthenticationException`, and the app has
->   no global error handler until [Phase 11](11-cross-cutting.md). Today those requests return a **500** (the
->   developer exception page in Development) carrying the right *message* but the wrong *status*.
+> - **Middleware 401s** write the status straight onto the response, before any handler runs: the API-key
+>   gate (Step 0) and the JWT bearer middleware (Step 2).
+> - **Thrown-exception 401s** come out of a *handler* — wrong password, expired password, reuse detection,
+>   revoked token — as an `AuthenticationException` that your `GlobalExceptionHandler`
+>   ([Part 2 §6b](04b-jwt-login.md)) maps to 401.
 >
-> So where a step below says `→ 401 Unauthorized "Invalid username or password."`, read it as: **the message
-> is what you should see now; the 401 arrives in Phase 11**, when `GlobalExceptionHandler` maps
-> `AuthenticationException → 401`. Everything else in this checkpoint — the tokens, the rotation, the family
-> revocation, the role gates — is fully real today. (Prefer not to wait? Nothing stops you from skimming
-> [Phase 11 §5](11-cross-cutting.md) and dropping the handler in early; the rest of Phase 11 will still fit.)
+> Same status, different origin: one is a door that refused to open, the other is a rule inside the room.
+> Every status code in this checkpoint is real today.
 
 ---
 
@@ -337,6 +332,8 @@ behind exactly this gate (API key → authenticate → authorize).
 ---
 
 ## ✅ Check Yourself
+
+> Try each one before you look. [Model answers](ANSWER-KEY.md#phase-4e-auth-wrap-up) — but attempting first is what makes them stick.
 
 1. In one sentence each: what's authentication vs. authorization?
 2. Why does a handler talk to `ICurrentUser` instead of reaching for `HttpContext`?

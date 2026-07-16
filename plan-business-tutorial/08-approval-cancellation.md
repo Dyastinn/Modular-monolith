@@ -116,8 +116,16 @@ it with the order and passes it back on update:
 > public class ConcurrencyException(string message) : Exception(message);   // "someone changed it under you"
 > ```
 >
-> [Phase 11](11-cross-cutting.md) maps it to an HTTP **409 Conflict** — the status that tells a client
-> "reload and retry," as opposed to "you did something wrong."
+> New exception type → new arm on the `switch`, same as [Phase 6](06-create-order.md) did. Add it to
+> `GlobalExceptionHandler`:
+>
+> ```csharp
+> ConcurrencyException    => (StatusCodes.Status409Conflict, "Conflict — please reload"),   // NEW
+> ```
+>
+> **409 Conflict** is the status that tells a client *"reload and retry"* — importantly different from a
+> **422** ("the business says no; retrying won't help") and from a **400** ("your request was malformed").
+> The client's correct reaction to each is different, which is the whole reason we bother distinguishing them.
 
 ```csharp
 public async Task UpdateStatusAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct)
@@ -423,8 +431,8 @@ If a SalesRep had tried, they'd never reach step 3 — the 403 stops them at ste
   change.
 - ❌ **Adjusting the customer balance at create/submit.** ✅ At approval — the moment the debt is real —
   and in the same transaction as the status change.
-- ✅ **Best practice: surface `ConcurrencyException` as a 409 Conflict** (Phase 11) so clients know to
-  reload and retry.
+- ✅ **Best practice: surface `ConcurrencyException` as a 409 Conflict** (the arm you added to the handler in
+  §4) so clients know to reload and retry — never as a generic 500, which tells them nothing.
 
 ## 11. Checkpoint — approve (manager-only) and cancel (releases) ✅
 
@@ -465,6 +473,8 @@ verifiable** — the full order lifecycle now works end to end.
 ---
 
 ## ✅ Check Yourself
+
+> Try each one before you look. [Model answers](ANSWER-KEY.md#phase-8-approval-and-cancellation) — but attempting first is what makes them stick.
 
 1. Why does approval need *both* a transaction and a `RowVersion` check — what does each prevent?
 2. Why is the customer balance adjusted at approval rather than at create or submit?

@@ -998,6 +998,8 @@ pipeline — a different level. These pure-domain tests are the fast, foundation
 
 ## ✅ Check Yourself
 
+> Try each one before you look. [Model answers](ANSWER-KEY.md#phase-5-domain-model) — but attempting first is what makes them stick.
+
 1. Why is credit-limit a *domain* rule but inventory reservation a *SQL* one, even though both "need
    database data"?
 2. Why doesn't `SalesOrder.Submit()` reserve inventory itself?

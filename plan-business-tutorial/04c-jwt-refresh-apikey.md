@@ -524,8 +524,10 @@ You already have everything needed:
 - Carter's `ICarterModule`, auto-discovered by `app.MapCarter()`
 
 > ❓ **Where does the `401` come from?** You don't write it. `RefreshHandler` throws
-> `AuthenticationException` on every failure path, and [Phase 11](11-cross-cutting.md)'s global exception
-> handler is what maps that exception to a `401`. The endpoint stays a two-line adapter — that's the point.
+> `AuthenticationException` on every failure path, and the `GlobalExceptionHandler` you built in
+> [Part 2 §6b](04b-jwt-login.md) is what maps that exception to a `401`. The endpoint stays a two-line
+> adapter — that's the point, and it's the first dividend from putting that mapping in one place: a whole
+> new slice inherits correct status codes without writing a line of error handling.
 
 The request flow should look like this:
 
@@ -1422,8 +1424,10 @@ curl -i -X POST "$BASE/auth/login" -H "Content-Type: application/json" \
 #   We never reached LoginHandler. A wrong key looks identical.
 ```
 
-This 401 is written by the middleware itself, so — unlike the handler-thrown ones — it is **already correct
-today**, before Phase 11.
+Note this 401 comes from a different machine than the login failures you saw in Part 2: the middleware writes
+the status **straight onto the response** rather than throwing, so it never touches your
+`GlobalExceptionHandler` at all. Two routes to the same status code — a gate that rejects, and a handler that
+throws — and it's worth knowing which is which when you're debugging one.
 
 **2) Log in with the key, and notice what's new in the response.**
 
@@ -1496,9 +1500,9 @@ That is deliberate, and it's the trade-off worth understanding: when two copies 
 server **cannot tell the thief from the victim**, so it burns the family and makes both log in again. A
 brief annoyance for the real user; a dead end for the thief.
 
-> ⚠️ Steps 4 and 5's failures are thrown `AuthenticationException`s, so **today they arrive as a 500** with
-> the right message. [Phase 11](11-cross-cutting.md) turns them into 401s. Read the message, not the status —
-> the same caveat as [Part 2](04b-jwt-login.md).
+> ℹ️ Steps 4 and 5's failures arrive as **401**s carrying those messages — thrown `AuthenticationException`s,
+> mapped by the `GlobalExceptionHandler` from [Part 2 §6b](04b-jwt-login.md). You wrote no error-handling
+> code in this part; the refresh slice inherited it.
 
 **6) Logout revokes the session.** That family is now burned, so log in again to get a fresh pair — call its
 refresh token `REFRESH3` — and hand it to logout:

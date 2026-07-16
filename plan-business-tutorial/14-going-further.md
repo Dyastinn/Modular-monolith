@@ -260,6 +260,8 @@ plumbing is the problem, and not before.
 
 ## ✅ Check Yourself
 
+> Try each one before you look. [Model answers](ANSWER-KEY.md#phase-14-going-further) — but attempting first is what makes them stick.
+
 1. Which production gaps can you close with *no* new technology — and why is that most of the list?
 2. What does Docker actually buy you, and what does it explicitly *not*?
 3. Name a value in this system you must **never** cache, and say why.

@@ -264,6 +264,8 @@ the whole phase in one line: the wall is now the compiler. Delete the probe and 
 
 ## ✅ Check Yourself
 
+> Try each one before you look. [Model answers](ANSWER-KEY.md#phase-15-scaling-the-wall) — but attempting first is what makes them stick.
+
 1. In the base course, what *is* the wall between Sales and Inventory — and what replaces it in this phase?
 2. Why does adding a `Sales → Inventory` project reference **not** breach the wall here, when it obviously
    would in the base build?

@@ -792,6 +792,8 @@ of exactly these `[identity]` tables.
 
 ## ✅ Check Yourself
 
+> Try each one before you look. [Model answers](ANSWER-KEY.md#phase-3-database) — but attempting first is what makes them stick.
+
 1. Which business rule is the *one* we deliberately enforce in SQL, and why can't it live only in C#?
 2. What does the `RowVersion` column enable, and in which later phase?
 3. Why do we copy `UnitPrice` onto the order line instead of always reading it from `Item`?

@@ -18,12 +18,14 @@ reservation, concurrency — with your own hands. Every step you need is in that
 explained where it's first used, starting from the problem it solves rather than the solution. Nothing is
 assumed about what you already know, and no phase sends you elsewhere to fill a gap.
 
-Three reference files sit alongside the phases:
+Five reference files sit alongside the phases:
 
 | File | What it's for |
 |---|---|
 | [00a-FOUNDATIONS.md](plan-business-tutorial/00a-FOUNDATIONS.md) | The C# features the course leans on (records, `async`/`await`, interfaces, generics). Read it first if C# itself is new. |
+| [00b-WINDOWS-POWERSHELL.md](plan-business-tutorial/00b-WINDOWS-POWERSHELL.md) | Every checkpoint translated into PowerShell, for Windows readers who'd rather not use Git Bash. |
 | [GLOSSARY.md](plan-business-tutorial/GLOSSARY.md) | Every term the course uses, in plain English. |
+| [ANSWER-KEY.md](plan-business-tutorial/ANSWER-KEY.md) | Model answers to every phase's **Check Yourself** questions; doubles as an instructor's discussion guide. |
 | [LEARNING-RESOURCES.md](plan-business-tutorial/LEARNING-RESOURCES.md) | Where to go deeper, and how to get unstuck. |
 
 The tutorial is also written for someone coming from **ASP.NET WebForms** — 🧭 markers throughout translate

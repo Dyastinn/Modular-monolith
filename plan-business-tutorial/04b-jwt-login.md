@@ -382,29 +382,19 @@ This prevents attackers from discovering valid usernames.
 
 ---
 
-> ⚠️ **What the client actually sees today: a 500, not a 401.** Be clear-eyed about this, because it will
-> surprise you the first time you test a wrong password. `AuthenticationException` is *thrown*, and right now
-> **nothing catches it** — there is no global error handler in the app yet, so ASP.NET treats it as an
-> unhandled exception and returns a **500** (in Development, the developer exception page). The *message* is
-> right; the *status code* isn't, yet.
+> ⚠️ **A thrown exception, by itself, is a 500.** `AuthenticationException` is *thrown*, and nothing in the
+> app catches it yet — so ASP.NET treats it as an unhandled crash and returns a **500** with a developer
+> exception page. The *message* is right; the *status code* is badly wrong: a wrong password is not a server
+> malfunction, and telling a client "500" invites them to retry something that will never work.
 >
-> [Phase 11](11-cross-cutting.md) adds a single `GlobalExceptionHandler` that maps `AuthenticationException`
-> → **401**, `DomainException` → **422**, `NotFoundException` → **404**, and so on. That's where the status
-> codes quoted in this phase become literally true. We don't build it here for the same reason we don't build
-> the validator pipeline here: mapping *every* exception type to a status is a **cross-cutting** concern that
-> deserves one home, and writing a half-version now that Phase 11 immediately replaces would teach you a file
-> you'd have to unlearn.
+> We fix that at the end of this part ([§6b](#6b-one-small-handler-so-a-wrong-password-is-a-401)) — with the
+> smallest thing that can possibly work, and then we grow it.
 >
-> Two consequences worth naming, so nothing here is a phantom:
-> - **`LoginValidator` is registered but never runs yet.** FluentValidation validators don't execute
->   themselves — the `ValidationBehavior` that invokes them is a pipeline behavior, and we add it in
->   [Phase 11 §3](11-cross-cutting.md). Until then, an empty username simply falls through to "user not
->   found" and the same generic failure. Writing the validator now is still right: it belongs in the slice,
->   next to the command it validates.
-> - **The 401s that *are* real today** are the ones produced by **middleware**, not by a throw: the API-key
->   gate ([Part 3](04c-jwt-refresh-apikey.md)) writes `401` onto the response itself, and the JWT bearer
->   middleware rejects a missing or tampered token with `401` before any handler runs. Those you can verify
->   right now.
+> One other consequence worth naming, so nothing here is a phantom: **`LoginValidator` is registered but
+> never runs yet.** FluentValidation validators don't execute themselves — the `ValidationBehavior` that
+> invokes them is a pipeline behavior, and we add it in [Phase 11 §3](11-cross-cutting.md). Until then, an
+> empty username simply falls through to "user not found" and the same generic failure. Writing the validator
+> now is still right: it belongs in the slice, next to the command it validates.
 
 ---
 
@@ -470,17 +460,53 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Api.Auth;
 
+// The wire shape — the JSON body this route accepts.
+public sealed record LoginRequest(string Username, string Password);
+
 public sealed class LoginEndpoint : ICarterModule
 {
     public void AddRoutes(IEndpointRouteBuilder app) =>
-        app.MapPost("/auth/login", async (LoginCommand cmd, ISender sender, CancellationToken ct) =>
+        app.MapPost("/auth/login", async (LoginRequest body, ISender sender, CancellationToken ct) =>
         {
-            var result = await sender.Send(cmd, ct);
+            var result = await sender.Send(new LoginCommand(body.Username, body.Password), ct);
             return Results.Ok(result);
         })
         .AllowAnonymous();   // login must NOT require a token (chicken-and-egg)
 }
 ```
+
+### 🔑 The endpoint convention: Request in, Command out
+
+This is the first endpoint in the course with a **body**, so here's the rule every endpoint from now on
+follows — worth pinning down once, because inconsistency here is how a codebase ends up with three ways to do
+one thing:
+
+> **The endpoint file owns a `Request` record (the HTTP shape). The handler file owns the `Command` (the
+> mediator shape). The endpoint's whole job is to translate one into the other.**
+
+And your immediate objection is the right one to have: `LoginRequest(Username, Password)` and
+`LoginCommand(Username, Password)` are *identical*. Why type the same fields twice and map between them?
+
+Because they answer to different masters, and they only *look* identical today:
+
+- **The `Request` is your public API.** Renaming its field breaks every client. It's versioned by your API
+  contract, and it's shaped by what's convenient over HTTP.
+- **The `Command` is internal.** You can rename, split, or add to it freely — nothing outside the app knows
+  it exists.
+
+Collapse them into one type and you've welded those two rates of change together: the day a handler wants an
+extra field, you've silently changed your public API; the day a client needs a field renamed, you're editing
+the type your domain logic reads. The mapping line in the endpoint is the seam that lets each side move
+without the other's permission — and it's *one line*.
+
+You'll see the payoff concretely in [Phase 9](09-update-order.md), where `PUT /sales-orders/{id}` takes its
+id from the **route** and its lines from the **body**: `UpdateSalesOrderRequest` holds only the lines, while
+`UpdateSalesOrderCommand` carries both. There, the two shapes genuinely differ — and the endpoint that
+assembles them is exactly the one you're writing here. The convention costs you a line when the shapes match
+so that it's already in place when they don't.
+
+> ⚠️ **Don't bind the `Command` straight from the body** (`async (LoginCommand cmd, …)`). It compiles, it's
+> shorter, and it will bite you the first time your handler needs a field your API shouldn't expose.
 
 > 🧭 **From WebForms:** this is your `Login.aspx` code-behind's `Login_Click` — but the credential check
 > and token creation moved into a handler, and the endpoint is a two-line adapter. A `[WebMethod]` you used
@@ -548,6 +574,89 @@ services.AddScoped<IUserRepository, UserRepository>();      // Dapper over the [
 > `IDbConnectionFactory`, and a singleton may never depend on a scoped service.
 
 Parts 3 and 4 add one more handler registration each, as they add refresh, logout, and change-password.
+
+## 6b. One small handler, so a wrong password is a 401
+
+Your handler throws `AuthenticationException`; the client gets a 500. Let's close that now — not because
+error handling is this phase's topic, but because leaving it broken would mean quoting status codes for
+seven phases that your app doesn't actually return.
+
+**Where does the fix go?** Not in the endpoint. You could wrap `sender.Send` in a `try/catch` right there —
+and then write the same `try/catch` in the refresh endpoint, the logout endpoint, the change-password
+endpoint, and every sales-order endpoint from [Phase 6](06-create-order.md) on. That's the copy-paste sprawl
+this architecture exists to kill. Translating an exception into an HTTP status is the textbook **cross-cutting
+concern**: every endpoint wants it, none should implement it.
+
+ASP.NET Core has exactly the seam for this — `IExceptionHandler`. Register one class, and it gets first
+refusal on every unhandled exception in the app. Create `Erp.Api/GlobalExceptionHandler.cs`:
+
+```csharp
+// src/Erp.Api/GlobalExceptionHandler.cs
+using System.Security.Authentication;    // AuthenticationException
+using Microsoft.AspNetCore.Diagnostics;  // IExceptionHandler
+
+namespace Erp.Api;
+
+// Maps each exception type to an HTTP status, in ONE place. We start with the one type we actually throw;
+// later phases add an arm each as they introduce new exception types.
+public sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> log) : IExceptionHandler
+{
+    public async ValueTask<bool> TryHandleAsync(HttpContext ctx, Exception ex, CancellationToken ct)
+    {
+        var (status, title) = ex switch
+        {
+            AuthenticationException => (StatusCodes.Status401Unauthorized,        "Authentication failed"),
+            _                       => (StatusCodes.Status500InternalServerError, "Unexpected error")
+        };
+
+        // A 500 is a bug we need to see: log the whole thing, server-side, always.
+        if (status == StatusCodes.Status500InternalServerError)
+            log.LogError(ex, "Unhandled exception");
+
+        ctx.Response.StatusCode = status;
+        await ctx.Response.WriteAsJsonAsync(new { title, status, detail = ex.Message }, ct);
+        return true;   // "handled" — stop here, don't let it bubble up as a crash
+    }
+}
+```
+
+Register it in `Program.cs`:
+
+```csharp
+builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+builder.Services.AddProblemDetails();   // the fallback formatter, if a handler ever declines
+// ...after var app = builder.Build():
+app.UseExceptionHandler();   // early in the pipeline, so it wraps everything downstream
+```
+
+That's the whole thing: a `switch` from exception type to status code, one `log`, one JSON write.
+
+> 🔑 **The `switch` *is* the design, and it's going to grow — deliberately, one arm at a time.** Right now
+> the app throws exactly one meaningful exception type, so the switch has exactly one real arm. Every later
+> phase that introduces a *new* kind of failure adds its own line here, in the phase where you first throw
+> it: [Phase 6](06-create-order.md) adds `NotFoundException` → **404** and `DomainException` → **422**,
+> [Phase 8](08-approval-cancellation.md) adds `ConcurrencyException` → **409**,
+> [Phase 10](10-queries-search.md) adds `ValidationException` → **400**, and
+> [Phase 11](11-cross-cutting.md) finishes the file. That's the same just-in-time rule this course uses for
+> packages and configuration — add it the moment a phase needs it, never before.
+
+> ❓ **"Why return `true`? And why does the handler take an `ILogger`?"** `TryHandleAsync` returns `true` for
+> "I've written the response, we're done" and `false` for "not mine — let something else deal with it."
+> Since our default arm handles *everything*, we always return `true`. And the `ILogger` matters more than it
+> looks: the moment you catch every exception, you become responsible for the ones you're hiding. A 500 that
+> vanishes into a tidy JSON body and *nowhere else* is far worse than a crash — so every 500 gets logged in
+> full before the client gets its bland little envelope.
+
+> ⚠️ **One honest gap, and Phase 11 closes it.** `detail = ex.Message` sends the raw exception message to the
+> client — fine for `"Invalid username or password."`, but on a **500** that message might name a table, a
+> file path, or a library version. That's a security leak in production, and it's precisely why
+> [Phase 11 §5](11-cross-cutting.md) adds an environment switch: full detail (even the stack trace) in
+> Development, a bland `"An unexpected error occurred."` in Production. We're in Development, so the
+> difference doesn't bite yet — but don't ship this version.
+
+Restart the app and try a bad login: you now get a real **401** with `{"title":"Authentication failed",
+"status":401,"detail":"Invalid username or password."}`. Every status code this phase quotes is now literally
+true.
 
 ## 7. Step 5 — Wiring token validation into the app
 
@@ -2266,10 +2375,10 @@ curl -i -X POST "$BASE/auth/login" -H "Content-Type: application/json" \
      -d '{"username":"nobody","password":"WRONG"}'
 ```
 
-Both must produce the **same** message — `Invalid username or password.` — because a different answer for
-"no such user" would let an attacker enumerate your usernames (§5). As the ⚠️ note above explains, the
-**status code** on both is a **500** today, not the 401 it will become once
-[Phase 11](11-cross-cutting.md) maps `AuthenticationException`. Check the *message*, not the status.
+Both must produce the **same** `401` and the **same** message — `Invalid username or password.` — because a
+different answer for "no such user" would let an attacker enumerate your usernames (§5). The 401 is your
+[§6b](#6b-one-small-handler-so-a-wrong-password-is-a-401) handler doing its job; before you wrote it, both of
+these were 500s.
 
 ### You're done when
 
@@ -2278,7 +2387,7 @@ Both must produce the **same** message — `Invalid username or password.` — b
 | 1 | A protected endpoint rejects anonymous and forged callers | no token → **401**; `Bearer not.a.jwt` → **401** |
 | 2 | Login issues an access token | **200** + `accessToken`, `username`, `role` (no refresh token yet) |
 | 3 | The token gates the endpoint | valid token → **200** `pong: world` |
-| 4 | Login failure is generic | both wrong-password and unknown-user → the *same* message |
+| 4 | Login failure is generic — and a real 401 | both wrong-password and unknown-user → **401**, the *same* message |
 
 > 🧪 **Step 3 gives you a 401 even with a freshly-minted token?** Then the token you *made* and the token you
 > *validate* disagree about something. The three usual suspects, all in §7's `TokenValidationParameters`:

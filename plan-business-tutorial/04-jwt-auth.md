@@ -945,6 +945,8 @@ Both halves of Part 1 now work: passwords hash and verify (§3's checkpoint), an
 
 ## ✅ Check Yourself
 
+> Try each one before you look. [Model answers](ANSWER-KEY.md#phase-4-passwords-and-access-tokens) — but attempting first is what makes them stick.
+
 1. A JWT's payload can be decoded by anyone. Why is that not a security hole — and what must you therefore
    never put in one?
 2. Why is PBKDF2 deliberately *slow*, when every other function you write should be fast?

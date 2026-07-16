@@ -187,7 +187,7 @@ public sealed class SearchSalesOrdersHandler(IDbConnectionFactory factory)
     {
         // Translate a status name to its number for the proc (null = no filter).
         // TryParse, not Parse: an unknown ?status=Foo is bad *input*, so throw a ValidationException
-        // (→ 400 via the global handler, Phase 11), never an unhandled 500.
+        // (→ 400 via the global handler — see the 📦 box below), never an unhandled 500.
         int? statusNum = null;
         if (q.Status is not null)
         {
@@ -219,6 +219,25 @@ public sealed class SearchSalesOrdersHandler(IDbConnectionFactory factory)
 > and it fails at runtime: the proc's `Status` column is an `int`, the DTO's `Status` property is a `string`,
 > and Dapper won't invent a conversion. You'd get a mapping exception on the first search. The two-record
 > split isn't ceremony — the DB shape and the API shape genuinely differ, and this is where you reconcile them.
+
+> 📦 **One more arm on the handler — this is the first phase that throws a `ValidationException`.** Add it to
+> `GlobalExceptionHandler`'s `switch` (with
+> `using ValidationException = FluentValidation.ValidationException;` at the top — the alias disambiguates it
+> from `System.ComponentModel.DataAnnotations`' identically-named type, a genuinely confusing collision):
+>
+> ```csharp
+> ValidationException     => (StatusCodes.Status400BadRequest, "Validation failed"),   // NEW
+> ```
+>
+> **400** means "your request was malformed" — distinct from the **422** you added in
+> [Phase 6](06-create-order.md) ("well-formed, but the business refuses"). `?status=Banana` isn't a business
+> rule violation; it's a request that never made sense. Getting this pair right is what makes an API
+> debuggable from the client side.
+>
+> Note we're throwing FluentValidation's exception type *by hand* here, without a validator involved — the
+> type is just a convenient, accurate way to say "bad input." In [Phase 11](11-cross-cutting.md) the
+> `ValidationBehavior` starts throwing the same type automatically for every command, and this one arm
+> already handles it.
 
 ## 5. The search stored procedure
 
@@ -332,9 +351,10 @@ GET /sales-orders?status=PendingApproval&page=1&pageSize=20   (valid token)
 ```
 
 No domain object was built anywhere in that flow — just SQL → DTO. Compare the effort to the create
-flow; the asymmetry is the whole point of CQRS-lite. (The `ValidationBehavior` and the global handler that
-turns an unknown `?status=` into a clean `400` are wired in [Phase 11](11-cross-cutting.md); until then the
-query still runs, it just won't pre-validate paging inputs automatically.)
+flow; the asymmetry is the whole point of CQRS-lite. (An unknown `?status=` already returns a clean `400` —
+that's the arm you just added. What's still missing is the `ValidationBehavior` that would *auto-run*
+`SearchSalesOrdersValidator`, so today's paging inputs aren't pre-validated: `?pageSize=5000` sails through.
+[Phase 11](11-cross-cutting.md) closes that.)
 
 ## 7b. Checkpoint — read one and search ✅
 
@@ -349,7 +369,8 @@ curl "$BASE/sales-orders?status=PendingApproval&page=1&pageSize=20" "${AUTH[@]}"
 ```
 
 Also try `?status=Banana`. You should get a `400`, not a `500` — that's the `Enum.TryParse` guard in the
-handler turning bad input into a `ValidationException` (Phase 11 formats it).
+handler turning bad input into a `ValidationException`, and the arm you just added turning that into the
+right status.
 
 If the detail endpoint returns one order with its lines and names, and the search returns a paged envelope
 that respects `?status=` / `?customerId=` filters, **Phase 10 is done and verifiable** — and notice how much
@@ -381,6 +402,8 @@ less machinery a read needed than a write.
 ---
 
 ## ✅ Check Yourself
+
+> Try each one before you look. [Model answers](ANSWER-KEY.md#phase-10-queries-and-search) — but attempting first is what makes them stick.
 
 1. Why does the query handler depend on `IDbConnectionFactory` and not the repository?
 2. Why does the search proc return *two* result sets?
