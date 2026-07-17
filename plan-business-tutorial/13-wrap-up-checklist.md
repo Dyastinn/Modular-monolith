@@ -384,10 +384,11 @@ Stay within the stack; each reinforces a pattern:
 Try one *before* reading how; struggling first is where the learning is. ([Phase 14 §4](14-going-further.md)
 continues the list at #9, for exercises that push past the base stack.)
 
-> 👉 **Want the production last mile?** [Phase 14 — Going Further](14-going-further.md) is an optional,
-> out-of-scope appendix: how you'd close the checklist above, containerize with Docker, cache with Redis, and
-> more — for when *you* take this to your own project. It stays inside the same discipline (nothing there
-> rewrites the base architecture), so it's safe to read without unlearning anything.
+> 👉 **Want the production last mile?** Two optional, out-of-scope appendices follow, and neither rewrites the
+> base architecture — so both are safe to read without unlearning anything.
+> [Phase 14 — Going Further](14-going-further.md) closes the checklist above and says when Docker and Redis
+> start earning their keep. [Phase 14b — Deploying to IIS](14b-deploy-iis.md) then puts the thing on an actual
+> Windows server — which, if you came here from WebForms, is probably the appendix you actually want.
 
 ## 6. Final word from your senior
 

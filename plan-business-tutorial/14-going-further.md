@@ -268,9 +268,16 @@ plumbing is the problem, and not before.
 4. Why does an in-memory rate limiter break when you add a second instance, and what fixes it?
 5. What can an outbox guarantee that Phase 8's after-commit dispatch cannot?
 
-← Previous: [Phase 13 — Wrap-up & production-readiness checklist](13-wrap-up-checklist.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 15 — Scaling the Wall](15-scaling-the-wall.md) →
+← Previous: [Phase 13 — Wrap-up & production-readiness checklist](13-wrap-up-checklist.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 14b — Deploying to IIS](14b-deploy-iis.md) →
 
-> 🎉 **You've built the whole module and seen where the production plumbing attaches.** One more *optional*
-> phase remains — [Phase 15](15-scaling-the-wall.md) — and unlike this one it *changes the architecture*: it's
-> the refactor for when a single shared kernel of contracts stops scaling. Read it when that day comes; you
-> can stop here with a complete, correct build.
+> 🎉 **You've built the whole module and seen where the production plumbing attaches.** Two more *optional*
+> phases remain, and they're independent of each other — take either, both, or neither:
+> - [**Phase 14b — Deploying to IIS**](14b-deploy-iis.md) puts what you just hardened onto an actual Windows
+>   server. If you're coming from WebForms, this is almost certainly the more useful of the two: it's the
+>   deployment target you already have, and it costs you **one line** of application code — the rest is three
+>   pieces of configuration and one large unlearning about what IIS is now.
+> - [**Phase 15 — Scaling the Wall**](15-scaling-the-wall.md) is the only phase that *changes the
+>   architecture*: the refactor for when a single shared kernel of contracts stops scaling. Read it the day
+>   you feel that pain, and not before.
+>
+> You can stop here with a complete, correct build.
