@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-public sealed class SubmitSalesOrderEndpoint : ICarterModule
+internal sealed class SubmitSalesOrderEndpoint : ICarterModule
 {
     public void AddRoutes(IEndpointRouteBuilder app) =>
         app.MapPost("/sales-orders/{id:long}/submit",

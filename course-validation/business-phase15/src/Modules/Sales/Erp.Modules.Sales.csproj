@@ -22,6 +22,13 @@
     <ProjectReference Include="..\Inventory\Erp.Modules.Inventory.csproj" />
   </ItemGroup>
 
+  <!-- Phase 15b: every type in this module is `internal` except the AddSalesModule seam, so the unit tests
+       (which exercise the domain directly: Customer, Money, SalesOrder) need explicit access. Name only the
+       assemblies you trust — never another MODULE. See plan-business-tutorial/15b-internal-all-the-way.md §5. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="Erp.Modules.Sales.UnitTests" />
+  </ItemGroup>
+
   <!-- Ship each module's SQL as embedded resources so the host's DatabaseInitializer can apply them
        regardless of the working directory (Phase 3 §7). -->
   <ItemGroup>

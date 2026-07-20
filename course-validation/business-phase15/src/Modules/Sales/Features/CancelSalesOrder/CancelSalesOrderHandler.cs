@@ -4,9 +4,9 @@ using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Features;
 
-public sealed record CancelSalesOrderCommand(long OrderId) : ICommand<Unit>;
+internal sealed record CancelSalesOrderCommand(long OrderId) : ICommand<Unit>;
 
-public sealed class CancelSalesOrderHandler(
+internal sealed class CancelSalesOrderHandler(
     ISalesOrderRepository orders,
     ICustomerRepository customers,  // needed to reverse the balance if the order was already Approved
     IStockReservation stock,        // the Inventory contract — release goes back across the wall

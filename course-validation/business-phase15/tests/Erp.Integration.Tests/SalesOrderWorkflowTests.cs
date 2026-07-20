@@ -90,6 +90,19 @@ public class SalesOrderWorkflowTests
         search.StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
+    // Regression guard for Phase 15b: the validators are `internal`, and FluentValidation's assembly scanner
+    // SKIPS internal types unless AddSalesModule passes `includeInternalTypes: true`. Get that wrong and
+    // nothing throws — validation just silently stops running, and this order (zero lines) sails past
+    // CreateSalesOrderValidator into the handler and is happily persisted as 201 Created. See 15b §4.
+    [Fact]
+    public async Task Order_with_no_lines_is_rejected_by_the_internal_validator()
+    {
+        var client = await LoggedInAs("manager");
+        var create = await client.PostAsJsonAsync("/sales-orders",
+            new { customerId = 1, lines = Array.Empty<object>() });
+        create.StatusCode.Should().Be(HttpStatusCode.BadRequest);   // 400, not 201 — the validator ran
+    }
+
     [Fact]
     public async Task Refresh_rotates_and_replaying_a_spent_token_revokes_the_session()
     {

@@ -3,7 +3,7 @@ using Erp.Shared.BuildingBlocks;
 namespace Erp.Modules.Sales.Domain;
 
 // ₱ — a plain non-negative amount. A cross-cutting value object: compared by value, immutable.
-public readonly record struct Money
+internal readonly record struct Money
 {
     public decimal Amount { get; }
     public static readonly Money Zero = new(0m);

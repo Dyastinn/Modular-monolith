@@ -4,11 +4,11 @@ using FluentValidation;
 
 namespace Erp.Modules.Sales.Features;
 
-public sealed record UpdateSalesOrderCommand(
+internal sealed record UpdateSalesOrderCommand(
     long OrderId,
     IReadOnlyList<CreateSalesOrderLineDto> Lines) : ICommand<Unit>;   // reuse the line DTO from Create
 
-public sealed class UpdateSalesOrderValidator : AbstractValidator<UpdateSalesOrderCommand>
+internal sealed class UpdateSalesOrderValidator : AbstractValidator<UpdateSalesOrderCommand>
 {
     public UpdateSalesOrderValidator()
     {
@@ -22,7 +22,7 @@ public sealed class UpdateSalesOrderValidator : AbstractValidator<UpdateSalesOrd
     }
 }
 
-public sealed class UpdateSalesOrderHandler(
+internal sealed class UpdateSalesOrderHandler(
     ISalesOrderRepository orders,
     ICustomerRepository customers,
     IItemRepository items,

@@ -5,7 +5,7 @@ using Erp.Modules.Sales.Domain;
 
 namespace Erp.Modules.Sales.Infrastructure;
 
-public sealed class SalesOrderRepository(IDbConnectionFactory factory) : ISalesOrderRepository
+internal sealed class SalesOrderRepository(IDbConnectionFactory factory) : ISalesOrderRepository
 {
     // Flat DB shapes for rehydration (write side).
     private sealed record HeaderRow(

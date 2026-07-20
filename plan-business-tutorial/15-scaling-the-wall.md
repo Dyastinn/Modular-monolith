@@ -34,9 +34,14 @@ You'll take the exact Sales ↔ Inventory relationship you already have and re-c
 
 Runnable reference for this whole phase:
 [`course-validation/business-phase15/`](../course-validation/business-phase15/) — a copy of the base build
-with exactly these changes, `dotnet test` green (14 unit + 7 integration). The base build
-[`course-validation/business/`](../course-validation/business/) is left alone, because Phases 0–14 still
-describe *it*.
+with these changes applied. The base build [`course-validation/business/`](../course-validation/business/) is
+left alone, because Phases 0–14 still describe *it*.
+
+> ⚠️ **That reference build carries the follow-on phase too.** It shows the end state of *both* Phase 15 and
+> [Phase 15b](15b-internal-all-the-way.md), so the Sales module you'll find there is already fully
+> `internal` — further along than this phase alone takes you. Everything below is still exactly what Phase 15
+> changes; just don't be surprised when Sales has more `internal` in it than the text here accounts for.
+> Keeping one build instead of two is a deliberate trade: fewer copies to keep in sync.
 
 ## 1. The pain first — why `Shared` stops scaling
 
@@ -242,8 +247,11 @@ From [`course-validation/business-phase15/`](../course-validation/business-phase
 
 ```
 dotnet build      # 0 errors — the Sales→Inventory reference + internal impl compile
-dotnet test       # 21 passing (14 unit + 7 integration) — InternalsVisibleTo lets the race test run
+dotnet test       # 22 passing (14 unit + 8 integration) — InternalsVisibleTo lets the race test run
 ```
+
+*(Phase 15's own changes account for 21 of those. The 22nd is a guard added by
+[Phase 15b](15b-internal-all-the-way.md), which the same build also carries.)*
 
 Then prove the wall itself, the way a compiler proves things — by refusing. Drop this into any Sales file and
 build:
@@ -279,4 +287,9 @@ the whole phase in one line: the wall is now the compiler. Delete the probe and 
 
 ---
 
-← Previous: [Phase 14b — Deploying to IIS](14b-deploy-iis.md) · [Tutorial overview](00-START-HERE.md) · **This is the last, and most optional, phase — 🎉 you've gone all the way through.**
+← Previous: [Phase 14b — Deploying to IIS](14b-deploy-iis.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 15b — `internal` All the Way](15b-internal-all-the-way.md) →
+
+> 👨‍🏫 **One more, if you want it.** This phase locked *one class* in *one module*. Everything else in the
+> solution — all of Sales included — is still `public` and still reachable by anyone who references it.
+> [Phase 15b](15b-internal-all-the-way.md) finishes the audit, and covers the two framework behaviours that
+> make `internal` break your app without a single error message.

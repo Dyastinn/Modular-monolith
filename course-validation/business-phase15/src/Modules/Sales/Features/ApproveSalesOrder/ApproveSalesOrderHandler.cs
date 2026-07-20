@@ -3,9 +3,9 @@ using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Features;
 
-public sealed record ApproveSalesOrderCommand(long OrderId) : ICommand<Unit>;
+internal sealed record ApproveSalesOrderCommand(long OrderId) : ICommand<Unit>;
 
-public sealed class ApproveSalesOrderHandler(
+internal sealed class ApproveSalesOrderHandler(
     ISalesOrderRepository orders,
     ICustomerRepository customers,
     IDbConnectionFactory factory,

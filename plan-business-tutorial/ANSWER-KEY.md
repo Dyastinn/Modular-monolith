@@ -19,7 +19,8 @@ first, you'll get the warm feeling of understanding without the understanding.
 [5](#phase-5-domain-model) · [6](#phase-6-create-sales-order) · [7](#phase-7-submit-and-concurrency) ·
 [8](#phase-8-approval-and-cancellation) · [9](#phase-9-update-order) · [10](#phase-10-queries-and-search) ·
 [11](#phase-11-cross-cutting-concerns) · [12](#phase-12-testing) · [13](#phase-13-capstone) ·
-[14](#phase-14-going-further) · [14b](#phase-14b-deploying-to-iis) · [15](#phase-15-scaling-the-wall)
+[14](#phase-14-going-further) · [14b](#phase-14b-deploying-to-iis) · [15](#phase-15-scaling-the-wall) ·
+[15b](#phase-15b-internal-all-the-way)
 
 ---
 
@@ -801,6 +802,71 @@ fails: open `Shared/Contracts`, point at an interface, and if you can't say whic
 opening the file, ownership has become a guess. The other two signals: a one-line contract change recompiles
 every module and drags every team into one merge queue, and a contract starts needing a type from its owning
 module — at which point neutral `Shared` stops being neutral.
+
+---
+
+## Phase 15b: `internal` All the Way
+
+**1. What are a module's two kinds of `public` type, and why is everything else `internal`?**
+
+Its **contracts** (what another module calls — `IStockReservation`) and its **composition seam** (the one
+`Add…Module` the host calls to wire it up). Everything else is `internal` because `public` is a *promise*:
+it says other assemblies may depend on this type, so you'll consider them before changing it. You never meant
+to make that promise about `SalesOrderLine` or a Dapper row DTO that exists for one query — but the keyword
+makes it anyway, and now renaming them is technically a breaking change to an API you published by accident.
+Shrinking the surface to one type means everything else can be renamed, split, or deleted freely.
+
+**2. Endpoints go `internal`, routes 404, Swagger stops listing them. What broke?**
+
+**Carter's discovery scan** — `AddCarter()` only considers `public` types when it looks for `ICarterModule`
+implementations, so it never finds your endpoints and never maps the routes. "Swagger is broken" is the wrong
+diagnosis because Swagger is working perfectly: it reports the route table, and the route table genuinely no
+longer contains that endpoint. Chasing Swagger sends you to the wrong component entirely. The fix is to
+register the endpoints yourself inside the module's own assembly —
+`services.AddSingleton(typeof(ICarterModule), endpointType)` — where `internal` is visible, since
+`MapCarter()` resolves modules from DI regardless of how they got there.
+
+**3. Why can the mediator resolve and invoke an `internal` handler?**
+
+Because accessibility governs **what you can write in source**, not what reflection can reach at runtime.
+`Assembly.GetTypes()` returns internal types, and the DI container activates types by reflection without
+checking whether the requesting code could have named them. The registration itself is legal because it runs
+*inside* the module's assembly. And the mediator never names the handler — it holds an `IRequestHandler<,>`
+reference (a `public` interface) and invokes through it; interface dispatch doesn't care that the implementing
+type is invisible to the caller.
+
+**4. Why doesn't `internal class` + `public Handle()` work?**
+
+C# caps a member's reach at its containing type's, so a `public` method on an `internal` class is still
+assembly-only — the combination buys you exactly nothing. The reason it feels necessary is a wrong assumption:
+that something outside calls `Handle` *by name*. Nothing does. Once you see that the call arrives through the
+public interface, the problem dissolves — you don't need the member to be reachable, and it already works.
+
+**5. Which §4 failure is more dangerous in production?**
+
+The **FluentValidation** one, by a wide margin. The Carter failure is loud in effect if not in message: routes
+return 404, the endpoint is missing from Swagger, and someone notices within minutes. The validation failure
+leaves the app serving traffic and returning *success* — a `POST /sales-orders` with zero lines stops being
+rejected with `400` and starts being persisted as `201 Created`. You get silent data corruption that looks
+healthy from every dashboard, and you find out weeks later from the data, not the logs.
+
+**6. Your suite is green after internalising. Name a bug it can't see.**
+
+The dropped validators. Revert `includeInternalTypes: true` and all 21 of the Phase 15 tests still pass,
+because none of them submits a *malformed* command — they test happy paths, role gates, domain-rule rejections
+(422) and concurrency, but never request shape. The catching test posts an order with an empty `lines` array
+and asserts `400`: with the validator registered it's rejected, without it the handler happily writes an empty
+order and returns `201`. That single assertion distinguishes the two states cleanly, which is what makes it a
+guard rather than another happy-path test.
+
+**7. `ISalesOrderRepository` vs `IStockReservation` — which is `public`?**
+
+`IStockReservation` is `public`; `ISalesOrderRepository` is `internal`. The question that separates them is
+**who implements it**. A **port** (`ISalesOrderRepository`) is implemented by the module's *own* Infrastructure
+— it's how the module reaches its own database, an internal arrangement between two folders in one assembly,
+so nothing outside needs to name it. A **contract** (`IStockReservation`) is implemented by this module and
+called by a *different* one — that's a cross-module promise, and it's the only reason to publish a type.
+Both are interfaces the module declares, which is exactly why "it's an interface" is not the test.
 
 ---
 

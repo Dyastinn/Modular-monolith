@@ -2,7 +2,7 @@ using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Domain;
 
-public sealed class ItemCategory
+internal sealed class ItemCategory
 {
     public long Id { get; }
     public string Name { get; }

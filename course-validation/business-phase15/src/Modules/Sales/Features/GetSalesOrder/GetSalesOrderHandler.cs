@@ -5,21 +5,21 @@ using Erp.Modules.Sales.Domain;
 
 namespace Erp.Modules.Sales.Features;
 
-public sealed record GetSalesOrderQuery(long OrderId) : IQuery<SalesOrderDetailDto?>;
+internal sealed record GetSalesOrderQuery(long OrderId) : IQuery<SalesOrderDetailDto?>;
 
-public sealed record SalesOrderDetailDto(
+internal sealed record SalesOrderDetailDto(
     long Id, string OrderNumber, long CustomerId, string CustomerName,
     string Status, decimal Total, DateTime CreatedUtc,
     IReadOnlyList<SalesOrderLineDto> Lines);
 
-public sealed record SalesOrderLineDto(long ItemId, string ItemName, int Quantity, decimal UnitPrice, decimal LineTotal);
+internal sealed record SalesOrderLineDto(long ItemId, string ItemName, int Quantity, decimal UnitPrice, decimal LineTotal);
 
 // Flat "row" shapes Dapper reads from the proc's two result sets.
-public sealed record SalesOrderHeaderRow(
+internal sealed record SalesOrderHeaderRow(
     long Id, string OrderNumber, long CustomerId, string CustomerName, int Status, decimal Total, DateTime CreatedUtc);
-public sealed record SalesOrderLineRow(long ItemId, string ItemName, int Quantity, decimal UnitPrice);
+internal sealed record SalesOrderLineRow(long ItemId, string ItemName, int Quantity, decimal UnitPrice);
 
-public sealed class GetSalesOrderHandler(IDbConnectionFactory factory)
+internal sealed class GetSalesOrderHandler(IDbConnectionFactory factory)
     : IQueryHandler<GetSalesOrderQuery, SalesOrderDetailDto?>
 {
     public async Task<SalesOrderDetailDto?> Handle(GetSalesOrderQuery q, CancellationToken ct)

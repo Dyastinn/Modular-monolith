@@ -6,18 +6,18 @@ using FluentValidation;
 
 namespace Erp.Modules.Sales.Features;
 
-public sealed record SearchSalesOrdersQuery(
+internal sealed record SearchSalesOrdersQuery(
     long? CustomerId, string? Status, int Page = 1, int PageSize = 20)
     : IQuery<PagedResult<SalesOrderSummaryDto>>;
 
-public sealed record SalesOrderSummaryDto(
+internal sealed record SalesOrderSummaryDto(
     long Id, string OrderNumber, string CustomerName, string Status, decimal Total, DateTime CreatedUtc);
 
 // The proc returns Status as its stored int; the handler converts it to a readable name.
-public sealed record SalesOrderSummaryRow(
+internal sealed record SalesOrderSummaryRow(
     long Id, string OrderNumber, string CustomerName, int Status, decimal Total, DateTime CreatedUtc);
 
-public sealed class SearchSalesOrdersValidator : AbstractValidator<SearchSalesOrdersQuery>
+internal sealed class SearchSalesOrdersValidator : AbstractValidator<SearchSalesOrdersQuery>
 {
     public SearchSalesOrdersValidator()
     {
@@ -26,7 +26,7 @@ public sealed class SearchSalesOrdersValidator : AbstractValidator<SearchSalesOr
     }
 }
 
-public sealed class SearchSalesOrdersHandler(IDbConnectionFactory factory)
+internal sealed class SearchSalesOrdersHandler(IDbConnectionFactory factory)
     : IQueryHandler<SearchSalesOrdersQuery, PagedResult<SalesOrderSummaryDto>>
 {
     public async Task<PagedResult<SalesOrderSummaryDto>> Handle(SearchSalesOrdersQuery q, CancellationToken ct)

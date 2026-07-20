@@ -1,6 +1,6 @@
 namespace Erp.Modules.Sales.Domain;
 
-public sealed class SalesOrderLine
+internal sealed class SalesOrderLine
 {
     public ItemId ItemId { get; }
     public Quantity Quantity { get; private set; }

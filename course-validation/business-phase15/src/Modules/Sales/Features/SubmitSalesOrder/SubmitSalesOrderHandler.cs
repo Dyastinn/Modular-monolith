@@ -4,9 +4,9 @@ using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Features;
 
-public sealed record SubmitSalesOrderCommand(long OrderId) : ICommand<Unit>;
+internal sealed record SubmitSalesOrderCommand(long OrderId) : ICommand<Unit>;
 
-public sealed class SubmitSalesOrderHandler(
+internal sealed class SubmitSalesOrderHandler(
     ISalesOrderRepository orders,
     ICustomerRepository customers,
     IStockReservation stock,        // ← the published Inventory contract, NOT Inventory's internals

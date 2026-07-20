@@ -4,13 +4,13 @@ using FluentValidation;
 
 namespace Erp.Modules.Sales.Features;
 
-public sealed record CreateSalesOrderLineDto(long ItemId, int Quantity);
+internal sealed record CreateSalesOrderLineDto(long ItemId, int Quantity);
 
-public sealed record CreateSalesOrderCommand(
+internal sealed record CreateSalesOrderCommand(
     long CustomerId,
     IReadOnlyList<CreateSalesOrderLineDto> Lines) : ICommand<long>;   // returns the new order id
 
-public sealed class CreateSalesOrderValidator : AbstractValidator<CreateSalesOrderCommand>
+internal sealed class CreateSalesOrderValidator : AbstractValidator<CreateSalesOrderCommand>
 {
     public CreateSalesOrderValidator()
     {
@@ -24,7 +24,7 @@ public sealed class CreateSalesOrderValidator : AbstractValidator<CreateSalesOrd
     }
 }
 
-public sealed class CreateSalesOrderHandler(
+internal sealed class CreateSalesOrderHandler(
     ICustomerRepository customers,
     IItemRepository items,
     ISalesOrderRepository orders,

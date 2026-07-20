@@ -129,6 +129,8 @@ dotnet test        # 14 domain unit tests + 7 integration/e2e tests (uses a sepa
 > first — the reference build is there to check your work, not to replace the typing.
 
 > An **optional** second reference build,
-> [`course-validation/business-phase15/`](course-validation/business-phase15/), applies the Phase 15 refactor
-> (per-module contracts + `internal`) on top of the base build. It exists only to back
-> [Phase 15](plan-business-tutorial/15-scaling-the-wall.md); the base build above is what Phases 0–14 describe.
+> [`course-validation/business-phase15/`](course-validation/business-phase15/), applies the optional refactors
+> on top of the base build: per-module contracts + `internal`
+> ([Phase 15](plan-business-tutorial/15-scaling-the-wall.md)), then a module shrunk to a single public type
+> ([Phase 15b](plan-business-tutorial/15b-internal-all-the-way.md)). One build backs both phases so there's
+> only one copy to keep in sync; the base build above is what Phases 0–14 describe.

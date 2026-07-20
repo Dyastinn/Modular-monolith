@@ -5,7 +5,7 @@ using Erp.Modules.Sales.Domain;
 
 namespace Erp.Modules.Sales.Infrastructure;
 
-public sealed class CustomerRepository(IDbConnectionFactory factory) : ICustomerRepository
+internal sealed class CustomerRepository(IDbConnectionFactory factory) : ICustomerRepository
 {
     private sealed record CustomerRow(long Id, string Name, bool IsBlocked, decimal CreditLimit, decimal OutstandingBalance);
 

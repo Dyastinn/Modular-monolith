@@ -2,7 +2,7 @@ using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Domain;
 
-public sealed class Customer
+internal sealed class Customer
 {
     public CustomerId Id { get; }
     public string Name { get; }

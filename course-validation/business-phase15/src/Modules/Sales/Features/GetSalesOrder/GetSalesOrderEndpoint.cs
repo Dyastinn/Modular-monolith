@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-public sealed class GetSalesOrderEndpoint : ICarterModule
+internal sealed class GetSalesOrderEndpoint : ICarterModule
 {
     public void AddRoutes(IEndpointRouteBuilder app) =>
         app.MapGet("/sales-orders/{id:long}",

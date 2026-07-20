@@ -145,6 +145,7 @@ Each phase builds directly on the one before it, and each ends with something yo
 | 14 | [14-going-further.md](14-going-further.md) | *Optional.* Harden what you built; when Docker and Redis start earning their keep | ~1 hr (read) |
 | 14b | [14b-deploy-iis.md](14b-deploy-iis.md) | *Optional.* Deploy it to **IIS** on a real Windows server — eleven steps, three config changes, one line of code | ~1.5–2 hr |
 | 15 | [15-scaling-the-wall.md](15-scaling-the-wall.md) | *Optional, and it changes the architecture.* Per-module contracts + `internal`, for when the shared kernel stops scaling | ~40 min (read) |
+| 15b | [15b-internal-all-the-way.md](15b-internal-all-the-way.md) | *Optional, and it follows on from Phase 15.* Shrink a module to one public type — plus the two framework behaviours that make `internal` break your app silently | ~40 min |
 
 > 🔑 **Phase 4 is the long one, so each of its five parts ends in its own runnable checkpoint** — you never
 > carry more than one part's worth of unverified code. Part 5 then runs every door in one pass.

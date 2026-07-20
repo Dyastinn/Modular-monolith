@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-public sealed class UpdateSalesOrderEndpoint : ICarterModule
+internal sealed class UpdateSalesOrderEndpoint : ICarterModule
 {
     public void AddRoutes(IEndpointRouteBuilder app) =>
         app.MapPut("/sales-orders/{id:long}",
@@ -19,4 +19,4 @@ public sealed class UpdateSalesOrderEndpoint : ICarterModule
 }
 
 // id comes from the route; lines from the body — avoids the "id in URL vs id in body" ambiguity.
-public sealed record UpdateSalesOrderRequest(IReadOnlyList<CreateSalesOrderLineDto> Lines);
+internal sealed record UpdateSalesOrderRequest(IReadOnlyList<CreateSalesOrderLineDto> Lines);

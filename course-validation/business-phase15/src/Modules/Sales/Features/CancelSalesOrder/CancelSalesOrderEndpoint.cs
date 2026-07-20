@@ -6,7 +6,7 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-public sealed class CancelSalesOrderEndpoint : ICarterModule
+internal sealed class CancelSalesOrderEndpoint : ICarterModule
 {
     public void AddRoutes(IEndpointRouteBuilder app) =>
         app.MapPost("/sales-orders/{id:long}/cancel",

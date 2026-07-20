@@ -1,6 +1,6 @@
 namespace Erp.Modules.Sales.Domain;
 
-public static class SalesOrderStatusRules
+internal static class SalesOrderStatusRules
 {
     private static readonly Dictionary<SalesOrderStatus, SalesOrderStatus[]> _allowed = new()
     {

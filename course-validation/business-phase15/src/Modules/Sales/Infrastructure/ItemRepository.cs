@@ -5,7 +5,7 @@ using Erp.Modules.Sales.Domain;
 
 namespace Erp.Modules.Sales.Infrastructure;
 
-public sealed class ItemRepository(IDbConnectionFactory factory) : IItemRepository
+internal sealed class ItemRepository(IDbConnectionFactory factory) : IItemRepository
 {
     private sealed record ItemRow(
         long ItemId, bool IsActive, decimal UnitPrice,

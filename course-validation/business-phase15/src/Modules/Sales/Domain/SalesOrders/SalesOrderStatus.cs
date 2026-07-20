@@ -1,6 +1,6 @@
 namespace Erp.Modules.Sales.Domain;
 
-public enum SalesOrderStatus
+internal enum SalesOrderStatus
 {
     Draft = 0,            // being edited
     PendingApproval = 1,  // submitted, inventory reserved, awaiting a manager

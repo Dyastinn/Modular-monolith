@@ -2,7 +2,7 @@ using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Domain;
 
-public sealed class SalesOrder : AggregateRoot<SalesOrderId>
+internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
 {
     private readonly List<SalesOrderLine> _lines = new();
     public IReadOnlyList<SalesOrderLine> Lines => _lines;

@@ -3,7 +3,7 @@ using System.Data;
 namespace Erp.Modules.Sales.Domain;
 
 // A data-access "port" the module declares; Sales's own Infrastructure implements it (Phase 6 §4).
-public interface ISalesOrderRepository
+internal interface ISalesOrderRepository
 {
     Task<string> NextOrderNumberAsync(CancellationToken ct);
     Task<long> AddAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct);   // returns the DB-assigned id
