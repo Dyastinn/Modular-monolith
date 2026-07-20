@@ -4,8 +4,6 @@
   </Folder>
   <Folder Name="/src/Shared/">
     <Project Path="src/Shared/Erp.Shared.BuildingBlocks/Erp.Shared.BuildingBlocks.csproj" />
-    <Project Path="src/Shared/Erp.Shared.Common/Erp.Shared.Common.csproj" />
-    <Project Path="src/Shared/Erp.Shared.Messaging/Erp.Shared.Messaging.csproj" />
     <Project Path="src/Shared/Erp.Shared.Infrastructure/Erp.Shared.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/src/Modules/">

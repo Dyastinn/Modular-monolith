@@ -47,10 +47,11 @@ this phase:
 Erp.slnx
 ├── src/
 │   ├── Shared/
-│   │   ├── Erp.Shared.BuildingBlocks/   # Entity, AggregateRoot, IDomainEvent, DomainException
-│   │   ├── Erp.Shared.Common/           # IClock, PagedResult, and the interfaces modules depend on:
-│   │   │                                #   IDbConnectionFactory, ICurrentUser, IStockReservation
-│   │   ├── Erp.Shared.Messaging/        # IRequest, ICommand, IQuery, IRequestHandler, ISender, behaviors
+│   │   ├── Erp.Shared.BuildingBlocks/   # everything a module is allowed to see. Folders, not projects:
+│   │   │   ├── Domain/                  #   Entity, AggregateRoot, IDomainEvent, DomainException
+│   │   │   ├── Abstractions/            #   IClock, PagedResult, and the interfaces modules depend on:
+│   │   │   │                            #     IDbConnectionFactory, ICurrentUser, IStockReservation
+│   │   │   └── Messaging/               #   IRequest, ICommand, IQuery, IRequestHandler, ISender, behaviors
 │   │   └── Erp.Shared.Infrastructure/   # the implementations: SqlConnectionFactory, JWT/password services,
 │   │                                    #   CurrentUser, AddSharedInfrastructure()
 │   │
@@ -91,11 +92,14 @@ its own); `web` = a runnable web app (that's our host).
 # 1) The solution file (--format slnx gives the newer XML "Erp.slnx"; omit it for a classic "Erp.sln")
 dotnet new sln -n Erp --format slnx
 
-# 2) Shared kernel — four class libraries
+# 2) Shared code — two class libraries (why only two: see §3b below)
 dotnet new classlib -n Erp.Shared.BuildingBlocks -o src/Shared/Erp.Shared.BuildingBlocks
-dotnet new classlib -n Erp.Shared.Common         -o src/Shared/Erp.Shared.Common
-dotnet new classlib -n Erp.Shared.Messaging      -o src/Shared/Erp.Shared.Messaging
 dotnet new classlib -n Erp.Shared.Infrastructure -o src/Shared/Erp.Shared.Infrastructure
+
+# The BuildingBlocks folders — plain directories inside one project, not separate projects
+mkdir src/Shared/Erp.Shared.BuildingBlocks/Domain
+mkdir src/Shared/Erp.Shared.BuildingBlocks/Abstractions
+mkdir src/Shared/Erp.Shared.BuildingBlocks/Messaging
 
 # 3) The Sales module (a class library) and the API host (runnable)
 dotnet new classlib -n Erp.Modules.Sales -o src/Modules/Sales
@@ -114,49 +118,70 @@ Now set **which project may reference which** with `dotnet add reference`. A ref
 — which is exactly how the module walls get *enforced*.
 
 ```bash
-# The Sales module may use the shared kernel — but NOT Erp.Shared.Infrastructure (see the note below):
-dotnet add src/Modules/Sales/Erp.Modules.Sales.csproj reference src/Shared/Erp.Shared.BuildingBlocks/Erp.Shared.BuildingBlocks.csproj src/Shared/Erp.Shared.Common/Erp.Shared.Common.csproj src/Shared/Erp.Shared.Messaging/Erp.Shared.Messaging.csproj
+# The Sales module may use the shared building blocks — but NOT Erp.Shared.Infrastructure (see below):
+dotnet add src/Modules/Sales/Erp.Modules.Sales.csproj reference src/Shared/Erp.Shared.BuildingBlocks/Erp.Shared.BuildingBlocks.csproj
 
 # The host wires the module + shared infrastructure:
 dotnet add src/Erp.Api/Erp.Api.csproj reference src/Modules/Sales/Erp.Modules.Sales.csproj src/Shared/Erp.Shared.Infrastructure/Erp.Shared.Infrastructure.csproj
 
-# Inside the shared kernel:
-dotnet add src/Shared/Erp.Shared.Infrastructure/Erp.Shared.Infrastructure.csproj reference src/Shared/Erp.Shared.Messaging/Erp.Shared.Messaging.csproj src/Shared/Erp.Shared.Common/Erp.Shared.Common.csproj src/Shared/Erp.Shared.BuildingBlocks/Erp.Shared.BuildingBlocks.csproj
-dotnet add src/Shared/Erp.Shared.Messaging/Erp.Shared.Messaging.csproj reference src/Shared/Erp.Shared.Common/Erp.Shared.Common.csproj src/Shared/Erp.Shared.BuildingBlocks/Erp.Shared.BuildingBlocks.csproj
+# The implementations need the interfaces they implement:
+dotnet add src/Shared/Erp.Shared.Infrastructure/Erp.Shared.Infrastructure.csproj reference src/Shared/Erp.Shared.BuildingBlocks/Erp.Shared.BuildingBlocks.csproj
 ```
 
-That produces this dependency graph — **`BuildingBlocks` and `Common` reference nothing** (so a pure Domain
-can lean on them without ever dragging in the database or the web):
+That's the whole graph. Four arrows:
 
 ```
 Erp.Api                   → Erp.Modules.Sales, Erp.Shared.Infrastructure
-Erp.Modules.Sales         → Erp.Shared.{BuildingBlocks, Common, Messaging}
-Erp.Shared.Infrastructure → Erp.Shared.Messaging, Erp.Shared.Common, Erp.Shared.BuildingBlocks
-Erp.Shared.Messaging      → Erp.Shared.Common, Erp.Shared.BuildingBlocks
+Erp.Modules.Sales         → Erp.Shared.BuildingBlocks
+Erp.Shared.Infrastructure → Erp.Shared.BuildingBlocks
 Erp.Shared.BuildingBlocks → (nothing)
-Erp.Shared.Common         → (nothing)
 ```
 
 **No module references another module** — that missing reference *is* the island wall, enforced by the
-compiler. (`Messaging` references `BuildingBlocks` so the mediator can carry base domain-event types when we
-add events later; it's a harmless edge, since `BuildingBlocks` depends on nothing.)
+compiler.
 
-Look closely at the second line: **`Erp.Modules.Sales` does not reference `Erp.Shared.Infrastructure`.**
-That arrow is missing on purpose, and it's the same trick as the module wall. The module writes its Dapper
-repositories against the **interface** `IDbConnectionFactory`, which lives in `Erp.Shared.Common` — a project
-that depends on nothing. The *implementation* (`SqlConnectionFactory`, plus the JWT and password services and
-the `HttpContext`-reading `CurrentUser`) lives in `Erp.Shared.Infrastructure`, and **only the host references
-that**. So a module physically cannot reach for a connection string, a signing key, or `HttpContext`: those
-types aren't on its compile path at all. Interfaces down in `Common`, implementations up in `Infrastructure`,
-and the host is the only place the two are introduced to each other.
+Now look at the second and third lines together, because the arrow that *isn't* there is the important one:
+**`Erp.Modules.Sales` does not reference `Erp.Shared.Infrastructure`.** That's the same trick as the module
+wall. The module writes its Dapper repositories against the **interface** `IDbConnectionFactory`, which lives
+in `Erp.Shared.BuildingBlocks` — a project that depends on nothing. The *implementation*
+(`SqlConnectionFactory`, plus the JWT and password services and the `HttpContext`-reading `CurrentUser`) lives
+in `Erp.Shared.Infrastructure`, and **only the host references that**. So a module physically cannot reach for
+a connection string, a signing key, or `HttpContext`: those types aren't on its compile path at all.
+Interfaces down in `BuildingBlocks`, implementations up in `Infrastructure`, and the host is the only place
+the two are introduced to each other.
+
+### 3b. Why two projects and not five
+
+❓ **You might be wondering:** there are three very different kinds of thing inside `BuildingBlocks` — base
+domain types, interfaces, and the mediator. Why aren't those three projects?
+
+Because a separate project buys you exactly one thing: **the compiler stops someone from writing a
+`using`.** That's worth paying for when somebody would otherwise write the wrong `using` — which is precisely
+the `Infrastructure` case above. It's worth nothing when every consumer references all the pieces anyway.
+`Erp.Modules.Sales` needs `Entity<TId>`, needs `IDbConnectionFactory`, and needs `ICommandHandler<,>`. Split
+those into three projects and Sales just references all three; nobody is on the wrong side of any wall, so no
+wall is doing any work. You'd have bought three csproj files, three sets of `using` lines, and a
+dependency diagram to explain — in exchange for nothing enforced.
+
+🔑 **The rule: a project boundary exists to make something a compile error. Folders are for organising code
+you're allowed to use.** That's the same rule the modules follow — `Features/` and `Domain/` are folders
+inside `Erp.Modules.Sales`, not projects, because Sales code is allowed to use all of it.
+
+⚠️ **Be honest about what this gives up.** Because `Domain/` and `Messaging/` now live in one assembly,
+nothing *stops* a domain entity from writing `using` and grabbing `ISender`. That would be bad design — the
+domain shouldn't know a mediator exists — but it will compile. The old four-project layout didn't actually
+prevent it either (`Erp.Modules.Sales` referenced `Messaging` regardless), so nothing was lost here; the rule
+was always a convention. Phase 13 revisits how you'd enforce conventions like this with an architecture test
+once the codebase is big enough to need it.
 
 ## 4. Why each folder exists (no mystery folders)
 
 | Folder | Why it exists | Why *here* |
 |---|---|---|
-| `Shared.BuildingBlocks` | `Entity`, `AggregateRoot`, `IDomainEvent`, `DomainException`. | Generic scaffolding every module's domain reuses; depends on nothing. |
-| `Shared.Common` | `IClock`, `PagedResult`, and the **interfaces** modules code against: `IDbConnectionFactory`, `ICurrentUser`, and cross-module contracts like `IStockReservation`. | Pure, dependency-free types both modules may depend on without depending on each other. |
-| `Shared.Messaging` | The hand-rolled mediator contracts + `Sender` + behaviors. | Every module sends/handles through one mediator. |
+| `Shared.BuildingBlocks` | Everything a module may use, in three folders (below). | One project because a module needs all of it — see §3b. Depends on nothing. |
+| `Shared.BuildingBlocks/Domain` | `Entity`, `AggregateRoot`, `IDomainEvent`, `DomainException`. | Generic scaffolding every module's domain reuses. |
+| `Shared.BuildingBlocks/Abstractions` | `IClock`, `PagedResult`, and the **interfaces** modules code against: `IDbConnectionFactory`, `ICurrentUser`, and cross-module contracts like `IStockReservation`. | Pure, dependency-free types both modules may depend on without depending on each other. |
+| `Shared.BuildingBlocks/Messaging` | The hand-rolled mediator contracts + `Sender` + behaviors. | Every module sends/handles through one mediator. |
 | `Shared.Infrastructure` | The **implementations** of those interfaces: `SqlConnectionFactory`, the JWT and password services, `CurrentUser` (which reads `HttpContext`). | Framework/crypto/db plumbing. **Only `Erp.Api` references it** — no module does, so no module *can* touch it. |
 | `Sales/Domain` | The `SalesOrder` that knows how to submit/approve itself; `Customer`, `Item`. | Pure business objects; depend only on `BuildingBlocks`. |
 | `Sales/Features/<Feature>` | One folder per feature, **two files** (handler + endpoint). | Everything for "create a sales order" together, not scattered by technical kind. |
@@ -172,10 +197,17 @@ stay auth-agnostic. We don't create that folder now.)*
 domain will inherit from or throw them. They're short, so we write all four in one file — and because they
 depend on nothing, this project stays the bottom of the dependency graph.
 
-Delete the generated `Class1.cs` and create `BuildingBlocks.cs`:
+🔑 **One convention to note now, because it holds for the whole project:** every file in
+`Erp.Shared.BuildingBlocks` declares `namespace Erp.Shared.BuildingBlocks`, *regardless of which folder it
+sits in*. `Domain/`, `Abstractions/`, and `Messaging/` are there so you can find things — they are not part
+of the namespace. C# doesn't require namespaces to match folders, and here we deliberately keep it flat so
+that a module needs exactly one `using Erp.Shared.BuildingBlocks;` to get the base types, the interfaces, and
+the mediator. One `using` instead of three, in every handler you'll write.
+
+Delete the generated `Class1.cs` and create `Domain/BuildingBlocks.cs`:
 
 ```csharp
-// src/Shared/Erp.Shared.BuildingBlocks/BuildingBlocks.cs
+// src/Shared/Erp.Shared.BuildingBlocks/Domain/BuildingBlocks.cs
 namespace Erp.Shared.BuildingBlocks;
 
 public abstract class Entity<TId> where TId : struct
@@ -463,7 +495,7 @@ rooms to a house that already has power.
 - ❌ **Making `Sales` reference `Inventory` (or vice versa).** ✅ Never — modules talk through a `Shared`
   contract. The missing reference *is* the wall.
 - ❌ **Making a module reference `Shared.Infrastructure` "because it'll need the database eventually."**
-  ✅ It needs the *interface* (`IDbConnectionFactory`, in `Shared.Common`), never the implementation. Only
+  ✅ It needs the *interface* (`IDbConnectionFactory`, in `Shared.BuildingBlocks`), never the implementation. Only
   the host references `Shared.Infrastructure`.
 - ❌ **Generic `Commands/`/`Handlers/`/`Endpoints/` folders.** ✅ We group by *feature* (two files each) —
   you'll see the first feature folder in Phase 6; keep this shape from the start.
@@ -478,7 +510,7 @@ rooms to a house that already has power.
 
 1. Why is the solution split by module + Shared kernel instead of four Clean Architecture layers?
 2. What compiler-level thing stops `Sales` from reaching into `Inventory`?
-3. `IDbConnectionFactory` lives in `Shared.Common`, but `SqlConnectionFactory` lives in
+3. `IDbConnectionFactory` lives in `Shared.BuildingBlocks`, but `SqlConnectionFactory` lives in
    `Shared.Infrastructure`. Why are they in different projects, and which one is the `Sales` module allowed
    to see?
 4. Why does this phase install only Swashbuckle and no other packages?

@@ -1,7 +1,7 @@
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Http;
-using Erp.Shared.Common;
+using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Shared.Infrastructure;
 

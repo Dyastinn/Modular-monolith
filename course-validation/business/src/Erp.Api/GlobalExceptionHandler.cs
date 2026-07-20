@@ -1,6 +1,5 @@
 using System.Security.Authentication;
 using Erp.Shared.BuildingBlocks;
-using Erp.Shared.Common;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Http;
 using ValidationException = FluentValidation.ValidationException;

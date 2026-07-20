@@ -2,7 +2,7 @@ using System.Diagnostics;
 using FluentValidation;
 using Microsoft.Extensions.Logging;
 
-namespace Erp.Shared.Messaging;
+namespace Erp.Shared.BuildingBlocks;
 
 // Cross-cutting behaviors shared by every module (Phase 11 §3-4). Registered once by AddMessaging,
 // LoggingBehavior OUTERMOST so it logs even requests that fail validation.

@@ -69,7 +69,7 @@ commits together, or none does.
 The interface is a **port** — any module may depend on it without knowing which database engine sits behind it. The implementation is an **adapter** that lives in `Shared.Infrastructure`, the only project that knows we're using SQL Server.
 
 ```
-Erp.Shared.Common
+Erp.Shared.BuildingBlocks
 └── Data
     └── IDbConnectionFactory.cs
 
@@ -78,12 +78,12 @@ Erp.Shared.Infrastructure
     └── SqlConnectionFactory.cs
 ```
 
-`Erp.Shared.Common/Data/IDbConnectionFactory.cs`:
+`Erp.Shared.BuildingBlocks/Abstractions/IDbConnectionFactory.cs`:
 
 ```csharp
 using System.Data.Common;
 
-namespace Erp.Shared.Common.Data;
+namespace Erp.Shared.BuildingBlocks;
 
 public interface IDbConnectionFactory
 {
@@ -102,7 +102,7 @@ public interface IDbConnectionFactory
 ```csharp
 using System.Data.Common;
 using Microsoft.Data.SqlClient;
-using Erp.Shared.Common.Data;
+using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Shared.Infrastructure.Data;
 
@@ -247,7 +247,7 @@ connection it just asked the factory for.
 
 | Piece | Why it exists | Where it lives |
 |---|---|---|
-| `IDbConnectionFactory` | So a module can ask for a connection without learning which engine or connection string is behind it. The **port**. | `Erp.Shared.Common/Data/` — no dependencies, so even a pure module can reference it. |
+| `IDbConnectionFactory` | So a module can ask for a connection without learning which engine or connection string is behind it. The **port**. | `Erp.Shared.BuildingBlocks/Abstractions/` — no dependencies, so even a pure module can reference it. |
 | `SqlConnectionFactory` | The one class in the solution allowed to say the words `SqlConnection`. The **adapter**. | `Erp.Shared.Infrastructure/Data/` — the only project that knows we chose SQL Server. |
 | `DbConnection` (not `IDbConnection`) | It's the abstract ADO.NET base class that has `OpenAsync`, so a waiting request doesn't pin a thread. | Returned by `Create()`. |
 | `IDbTransaction` | The unit of atomicity, opened **in the handler** so the boundary is visible in the code that owns it. | Never registered in DI — a handler opens it on the connection it just got. |
@@ -262,7 +262,7 @@ temporary endpoint in `Program.cs` — plain ADO.NET, no Dapper, because we have
 this is really a test of the factory and the connection string:
 
 ```csharp
-// Program.cs — temporary. Add `using Erp.Shared.Common.Data;` at the top.
+// Program.cs — temporary. Add `using Erp.Shared.BuildingBlocks;` at the top.
 app.MapGet("/db-ping", async (IDbConnectionFactory factory, CancellationToken ct) =>
 {
     using var conn = factory.Create();          // the factory hands back an unopened connection

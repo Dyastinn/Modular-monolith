@@ -134,6 +134,14 @@ discussion (Phase 13's checklist and Phase 14's extensions). Never as part of th
 2. **Keep the Domain pure.** Inside a module, `Features/` and `Infrastructure/` depend on `Domain/`;
    `Domain/` depends only on `Shared.BuildingBlocks`. No SQL, web, Carter, Dapper, or `HttpContext` in the
    domain. Ever.
+2b. **`Shared/` is exactly two projects, and stays that way.** `Erp.Shared.BuildingBlocks` (folders
+   `Domain/`, `Abstractions/`, `Messaging/`; **one flat namespace `Erp.Shared.BuildingBlocks`** regardless of
+   folder) holds everything a module may use and depends on nothing. `Erp.Shared.Infrastructure` holds the
+   implementations and is referenced **only by `Erp.Api`** — that absent reference is what stops a module
+   touching a connection string, a signing key, or `HttpContext`. **Do not re-split `BuildingBlocks` into
+   `Common`/`Messaging`/etc.** Those projects existed until 2026-07-20 and were merged on purpose: every
+   module referenced all of them, so the boundaries enforced nothing. The rule is *a project boundary exists
+   to make something a compile error; folders organise code you're allowed to use* — taught in Phase 1 §3b.
 3. **Where each kind of logic lives** (this "split" is the entire skill the course teaches — keep it sacred):
 
    | Concern | Home |

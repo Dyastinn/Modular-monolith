@@ -1,6 +1,6 @@
 using System.Data;
 using Dapper;
-using Erp.Shared.Common;
+using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Inventory.Infrastructure;
 

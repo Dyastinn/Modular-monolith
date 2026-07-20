@@ -32,7 +32,7 @@ getting it wrong — both fail in a way that doesn't tell you the real reason.
 
 | # | Where | Step | |
 |---|---|---|---|
-| 1 | server | Install **IIS**, then the **.NET Hosting Bundle** | ← order matters |
+| 1 | server | Survey what's already there, then install **IIS**, then the **.NET Hosting Bundle** | ← order matters |
 | 2 | server | Stand up a **real SQL Server**, and build the `Erp` database yourself | |
 | 3 | your code | Stop the app building the database on startup — **the one code change** | |
 | 4 | your machine | `dotnet publish` to a staging folder, and look at what came out | |
@@ -110,17 +110,82 @@ it, is `<AspNetCoreHostingModel>OutOfProcess</AspNetCoreHostingModel>` in the `.
 
 ---
 
-## 3. Step 1 — Install IIS, then the Hosting Bundle
+## 3. Step 1 — Survey the server, then install IIS and the Hosting Bundle
 
 **What's happening:** you're installing the web server, and then the piece from §2 that teaches it how to
 start a .NET app. Two installers, and **the order between them matters.**
 
-**1) IIS itself.** *Server Manager → Add Roles and Features → Web Server (IIS)*. On Windows 10/11 for a test:
-*Turn Windows features on or off → Internet Information Services*. If you want the preload feature from step
-10, also tick **Application Initialization** (under *World Wide Web Services → Application Development
-Features*).
+Real servers are rarely blank. IIS may already be there — installed years ago for a WebForms app, or ticked
+on by someone else with half the features you need. "Already installed" and "installed correctly for *this*"
+are different questions, so **survey before you install anything.** Run everything below in an
+**elevated** PowerShell (right-click → *Run as administrator*); every command here needs it.
 
-**2) The .NET Hosting Bundle** — from <https://dotnet.microsoft.com/download/dotnet/10.0>, the
+### 1a. Is IIS already here, and is it complete?
+
+Three questions: is it installed, which features are on, and is it actually running.
+
+```powershell
+# 1) Is IIS installed at all, and which version?
+(Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\InetStp' -ErrorAction SilentlyContinue).VersionString
+# → "Version 10.0"  on Server 2016+ / Windows 10+
+# → nothing at all  means IIS isn't installed. Skip to 1b.
+
+# 2) Which of the features THIS phase needs are actually installed?
+Get-WindowsFeature Web-Server, Web-Mgmt-Console, Web-Scripting-Tools, Web-App-Init |
+    Format-Table Name, InstallState, DisplayName -AutoSize
+
+# 3) Is it running? (installed but stopped is a real state, and it looks like a firewall problem)
+Get-Service W3SVC, WAS | Format-Table Name, Status, StartType -AutoSize
+```
+
+`InstallState` reads **`Installed`** or **`Available`** — and `Available` means "present on the installation
+media, *not* installed," which is the reading that trips people. You want `Installed` on the first three rows
+below (the fourth is optional), and `W3SVC`/`WAS` both `Running` with StartType `Automatic`.
+
+| Feature | Why this phase needs it |
+|---|---|
+| **`Web-Server`** | The web server itself. Everything else hangs off it. |
+| **`Web-Scripting-Tools`** | The `WebAdministration` PowerShell module. **Step 6 fails at line 1 without this** — and it's the one a minimal install leaves out. |
+| **`Web-Mgmt-Console`** | IIS Manager, the GUI. You need it for the certificate binding in step 9. |
+| **`Web-App-Init`** | Application Initialization. Only needed if you want `preloadEnabled` in step 10 — skip it otherwise. |
+
+> 🧭 **From WebForms — what you do *not* need, and shouldn't add.** If this server ever hosted a WebForms
+> app, `Web-Asp-Net45` and `Web-Net-Ext45` (*ASP.NET 4.x* and *.NET Extensibility 4.x*) are almost certainly
+> installed. **Your app doesn't use them** — they're the .NET Framework pipeline, and ANCM loads .NET 10
+> itself (§2). They're harmless sitting there, so don't go uninstalling them on a shared server; just don't
+> add them for *this* app's sake, and don't be reassured by seeing them. `Web-Windows-Auth` is the same
+> story: not needed, your auth is the JWT from [Phase 4b](04b-jwt-login.md).
+
+### 1b. Install IIS, or top up what's missing
+
+The same command does both — features already installed are left alone, so it's safe to run on a server
+that's half-configured:
+
+```powershell
+Install-WindowsFeature -Name Web-Server, Web-Mgmt-Console, Web-Scripting-Tools, Web-App-Init `
+                       -IncludeManagementTools
+```
+
+Read the result: you want `Success: True` and `ExitCode: Success`. It also prints `RestartNeeded` — normally
+`No` for IIS, but believe it over me if it says otherwise.
+
+> ❓ **"I'm testing on Windows 10/11, and `Get-WindowsFeature` doesn't exist."** Right — that cmdlet is
+> Server-only. The client OS calls the same things by different names:
+>
+> ```powershell
+> Get-WindowsOptionalFeature -Online -FeatureName IIS-WebServer, IIS-ManagementConsole,
+>     IIS-ManagementScriptingTools, IIS-ApplicationInit | Format-Table FeatureName, State -AutoSize
+>
+> Enable-WindowsOptionalFeature -Online -All -FeatureName IIS-WebServerRole, IIS-WebServer,
+>     IIS-ManagementConsole, IIS-ManagementScriptingTools, IIS-ApplicationInit
+> ```
+>
+> (Or *Turn Windows features on or off → Internet Information Services*, with **Application Initialization**
+> under *World Wide Web Services → Application Development Features*.)
+
+### 1c. The Hosting Bundle — second, always
+
+From <https://dotnet.microsoft.com/download/dotnet/10.0>, take the
 "**ASP.NET Core Runtime … Hosting Bundle**" (`dotnet-hosting-10.x.x-win.exe`). This one installer gives you
 the .NET runtime **plus ANCM**.
 
@@ -139,21 +204,46 @@ net start w3svc
 > ```powershell
 > .\dotnet-hosting-10.0.0-win.exe /repair
 > ```
+>
+> **This applies to the survey above too.** If 1a found IIS missing and you installed it just now, but the
+> server *already* had .NET on it from something else, then ANCM was never registered — the bundle ran before
+> IIS existed, historically. Repair it. The check in 1d is what catches this.
 
-**Verify ANCM actually landed.** This is a 10-second check that saves an hour, and it's worth doing now
-rather than discovering it at step 8:
+### 1d. Prove the server is ready
+
+Run this whole block. It answers "am I missing anything?" in one go, and it's worth 30 seconds now rather
+than debugging a 500.19 at step 8:
 
 ```powershell
-# The module file should exist...
+# ANCM — the module file exists...
 Test-Path 'C:\Program Files\IIS\Asp.Net Core Module\V2\aspnetcorev2.dll'      # → True
 
-# ...and IIS should have it registered globally:
+# ...and IIS has it registered globally:
 & "$env:windir\system32\inetsrv\appcmd.exe" list module /name:AspNetCoreModuleV2
 # → MODULE "AspNetCoreModuleV2" ( native )
+
+# The runtime your app needs is on the box:
+dotnet --list-runtimes | Select-String 'Microsoft.AspNetCore.App 10\.'
+# → Microsoft.AspNetCore.App 10.0.x [C:\Program Files\dotnet\shared\Microsoft.AspNetCore.App]
+
+# The management module loads (this is what step 6 needs):
+Import-Module WebAdministration; Get-Command Get-Website | Select-Object Name, Source
+
+# And what's ALREADY on this server — which ports are spoken for:
+Get-Website | Format-Table Name, ID, State, PhysicalPath,
+    @{ n='Bindings'; e={ ($_.Bindings.Collection | ForEach-Object BindingInformation) -join '  ' } } -AutoSize
 ```
 
-If the first prints `True` and the second prints nothing, that's exactly the "bundle before IIS" case.
-Repair it and re-check.
+| Check | You want | If not |
+|---|---|---|
+| `Test-Path` on `aspnetcorev2.dll` | `True` | The Hosting Bundle never installed. Install it (1c). |
+| `appcmd list module` | `MODULE "AspNetCoreModuleV2" ( native )` | **The bundle-before-IIS case.** File's there, registration isn't. `/repair` (1c). |
+| `dotnet --list-runtimes` | an `AspNetCore.App 10.0.x` line | Wrong bundle version → you'd get a **500.31** at step 8. |
+| `Import-Module WebAdministration` | no error, `Get-Website` resolves | `Web-Scripting-Tools` is missing (1b). |
+| `Get-Website` | note anything bound to `*:80:` | See the port-80 note in step 6 before you create your site. |
+
+If the first check prints `True` and the second prints nothing, that's exactly the "bundle before IIS" case.
+Repair it and re-run the block.
 
 ---
 
@@ -393,6 +483,22 @@ Copy-Item C:\deploy\ErpApi\* C:\inetpub\ErpApi\ -Recurse -Force
 
 New-Website -Name 'ErpApi' -PhysicalPath 'C:\inetpub\ErpApi' -Port 80 -ApplicationPool 'ErpApi'
 ```
+
+> ⚠️ **If step 1d showed something already bound to `*:80:` — usually `Default Web Site` — that line fails**
+> with a binding conflict, because two sites can't hold the same IP-port-host combination. Three ways out,
+> and the third is the real-world one:
+>
+> ```powershell
+> Stop-Website 'Default Web Site'        # 1) it's a stock empty site; stopping it is usually fine
+>
+> New-Website -Name 'ErpApi' ... -Port 8080                        # 2) get off 80 entirely
+>
+> New-Website -Name 'ErpApi' ... -Port 80 -HostHeader 'erp.company.local'   # 3) share 80 by hostname
+> ```
+>
+> A **host header** is how one server hosts many sites on port 80: IIS routes on the `Host:` header the
+> browser sends, so `erp.company.local` and `intranet.company.local` coexist. It's the right answer when the
+> box has other sites on it and you don't own them.
 
 **Then grant the pool identity read access to the folder:**
 
@@ -709,6 +815,15 @@ to get there.
 
 - ❌ **Hosting Bundle installed before IIS** → 500.19 forever. ✅ IIS first, then the bundle, then
   `net stop was /y; net start w3svc`. Already wrong? `/repair`.
+- ❌ **Assuming "IIS is already installed" means the server is ready.** ✅ It usually means someone installed
+  it for a *different* app. Survey it (step 1a): the features you need may be off, and if .NET was on the box
+  before IIS, ANCM was never registered. `appcmd list module` is the only answer that counts.
+- ❌ **A minimal IIS install without `Web-Scripting-Tools`.** ✅ `Import-Module WebAdministration` fails and
+  step 6 stops dead. It's the feature a lean install drops most often — check for it before you need it.
+- ❌ **Adding `Web-Asp-Net45` / ASP.NET 4.x "because it's an ASP.NET app."** ✅ It isn't that kind of ASP.NET
+  app. ANCM loads .NET 10 itself; the 4.x features do nothing for you.
+- ❌ **`New-Website ... -Port 80` on a server that already has `Default Web Site`.** ✅ Binding conflict. Stop
+  the other site, use another port, or share port 80 with a `-HostHeader` (step 6).
 - ❌ **App pool set to .NET CLR v4.0** (the WebForms reflex). ✅ **No Managed Code** — ANCM loads .NET itself.
 - ❌ **Connection strings or secrets in `web.config`'s `<connectionStrings>`.** ✅ It's ignored — silently.
   `IConfiguration` reads `appsettings.json` + env vars; use `__` for nesting.

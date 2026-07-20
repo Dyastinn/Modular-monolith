@@ -73,8 +73,8 @@ thing that looks inconsistent until you see *why*:
 using System.Data;              // CommandType
 using Dapper;                   // QueryMultipleAsync, CommandDefinition
 using Erp.Modules.Sales.Domain; // SalesOrderStatus
-using Erp.Shared.Common.Data;   // IDbConnectionFactory
-using Erp.Shared.Messaging;     // IQuery, IQueryHandler
+using Erp.Shared.BuildingBlocks;   // IDbConnectionFactory
+using Erp.Shared.BuildingBlocks;     // IQuery, IQueryHandler
 
 namespace Erp.Modules.Sales.Features;
 
@@ -133,11 +133,11 @@ write-side tool (it deals in aggregates); reads don't need it.
 `Modules/Sales/Features/SearchSalesOrders/SearchSalesOrdersHandler.cs`:
 
 First, the paging envelope. It isn't Sales-specific — any module's grid wants the same shape — so it lives in
-the shared kernel, in `src/Shared/Erp.Shared.Common/PagedResult.cs`:
+the shared kernel, in `src/Shared/Erp.Shared.BuildingBlocks/Abstractions/PagedResult.cs`:
 
 ```csharp
-// src/Shared/Erp.Shared.Common/PagedResult.cs
-namespace Erp.Shared.Common;
+// src/Shared/Erp.Shared.BuildingBlocks/Abstractions/PagedResult.cs
+namespace Erp.Shared.BuildingBlocks;
 
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, int TotalCount)
 {
@@ -152,9 +152,9 @@ Now the slice itself:
 using System.Data;              // CommandType
 using Dapper;                   // QueryMultipleAsync, CommandDefinition
 using Erp.Modules.Sales.Domain; // SalesOrderStatus
-using Erp.Shared.Common;        // PagedResult
-using Erp.Shared.Common.Data;   // IDbConnectionFactory
-using Erp.Shared.Messaging;     // IQuery, IQueryHandler
+using Erp.Shared.BuildingBlocks;        // PagedResult
+using Erp.Shared.BuildingBlocks;   // IDbConnectionFactory
+using Erp.Shared.BuildingBlocks;     // IQuery, IQueryHandler
 using FluentValidation;         // AbstractValidator, ValidationException
 
 namespace Erp.Modules.Sales.Features;

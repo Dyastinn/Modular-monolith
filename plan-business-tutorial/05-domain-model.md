@@ -214,7 +214,7 @@ level above the things that share it.
 > more than one place. Every Vertical Slice you'll build from [Phase 6](06-create-order.md) on packs its
 > Command/Query, DTOs, validator, and handler into **one** file so the whole slice reads top-to-bottom
 > ([`GetSalesOrderHandler.cs`](10-queries-search.md) alone holds six types). And several `Shared` files gather
-> a small family of related abstractions on purpose: `Erp.Shared.Messaging/Contracts.cs` holds the entire
+> a small family of related abstractions on purpose: `Erp.Shared.BuildingBlocks/Messaging/Contracts.cs` holds the entire
 > mediator vocabulary (~nine marker interfaces), and `Erp.Shared.BuildingBlocks` keeps `Entity`,
 > `AggregateRoot`, `IDomainEvent`, and `DomainException` together. `SA1402` would fight all of those. So don't
 > switch it on globally — turn it **off by default and on only inside the aggregate domains**, the one place

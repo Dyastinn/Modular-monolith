@@ -1,6 +1,6 @@
 using Erp.Modules.Sales.Domain;
 using Erp.Modules.Sales.Infrastructure;
-using Erp.Shared.Messaging;
+using Erp.Shared.BuildingBlocks;
 using FluentValidation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

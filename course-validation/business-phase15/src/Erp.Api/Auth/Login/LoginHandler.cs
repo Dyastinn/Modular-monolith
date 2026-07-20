@@ -1,8 +1,6 @@
 using System.Security.Authentication;
-using Erp.Shared.Common;
-using Erp.Shared.Common.Data;
+using Erp.Shared.BuildingBlocks;
 using Erp.Shared.Infrastructure;
-using Erp.Shared.Messaging;
 using FluentValidation;
 
 namespace Erp.Api.Auth;

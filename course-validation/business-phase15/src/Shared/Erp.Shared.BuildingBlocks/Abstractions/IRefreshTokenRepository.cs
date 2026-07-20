@@ -1,6 +1,6 @@
 using System.Data;
 
-namespace Erp.Shared.Common;
+namespace Erp.Shared.BuildingBlocks;
 
 // The stored refresh token, as the handler needs it (Phase 4 §10).
 public sealed record RefreshTokenRecord(

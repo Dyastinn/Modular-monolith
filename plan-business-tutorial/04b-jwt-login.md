@@ -136,12 +136,12 @@ It simply needs enough information to determine whether someone can log in.
 
 For that reason, we don't build a rich domain aggregate here. A simple read model is enough.
 
-The **port** lives in `Erp.Shared.Common/Security/IUserRepository.cs` — the same home as `ICurrentUser` and
+The **port** lives in `Erp.Shared.BuildingBlocks/Abstractions/IUserRepository.cs` — the same home as `ICurrentUser` and
 `IDbConnectionFactory`:
 
 ```csharp
-// src/Shared/Erp.Shared.Common/Security/IUserRepository.cs
-namespace Erp.Shared.Common;
+// src/Shared/Erp.Shared.BuildingBlocks/Abstractions/IUserRepository.cs
+namespace Erp.Shared.BuildingBlocks;
 
 public sealed record AppUser(
     long Id,
@@ -198,8 +198,8 @@ The **adapter** lives in `Erp.Shared.Infrastructure/Identity/UserRepository.cs`:
 // src/Shared/Erp.Shared.Infrastructure/Identity/UserRepository.cs
 using System.Data;                  // CommandType
 using Dapper;                       // QuerySingleOrDefaultAsync, CommandDefinition
-using Erp.Shared.Common;            // AppUser, IUserRepository
-using Erp.Shared.Common.Data;       // IDbConnectionFactory
+using Erp.Shared.BuildingBlocks;            // AppUser, IUserRepository
+using Erp.Shared.BuildingBlocks;       // IDbConnectionFactory
 
 namespace Erp.Shared.Infrastructure;
 
@@ -261,9 +261,9 @@ The login slice consists of four pieces:
 
 ```csharp
 using System.Security.Authentication;   // AuthenticationException
-using Erp.Shared.Common;                // IUserRepository
+using Erp.Shared.BuildingBlocks;                // IUserRepository
 using Erp.Shared.Infrastructure;        // IPasswordHasher, IJwtTokenService
-using Erp.Shared.Messaging;             // ICommand, ICommandHandler
+using Erp.Shared.BuildingBlocks;             // ICommand, ICommandHandler
 using FluentValidation;
 
 namespace Erp.Api.Auth;
@@ -453,7 +453,7 @@ A client can:
 
 ```csharp
 using Carter;
-using Erp.Shared.Messaging;
+using Erp.Shared.BuildingBlocks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -523,7 +523,7 @@ So `sender.Send(cmd, ct)` would compile perfectly and then throw at runtime:
 
 ```
 System.InvalidOperationException: No service for type
-'Erp.Shared.Messaging.IRequestHandler`2[LoginCommand,LoginResult]' has been registered.
+'Erp.Shared.BuildingBlocks.IRequestHandler`2[LoginCommand,LoginResult]' has been registered.
 ```
 
 The fix is one line per host-assembly slice, in `Program.cs`. We register them by hand rather than scanning
@@ -1004,14 +1004,14 @@ without spinning up an HTTP request.
 
 So we use the same port/adapter move as `IDbConnectionFactory` in [Phase 3b](03b-data-access.md):
 
-- `Erp.Shared.Common` declares **what's needed** (`ICurrentUser`).
+- `Erp.Shared.BuildingBlocks` declares **what's needed** (`ICurrentUser`).
 - `Erp.Shared.Infrastructure` supplies **how it's done** (`CurrentUser`, which reads `HttpContext`).
 
 ```
 A handler (or the domain)
       │
       ▼
-ICurrentUser            ← the port, in Erp.Shared.Common
+ICurrentUser            ← the port, in Erp.Shared.BuildingBlocks
       ▲
       │
 CurrentUser             ← the adapter, in Erp.Shared.Infrastructure
@@ -1026,11 +1026,11 @@ Business code now depends only on the `ICurrentUser` abstraction, never on ASP.N
 
 ### Implementing `CurrentUser` and `ICurrentUser`
 
-The **port** goes in `Erp.Shared.Common`, which references nothing — so any module may depend on it.
+The **port** goes in `Erp.Shared.BuildingBlocks`, which references nothing — so any module may depend on it.
 
 ```csharp
-// src/Shared/Erp.Shared.Common/Security/ICurrentUser.cs
-namespace Erp.Shared.Common;
+// src/Shared/Erp.Shared.BuildingBlocks/Abstractions/ICurrentUser.cs
+namespace Erp.Shared.BuildingBlocks;
 
 public interface ICurrentUser
 {
@@ -1047,7 +1047,7 @@ The **adapter** goes in `Erp.Shared.Infrastructure`, the only shared project all
 // src/Shared/Erp.Shared.Infrastructure/Security/CurrentUser.cs
 using System.IdentityModel.Tokens.Jwt;   // JwtRegisteredClaimNames
 using System.Security.Claims;            // ClaimsPrincipal, ClaimTypes, FindFirstValue
-using Erp.Shared.Common;
+using Erp.Shared.BuildingBlocks;
 using Microsoft.AspNetCore.Http;         // IHttpContextAccessor
 
 namespace Erp.Shared.Infrastructure;

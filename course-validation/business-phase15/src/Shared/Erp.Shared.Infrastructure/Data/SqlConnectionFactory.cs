@@ -1,5 +1,5 @@
 using System.Data.Common;
-using Erp.Shared.Common.Data;
+using Erp.Shared.BuildingBlocks;
 using Microsoft.Data.SqlClient;
 
 namespace Erp.Shared.Infrastructure.Data;

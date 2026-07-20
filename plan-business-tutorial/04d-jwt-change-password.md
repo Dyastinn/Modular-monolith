@@ -89,10 +89,10 @@ guards top to bottom — they mirror login's, with one **deliberate omission**:
 ```csharp
 // src/Erp.Api/Auth/ChangePassword/ChangePasswordHandler.cs
 using System.Security.Authentication;   // AuthenticationException
-using Erp.Shared.Common;                // IUserRepository
-using Erp.Shared.Common.Data;           // IDbConnectionFactory
+using Erp.Shared.BuildingBlocks;                // IUserRepository
+using Erp.Shared.BuildingBlocks;           // IDbConnectionFactory
 using Erp.Shared.Infrastructure;        // IPasswordHasher
-using Erp.Shared.Messaging;             // ICommand, ICommandHandler, Unit
+using Erp.Shared.BuildingBlocks;             // ICommand, ICommandHandler, Unit
 using FluentValidation;
 
 namespace Erp.Api.Auth;
@@ -192,7 +192,7 @@ public sealed class ChangePasswordHandler(
 ```csharp
 // src/Erp.Api/Auth/ChangePassword/ChangePasswordEndpoint.cs
 using Carter;
-using Erp.Shared.Messaging;
+using Erp.Shared.BuildingBlocks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;

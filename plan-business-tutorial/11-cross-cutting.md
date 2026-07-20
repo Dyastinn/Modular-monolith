@@ -94,7 +94,7 @@ request want exactly this, in exactly this place?* Two yeses and one no.
 
 ## 3. The ValidationBehavior
 
-Cross-cutting behaviors are shared by *every* module, so they live in `Erp.Shared.Messaging`. Back in
+Cross-cutting behaviors are shared by *every* module, so they live in `Erp.Shared.BuildingBlocks`. Back in
 [Phase 2](02-mediator-own-vs-free.md), `AddMessaging()` registered only the `ISender` and left a note that
 the behaviors would join here — so now we write them and add the two registration lines to `AddMessaging`:
 
@@ -110,15 +110,15 @@ public static IServiceCollection AddMessaging(this IServiceCollection services)
 }
 ```
 
-Both behaviors go in one file, `src/Shared/Erp.Shared.Messaging/Behaviors/Behaviors.cs`:
+Both behaviors go in one file, `src/Shared/Erp.Shared.BuildingBlocks/Messaging/Behaviors.cs`:
 
 ```csharp
-// src/Shared/Erp.Shared.Messaging/Behaviors/Behaviors.cs
+// src/Shared/Erp.Shared.BuildingBlocks/Messaging/Behaviors.cs
 using System.Diagnostics;                 // Stopwatch (for LoggingBehavior, below)
 using FluentValidation;                   // IValidator, ValidationContext, ValidationException
 using Microsoft.Extensions.Logging;       // ILogger<T>
 
-namespace Erp.Shared.Messaging;
+namespace Erp.Shared.BuildingBlocks;
 
 public sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValidator<TRequest>> validators)
     : IPipelineBehavior<TRequest, TResponse> where TRequest : IRequest<TResponse>
@@ -201,7 +201,7 @@ Two things left. Here's the finished file — `Erp.Api/GlobalExceptionHandler.cs
 // src/Erp.Api/GlobalExceptionHandler.cs
 using System.Security.Authentication;              // AuthenticationException
 using Erp.Shared.BuildingBlocks;                   // DomainException
-using Erp.Shared.Common;                           // NotFoundException, ForbiddenException, ConcurrencyException
+using Erp.Shared.BuildingBlocks;                           // NotFoundException, ForbiddenException, ConcurrencyException
 using Microsoft.AspNetCore.Diagnostics;            // IExceptionHandler
 using ValidationException = FluentValidation.ValidationException;   // disambiguate from System.ComponentModel's
 
@@ -315,8 +315,8 @@ public class DomainException(string message) : Exception(message);        // "a 
 ```
 
 ```csharp
-// src/Shared/Erp.Shared.Common/Exceptions.cs — the transport-shaped ones the global handler maps
-namespace Erp.Shared.Common;
+// src/Shared/Erp.Shared.BuildingBlocks/Abstractions/Exceptions.cs — the transport-shaped ones the global handler maps
+namespace Erp.Shared.BuildingBlocks;
 
 public class NotFoundException(string message) : Exception(message);      // Phase 6 — "that row doesn't exist"
 public class ConcurrencyException(string message) : Exception(message);   // Phase 8 — "someone changed it under you"

@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Erp.Shared.Messaging;
+namespace Erp.Shared.BuildingBlocks;
 
 // The hand-rolled mediator (Phase 2, Option A). Finds the handler for a request type, wraps it in the
 // registered behaviors, and runs it. One wrapper is cached per concrete request type.

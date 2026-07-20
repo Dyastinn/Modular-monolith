@@ -1,7 +1,5 @@
-using Erp.Shared.Common;
-using Erp.Shared.Common.Data;
+using Erp.Shared.BuildingBlocks;
 using Erp.Shared.Infrastructure.Data;
-using Erp.Shared.Messaging;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;

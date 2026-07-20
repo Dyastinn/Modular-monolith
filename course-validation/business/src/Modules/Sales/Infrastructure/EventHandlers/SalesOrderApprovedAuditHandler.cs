@@ -1,5 +1,5 @@
 using Erp.Modules.Sales.Domain;
-using Erp.Shared.Messaging;
+using Erp.Shared.BuildingBlocks;
 using Microsoft.Extensions.Logging;
 
 namespace Erp.Modules.Sales.Infrastructure;

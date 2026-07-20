@@ -1,4 +1,4 @@
-using Erp.Shared.Common;
+using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Shared.Infrastructure;
 

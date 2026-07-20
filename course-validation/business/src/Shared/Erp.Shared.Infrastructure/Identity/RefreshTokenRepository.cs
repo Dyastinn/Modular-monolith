@@ -1,11 +1,10 @@
 using System.Data;
 using Dapper;
-using Erp.Shared.Common;
-using Erp.Shared.Common.Data;
+using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Shared.Infrastructure;
 
-// The Dapper ADAPTER for the IRefreshTokenRepository port in Erp.Shared.Common/Security (Phase 4 §10).
+// The Dapper ADAPTER for the IRefreshTokenRepository port in Erp.Shared.BuildingBlocks/Abstractions (Phase 4 §10).
 public sealed class RefreshTokenRepository(IDbConnectionFactory factory) : IRefreshTokenRepository
 {
     public async Task AddAsync(string tokenHash, long userId, Guid familyId, Guid securityStamp,

@@ -20,10 +20,10 @@ module**, and the compiler — not an absent project reference — becomes the w
 
 | | `../business` (base) | this build (Phase 15) |
 |---|---|---|
-| `IStockReservation` lives in | `Shared/Erp.Shared.Common/Contracts/` | `Modules/Inventory/Contracts/` (namespace `Erp.Modules.Inventory.Contracts`) |
+| `IStockReservation` lives in | `Shared/Erp.Shared.BuildingBlocks/Abstractions/` | `Modules/Inventory/Contracts/` (namespace `Erp.Modules.Inventory.Contracts`) |
 | `StockReservationService` | `public` | **`internal`** |
 | Sales → Inventory reference | none (wall = absent reference) | Sales references the Inventory **assembly**; sees only the `public` contract |
-| Inventory → `Erp.Shared.Common` | referenced | dropped (Inventory owns its contract now) |
+| Inventory → `Erp.Shared.BuildingBlocks` | referenced | dropped (Inventory owns its contract now) |
 | Test access to internals | not needed | `InternalsVisibleTo("Erp.Integration.Tests")` in the Inventory csproj |
 
 Everything else — SQL, handlers' logic, DI lifetimes, runtime behavior — is **identical**. The change is

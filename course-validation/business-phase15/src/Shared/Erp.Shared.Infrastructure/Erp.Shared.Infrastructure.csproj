@@ -5,8 +5,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Erp.Shared.Messaging\Erp.Shared.Messaging.csproj" />
-    <ProjectReference Include="..\Erp.Shared.Common\Erp.Shared.Common.csproj" />
+    <ProjectReference Include="..\Erp.Shared.BuildingBlocks\Erp.Shared.BuildingBlocks.csproj" />
   </ItemGroup>
 
   <ItemGroup>

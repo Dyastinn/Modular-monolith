@@ -1,5 +1,5 @@
 using Erp.Modules.Inventory.Infrastructure;
-using Erp.Shared.Common;
+using Erp.Shared.BuildingBlocks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 

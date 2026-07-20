@@ -1,4 +1,4 @@
-namespace Erp.Shared.Common;
+namespace Erp.Shared.BuildingBlocks;
 
 // An interface any module may depend on to ask "who is calling?" without touching ASP.NET (Phase 4 §8).
 // Shared.Infrastructure supplies the implementation that reads HttpContext claims.

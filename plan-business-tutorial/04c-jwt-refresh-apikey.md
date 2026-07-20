@@ -151,12 +151,12 @@ public sealed class RefreshTokenService(IConfiguration config) : IRefreshTokenSe
 > A configured span would be a *second* copy of the policy that could silently drift out of sync (the
 > "split-brain" [Phase 3](03-database-schema.md) warns about). One policy, one home: the database.
 
-> ℹ️ **`IClock`** — [Phase 1](01-solution-setup.md)'s folder map named this as one of `Shared.Common`'s types
+> ℹ️ **`IClock`** — [Phase 1](01-solution-setup.md)'s folder map named this as one of `Shared.BuildingBlocks`'s types
 > but left it unbuilt; this is where we actually create it. The login and refresh handlers inject it instead of
 > calling `DateTime.UtcNow` directly, so a test can pin "now" and assert an expiry to the second. Two files,
 > the same interface-in-`Common` / implementation-in-`Infrastructure` split as `IUserRepository`:
 > ```csharp
-> // Erp.Shared.Common/IClock.cs
+> // Erp.Shared.BuildingBlocks/Abstractions/IClock.cs
 > public interface IClock { DateTime UtcNow { get; } }
 >
 > // Erp.Shared.Infrastructure/SystemClock.cs
@@ -166,15 +166,15 @@ public sealed class RefreshTokenService(IConfiguration config) : IRefreshTokenSe
 
 ### The store (persist, look up, revoke)
 
-The port lives in `Erp.Shared.Common/Security/IRefreshTokenRepository.cs` — the same home as `IUserRepository`
+The port lives in `Erp.Shared.BuildingBlocks/Abstractions/IRefreshTokenRepository.cs` — the same home as `IUserRepository`
 from [Phase 4b](04b-jwt-login.md); `Shared.Infrastructure` implements it with Dapper over the
 [Phase 3](03-database-schema.md) procs:
 
 ```csharp
-// src/Shared/Erp.Shared.Common/Security/IRefreshTokenRepository.cs
+// src/Shared/Erp.Shared.BuildingBlocks/Abstractions/IRefreshTokenRepository.cs
 using System.Data;   // IDbTransaction
 
-namespace Erp.Shared.Common;
+namespace Erp.Shared.BuildingBlocks;
 
 public sealed record RefreshTokenRecord(
     long Id, string TokenHash, long UserId, Guid FamilyId, Guid SecurityStamp,
@@ -205,8 +205,8 @@ lets a rotation add-the-new and revoke-the-old atomically.
 ```csharp
 using System.Data;              // CommandType, IDbTransaction
 using Dapper;                   // ExecuteAsync, QuerySingleOrDefaultAsync, CommandDefinition
-using Erp.Shared.Common;        // RefreshTokenRecord, IRefreshTokenRepository
-using Erp.Shared.Common.Data;   // IDbConnectionFactory
+using Erp.Shared.BuildingBlocks;        // RefreshTokenRecord, IRefreshTokenRepository
+using Erp.Shared.BuildingBlocks;   // IDbConnectionFactory
 
 namespace Erp.Shared.Infrastructure;
 
@@ -395,10 +395,10 @@ host/platform slice, so it lives in `Erp.Api/Auth/Refresh/`:
 ```csharp
 // src/Erp.Api/Auth/Refresh/RefreshHandler.cs
 using System.Security.Authentication;   // AuthenticationException
-using Erp.Shared.Common;                // IUserRepository, IRefreshTokenRepository, IClock
-using Erp.Shared.Common.Data;           // IDbConnectionFactory
+using Erp.Shared.BuildingBlocks;                // IUserRepository, IRefreshTokenRepository, IClock
+using Erp.Shared.BuildingBlocks;           // IDbConnectionFactory
 using Erp.Shared.Infrastructure;        // IJwtTokenService, IRefreshTokenService
-using Erp.Shared.Messaging;             // ICommand, ICommandHandler
+using Erp.Shared.BuildingBlocks;             // ICommand, ICommandHandler
 
 namespace Erp.Api.Auth;
 
@@ -565,7 +565,7 @@ Your implementation should look similar to the following:
 ```csharp
 // src/Erp.Api/Auth/Refresh/RefreshEndpoint.cs
 using Carter;
-using Erp.Shared.Messaging;              // ISender
+using Erp.Shared.BuildingBlocks;              // ISender
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -979,7 +979,7 @@ tick — exactly the lifetime a single sweep should have.
 caller transaction, so — like `GetByHashAsync` — it opens its **own** connection:
 
 ```csharp
-// add to IRefreshTokenRepository (Erp.Shared.Common/Security/IRefreshTokenRepository.cs)
+// add to IRefreshTokenRepository (Erp.Shared.BuildingBlocks/Abstractions/IRefreshTokenRepository.cs)
 Task<int> PurgeExpiredAsync(int retentionDays, CancellationToken ct);   // returns rows archived + purged
 
 // add to RefreshTokenRepository (Erp.Shared.Infrastructure/Identity/RefreshTokenRepository.cs)
@@ -998,7 +998,7 @@ public async Task<int> PurgeExpiredAsync(int retentionDays, CancellationToken ct
 
 ```csharp
 // src/Erp.Api/Auth/RefreshTokenCleanupService.cs
-using Erp.Shared.Common;                          // IRefreshTokenRepository
+using Erp.Shared.BuildingBlocks;                          // IRefreshTokenRepository
 using Microsoft.Extensions.DependencyInjection;   // CreateScope, GetRequiredService
 using Microsoft.Extensions.Hosting;               // BackgroundService
 

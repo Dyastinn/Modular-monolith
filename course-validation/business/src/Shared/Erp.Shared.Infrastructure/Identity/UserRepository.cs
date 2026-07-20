@@ -1,11 +1,10 @@
 using System.Data;
 using Dapper;
-using Erp.Shared.Common;
-using Erp.Shared.Common.Data;
+using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Shared.Infrastructure;
 
-// The Dapper ADAPTER for the IUserRepository port declared in Erp.Shared.Common/Security (Phase 4 §5).
+// The Dapper ADAPTER for the IUserRepository port declared in Erp.Shared.BuildingBlocks/Abstractions (Phase 4 §5).
 public sealed class UserRepository(IDbConnectionFactory factory) : IUserRepository
 {
     public async Task<AppUser?> GetByUsernameAsync(string username, CancellationToken ct)

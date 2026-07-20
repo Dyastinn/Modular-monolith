@@ -1,4 +1,4 @@
-namespace Erp.Shared.Messaging;
+namespace Erp.Shared.BuildingBlocks;
 
 // Marker: "I am a request that produces a TResponse."
 public interface IRequest<out TResponse> { }

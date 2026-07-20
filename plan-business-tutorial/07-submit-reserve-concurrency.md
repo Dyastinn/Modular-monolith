@@ -54,7 +54,7 @@ modular monolith's core move: the *absence* of a project reference is what makes
 > dotnet sln add src/Modules/Inventory
 > # Inventory needs only the shared kernel — NOT Sales (the wall stays up), and NOT Shared.Infrastructure
 > # (a module sees the interfaces in Common, never the implementations — Phase 1 §3):
-> dotnet add src/Modules/Inventory/Erp.Modules.Inventory.csproj reference src/Shared/Erp.Shared.Common/Erp.Shared.Common.csproj
+> dotnet add src/Modules/Inventory/Erp.Modules.Inventory.csproj reference src/Shared/Erp.Shared.BuildingBlocks/Erp.Shared.BuildingBlocks.csproj
 > # The host references the new module so it can register it:
 > dotnet add src/Erp.Api/Erp.Api.csproj reference src/Modules/Inventory/Erp.Modules.Inventory.csproj
 > # Inventory runs Dapper against SQL Server, same as Sales. IConfiguration is for AddInventoryModule(config):
@@ -75,10 +75,10 @@ modular monolith's core move: the *absence* of a project reference is what makes
 > Creating the project around them is all that was left to do.
 
 ```csharp
-// src/Shared/Erp.Shared.Common/Contracts/IStockReservation.cs  (the ONLY way Sales touches stock)
+// src/Shared/Erp.Shared.BuildingBlocks/Abstractions/IStockReservation.cs  (the ONLY way Sales touches stock)
 using System.Data;   // IDbTransaction
 
-namespace Erp.Shared.Common;
+namespace Erp.Shared.BuildingBlocks;
 
 public interface IStockReservation
 {
@@ -113,7 +113,7 @@ Sales depends only on the interface, so neither module references the other. The
 // src/Modules/Inventory/Infrastructure/StockReservationService.cs  (Inventory owns this)
 using System.Data;         // CommandType, IDbTransaction
 using Dapper;              // ExecuteAsync, ExecuteScalarAsync, CommandDefinition
-using Erp.Shared.Common;   // IStockReservation
+using Erp.Shared.BuildingBlocks;   // IStockReservation
 
 namespace Erp.Modules.Inventory.Infrastructure;
 
@@ -153,9 +153,9 @@ just reads whether it reported success.
 // src/Modules/Sales/Features/SubmitSalesOrder/SubmitSalesOrderHandler.cs
 using Erp.Modules.Sales.Domain;
 using Erp.Shared.BuildingBlocks;   // DomainException
-using Erp.Shared.Common;           // NotFoundException, IStockReservation
-using Erp.Shared.Common.Data;      // IDbConnectionFactory
-using Erp.Shared.Messaging;
+using Erp.Shared.BuildingBlocks;           // NotFoundException, IStockReservation
+using Erp.Shared.BuildingBlocks;      // IDbConnectionFactory
+using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Features;
 
@@ -343,7 +343,7 @@ UPDATE inventory.Inventory SET Reserved = 0 WHERE ItemId = 3;
 ```csharp
 // src/Modules/Sales/Features/SubmitSalesOrder/SubmitSalesOrderEndpoint.cs
 using Carter;
-using Erp.Shared.Messaging;
+using Erp.Shared.BuildingBlocks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;

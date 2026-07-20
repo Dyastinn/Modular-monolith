@@ -42,11 +42,11 @@ The **absent project reference**. `Erp.Modules.Sales.csproj` has no `<ProjectRef
 build failing. *(The optional [Phase 15](15-scaling-the-wall.md) trades this for a different compiler-enforced
 wall: a reference plus `internal`.)*
 
-**3. 🎯 `IDbConnectionFactory` lives in `Shared.Common`, `SqlConnectionFactory` in `Shared.Infrastructure`.
+**3. 🎯 `IDbConnectionFactory` lives in `Shared.BuildingBlocks`, `SqlConnectionFactory` in `Shared.Infrastructure`.
 Why different projects, and which may `Sales` see?**
 
 `Sales` may see **`IDbConnectionFactory`** (the interface) and *not* `SqlConnectionFactory`. They're split so
-the split can be *enforced*: `Shared.Common` depends on nothing, so any module can reference it safely;
+the split can be *enforced*: `Shared.BuildingBlocks` depends on nothing, so any module can reference it safely;
 `Shared.Infrastructure` holds everything that touches SQL Server, JWTs, and `HttpContext`, and **only the host
 references it**. Because that reference doesn't exist from `Sales`, a module physically cannot reach a
 connection string, a signing key, or `HttpContext` — those types aren't on its compile path. Interfaces down
@@ -166,7 +166,7 @@ outside — never stuck halfway.
 Two reasons. Practically: one place knows how to build a connection, so the connection string isn't
 copy-pasted through dozens of files. Architecturally: `new SqlConnection(...)` in a module would drag SQL
 Server — and the connection string — onto that module's compile path, breaking the rule that a module sees
-interfaces (`Shared.Common`) and never implementations (`Shared.Infrastructure`). The factory is the **port**;
+interfaces (`Shared.BuildingBlocks`) and never implementations (`Shared.Infrastructure`). The factory is the **port**;
 `SqlConnectionFactory` is the only class in the solution allowed to say `SqlConnection`.
 
 ---
@@ -226,7 +226,7 @@ Authentication always comes first: you can't decide what someone may do until yo
 
 Because `HttpContext` is ASP.NET Core, and business code that touches it is welded to the web framework. You
 could no longer unit-test "a rep may only see their own customers" without spinning up an HTTP request. The
-port/adapter split — `ICurrentUser` in `Shared.Common`, `CurrentUser` (which reads `HttpContext`) in
+port/adapter split — `ICurrentUser` in `Shared.BuildingBlocks`, `CurrentUser` (which reads `HttpContext`) in
 `Shared.Infrastructure` — keeps handlers and the domain framework-free and lets a test pass a fake caller in
 one line.
 

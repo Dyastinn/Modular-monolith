@@ -47,9 +47,9 @@ Plus: **optimistic concurrency** so two managers acting on the same order can't 
 ```csharp
 // src/Modules/Sales/Features/ApproveSalesOrder/ApproveSalesOrderHandler.cs
 using Erp.Modules.Sales.Domain;
-using Erp.Shared.Common;        // NotFoundException, ICurrentUser
-using Erp.Shared.Common.Data;   // IDbConnectionFactory
-using Erp.Shared.Messaging;     // ICommand, ICommandHandler, Unit, IDomainEventDispatcher
+using Erp.Shared.BuildingBlocks;        // NotFoundException, ICurrentUser
+using Erp.Shared.BuildingBlocks;   // IDbConnectionFactory
+using Erp.Shared.BuildingBlocks;     // ICommand, ICommandHandler, Unit, IDomainEventDispatcher
 
 namespace Erp.Modules.Sales.Features;
 
@@ -112,7 +112,7 @@ it with the order and passes it back on update:
 > missing row. Add it next to `NotFoundException`:
 >
 > ```csharp
-> // src/Shared/Erp.Shared.Common/Exceptions.cs
+> // src/Shared/Erp.Shared.BuildingBlocks/Abstractions/Exceptions.cs
 > public class ConcurrencyException(string message) : Exception(message);   // "someone changed it under you"
 > ```
 >
@@ -171,9 +171,9 @@ since we loaded it (any change bumps `RowVersion`). Rowcount `0` → someone bea
 ```csharp
 // src/Modules/Sales/Features/CancelSalesOrder/CancelSalesOrderHandler.cs
 using Erp.Modules.Sales.Domain;
-using Erp.Shared.Common;        // NotFoundException, IStockReservation
-using Erp.Shared.Common.Data;   // IDbConnectionFactory
-using Erp.Shared.Messaging;
+using Erp.Shared.BuildingBlocks;        // NotFoundException, IStockReservation
+using Erp.Shared.BuildingBlocks;   // IDbConnectionFactory
+using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Features;
 
@@ -250,22 +250,22 @@ The domain events raised in [Phase 5](05-domain-model.md) (`SalesOrderApproved`,
 *after* the transaction commits.
 
 Two contracts and one implementation, all three in a new
-`src/Shared/Erp.Shared.Messaging/DomainEvents.cs` — every module's events reuse them, so they sit beside the
+`src/Shared/Erp.Shared.BuildingBlocks/Messaging/DomainEvents.cs` — every module's events reuse them, so they sit beside the
 other messaging contracts rather than in `Infrastructure`. (There's nothing framework-specific here: the
 dispatcher only needs an `IServiceProvider` to find handlers.)
 
 > ✅ **No new reference needed here.** These contracts mention `IDomainEvent` and `AggregateRoot<TId>`, which
-> live in `Erp.Shared.BuildingBlocks` — and you already gave `Erp.Shared.Messaging` a reference to
+> live in `Erp.Shared.BuildingBlocks` — and you already gave `Erp.Shared.BuildingBlocks` a reference to
 > `BuildingBlocks` back in [Phase 1](01-solution-setup.md) (that's the edge we set up precisely so the
 > mediator could carry base domain-event types). So they resolve as-is. Safe edge, too: `BuildingBlocks`
 > depends on nothing, so no module wall is crossed.
 
 ```csharp
-// src/Shared/Erp.Shared.Messaging/DomainEvents.cs
+// src/Shared/Erp.Shared.BuildingBlocks/Messaging/DomainEvents.cs
 using Erp.Shared.BuildingBlocks;                  // IDomainEvent, AggregateRoot<TId>
 using Microsoft.Extensions.DependencyInjection;   // GetServices
 
-namespace Erp.Shared.Messaging;
+namespace Erp.Shared.BuildingBlocks;
 
 // A reaction to a specific domain event. Zero-to-many handlers may exist per event.
 public interface IDomainEventHandler<in TEvent> where TEvent : IDomainEvent

@@ -45,9 +45,9 @@ The whole feature is **two files** in `Modules/Sales/Features/CreateSalesOrder/`
 ```csharp
 // src/Modules/Sales/Features/CreateSalesOrder/CreateSalesOrderHandler.cs
 using Erp.Modules.Sales.Domain;
-using Erp.Shared.Common;        // NotFoundException, ICurrentUser
-using Erp.Shared.Common.Data;   // IDbConnectionFactory
-using Erp.Shared.Messaging;     // ICommand, ICommandHandler
+using Erp.Shared.BuildingBlocks;        // NotFoundException, ICurrentUser
+using Erp.Shared.BuildingBlocks;   // IDbConnectionFactory
+using Erp.Shared.BuildingBlocks;     // ICommand, ICommandHandler
 using FluentValidation;
 
 namespace Erp.Modules.Sales.Features;
@@ -159,8 +159,8 @@ This is the meat. Read every line; the comments mark which layer owns each decis
 > a customer or item isn't there. That type doesn't exist yet — create it now:
 >
 > ```csharp
-> // src/Shared/Erp.Shared.Common/Exceptions.cs
-> namespace Erp.Shared.Common;
+> // src/Shared/Erp.Shared.BuildingBlocks/Abstractions/Exceptions.cs
+> namespace Erp.Shared.BuildingBlocks;
 >
 > public class NotFoundException(string message) : Exception(message);   // "that row doesn't exist"
 > ```
@@ -187,7 +187,7 @@ This is the meat. Read every line; the comments mark which layer owns each decis
 > };
 > ```
 >
-> …with `using Erp.Shared.BuildingBlocks;` and `using Erp.Shared.Common;` at the top for the two types. Two
+> …with `using Erp.Shared.BuildingBlocks;` and `using Erp.Shared.BuildingBlocks;` at the top for the two types. Two
 > lines, and every rule you're about to write returns the right status. Note what each one *means* to a
 > client: **404** = "that thing isn't here"; **422** = "I understood you perfectly, and the business says no."
 > A 422 is not an error in your code — it's the system working.
@@ -310,7 +310,7 @@ because it earns one:
 using System.Data;              // CommandType, IDbTransaction
 using Dapper;                   // ExecuteAsync, ExecuteScalarAsync, CommandDefinition
 using Erp.Modules.Sales.Domain;
-using Erp.Shared.Common.Data;   // IDbConnectionFactory
+using Erp.Shared.BuildingBlocks;   // IDbConnectionFactory
 
 namespace Erp.Modules.Sales.Infrastructure;
 
@@ -547,7 +547,7 @@ Carter `ICarterModule` living right next to its handler:
 ```csharp
 // src/Modules/Sales/Features/CreateSalesOrder/CreateSalesOrderEndpoint.cs
 using Carter;
-using Erp.Shared.Messaging;
+using Erp.Shared.BuildingBlocks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;

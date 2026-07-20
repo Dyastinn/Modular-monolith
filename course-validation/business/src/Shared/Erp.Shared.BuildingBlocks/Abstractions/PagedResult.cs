@@ -1,4 +1,4 @@
-namespace Erp.Shared.Common;
+namespace Erp.Shared.BuildingBlocks;
 
 // Standard envelope carrying items + paging metadata (Phase 10 §4).
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSize, int TotalCount)

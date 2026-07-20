@@ -1,9 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!-- Deliberately NO reference to Erp.Shared.Infrastructure (nor to Erp.Modules.Sales): this module sees
-       only the interfaces in Erp.Shared.Common. See plan-business-tutorial/01-solution-setup.md §3. -->
+       only the interfaces in Erp.Shared.BuildingBlocks. See plan-business-tutorial/01-solution-setup.md §3. -->
   <ItemGroup>
-    <ProjectReference Include="..\..\Shared\Erp.Shared.Common\Erp.Shared.Common.csproj" />
+    <ProjectReference Include="..\..\Shared\Erp.Shared.BuildingBlocks\Erp.Shared.BuildingBlocks.csproj" />
   </ItemGroup>
 
   <ItemGroup>

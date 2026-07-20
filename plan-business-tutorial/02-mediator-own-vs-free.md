@@ -134,7 +134,7 @@ contracts. That's what makes the two implementations interchangeable.
 We'll build the mediator in two files:
 
 ```text
-Erp.Shared.Messaging
+Erp.Shared.BuildingBlocks
 │
 ├── Contracts.cs          // the shared interfaces — the mediator's public API
 └── Sender.cs             // the mediator implementation (Option A only)
@@ -168,9 +168,9 @@ Install them where they're first needed:
 
 ```bash
 # The mediator contracts + behaviors need DI, logging, and validation abstractions:
-dotnet add src/Shared/Erp.Shared.Messaging package Microsoft.Extensions.DependencyInjection.Abstractions
-dotnet add src/Shared/Erp.Shared.Messaging package Microsoft.Extensions.Logging.Abstractions
-dotnet add src/Shared/Erp.Shared.Messaging package FluentValidation
+dotnet add src/Shared/Erp.Shared.BuildingBlocks package Microsoft.Extensions.DependencyInjection.Abstractions
+dotnet add src/Shared/Erp.Shared.BuildingBlocks package Microsoft.Extensions.Logging.Abstractions
+dotnet add src/Shared/Erp.Shared.BuildingBlocks package FluentValidation
 
 # The shared kernel hosts the mediator + Carter wiring, and its AddSharedInfrastructure takes IConfiguration:
 dotnet add src/Shared/Erp.Shared.Infrastructure package Carter
@@ -204,7 +204,7 @@ dotnet add src/Erp.Api package Carter
 
 ### Step 2 — Create `Contracts.cs`
 
-Create a new file named **`Contracts.cs`** in `src/Shared/Erp.Shared.Messaging`.
+Create a new file named **`Contracts.cs`** in `src/Shared/Erp.Shared.BuildingBlocks`.
 
 > 💡 **Why one file?** These contracts are all part of the same concept: the mediator's public API. Keeping
 > them together makes them easier to learn because you can see the entire contract in one place. As the
@@ -255,8 +255,8 @@ Let's decode them before writing the code:
 Now add the following code:
 
 ```csharp
-// src/Shared/Erp.Shared.Messaging/Contracts.cs
-namespace Erp.Shared.Messaging;
+// src/Shared/Erp.Shared.BuildingBlocks/Messaging/Contracts.cs
+namespace Erp.Shared.BuildingBlocks;
 
 // Marker: "I am a request that produces a TResponse."
 public interface IRequest<out TResponse> { }
@@ -348,7 +348,7 @@ Our mediator has one job:
 We'll build all of that in a single file:
 
 ```text
-Erp.Shared.Messaging
+Erp.Shared.BuildingBlocks
 └── Sender.cs
 ```
 
@@ -376,11 +376,11 @@ Return the response
 Now let's build it.
 
 ```csharp
-// src/Shared/Erp.Shared.Messaging/Sender.cs
+// src/Shared/Erp.Shared.BuildingBlocks/Messaging/Sender.cs
 using System.Collections.Concurrent;              // ConcurrentDictionary — not an implicit using
 using Microsoft.Extensions.DependencyInjection;   // GetRequiredService / GetServices
 
-namespace Erp.Shared.Messaging;
+namespace Erp.Shared.BuildingBlocks;
 
 public sealed class Sender(IServiceProvider provider) : ISender
 {
@@ -678,7 +678,7 @@ means registering the mediator:
 
 ```csharp
 // src/Shared/Erp.Shared.Infrastructure/DependencyInjection.cs
-using Erp.Shared.Messaging;
+using Erp.Shared.BuildingBlocks;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -744,7 +744,7 @@ file.
 
 ```csharp
 // src/Modules/Sales/DependencyInjection.cs
-using Erp.Shared.Messaging;
+using Erp.Shared.BuildingBlocks;
 using FluentValidation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -844,7 +844,7 @@ If you prefer the library, you **do not write `Sender.cs` at all**. Instead:
 1. Install the library's packages. You still keep `FluentValidation` — that's for *writing* validators, and
    it's unrelated to which mediator runs them:
    ```bash
-   dotnet add src/Shared/Erp.Shared.Messaging package Mediator.Abstractions
+   dotnet add src/Shared/Erp.Shared.BuildingBlocks package Mediator.Abstractions
    dotnet add src/Erp.Api package Mediator.SourceGenerator
    ```
 2. Its API is MediatR-shaped, so it already provides `IRequest`, `IRequestHandler`, `IPipelineBehavior`,
@@ -921,7 +921,7 @@ Every feature sends a **request object** to the mediator. The handler always rec
 `src/Modules/Sales/Features/Ping/PingHandler.cs`:
 
 ```csharp
-using Erp.Shared.Messaging;
+using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Features.Ping;
 
@@ -980,7 +980,7 @@ The endpoint creates a `PingRequest`, and the mediator passes that same object t
 
 ```csharp
 using Carter;
-using Erp.Shared.Messaging;
+using Erp.Shared.BuildingBlocks;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;

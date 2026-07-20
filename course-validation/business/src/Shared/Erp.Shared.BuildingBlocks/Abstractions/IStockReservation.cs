@@ -1,6 +1,6 @@
 using System.Data;
 
-namespace Erp.Shared.Common;
+namespace Erp.Shared.BuildingBlocks;
 
 // The ONLY way Sales touches stock (Phase 7 §3). Sales depends on this interface; the Inventory
 // module implements it. Neither module references the other — the contract is the wall.

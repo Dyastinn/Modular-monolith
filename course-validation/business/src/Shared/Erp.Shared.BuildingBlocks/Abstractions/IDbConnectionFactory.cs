@@ -1,6 +1,6 @@
 using System.Data.Common;
 
-namespace Erp.Shared.Common.Data;
+namespace Erp.Shared.BuildingBlocks;
 
 // Hands out connections. Reads call Create() and open a plain connection; writes open one and start an
 // explicit transaction on it, right there in the handler (Phase 3b).

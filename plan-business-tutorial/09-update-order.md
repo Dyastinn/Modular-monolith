@@ -32,9 +32,9 @@ business checks against the new lines.
 ```csharp
 // src/Modules/Sales/Features/UpdateSalesOrder/UpdateSalesOrderHandler.cs
 using Erp.Modules.Sales.Domain;
-using Erp.Shared.Common;        // NotFoundException, ICurrentUser
-using Erp.Shared.Common.Data;   // IDbConnectionFactory
-using Erp.Shared.Messaging;
+using Erp.Shared.BuildingBlocks;        // NotFoundException, ICurrentUser
+using Erp.Shared.BuildingBlocks;   // IDbConnectionFactory
+using Erp.Shared.BuildingBlocks;
 using FluentValidation;
 
 namespace Erp.Modules.Sales.Features;

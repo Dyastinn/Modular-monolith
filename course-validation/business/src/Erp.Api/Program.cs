@@ -7,7 +7,7 @@ using Erp.Api.Security;
 using Erp.Modules.Inventory;
 using Erp.Modules.Sales;
 using Erp.Shared.Infrastructure;
-using Erp.Shared.Messaging;
+using Erp.Shared.BuildingBlocks;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;

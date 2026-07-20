@@ -55,31 +55,31 @@ Erp/                                         # repo root
 ├── Directory.Packages.props                 # central NuGet versions — one place (Phase 1 §5b)
 ├── src/
 │   ├── Shared/
-│   │   ├── Erp.Shared.BuildingBlocks/        # depends on NOTHING
-│   │   │   └── BuildingBlocks.cs             #   Entity<TId>, AggregateRoot<TId>, IDomainEvent, DomainException
-│   │   ├── Erp.Shared.Common/                # depends on NOTHING — every PORT the modules code against
-│   │   │   ├── PagedResult.cs
-│   │   │   ├── IClock.cs
-│   │   │   ├── Exceptions.cs                 #   NotFoundException, ForbiddenException, ConcurrencyException
-│   │   │   ├── Data/IDbConnectionFactory.cs   #   (Phase 3b)
-│   │   │   ├── Security/                     #   ICurrentUser, IUserRepository (+AppUser),
-│   │   │   │                                 #   IRefreshTokenRepository (+RefreshTokenRecord) — Phase 4
-│   │   │   └── Contracts/IStockReservation.cs #   the Sales↔Inventory wall (Phase 7)
-│   │   ├── Erp.Shared.Messaging/             # → Common, BuildingBlocks
-│   │   │   ├── Contracts.cs                  #   IRequest, ICommand, IQuery, Unit, IRequestHandler,
-│   │   │   │                                 #   ICommandHandler, IQueryHandler, IPipelineBehavior, ISender
-│   │   │   ├── Sender.cs                     #   the hand-rolled mediator (Phase 2)
-│   │   │   ├── DomainEvents.cs               #   IDomainEventHandler, IDomainEventDispatcher + impl (Phase 8)
-│   │   │   └── Behaviors/Behaviors.cs        #   LoggingBehavior, ValidationBehavior (Phase 11)
-│   │   └── Erp.Shared.Infrastructure/        # → Messaging, Common, BuildingBlocks (+ ASP.NET framework ref)
-│   │       ├── Data/SqlConnectionFactory.cs   #   the ADAPTER; its interface lives in Shared.Common
+│   │   ├── Erp.Shared.BuildingBlocks/        # depends on NOTHING — all a module is allowed to see
+│   │   │   ├── Domain/BuildingBlocks.cs      #   Entity<TId>, AggregateRoot<TId>, IDomainEvent, DomainException
+│   │   │   ├── Abstractions/                 #   every PORT the modules code against:
+│   │   │   │   ├── PagedResult.cs
+│   │   │   │   ├── IClock.cs
+│   │   │   │   ├── Exceptions.cs             #     NotFoundException, ForbiddenException, ConcurrencyException
+│   │   │   │   ├── IDbConnectionFactory.cs   #     (Phase 3b)
+│   │   │   │   ├── ICurrentUser.cs, IUserRepository.cs (+AppUser),
+│   │   │   │   │   IRefreshTokenRepository.cs (+RefreshTokenRecord)        # Phase 4
+│   │   │   │   └── IStockReservation.cs      #     the Sales↔Inventory wall (Phase 7)
+│   │   │   └── Messaging/
+│   │   │       ├── Contracts.cs              #   IRequest, ICommand, IQuery, Unit, IRequestHandler,
+│   │   │       │                             #   ICommandHandler, IQueryHandler, IPipelineBehavior, ISender
+│   │   │       ├── Sender.cs                 #   the hand-rolled mediator (Phase 2)
+│   │   │       ├── DomainEvents.cs           #   IDomainEventHandler, IDomainEventDispatcher + impl (Phase 8)
+│   │   │       └── Behaviors.cs              #   LoggingBehavior, ValidationBehavior (Phase 11)
+│   │   └── Erp.Shared.Infrastructure/        # → BuildingBlocks (+ ASP.NET framework ref)
+│   │       ├── Data/SqlConnectionFactory.cs   #   the ADAPTER; its interface lives in BuildingBlocks
 │   │       ├── SystemClock.cs                 #   the IClock adapter
 │   │       ├── Security/                     #   IPasswordHasher+PasswordHasher, IJwtTokenService+JwtTokenService,
 │   │       │                                 #   IRefreshTokenService+RefreshTokenService, CurrentUser
 │   │       ├── Identity/                     #   UserRepository, RefreshTokenRepository — Phase 4
 │   │       └── DependencyInjection.cs        #   AddSharedInfrastructure() + AddMessaging()
 │   ├── Modules/
-│   │   ├── Sales/  (Erp.Modules.Sales)       # → Shared.{BuildingBlocks, Common, Messaging} — NOT Infrastructure
+│   │   ├── Sales/  (Erp.Modules.Sales)       # → Shared.BuildingBlocks — NOT Infrastructure
 │   │   │   ├── Domain/                        #   pure C#, depends only on BuildingBlocks; FOLDER PER AGGREGATE
 │   │   │   │   ├── SalesOrders/               #     SalesOrder, SalesOrderId, SalesOrderLine, SalesOrderStatus
 │   │   │   │   │                              #       (+Rules), SalesOrderEvents, ApprovalPolicy
@@ -100,7 +100,7 @@ Erp/                                         # repo root
 │   │   │   │   ├── EventHandlers/            #   e.g. SalesOrderApprovedAuditHandler (Phase 8)
 │   │   │   │   └── Sql/ 001_schema.sql, 002_procedures.sql, 003_seed.sql   # the `sales` + `[identity]` schemas
 │   │   │   └── DependencyInjection.cs         #   AddSalesModule()
-│   │   └── Inventory/  (Erp.Modules.Inventory) # → Shared.Common only  (Phase 7)
+│   │   └── Inventory/  (Erp.Modules.Inventory) # → Shared.BuildingBlocks only  (Phase 7)
 │   │       ├── Infrastructure/
 │   │       │   ├── StockReservationService.cs #   implements IStockReservation
 │   │       │   └── Sql/ 001_schema.sql, 002_procedures.sql, 003_seed.sql   # the `inventory` schema

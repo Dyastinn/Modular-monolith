@@ -37,11 +37,13 @@ each new idea back to `.aspx.vb`, `[WebMethod]`, and `SqlCommand`.
 Erp.slnx
 Directory.Packages.props             one place for every NuGet version (Central Package Management)
 src/
-├── Shared/                          shared kernel — code every module may use
-│   ├── Erp.Shared.BuildingBlocks/   Entity, AggregateRoot, IDomainEvent, DomainException
-│   ├── Erp.Shared.Common/           IClock, IDbConnectionFactory, ICurrentUser, PagedResult, cross-module contracts
-│   ├── Erp.Shared.Messaging/        hand-rolled mediator: IRequest, IRequestHandler, ISender, behaviors
+├── Shared/                          two projects: what a module may see, and what it may not
+│   ├── Erp.Shared.BuildingBlocks/   everything a module may use — depends on nothing
+│   │   ├── Domain/                  Entity, AggregateRoot, IDomainEvent, DomainException
+│   │   ├── Abstractions/            IClock, IDbConnectionFactory, ICurrentUser, PagedResult, cross-module contracts
+│   │   └── Messaging/               hand-rolled mediator: IRequest, IRequestHandler, ISender, behaviors
 │   └── Erp.Shared.Infrastructure/   Dapper connection factory, JWT/auth, refresh tokens, Carter wiring
+│                                    NO module references this — that missing reference is the wall
 │
 ├── Modules/
 │   ├── Sales/  (Erp.Modules.Sales)  ONE module = ONE project = the isolation boundary
@@ -56,7 +58,7 @@ src/
 │   │   └── DependencyInjection.cs   AddSalesModule() — the module's one public registration seam
 │   │
 │   └── Inventory/ (Erp.Modules.Inventory)  reserves/releases stock; Sales reaches it only through
-│                                           the IStockReservation contract published in Shared.Common
+│                                           the IStockReservation contract published in Shared.BuildingBlocks
 │
 └── Erp.Api/                         host / composition root: wires modules, Carter, auth, error handling
 

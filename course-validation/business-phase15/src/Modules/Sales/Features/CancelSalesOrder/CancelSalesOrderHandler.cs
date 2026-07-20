@@ -1,8 +1,6 @@
 using Erp.Modules.Sales.Domain;
 using Erp.Modules.Inventory.Contracts;   // Phase 15: the contract now lives in the Inventory assembly
-using Erp.Shared.Common;
-using Erp.Shared.Common.Data;
-using Erp.Shared.Messaging;
+using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Features;
 

@@ -1,7 +1,4 @@
 using Erp.Modules.Sales.Domain;
-using Erp.Shared.Common;
-using Erp.Shared.Common.Data;
-using Erp.Shared.Messaging;
 using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Features;

@@ -1,7 +1,7 @@
 using Erp.Shared.BuildingBlocks;
 using Microsoft.Extensions.DependencyInjection;
 
-namespace Erp.Shared.Messaging;
+namespace Erp.Shared.BuildingBlocks;
 
 // Phase 8 §6: domain-event dispatch contracts. They mention IDomainEvent + AggregateRoot from
 // BuildingBlocks, which is why Messaging references BuildingBlocks.

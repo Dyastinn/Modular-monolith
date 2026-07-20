@@ -25,7 +25,7 @@ reference the whole module and still touch nothing but the published contract.
 
 You'll take the exact Sales ↔ Inventory relationship you already have and re-cut the boundary:
 
-- `IStockReservation` moves from `Shared/Erp.Shared.Common/Contracts/` into
+- `IStockReservation` moves from `Shared/Erp.Shared.BuildingBlocks/Abstractions/` into
   `Modules/Inventory/Contracts/` — Inventory now **owns** its contract.
 - `StockReservationService` becomes `internal`.
 - `Sales` gains a project reference to the **Inventory assembly** — and, because of `internal`, can still
@@ -43,8 +43,8 @@ describe *it*.
 Here's the shared kernel at the size this course leaves it:
 
 ```
-Shared/Erp.Shared.Common/
-└── Contracts/
+Shared/Erp.Shared.BuildingBlocks/
+└── Abstractions/
     └── IStockReservation.cs      # Inventory's promise to the world
 ```
 
@@ -53,8 +53,8 @@ Tax, Notifications — and every cross-module promise landed in the same place, 
 were taught:
 
 ```
-Shared/Erp.Shared.Common/
-└── Contracts/
+Shared/Erp.Shared.BuildingBlocks/
+└── Abstractions/
     ├── IStockReservation.cs      # owned by... Inventory? you have to go check
     ├── IPurchaseOrderClosal.cs   # owned by Purchasing
     ├── ITaxQuote.cs              # owned by Tax
@@ -70,7 +70,7 @@ Three things have quietly gone wrong, and none of them is about any single inter
   lives next to the fifteen others in a project no module *owns*, so "whoever edits it last" becomes the de
   facto owner. That's how a shared kernel rots into a junk drawer — the thing [Phase 14](14-going-further.md)
   warned about for Redis, happening to your *architecture* instead of your infrastructure.
-- **`Shared` is now a bottleneck.** Every module references `Erp.Shared.Common`, so a change to *any* contract
+- **`Shared` is now a bottleneck.** Every module references `Erp.Shared.BuildingBlocks`, so a change to *any* contract
   touches the assembly *every* module depends on. A one-line edit to `IShipmentBooking` recompiles the world
   and drags fifteen teams into one merge queue.
 - **The wall got weaker exactly when you needed it strong.** The base course's wall was "no project
@@ -168,7 +168,7 @@ owning module:
 
 ```csharp
 // src/Modules/Sales/Features/SubmitSalesOrder/SubmitSalesOrderHandler.cs
-using Erp.Modules.Inventory.Contracts;   // was: the contract came in via Erp.Shared.Common
+using Erp.Modules.Inventory.Contracts;   // was: the contract came in via Erp.Shared.BuildingBlocks
 
 public sealed class SubmitSalesOrderHandler(
     ISalesOrderRepository orders,
