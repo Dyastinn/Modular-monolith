@@ -8,28 +8,27 @@ using ValidationException = FluentValidation.ValidationException;
 
 namespace Erp.Api;
 
-// Maps each exception type to an HTTP status, in one place, and answers with RFC 9457 problem+json.
+// One place that maps exceptions to HTTP statuses, answering with RFC 9457 problem+json.
 internal sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> log, IHostEnvironment env) : IExceptionHandler
 {
     public async ValueTask<bool> TryHandleAsync(HttpContext ctx, Exception ex, CancellationToken ct)
     {
         var (status, title) = ex switch
         {
-            ValidationException             => (StatusCodes.Status400BadRequest,          "Validation failed"),
-            AuthenticationException         => (StatusCodes.Status401Unauthorized,        "Authentication failed"),
-            ForbiddenException              => (StatusCodes.Status403Forbidden,           "Forbidden"),
-            NotFoundException               => (StatusCodes.Status404NotFound,            "Resource not found"),
+            ValidationException          => (StatusCodes.Status400BadRequest, "Validation failed"),
+            AuthenticationException      => (StatusCodes.Status401Unauthorized, "Authentication failed"),
+            ForbiddenException           => (StatusCodes.Status403Forbidden, "Forbidden"),
+            NotFoundException            => (StatusCodes.Status404NotFound, "Resource not found"),
             ConcurrencyException or
-            DbUpdateConcurrencyException    => (StatusCodes.Status409Conflict,            "Conflict — someone else changed this. Reload and try again."),
-            DomainException                 => (StatusCodes.Status422UnprocessableEntity, "Business rule violated"),
-            _                               => (StatusCodes.Status500InternalServerError, "Unexpected error")
+            DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "Someone else changed this. Reload and try again."),
+            DomainException              => (StatusCodes.Status422UnprocessableEntity, "Business rule violated"),
+            _                            => (StatusCodes.Status500InternalServerError, "Unexpected error")
         };
 
         if (status == StatusCodes.Status500InternalServerError)
             log.LogError(ex, "Unhandled exception");
 
-        // Business errors carry messages meant for the user. A 500's detail is the stack trace only while
-        // developing — in production it's bland, so we never leak internals.
+        // Never leak a stack trace outside development.
         var detail = status switch
         {
             StatusCodes.Status500InternalServerError when env.IsDevelopment() => ex.ToString(),
@@ -39,7 +38,7 @@ internal sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> log
         };
 
         var problem = new ProblemDetails { Status = status, Title = title, Detail = detail, Instance = ctx.Request.Path };
-        problem.Extensions["traceId"] = Activity.Current?.Id ?? ctx.TraceIdentifier;   // quote this when reporting a bug
+        problem.Extensions["traceId"] = Activity.Current?.TraceId.ToString() ?? ctx.TraceIdentifier;
         if (ex is ValidationException v)
             problem.Extensions["errors"] = v.Errors.Select(e => e.ErrorMessage).ToArray();
 

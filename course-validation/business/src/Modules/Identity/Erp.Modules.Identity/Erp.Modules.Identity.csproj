@@ -1,6 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Endpoints are Carter modules, so this project needs the ASP.NET shared framework. -->
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
@@ -9,25 +8,19 @@
     <ProjectReference Include="..\..\..\Shared\Erp.Shared.BuildingBlocks\Erp.Shared.BuildingBlocks.csproj" />
   </ItemGroup>
 
-  <!-- Everything here is internal. Erp.Api may see it only because the Mediator source generator runs there;
-       test projects may see it to test it. Never another module. -->
+  <!-- Erp.Api: the Mediator source generator runs there. Never grant this to another module. -->
   <ItemGroup>
     <InternalsVisibleTo Include="Erp.Api" />
     <InternalsVisibleTo Include="Erp.Integration.Tests" />
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Infrastructure\Sql\**\*.sql" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="Carter" />
-    <PackageReference Include="FluentValidation" />
-    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="EFCore.NamingConventions" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
-    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
+    <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" />
+    <PackageReference Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" />
   </ItemGroup>
 
 </Project>

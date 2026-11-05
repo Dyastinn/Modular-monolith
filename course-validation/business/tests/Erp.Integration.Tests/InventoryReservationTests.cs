@@ -7,8 +7,7 @@ using Npgsql;
 
 namespace Erp.Integration.Tests;
 
-// The reservation race: the bug unit tests structurally cannot catch. Each caller gets its own DI scope — its
-// own request, connection and transaction — exactly as two simultaneous HTTP requests would.
+// Each caller gets its own DI scope (connection, transaction), like two simultaneous requests.
 [Collection("Integration")]
 public class InventoryReservationTests(CustomWebAppFactory factory)
 {
@@ -19,7 +18,6 @@ public class InventoryReservationTests(CustomWebAppFactory factory)
     {
         await SetReserved(RestrictedKitId, 0);
 
-        // Two callers each want 5 of the 8 available — only one can win.
         bool[] results = await Task.WhenAll(
             ReserveInOwnCommittedTransaction(RestrictedKitId, 5),
             ReserveInOwnCommittedTransaction(RestrictedKitId, 5));
@@ -43,7 +41,7 @@ public class InventoryReservationTests(CustomWebAppFactory factory)
             var stock = scope.ServiceProvider.GetRequiredService<IStockReservation>();
 
             (await stock.TryReserveAsync(RestrictedKitId, 5, tx, default)).Should().BeTrue();
-            // no commit: the caller's transaction is disposed → rolled back
+            // disposed without a commit
         }
 
         (await GetReserved(RestrictedKitId)).Should().Be(0);   // Inventory really joined the caller's transaction

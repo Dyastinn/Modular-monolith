@@ -16,7 +16,6 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
-  <!-- The domain is internal; Erp.Modules.Sales grants this project InternalsVisibleTo. -->
   <ItemGroup>
     <ProjectReference Include="..\..\src\Modules\Sales\Erp.Modules.Sales\Erp.Modules.Sales.csproj" />
   </ItemGroup>

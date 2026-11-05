@@ -4,16 +4,11 @@ using Npgsql;
 
 namespace Erp.Shared.Infrastructure;
 
-// The only types in the solution that name Npgsql connections. NpgsqlDataSource is created once for the app
-// and owns the connection pool; every connection below comes from it.
-
 public sealed class PostgresConnectionFactory(NpgsqlDataSource dataSource) : IDbConnectionFactory
 {
     public DbConnection Create() => dataSource.CreateConnection();
 }
 
-// Scoped: one per request. Every module's DbContext is built on this same connection object. EF opens and
-// closes it as needed; the DI scope disposes it at the end of the request.
 public sealed class SharedPostgresConnection(NpgsqlDataSource dataSource) : ISharedConnection, IAsyncDisposable, IDisposable
 {
     public DbConnection Connection { get; } = dataSource.CreateConnection();
@@ -24,8 +19,6 @@ public sealed class SharedPostgresConnection(NpgsqlDataSource dataSource) : ISha
 
 public static class PostgresDatabase
 {
-    // Creates the database named in the connection string if it isn't there yet — first run of a new install,
-    // or a fresh test database. Connects to the built-in "postgres" maintenance database to do it.
     public static async Task EnsureExistsAsync(string connectionString, CancellationToken ct = default)
     {
         var target = new NpgsqlConnectionStringBuilder(connectionString);
@@ -38,7 +31,7 @@ public static class PostgresDatabase
         exists.Parameters.AddWithValue("name", target.Database!);
         if (await exists.ExecuteScalarAsync(ct) is not null) return;
 
-        // A database name can't be a parameter; quote it as an identifier instead.
+        // A database name can't be a parameter, so quote it as an identifier.
         var quoted = "\"" + target.Database!.Replace("\"", "\"\"") + "\"";
         await using var create = new NpgsqlCommand($"CREATE DATABASE {quoted}", conn);
         await create.ExecuteNonQueryAsync(ct);

@@ -4,10 +4,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Erp.Modules.Inventory.Infrastructure;
 
-// The safety lives in ONE statement: "add to Reserved only WHERE enough is still available". Two orders racing
-// for the last 5 units can't both win, because SQL Server checks and writes in the same step.
 internal sealed class StockReservationService(InventoryDbContext db) : IStockReservation
 {
+    // Check and write in ONE statement, so two orders racing for the last units can't both win.
     public Task<bool> TryReserveAsync(long itemId, int quantity, DbTransaction tx, CancellationToken ct) =>
         InTransaction(tx, async () =>
         {
@@ -20,7 +19,6 @@ internal sealed class StockReservationService(InventoryDbContext db) : IStockRes
     public Task ReleaseAsync(long itemId, int quantity, DbTransaction tx, CancellationToken ct) =>
         InTransaction(tx, async () =>
         {
-            // Never below zero, even if a caller over-releases (the CHECK constraint backstops this too).
             await db.StockItems
                 .Where(s => s.ItemId == itemId)
                 .ExecuteUpdateAsync(s => s.SetProperty(
@@ -28,7 +26,7 @@ internal sealed class StockReservationService(InventoryDbContext db) : IStockRes
             return true;
         }, ct);
 
-    // Join the caller's transaction for this one operation, then let go of it — the caller owns the commit.
+    // Join the caller's transaction for one operation, then let go: the caller owns the commit.
     private async Task<bool> InTransaction(DbTransaction tx, Func<Task<bool>> work, CancellationToken ct)
     {
         await db.Database.UseTransactionAsync(tx, ct);

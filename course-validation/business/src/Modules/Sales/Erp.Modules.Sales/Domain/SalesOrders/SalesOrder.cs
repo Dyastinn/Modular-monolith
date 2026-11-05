@@ -12,34 +12,31 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
     public SalesOrderStatus Status { get; private set; }
     public UserId CreatedBy { get; private set; }
     public DateTime CreatedUtc { get; private set; }
-    public UserId? ApprovedBy { get; private set; }
+    public DateTime? SubmittedUtc { get; private set; }
+    public UserId? ApprovedBy { get; private set; }   // null = approved automatically
     public DateTime? ApprovedUtc { get; private set; }
+    public UserId? RejectedBy { get; private set; }
+    public DateTime? RejectedUtc { get; private set; }
+    public string? RejectionReason { get; private set; }
 
-    // Total is COMPUTED — it can never disagree with the lines.
     public Money Total => _lines.Aggregate(Money.Zero, (sum, l) => sum + l.LineTotal);
-
-    // The approval threshold is the ORDER'S own knowledge (a surfaced high-value flag).
     public bool RequiresApproval => Total > ApprovalPolicy.Threshold;
+    public bool HoldsStock => Status is SalesOrderStatus.PendingApproval or SalesOrderStatus.Approved;
 
-    private SalesOrder() { }   // EF rebuilds saved orders through this; it runs no rules and raises no events
+    private SalesOrder() { }
 
-    public static SalesOrder Create(string orderNumber, CustomerId customerId, UserId createdBy, DateTime nowUtc)
+    public static SalesOrder Create(string orderNumber, CustomerId customerId, UserId createdBy, DateTime nowUtc) => new()
     {
-        var order = new SalesOrder
-        {
-            OrderNumber = orderNumber,
-            CustomerId = customerId,
-            CreatedBy = createdBy,
-            CreatedUtc = nowUtc,
-            Status = SalesOrderStatus.Draft
-        };
-        return order;
-    }
+        OrderNumber = orderNumber,
+        CustomerId = customerId,
+        CreatedBy = createdBy,
+        CreatedUtc = nowUtc,
+        Status = SalesOrderStatus.Draft
+    };
 
     public void AddLine(ItemId itemId, Quantity qty, Money unitPrice)
     {
-        if (Status != SalesOrderStatus.Draft)
-            throw new DomainException("Lines can only be changed on a draft order.");
+        EnsureDraft();
         var existing = _lines.FirstOrDefault(l => l.ItemId == itemId);
         if (existing is not null) existing.IncreaseQuantity(qty);
         else _lines.Add(new SalesOrderLine(itemId, qty, unitPrice));
@@ -47,37 +44,81 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
 
     public void ClearLines()
     {
-        if (Status != SalesOrderStatus.Draft)
-            throw new DomainException("Lines can only be changed on a draft order.");
+        EnsureDraft();
         _lines.Clear();
     }
 
-    public void Submit()
+    // otherPendingTotal: the customer's other submitted-but-unapproved orders, which already count against credit.
+    public void Submit(Customer customer, Money otherPendingTotal, DateTime nowUtc)
     {
+        EnsureBelongsTo(customer);
         if (_lines.Count == 0)
             throw new DomainException("Cannot submit an order with no lines.");
+        customer.EnsureNotBlocked();
+        customer.EnsureWithinCreditLimit(Total, otherPendingTotal);
+
         Transition(SalesOrderStatus.PendingApproval);
+        SubmittedUtc = nowUtc;
+
+        if (!RequiresApproval)
+            MarkApproved(approver: null, customer, nowUtc);
     }
 
-    public void Approve(UserId approver, DateTime nowUtc)
+    public void Approve(UserId approver, Customer customer, DateTime nowUtc)
+    {
+        EnsureBelongsTo(customer);
+        if (approver == CreatedBy)
+            throw new DomainException("An order can't be approved by the person who created it.");
+        MarkApproved(approver, customer, nowUtc);
+    }
+
+    // Returns the lines whose reserved stock must be released.
+    public IReadOnlyList<SalesOrderLine> Reject(UserId rejectedBy, string reason, DateTime nowUtc)
+    {
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new DomainException("A rejection needs a reason.");
+        Transition(SalesOrderStatus.Rejected);
+        RejectedBy = rejectedBy;
+        RejectedUtc = nowUtc;
+        RejectionReason = reason.Trim();
+        return _lines;
+    }
+
+    // Returns the lines whose reserved stock must be released (none for a draft).
+    public IReadOnlyList<SalesOrderLine> Cancel(Customer customer)
+    {
+        EnsureBelongsTo(customer);
+        var heldStock = HoldsStock;
+        var wasCharged = Status == SalesOrderStatus.Approved;
+
+        Transition(SalesOrderStatus.Cancelled);
+
+        if (wasCharged)
+            customer.DeductFromBalance(Total);
+        return heldStock ? _lines : [];
+    }
+
+    private void MarkApproved(UserId? approver, Customer customer, DateTime nowUtc)
     {
         Transition(SalesOrderStatus.Approved);
         ApprovedBy = approver;
         ApprovedUtc = nowUtc;
+        customer.AddToBalance(Total);
         Raise(new SalesOrderApproved(Id, CustomerId, Total, approver));
     }
 
-    public void Reject()
+    private void EnsureDraft()
     {
-        Transition(SalesOrderStatus.Rejected);
+        if (Status != SalesOrderStatus.Draft)
+            throw new DomainException("Lines can only be changed on a draft order.");
     }
 
-    public void Cancel()
+    private void EnsureBelongsTo(Customer customer)
     {
-        Transition(SalesOrderStatus.Cancelled);
+        if (customer.Id != CustomerId)
+            throw new InvalidOperationException($"Customer {customer.Id.Value} does not own order {OrderNumber}.");
     }
 
-    // Single guarded gate for EVERY status change.
     private void Transition(SalesOrderStatus to)
     {
         if (!Status.CanTransitionTo(to))

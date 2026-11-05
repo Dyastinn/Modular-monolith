@@ -1,4 +1,5 @@
 using Erp.Shared.BuildingBlocks;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -20,6 +21,10 @@ public static class DependencyInjection
         // PostgreSQL names columns in snake_case (order_number); our DTOs use PascalCase (OrderNumber).
         // This tells Dapper that the two are the same name, for every read query in every module.
         Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
+
+        // Every module's DbContext picks up the registered interceptors (see each module's AddXModule).
+        services.AddSingleton<IInterceptor, OutboxInterceptor>();
+        services.AddHostedService<OutboxDispatcher>();
 
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, CurrentUser>();

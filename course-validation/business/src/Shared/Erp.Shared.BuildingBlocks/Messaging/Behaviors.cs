@@ -1,21 +1,28 @@
 using System.Diagnostics;
+using System.Diagnostics.Metrics;
 using FluentValidation;
 using Mediator;
 using Microsoft.Extensions.Logging;
 
 namespace Erp.Shared.BuildingBlocks;
 
-// Wraps every command and query. Registered in Program.cs (PipelineBehaviors), Logging OUTERMOST so it also
-// logs requests that fail validation.
-public sealed class LoggingBehavior<TMessage, TResponse>(ILogger<LoggingBehavior<TMessage, TResponse>> log)
+// Wraps every command and query with the three signals operations needs: a trace span (where did the time go?),
+// a duration metric (how often, how slow, how many failures?) and a log line. Registered OUTERMOST in
+// Program.cs so it also sees requests that fail validation.
+public sealed class TelemetryBehavior<TMessage, TResponse>(ILogger<TelemetryBehavior<TMessage, TResponse>> log)
     : IPipelineBehavior<TMessage, TResponse>
     where TMessage : IMessage
 {
+    private static readonly Histogram<double> Duration = ErpTelemetry.Meter.CreateHistogram<double>(
+        "erp.request.duration", unit: "ms", description: "Time to handle a command or query");
+
     public async ValueTask<TResponse> Handle(
         TMessage message, MessageHandlerDelegate<TMessage, TResponse> next, CancellationToken ct)
     {
         var name = typeof(TMessage).Name;
+        using var activity = ErpTelemetry.Source.StartActivity(name);
         var sw = Stopwatch.StartNew();
+        var outcome = "success";
         try
         {
             var response = await next(message, ct);
@@ -24,8 +31,17 @@ public sealed class LoggingBehavior<TMessage, TResponse>(ILogger<LoggingBehavior
         }
         catch (Exception ex)
         {
-            log.LogWarning(ex, "{Request} failed after {ElapsedMs} ms", name, sw.ElapsedMilliseconds);
-            throw;   // logging observes; it never swallows
+            // Rejections the user caused (validation, business rules) are expected; anything else is a failure.
+            outcome = ex is ValidationException or DomainException or NotFoundException or ConcurrencyException
+                ? "rejected" : "error";
+            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
+            log.LogWarning(ex, "{Request} {Outcome} after {ElapsedMs} ms", name, outcome, sw.ElapsedMilliseconds);
+            throw;   // telemetry observes; it never swallows
+        }
+        finally
+        {
+            Duration.Record(sw.Elapsed.TotalMilliseconds,
+                new KeyValuePair<string, object?>("request", name), new KeyValuePair<string, object?>("outcome", outcome));
         }
     }
 }
@@ -46,18 +62,5 @@ public sealed class ValidationBehavior<TMessage, TResponse>(IEnumerable<IValidat
             throw new ValidationException(failures);
 
         return await next(message, ct);
-    }
-}
-
-public static class DomainEventPublishing
-{
-    // Publish an aggregate's events, then forget them. Call it AFTER the save has committed.
-    public static async Task PublishDomainEventsAsync<TId>(
-        this IPublisher publisher, AggregateRoot<TId> aggregate, CancellationToken ct) where TId : struct
-    {
-        var events = aggregate.DomainEvents.ToList();
-        aggregate.ClearEvents();
-        foreach (var e in events)
-            await publisher.Publish(e, ct);   // Publish(object): dispatches on the event's runtime type
     }
 }

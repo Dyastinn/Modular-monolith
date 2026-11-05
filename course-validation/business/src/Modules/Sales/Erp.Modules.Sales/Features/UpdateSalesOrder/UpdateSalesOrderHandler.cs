@@ -7,9 +7,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed record UpdateSalesOrderCommand(
-    long OrderId,
-    IReadOnlyList<CreateSalesOrderLineDto> Lines) : ICommand;   // reuses the line DTO from Create
+internal sealed record UpdateSalesOrderCommand(long OrderId, IReadOnlyList<CreateSalesOrderLineDto> Lines) : ICommand;
 
 internal sealed class UpdateSalesOrderValidator : AbstractValidator<UpdateSalesOrderCommand>
 {
@@ -34,7 +32,7 @@ internal sealed class UpdateSalesOrderHandler(SalesDbContext db, ICurrentUser cu
         var order = await db.SalesOrders.SingleOrDefaultAsync(o => o.Id == orderId, ct)
             ?? throw new NotFoundException($"Sales order {cmd.OrderId} not found.");
 
-        order.ClearLines();   // the domain refuses unless the order is still a Draft
+        order.ClearLines();
 
         var customer = await db.Customers.SingleAsync(c => c.Id == order.CustomerId, ct);
         customer.EnsureNotBlocked();
@@ -56,9 +54,8 @@ internal sealed class UpdateSalesOrderHandler(SalesDbContext db, ICurrentUser cu
             order.AddLine(new ItemId(item.Id), new Quantity(line.Quantity), item.UnitPrice);
         }
 
-        customer.EnsureWithinCreditLimit(order.Total);
+        customer.EnsureWithinCreditLimit(order.Total, await db.PendingTotalAsync(customer.Id, order.Id, ct));
 
-        // EF deletes the old lines and inserts the new ones; the RowVersion check catches a concurrent edit.
         await db.SaveChangesAsync(ct);
         return Unit.Value;
     }

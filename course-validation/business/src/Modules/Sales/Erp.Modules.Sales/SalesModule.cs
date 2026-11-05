@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Carter;
 using Erp.Modules.Sales.Infrastructure;
 using Erp.Shared.BuildingBlocks;
@@ -8,8 +9,6 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace Erp.Modules.Sales;
 
-// The module's one public type: how the host plugs it in. Handlers need no registration here — the Mediator
-// source generator (running in Erp.Api) finds them at compile time.
 public static class SalesModule
 {
     public static IServiceCollection AddSalesModule(this IServiceCollection services, IConfiguration config)
@@ -17,15 +16,15 @@ public static class SalesModule
         var assembly = typeof(SalesModule).Assembly;
 
         services.AddDbContext<SalesDbContext>((sp, o) =>
-            SalesDbContext.Configure(o, sp.GetRequiredService<ISharedConnection>().Connection));
+            SalesDbContext.Configure(o, sp.GetRequiredService<ISharedConnection>().Connection)
+                .AddInterceptors(sp.GetServices<IInterceptor>()));
         services.AddScoped<IModuleDatabase, SalesDatabase>();
 
-        // Carter's AddCarter() only discovers PUBLIC endpoint classes; ours are internal, so register them here
-        // or every /sales-orders route silently 404s.
+        // AddCarter() only finds public endpoint classes; ours are internal.
         foreach (var endpoint in assembly.GetTypes().Where(t => !t.IsAbstract && typeof(ICarterModule).IsAssignableFrom(t)))
             services.AddSingleton(typeof(ICarterModule), endpoint);
 
-        // includeInternalTypes: true is REQUIRED — without it no validator is found and none ever runs, silently.
+        // Without includeInternalTypes no validator is found, and validation silently stops.
         services.AddValidatorsFromAssembly(assembly, includeInternalTypes: true);
         return services;
     }

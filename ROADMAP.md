@@ -119,14 +119,25 @@ Goal: the current Sales/Inventory features behave exactly as before, on the new 
 - [x] Errors are RFC 9457 `application/problem+json` with a `traceId`
 - [x] Unhandled domain events removed (only `SalesOrderApproved`, which has a handler); MSG0005 stays on
 
-### M2 — Production bar on existing scope ⬜
-- [ ] Transactional outbox + background dispatcher (replaces best-effort events)
-- [ ] OpenTelemetry (logs, traces, metrics), correlation ids, `/health/live` + `/health/ready`, Aspire dashboard for dev
-- [ ] Credit exposure includes in-flight orders
-- [ ] Approval workflow (pending → approved/rejected, with reason)
-- [ ] Rate limiting, HTTPS/HSTS, security headers
-- [ ] Least-privilege database role for the app (dev uses the `postgres` superuser)
-- [ ] Out-of-range search page reports 0 total (count comes from the page's rows) — fix when the UI pages
+### M2 — Production bar on existing scope ✅ code · ⬜ lessons
+- [x] Transactional outbox: `OutboxInterceptor` (same SaveChanges) + `OutboxDispatcher` (background,
+      `FOR UPDATE SKIP LOCKED`, retries, at-least-once); handlers no longer publish
+- [x] OpenTelemetry logs/traces/metrics (OTLP when configured), `X-Trace-Id` header, `traceId` in errors,
+      `/health/live` + `/health/ready`, `TelemetryBehavior` (span + duration metric per command/query)
+- [x] Aspire AppHost (dev-only dashboard; no Docker) — verified it starts the API and the dashboard
+- [x] Credit exposure counts orders awaiting approval; submit locks the customer row (`FOR UPDATE`)
+- [x] Approval workflow: ≤ ₱50,000 auto-approved on submit; above → manager approval; creator can't approve
+      own order; reject with reason releases stock; cancel reverses charge and releases stock
+- [x] **Auth moved to ASP.NET Core Identity** (user request): login/refresh/cookies/lockout/password policy from
+      the library; custom JWT + refresh-token code deleted; `/auth/register` blocked; data-protection keys in
+      PostgreSQL; sign-out-everywhere via security stamp. Forced 90-day password expiry dropped (NIST SP 800-63B)
+- [x] Rate limiting (per user/IP; strict per-IP on `/auth`), HTTPS redirection + HSTS, security headers, CORS
+      from config, no `Server` header
+- [x] Least privilege: `deploy/postgres/create-roles.sql` (`erp_owner` migrates, `erp_app` rows only);
+      verified — full integration suite passes as `erp_app`, and `erp_app` cannot DROP/CREATE/ALTER
+- [x] Search count is a separate function, so a page past the end reports the real total
+- [x] Found and fixed: `Money` deserialised as ₱0 from the outbox (`[JsonConstructor]`), caught by a new test
+- [x] Code comments trimmed to the non-obvious *why* (user request)
 
 ### M3 — Complete Sales, Inventory, Identity ⬜
 - [ ] User management (Identity module already extracted in M1)
@@ -143,29 +154,37 @@ Goal: the current Sales/Inventory features behave exactly as before, on the new 
 ### M6 — Invoicing ⬜ (BIR check first)
 ### M7 — Packaging & install ⬜
 - [ ] Migrations bundle, first-run admin, IIS guide (from 14b), backup/restore guide, release checklist
+- [ ] Buyer monitoring guide: "quick live view" (standalone Aspire dashboard — in-memory, no alerts) vs
+      "real monitoring" (free OTLP backend with retention + alerts, e.g. SigNoz or Grafana stack); just
+      `OTEL_EXPORTER_OTLP_ENDPOINT` either way. The Aspire AppHost stays dev-only.
 
-### L — Lessons ⬜
-Rewritten after each code milestone. Proposed course outline (to be confirmed when M1 lands):
+### L — Lessons 🟨
+Rewritten against the M1 + M2 build. Lessons for M3+ are written when that code lands.
 
-| # | Lesson | Source |
+Domain before database: with EF Core the schema follows the model, and the rules get unit tests from day one.
+
+| # | Lesson | Replaces |
 |---|---|---|
-| 00 / 00a / 00b | Start here, foundations, PowerShell | keep, trim |
-| 01 | Solution setup — modules, Contracts projects, `internal` | 01 + 15 + 15b folded in |
-| 02 | Mediator — why one, then `martinothamar/Mediator` | 02 rewritten (hand-rolled version cut to a short "pain" demo) |
-| 03 | Database — EF Core per module, migrations, schemas | 03 + 03b rewritten |
-| 03a | Reads — Dapper + stored procs shipped by migrations | 03a rewritten |
-| 04–04e | Identity & auth — cookie + JWT, refresh, change password, users | 04–04e reworked |
-| 05–10 | Domain model → orders → submit/reserve → approval → update → queries | reworked for EF writes |
-| 11 | Cross-cutting — behaviours, errors, outbox | reworked |
-| 12 | Observability & health | **new** |
-| 13 | Testing (unit, integration, architecture) | from 12 |
-| 14–16 | Inventory: items, receipts, adjustments, shipments | **new** |
-| 17–19 | Blazor front end | **new** |
-| 20 | Purchasing | **new** |
-| 21 | Invoicing | **new** |
-| 22 | Production hardening checklist | from 13 |
-| 23 | Deploy to IIS | from 14b |
-| — | Going further | 14 trimmed (brokers, microservices, etc. as "when you'd add them") |
+| 00 / 00a / 00b | Start here · Foundations · PowerShell | same files, updated |
+| 01 | Solution setup — modules, `internal`, central packages, base types | 01 + 15 + 15b |
+| 02 | Mediator — the pain, then `martinothamar/Mediator` + behaviours | 02 |
+| 03 | Domain model + its unit tests | 05 |
+| 04 | Database — PostgreSQL, EF Core per module, shared connection, migrations, seed | 03 + 03b |
+| 05 | Sign-in — ASP.NET Core Identity | 04, 04a–04e |
+| 06 | Create an order | 06 |
+| 07 | Submit — Inventory module, contract, one transaction, credit lock | 07 |
+| 08 | Approve, reject, cancel | 08 |
+| 09 | Update an order — lost updates and `xmin` | 09 |
+| 10 | Reads — Dapper + SQL functions | 10 + 03a |
+| 11 | Cross-cutting — validation, errors, the outbox | 11 |
+| 12 | Observability — OpenTelemetry, health, Aspire | **new** |
+| 13 | Security hardening — rate limits, HTTPS, headers, least privilege | parts of 13 |
+| 14 | Testing — integration and architecture tests | 12 |
+| 15 | Deploy to IIS | 14b |
+| 16 | Production checklist & going further | 13 + 14 |
+
+⚠️ A reader's migration history is longer than the reference build's (e.g. `AddOutbox` in lesson 11); the
+reference squashed each module into one `InitialCreate` before release. The resulting schema is identical.
 
 ---
 
@@ -190,3 +209,5 @@ Rewritten after each code milestone. Proposed course outline (to be confirmed wh
 - **2026-11-05** — Database switched to PostgreSQL (user decision). PostgreSQL 18 installed locally via winget
   (dev superuser password `erp_dev_only`, dev only). M1 code complete on PostgreSQL: **14 unit + 6 architecture
   + 10 integration tests pass.** Lessons not yet converted.
+- **2026-11-05** — M2 code complete: **22 unit + 6 architecture + 23 integration tests pass** (also as the
+  least-privilege `erp_app` role). Auth switched to ASP.NET Core Identity at the user's request.

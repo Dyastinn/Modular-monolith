@@ -1,26 +1,22 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Endpoints are Carter modules, so this project needs the ASP.NET shared framework. -->
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 
-  <!-- Sales may see Inventory's CONTRACTS, never Inventory itself. No reference to Erp.Shared.Infrastructure:
-       a module codes against BuildingBlocks interfaces, never the implementations. -->
+  <!-- Another module only through its .Contracts; never Erp.Shared.Infrastructure. -->
   <ItemGroup>
     <ProjectReference Include="..\..\..\Shared\Erp.Shared.BuildingBlocks\Erp.Shared.BuildingBlocks.csproj" />
     <ProjectReference Include="..\..\Inventory\Erp.Modules.Inventory.Contracts\Erp.Modules.Inventory.Contracts.csproj" />
   </ItemGroup>
 
-  <!-- Everything here is internal. Erp.Api may see it only because the Mediator source generator runs there;
-       test projects may see it to test it. Never another module. -->
+  <!-- Erp.Api: the Mediator source generator runs there. Never grant this to another module. -->
   <ItemGroup>
     <InternalsVisibleTo Include="Erp.Api" />
     <InternalsVisibleTo Include="Erp.Modules.Sales.UnitTests" />
     <InternalsVisibleTo Include="Erp.Integration.Tests" />
   </ItemGroup>
 
-  <!-- Stored procedures and seed scripts travel inside the assembly, so migrations can apply them anywhere. -->
   <ItemGroup>
     <EmbeddedResource Include="Infrastructure\Sql\**\*.sql" />
   </ItemGroup>

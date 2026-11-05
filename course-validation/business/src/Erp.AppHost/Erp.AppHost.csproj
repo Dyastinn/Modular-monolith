@@ -1,0 +1,15 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.6.4">
+
+  <!-- Development only: runs the API next to the Aspire dashboard (traces, logs, metrics). Never deployed. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <UserSecretsId>erp-apphost-dev</UserSecretsId>
+    <!-- ASPIRE010: we use the dashboard/orchestrator from NuGet on purpose, so no Aspire CLI install is needed. -->
+    <NoWarn>$(NoWarn);ASPIRE010</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Erp.Api\Erp.Api.csproj" />
+  </ItemGroup>
+
+</Project>

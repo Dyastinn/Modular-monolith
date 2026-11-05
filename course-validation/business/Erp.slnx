@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Erp.Api/Erp.Api.csproj" />
+    <Project Path="src/Erp.AppHost/Erp.AppHost.csproj" />
   </Folder>
   <Folder Name="/src/Shared/">
     <Project Path="src/Shared/Erp.Shared.BuildingBlocks/Erp.Shared.BuildingBlocks.csproj" />

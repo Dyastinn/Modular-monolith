@@ -12,10 +12,8 @@ internal sealed record SearchSalesOrdersQuery(long? CustomerId, string? Status, 
 internal sealed record SalesOrderSummaryDto(
     long Id, string OrderNumber, string CustomerName, string Status, decimal Total, DateTime CreatedUtc);
 
-// The function returns Status as its stored number (the handler turns it into a name) and, on every row, the
-// total number of matches.
 internal sealed record SalesOrderSummaryRow(
-    long Id, string OrderNumber, string CustomerName, int Status, decimal Total, DateTime CreatedUtc, long TotalCount);
+    long Id, string OrderNumber, string CustomerName, int Status, decimal Total, DateTime CreatedUtc);
 
 internal sealed class SearchSalesOrdersValidator : AbstractValidator<SearchSalesOrdersQuery>
 {
@@ -37,13 +35,19 @@ internal sealed class SearchSalesOrdersHandler(IDbConnectionFactory connections)
         int? status = q.Status is null ? null : (int)Enum.Parse<SalesOrderStatus>(q.Status, ignoreCase: true);
 
         await using var conn = connections.Create();
-        var rows = (await conn.QueryAsync<SalesOrderSummaryRow>(new CommandDefinition(
-            "SELECT * FROM sales.search_sales_orders(@CustomerId, @Status, @Page, @PageSize)",
-            new { q.CustomerId, Status = status, q.Page, q.PageSize }, cancellationToken: ct))).ToList();
-        var total = rows.Count == 0 ? 0 : (int)rows[0].TotalCount;
+        using var multi = await conn.QueryMultipleAsync(new CommandDefinition(
+            """
+            SELECT * FROM sales.search_sales_orders(@CustomerId, @Status, @Page, @PageSize);
+            SELECT sales.count_sales_orders(@CustomerId, @Status);
+            """,
+            new { q.CustomerId, Status = status, q.Page, q.PageSize }, cancellationToken: ct));
 
-        var items = rows.Select(r => new SalesOrderSummaryDto(
-            r.Id, r.OrderNumber, r.CustomerName, ((SalesOrderStatus)r.Status).ToString(), r.Total, r.CreatedUtc)).ToList();
-        return new PagedResult<SalesOrderSummaryDto>(items, q.Page, q.PageSize, total);
+        var items = (await multi.ReadAsync<SalesOrderSummaryRow>())
+            .Select(r => new SalesOrderSummaryDto(
+                r.Id, r.OrderNumber, r.CustomerName, ((SalesOrderStatus)r.Status).ToString(), r.Total, r.CreatedUtc))
+            .ToList();
+        var total = await multi.ReadSingleAsync<long>();
+
+        return new PagedResult<SalesOrderSummaryDto>(items, q.Page, q.PageSize, (int)total);
     }
 }

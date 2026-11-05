@@ -193,6 +193,19 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                         .HasColumnType("character varying(30)")
                         .HasColumnName("order_number");
 
+                    b.Property<long?>("RejectedBy")
+                        .HasColumnType("bigint")
+                        .HasColumnName("rejected_by");
+
+                    b.Property<DateTime?>("RejectedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("rejected_utc");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("rejection_reason");
+
                     b.Property<uint>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
@@ -203,23 +216,68 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("status");
 
+                    b.Property<DateTime?>("SubmittedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("submitted_utc");
+
                     b.HasKey("Id")
                         .HasName("pk_sales_order");
-
-                    b.HasIndex("CustomerId")
-                        .HasDatabaseName("ix_sales_order_customer_id");
 
                     b.HasIndex("OrderNumber")
                         .IsUnique()
                         .HasDatabaseName("ix_sales_order_order_number");
 
-                    b.HasIndex("Status")
-                        .HasDatabaseName("ix_sales_order_status");
+                    b.HasIndex("CustomerId", "Status")
+                        .HasDatabaseName("ix_sales_order_customer_id_status");
 
                     b.ToTable("sales_order", "sales", t =>
                         {
                             t.HasCheckConstraint("ck_sales_order_status", "status BETWEEN 0 AND 4");
                         });
+                });
+
+            modelBuilder.Entity("Erp.Shared.BuildingBlocks.OutboxMessage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<string>("LastError")
+                        .HasColumnType("text")
+                        .HasColumnName("last_error");
+
+                    b.Property<DateTime>("OccurredUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_utc");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload");
+
+                    b.Property<DateTime?>("ProcessedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("processed_utc");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("type");
+
+                    b.HasKey("Id")
+                        .HasName("pk_outbox_message");
+
+                    b.HasIndex("OccurredUtc")
+                        .HasDatabaseName("ix_outbox_message_occurred_utc")
+                        .HasFilter("processed_utc IS NULL");
+
+                    b.ToTable("outbox_message", "sales");
                 });
 
             modelBuilder.Entity("Erp.Modules.Sales.Domain.Item", b =>

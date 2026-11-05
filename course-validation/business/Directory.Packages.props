@@ -1,14 +1,8 @@
 <Project>
-  <!--
-    Central Package Management: every NuGet version in the solution is declared ONCE here; .csproj files
-    reference packages without a Version. To upgrade a package, edit one line.
-
-    LICENSING RULE: the source of this product is sold, so buyers inherit every licence below. Only
-    permissive licences (MIT / Apache-2.0 / BSD). Record each package in THIRD-PARTY-NOTICES.md.
-  -->
+  <!-- Buyers of the source inherit every license here: permissive and free only. Record each in THIRD-PARTY-NOTICES.md. -->
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
-    <!-- Pin transitive dependencies to the versions below too, so a patched version here wins everywhere. -->
+    <!-- A version pinned here also wins for transitive dependencies (security patches). -->
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
 
@@ -25,8 +19,8 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.14" />            <!-- MIT -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.14" /> <!-- MIT -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.14" />     <!-- MIT -->
-    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />     <!-- PostgreSQL licence (permissive) -->
-    <PackageVersion Include="Npgsql" Version="10.0.3" />                                    <!-- PostgreSQL licence (permissive) -->
+    <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />     <!-- PostgreSQL license (permissive) -->
+    <PackageVersion Include="Npgsql" Version="10.0.3" />                                    <!-- PostgreSQL license (permissive) -->
     <PackageVersion Include="EFCore.NamingConventions" Version="10.0.1" />                  <!-- Apache-2.0 -->
     <PackageVersion Include="Dapper" Version="2.1.79" />                                    <!-- Apache-2.0 -->
 
@@ -34,9 +28,18 @@
     <PackageVersion Include="FluentValidation" Version="12.1.1" />                          <!-- Apache-2.0 -->
     <PackageVersion Include="FluentValidation.DependencyInjectionExtensions" Version="12.1.1" />
 
-    <!-- Auth / JWT -->
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.14" /> <!-- MIT -->
-    <PackageVersion Include="System.IdentityModel.Tokens.Jwt" Version="8.19.2" />          <!-- MIT -->
+    <!-- Auth: ASP.NET Core Identity does sign-in, tokens, cookies and lockout -->
+    <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.14" />       <!-- MIT -->
+    <PackageVersion Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="10.0.14" /> <!-- MIT -->
+
+    <!-- Observability -->
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.20.1" />              <!-- Apache-2.0 -->
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.20.1" />      <!-- Apache-2.0 -->
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.20.1" />            <!-- Apache-2.0 -->
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.20.1" />         <!-- Apache-2.0 -->
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.20.1" />  <!-- Apache-2.0 -->
+    <PackageVersion Include="Npgsql.OpenTelemetry" Version="10.0.3" />                          <!-- PostgreSQL license -->
+    <!-- Aspire (MIT, dev-time dashboard only) is versioned by the Sdk attribute in Erp.AppHost.csproj. -->
 
     <!-- Extensions abstractions -->
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.14" />
@@ -49,7 +52,7 @@
     <PackageVersion Include="xunit" Version="2.9.3" />                                     <!-- Apache-2.0 -->
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />                 <!-- Apache-2.0 -->
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />                        <!-- MIT -->
-    <!-- AwesomeAssertions, not FluentAssertions: FluentAssertions 8+ needs a paid licence for commercial use. -->
+    <!-- AwesomeAssertions, not FluentAssertions: FluentAssertions 8+ needs a paid license for commercial use. -->
     <PackageVersion Include="AwesomeAssertions" Version="9.6.0" />                          <!-- Apache-2.0 -->
   </ItemGroup>
 </Project>

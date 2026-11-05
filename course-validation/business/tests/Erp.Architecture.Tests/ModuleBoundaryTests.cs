@@ -8,8 +8,7 @@ using Erp.Modules.Sales;
 
 namespace Erp.Architecture.Tests;
 
-// The module rules from CLAUDE.md §4, as tests. A reviewer can miss a stray project reference or a `public`
-// class; these can't. Each failure message says which rule broke and where.
+// CLAUDE.md §4 module rules as tests: a reviewer can miss a stray reference or `public` class; these can't.
 public class ModuleBoundaryTests
 {
     private static readonly Assembly[] Modules =
@@ -54,7 +53,7 @@ public class ModuleBoundaryTests
         foreach (var module in Modules)
         {
             var publicTypes = module.GetExportedTypes()
-                // EF generates migrations as public classes; they are tooling output, not API.
+                // EF generates migrations as public classes.
                 .Where(t => !(t.Namespace ?? "").EndsWith(".Migrations"))
                 .Select(t => t.FullName);
 

@@ -15,7 +15,6 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
-  <!-- Referencing the host pulls in every module, so the tests can inspect all of them. -->
   <ItemGroup>
     <ProjectReference Include="..\..\src\Erp.Api\Erp.Api.csproj" />
   </ItemGroup>

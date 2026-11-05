@@ -8,8 +8,7 @@ namespace Erp.Modules.Sales.Features;
 
 internal sealed record ApproveSalesOrderCommand(long OrderId) : ICommand;
 
-internal sealed class ApproveSalesOrderHandler(
-    SalesDbContext db, ICurrentUser currentUser, IClock clock, IPublisher publisher)
+internal sealed class ApproveSalesOrderHandler(SalesDbContext db, ICurrentUser currentUser, IClock clock)
     : ICommandHandler<ApproveSalesOrderCommand>
 {
     public async ValueTask<Unit> Handle(ApproveSalesOrderCommand cmd, CancellationToken ct)
@@ -19,13 +18,9 @@ internal sealed class ApproveSalesOrderHandler(
             ?? throw new NotFoundException($"Sales order {cmd.OrderId} not found.");
         var customer = await db.Customers.SingleAsync(c => c.Id == order.CustomerId, ct);
 
-        order.Approve(new UserId(currentUser.UserId), clock.UtcNow);   // domain: only a PendingApproval order
-        customer.AddToBalance(order.Total);                            // the customer now owes this
+        order.Approve(new UserId(currentUser.UserId), customer, clock.UtcNow);
 
-        // Both rows in ONE SaveChanges, which EF wraps in a transaction: approved-and-charged, or neither.
-        await db.SaveChangesAsync(ct);
-
-        await publisher.PublishDomainEventsAsync(order, ct);   // after the commit: audit log etc.
+        await db.SaveChangesAsync(ct);   // order, customer balance and outbox event: one transaction
         return Unit.Value;
     }
 }

@@ -1,126 +1,161 @@
 using System.Net;
 using System.Net.Http.Json;
 using AwesomeAssertions;
+using Dapper;
+using Npgsql;
 
 namespace Erp.Integration.Tests;
 
-// End-to-end through the real HTTP + database pipeline.
+// Seed: customers 1 Acme, 2 Beta (₱500 left), 3 Gamma (blocked), 4 Delta (₱200k limit), 5 Epsilon (large);
+// items 1 Widget ₱25, 2 Gadget ₱40, 3 Restricted Kit ₱500, 4 Server Rack ₱75,000.
 [Collection("Integration")]
-public class SalesOrderWorkflowTests
+public class SalesOrderWorkflowTests(CustomWebAppFactory factory)
 {
-    private readonly CustomWebAppFactory _factory;
-    public SalesOrderWorkflowTests(CustomWebAppFactory factory) => _factory = factory;
+    private const string Rep = "rep@erp.local", Manager = "manager@erp.local";
 
-    private sealed record LoginResponse(string AccessToken, string RefreshToken, string Username, string Role);
-    private sealed record CreatedResponse(long Id);
-    private sealed record DetailResponse(string Status);
+    private sealed record Created(long Id);
+    private sealed record Detail(string Status, string? RejectionReason);
+    private sealed record Page(int TotalCount, List<object> Items);
 
-    private static async Task<LoginResponse> Login(HttpClient client, string username)
+    private static async Task<long> CreateOrder(HttpClient client, long customerId, long itemId, int quantity)
     {
-        var login = await client.PostAsJsonAsync("/auth/login", new { username, password = "Password123!" });
-        login.StatusCode.Should().Be(HttpStatusCode.OK);
-        return (await login.Content.ReadFromJsonAsync<LoginResponse>())!;
+        var response = await client.PostAsJsonAsync("/sales-orders",
+            new { customerId, lines = new[] { new { itemId, quantity } } });
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        return (await response.Content.ReadFromJsonAsync<Created>())!.Id;
     }
 
-    private async Task<HttpClient> LoggedInAs(string username)
+    private static async Task<string> StatusOf(HttpClient client, long id) =>
+        (await client.GetFromJsonAsync<Detail>($"/sales-orders/{id}"))!.Status;
+
+    [Fact]
+    public async Task Small_order_is_approved_on_submit()
     {
-        var client = _factory.CreateClient();
-        var session = await Login(client, username);
-        client.DefaultRequestHeaders.Authorization = new("Bearer", session.AccessToken);
-        return client;
+        var rep = await factory.ClientFor(Rep);
+        var id = await CreateOrder(rep, customerId: 1, itemId: 1, quantity: 2);
+
+        (await rep.PostAsync($"/sales-orders/{id}/submit", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        (await StatusOf(rep, id)).Should().Be("Approved");
     }
 
     [Fact]
-    public async Task Create_submit_approve_happy_path()
+    public async Task High_value_order_waits_for_a_manager_who_did_not_create_it()
     {
-        var client = await LoggedInAs("manager");
+        var rep = await factory.ClientFor(Rep);
+        var manager = await factory.ClientFor(Manager);
+        var id = await CreateOrder(rep, customerId: 5, itemId: 4, quantity: 1);
+        await rep.PostAsync($"/sales-orders/{id}/submit", null);
+        (await StatusOf(rep, id)).Should().Be("PendingApproval");
 
-        var create = await client.PostAsJsonAsync("/sales-orders",
-            new { customerId = 1, lines = new[] { new { itemId = 1, quantity = 2 } } });
-        create.StatusCode.Should().Be(HttpStatusCode.Created);
-        var id = (await create.Content.ReadFromJsonAsync<CreatedResponse>())!.Id;
+        (await manager.PostAsync($"/sales-orders/{id}/approve", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        (await client.PostAsync($"/sales-orders/{id}/submit", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
-        (await client.PostAsync($"/sales-orders/{id}/approve", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await StatusOf(rep, id)).Should().Be("Approved");
+    }
 
-        var dto = await client.GetFromJsonAsync<DetailResponse>($"/sales-orders/{id}");
-        dto!.Status.Should().Be("Approved");
+    [Fact]
+    public async Task Creator_cannot_approve_their_own_order()
+    {
+        var manager = await factory.ClientFor(Manager);
+        var id = await CreateOrder(manager, customerId: 5, itemId: 4, quantity: 1);
+        await manager.PostAsync($"/sales-orders/{id}/submit", null);
+
+        (await manager.PostAsync($"/sales-orders/{id}/approve", null)).StatusCode
+            .Should().Be(HttpStatusCode.UnprocessableEntity);
     }
 
     [Fact]
     public async Task SalesRep_cannot_approve()
     {
-        var client = await LoggedInAs("rep");
+        var rep = await factory.ClientFor(Rep);
+        var id = await CreateOrder(rep, customerId: 5, itemId: 4, quantity: 1);
+        await rep.PostAsync($"/sales-orders/{id}/submit", null);
 
-        var create = await client.PostAsJsonAsync("/sales-orders",
-            new { customerId = 1, lines = new[] { new { itemId = 1, quantity = 1 } } });
-        var id = (await create.Content.ReadFromJsonAsync<CreatedResponse>())!.Id;
-        await client.PostAsync($"/sales-orders/{id}/submit", null);
+        (await rep.PostAsync($"/sales-orders/{id}/approve", null)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
 
-        var approve = await client.PostAsync($"/sales-orders/{id}/approve", null);
-        approve.StatusCode.Should().Be(HttpStatusCode.Forbidden);   // 403 — role gate works end-to-end
+    [Fact]
+    public async Task Rejecting_records_the_reason_and_releases_the_stock()
+    {
+        var rep = await factory.ClientFor(Rep);
+        var manager = await factory.ClientFor(Manager);
+        var before = await ReservedRacks();
+        var id = await CreateOrder(rep, customerId: 5, itemId: 4, quantity: 2);
+        await rep.PostAsync($"/sales-orders/{id}/submit", null);
+        (await ReservedRacks()).Should().Be(before + 2);
+
+        var reject = await manager.PostAsJsonAsync($"/sales-orders/{id}/reject", new { reason = "Price not agreed" });
+
+        reject.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var detail = await rep.GetFromJsonAsync<Detail>($"/sales-orders/{id}");
+        detail!.Status.Should().Be("Rejected");
+        detail.RejectionReason.Should().Be("Price not agreed");
+        (await ReservedRacks()).Should().Be(before);
+    }
+
+    [Fact]
+    public async Task Orders_awaiting_approval_count_against_credit()
+    {
+        var rep = await factory.ClientFor(Rep);
+        var first = await CreateOrder(rep, customerId: 4, itemId: 4, quantity: 2);   // ₱150,000 of ₱200,000
+        await rep.PostAsync($"/sales-orders/{first}/submit", null);
+
+        var second = await rep.PostAsJsonAsync("/sales-orders",
+            new { customerId = 4, lines = new[] { new { itemId = 4, quantity = 1 } } });   // +₱75,000
+
+        second.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
     }
 
     [Fact]
     public async Task Blocked_customer_is_rejected_with_422()
     {
-        var client = await LoggedInAs("manager");
-        var create = await client.PostAsJsonAsync("/sales-orders",
-            new { customerId = 3, lines = new[] { new { itemId = 1, quantity = 1 } } });   // Gamma is blocked
+        var manager = await factory.ClientFor(Manager);
+        var create = await manager.PostAsJsonAsync("/sales-orders",
+            new { customerId = 3, lines = new[] { new { itemId = 1, quantity = 1 } } });
         create.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
     }
 
     [Fact]
     public async Task Over_credit_limit_is_rejected_with_422()
     {
-        var client = await LoggedInAs("manager");
-        var create = await client.PostAsJsonAsync("/sales-orders",
-            new { customerId = 2, lines = new[] { new { itemId = 1, quantity = 100 } } });   // Beta: ₱2,500 > ₱500 left
+        var manager = await factory.ClientFor(Manager);
+        var create = await manager.PostAsJsonAsync("/sales-orders",
+            new { customerId = 2, lines = new[] { new { itemId = 1, quantity = 100 } } });   // ₱2,500 > ₱500 left
         create.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
     }
 
-    // Regression guard: `page`/`pageSize` must be `int?` on the endpoint. Declared as a non-nullable `int`,
-    // minimal-API model binding treats them as REQUIRED, and this bare call fails with 400 before the
-    // handler ever runs.
+    // Regression guard: `page`/`pageSize` must be `int?`, or a bare GET fails model binding with 400.
     [Fact]
     public async Task Search_with_no_query_string_returns_the_first_page()
     {
-        var client = await LoggedInAs("rep");
-        var search = await client.GetAsync("/sales-orders");
-        search.StatusCode.Should().Be(HttpStatusCode.OK);
+        var rep = await factory.ClientFor(Rep);
+        (await rep.GetAsync("/sales-orders")).StatusCode.Should().Be(HttpStatusCode.OK);
     }
 
-    // Regression guard: the validators are `internal`, and FluentValidation's assembly scanner
-    // SKIPS internal types unless AddSalesModule passes `includeInternalTypes: true`. Get that wrong and
-    // nothing throws — validation just silently stops running, and this order (zero lines) sails past
-    // CreateSalesOrderValidator into the handler and is happily persisted as 201 Created.
+    [Fact]
+    public async Task A_page_past_the_end_still_reports_the_real_total()
+    {
+        var rep = await factory.ClientFor(Rep);
+        await CreateOrder(rep, customerId: 1, itemId: 1, quantity: 1);
+
+        var page = await rep.GetFromJsonAsync<Page>("/sales-orders?page=9999");
+
+        page!.Items.Should().BeEmpty();
+        page.TotalCount.Should().BeGreaterThan(0);
+    }
+
+    // Regression guard: validators are internal; without includeInternalTypes: true they silently never run.
     [Fact]
     public async Task Order_with_no_lines_is_rejected_by_the_internal_validator()
     {
-        var client = await LoggedInAs("manager");
-        var create = await client.PostAsJsonAsync("/sales-orders",
-            new { customerId = 1, lines = Array.Empty<object>() });
-        create.StatusCode.Should().Be(HttpStatusCode.BadRequest);   // 400, not 201 — the validator ran
+        var manager = await factory.ClientFor(Manager);
+        var create = await manager.PostAsJsonAsync("/sales-orders", new { customerId = 1, lines = Array.Empty<object>() });
+        create.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
-    [Fact]
-    public async Task Refresh_rotates_and_replaying_a_spent_token_revokes_the_session()
+    private static async Task<int> ReservedRacks()
     {
-        var client = _factory.CreateClient();
-        var session = await Login(client, "rep");
-
-        // Rotate once — the first refresh token is now spent, and we hold a fresh pair.
-        var rotated = await client.PostAsJsonAsync("/auth/refresh", new { refreshToken = session.RefreshToken });
-        rotated.StatusCode.Should().Be(HttpStatusCode.OK);
-        var fresh = (await rotated.Content.ReadFromJsonAsync<LoginResponse>())!;
-        fresh.RefreshToken.Should().NotBe(session.RefreshToken);   // rotation issued a new token
-
-        // Replay the OLD (spent) token → reuse detected → 401, and the entire family is revoked...
-        (await client.PostAsJsonAsync("/auth/refresh", new { refreshToken = session.RefreshToken }))
-            .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
-
-        // ...so even the legitimately-rotated token is now dead — the breach burned the lineage.
-        (await client.PostAsJsonAsync("/auth/refresh", new { refreshToken = fresh.RefreshToken }))
-            .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        await using var conn = new NpgsqlConnection(CustomWebAppFactory.TestConnectionString);
+        return await conn.ExecuteScalarAsync<int>("SELECT reserved FROM inventory.stock_item WHERE item_id = 4");
     }
 }

@@ -8,8 +8,7 @@ namespace Erp.Modules.Sales.Features;
 
 internal sealed class SearchSalesOrdersEndpoint : ICarterModule
 {
-    // int? (not int): minimal APIs treat a non-nullable int query parameter as REQUIRED, so a bare
-    // GET /sales-orders would 400 before the handler ever ran.
+    // int?, not int: a non-nullable query parameter is required, so a bare GET would be a 400.
     public void AddRoutes(IEndpointRouteBuilder app) =>
         app.MapGet("/sales-orders",
             async (long? customerId, string? status, int? page, int? pageSize, ISender sender, CancellationToken ct) =>

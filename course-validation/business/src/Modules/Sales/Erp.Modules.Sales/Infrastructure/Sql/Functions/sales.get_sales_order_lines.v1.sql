@@ -1,5 +1,4 @@
--- Read side: one order's lines with item names, in the order they were added.
--- Shipped by migration AddReadFunctions. NEVER edit this file once released — write a .v2 and a new migration.
+-- Released scripts are never edited: change a function with a .v2 file and a new migration.
 CREATE OR REPLACE FUNCTION sales.get_sales_order_lines(p_order_id bigint)
 RETURNS TABLE (item_id bigint, item_name text, quantity integer, unit_price numeric)
 LANGUAGE sql STABLE

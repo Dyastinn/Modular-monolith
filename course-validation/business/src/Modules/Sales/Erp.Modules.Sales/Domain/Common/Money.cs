@@ -1,12 +1,16 @@
+using System.Text.Json.Serialization;
 using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Domain;
 
-// ₱ — a plain non-negative amount. A cross-cutting value object: compared by value, immutable.
+// Philippine pesos, never negative.
 internal readonly record struct Money
 {
-    public decimal Amount { get; }
     public static readonly Money Zero = new(0m);
+
+    public decimal Amount { get; }
+
+    [JsonConstructor]   // without it, JSON (the outbox) builds the struct empty and the amount comes back as 0
     public Money(decimal amount) =>
         Amount = amount >= 0 ? amount : throw new DomainException("Money cannot be negative.");
 

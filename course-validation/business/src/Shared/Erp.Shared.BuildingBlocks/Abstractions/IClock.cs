@@ -1,7 +1,6 @@
 namespace Erp.Shared.BuildingBlocks;
 
-// A trivial abstraction over "what time is it now?" — injected instead of calling DateTime.UtcNow directly,
-// so time-dependent logic (token expiries, Phase 4 §10) can be unit-tested with a pinned clock.
+// Inject instead of DateTime.UtcNow so time-based rules can be tested with a fixed clock.
 public interface IClock
 {
     DateTime UtcNow { get; }

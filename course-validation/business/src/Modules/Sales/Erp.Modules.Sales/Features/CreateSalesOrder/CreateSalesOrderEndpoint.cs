@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-// The wire shape. Kept separate from the command so the HTTP contract and the command can evolve independently.
 internal sealed record CreateSalesOrderRequest(long CustomerId, IReadOnlyList<CreateSalesOrderLineDto> Lines);
 
 internal sealed class CreateSalesOrderEndpoint : ICarterModule

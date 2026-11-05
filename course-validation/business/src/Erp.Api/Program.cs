@@ -1,5 +1,3 @@
-using System.Security.Claims;
-using System.Text;
 using Carter;
 using Erp.Api;
 using Erp.Api.Security;
@@ -9,61 +7,56 @@ using Erp.Modules.Sales;
 using Erp.Shared.BuildingBlocks;
 using Erp.Shared.Infrastructure;
 using Mediator;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
+builder.WebHost.ConfigureKestrel(o => o.AddServerHeader = false);
 
-// ── Platform ─────────────────────────────────────────────────────────────────────────────────────────────
-builder.Services.AddSharedInfrastructure(builder.Configuration);   // connections, ICurrentUser, IClock
+builder.AddObservability();
+builder.Services.AddSharedInfrastructure(builder.Configuration);
 
-// The mediator, generated at compile time. Scoped, because handlers use the scoped module DbContexts.
-// Behaviours run in this order: Logging OUTERMOST (so it sees validation failures too), then Validation.
 builder.Services.AddMediator((MediatorOptions options) =>
 {
-    options.ServiceLifetime = ServiceLifetime.Scoped;
+    options.ServiceLifetime = ServiceLifetime.Scoped;   // handlers use scoped DbContexts
     options.Assemblies = [typeof(IdentityModule), typeof(SalesModule), typeof(InventoryModule)];
-    options.PipelineBehaviors = [typeof(LoggingBehavior<,>), typeof(ValidationBehavior<,>)];
+    options.PipelineBehaviors = [typeof(TelemetryBehavior<,>), typeof(ValidationBehavior<,>)];   // outermost first
 });
 
-// ── Modules (registration order = migration and seed order) ─────────────────────────────────────────────
+// Registration order = migration and seed order.
 builder.Services.AddIdentityModule(builder.Configuration);
 builder.Services.AddSalesModule(builder.Configuration);
 builder.Services.AddInventoryModule(builder.Configuration);
-builder.Services.AddCarter();   // Carter's own services; each module registered its (internal) endpoints itself
+builder.Services.AddCarter();
 
-// ── Authentication: validate the JWT on every request ───────────────────────────────────────────────────
-var jwt = builder.Configuration.GetSection("Jwt");
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.MapInboundClaims = false;   // keep claim names as issued, so "sub" stays "sub"
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,   ValidIssuer = jwt["Issuer"],
-            ValidateAudience = true, ValidAudience = jwt["Audience"],
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwt["SigningKey"]!)),
-            RoleClaimType = ClaimTypes.Role,
-            NameClaimType = ClaimTypes.Name
-        };
-    });
 builder.Services.AddAuthorization();
-
+builder.Services.AddErpRateLimiting(builder.Configuration);
+builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database", tags: ["ready"]);
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
+builder.Services.AddHsts(o =>
+{
+    o.MaxAge = TimeSpan.FromDays(365);
+    o.IncludeSubDomains = true;
+});
 
-// ── API docs (development) ──────────────────────────────────────────────────────────────────────────────
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
+{
+    if (builder.Configuration.GetValue<bool>("Cors:AllowAnyOrigin"))   // development only
+        p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+    else
+        p.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
+}));
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
     options.SwaggerDoc("v1", new OpenApiInfo { Title = "Erp API", Version = "v1" });
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
-        Name = "Authorization", Type = SecuritySchemeType.Http, Scheme = "bearer", BearerFormat = "JWT",
-        In = ParameterLocation.Header, Description = "Paste the accessToken from POST /auth/login."
+        Name = "Authorization", Type = SecuritySchemeType.Http, Scheme = "bearer",
+        In = ParameterLocation.Header, Description = "The accessToken from POST /auth/login."
     });
     options.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
     {
@@ -71,8 +64,7 @@ builder.Services.AddSwaggerGen(options =>
     });
     options.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
     {
-        Name = "X-Api-Key", Type = SecuritySchemeType.ApiKey, In = ParameterLocation.Header,
-        Description = "The client application's key (ApiKeys in appsettings.Development.json)."
+        Name = "X-Api-Key", Type = SecuritySchemeType.ApiKey, In = ParameterLocation.Header
     });
     options.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
     {
@@ -80,13 +72,14 @@ builder.Services.AddSwaggerGen(options =>
     });
 });
 
-// CORS so the standalone test console (test-console/index.html, opened from disk) can call the API.
-// Bearer tokens travel in a header, not a cookie, so AllowAnyOrigin is safe here.
-builder.Services.AddCors(o => o.AddPolicy("test-console", p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
-
 var app = builder.Build();
 
 app.UseExceptionHandler();
+if (!app.Environment.IsDevelopment())
+    app.UseHsts();
+app.UseHttpsRedirection();
+app.UseMiddleware<SecurityHeadersMiddleware>();
+app.UseTraceIdHeader();
 
 if (app.Environment.IsDevelopment())
 {
@@ -94,16 +87,19 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-await app.InitializeDatabaseAsync();   // migrations (+ dev seed) when enabled in config
+await app.InitializeDatabaseAsync();
 
-app.UseCors("test-console");
-app.UseMiddleware<ApiKeyMiddleware>();   // 0) is this one of our client apps? (before auth: guards /auth/login too)
-app.UseAuthentication();                 // 1) who are you?
-app.UseAuthorization();                  // 2) are you allowed?
+app.UseCors();
+app.UseMiddleware<ApiKeyMiddleware>();
+app.UseAuthentication();
+app.UseRateLimiter();   // after authentication, so limits are per user where possible
+app.UseAuthorization();
 
-app.MapGet("/health", () => Results.Ok("healthy"));
+app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });   // the process is up
+app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains("ready") });
+app.MapIdentityModule();
 app.MapCarter();
 
 app.Run();
 
-public partial class Program { }   // lets the integration tests boot the app
+public partial class Program { }

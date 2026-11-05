@@ -1,4 +1,6 @@
+using System.Data.Common;
 using Erp.Modules.Sales.Domain;
+using Erp.Shared.BuildingBlocks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -14,21 +16,34 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
     public DbSet<Item> Items => Set<Item>();
     public DbSet<ItemCategory> ItemCategories => Set<ItemCategory>();
 
-    // nextval() is atomic: two orders created at the same instant never get the same number.
+    // Shared by the app and `dotnet ef`, so the two can't drift apart.
+    public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder o, DbConnection connection) =>
+        o.UseNpgsql(connection, npg => npg.MigrationsHistoryTable("__EFMigrationsHistory", Schema))
+         .UseSnakeCaseNamingConvention();
+
     public async Task<string> NextOrderNumberAsync(DateTime nowUtc, CancellationToken ct)
     {
+        // ToList, not Single(): EF would wrap Single() in a subquery.
         var next = (await Database
             .SqlQuery<long>($"SELECT nextval('sales.sales_order_number_seq') AS \"Value\"")
             .ToListAsync(ct)).Single();
         return OrderNumbering.Format(next, nowUtc);
     }
 
-    // How every Sales DbContext is configured — at runtime AND by `dotnet ef` — so the two never drift.
-    public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder o, System.Data.Common.DbConnection connection) =>
-        o.UseNpgsql(connection, npg => npg.MigrationsHistoryTable("__EFMigrationsHistory", Schema))
-         .UseSnakeCaseNamingConvention();   // SalesOrder.OrderNumber → sales.sales_order.order_number
+    // Holds the customer's row until the transaction ends, so two submits for one customer can't both pass the
+    // credit check on the same stale numbers. Must be called inside a transaction.
+    public Task LockCustomerAsync(CustomerId id, CancellationToken ct) =>
+        Database.ExecuteSqlAsync($"SELECT 1 FROM sales.customer WHERE id = {id.Value} FOR UPDATE", ct);
 
-    // Value objects and strongly-typed ids are stored as plain columns. Set once here, used everywhere.
+    // The customer's other submitted orders still waiting for a manager. They already count against credit.
+    public async Task<Money> PendingTotalAsync(CustomerId customerId, SalesOrderId excluding, CancellationToken ct)
+    {
+        var pending = await SalesOrders.AsNoTracking()
+            .Where(o => o.CustomerId == customerId && o.Status == SalesOrderStatus.PendingApproval && o.Id != excluding)
+            .ToListAsync(ct);
+        return pending.Aggregate(Money.Zero, (sum, o) => sum + o.Total);
+    }
+
     protected override void ConfigureConventions(ModelConfigurationBuilder c)
     {
         c.Properties<SalesOrderId>().HaveConversion<SalesOrderIdConverter>();
@@ -44,6 +59,15 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
         b.HasDefaultSchema(Schema);
         b.HasSequence<long>("sales_order_number_seq");
 
+        b.Entity<OutboxMessage>(e =>
+        {
+            e.ToTable("outbox_message");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Type).HasMaxLength(500);
+            e.Property(x => x.Payload).HasColumnType("jsonb");
+            e.HasIndex(x => x.OccurredUtc).HasFilter("processed_utc IS NULL");
+        });
+
         b.Entity<Customer>(e =>
         {
             e.ToTable("customer", t =>
@@ -54,7 +78,7 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).UseIdentityColumn();
             e.Property(x => x.Name).HasMaxLength(200);
-            e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");   // two approvals for one customer can't both win
+            e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");
         });
 
         b.Entity<ItemCategory>(e =>
@@ -83,15 +107,15 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
             e.Property(x => x.Id).UseIdentityColumn();
             e.HasIndex(x => x.OrderNumber).IsUnique();
             e.Property(x => x.OrderNumber).HasMaxLength(30);
-            e.HasIndex(x => x.Status);
+            e.Property(x => x.RejectionReason).HasMaxLength(500);
+            e.HasIndex(x => new { x.CustomerId, x.Status });
             e.HasOne<Customer>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
-            // PostgreSQL bumps the hidden xmin column on every update — a free row version. Stale save → 409.
             e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");
-            e.Ignore(x => x.Total);              // computed from the lines, never stored
+            e.Ignore(x => x.Total);
             e.Ignore(x => x.RequiresApproval);
+            e.Ignore(x => x.HoldsStock);
             e.Ignore(x => x.DomainEvents);
 
-            // Lines belong to the order: loaded with it, saved with it, deleted with it.
             e.OwnsMany(x => x.Lines, l =>
             {
                 l.ToTable("sales_order_line", t =>
@@ -110,9 +134,7 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
 
     public override Task<int> SaveChangesAsync(CancellationToken ct = default)
     {
-        // Editing only an order's lines writes only to SalesOrderLine, so the order's RowVersion would never be
-        // checked and two people editing the same draft would silently overwrite each other. Touch the order row
-        // as well, so the version check runs.
+        // A lines-only edit never updates the order row, so its xmin would never be checked. Touch it.
         if (ChangeTracker.Entries<SalesOrderLine>().Any(l => l.State != EntityState.Unchanged))
             foreach (var order in ChangeTracker.Entries<SalesOrder>().Where(o => o.State == EntityState.Unchanged))
                 order.Property(o => o.Status).IsModified = true;
@@ -128,7 +150,7 @@ internal sealed class UserIdConverter() : ValueConverter<UserId, long>(v => v.Va
 internal sealed class MoneyConverter() : ValueConverter<Money, decimal>(v => v.Amount, v => new Money(v));
 internal sealed class QuantityConverter() : ValueConverter<Quantity, int>(v => v.Value, v => new Quantity(v));
 
-// Lets `dotnet ef migrations add` build the context without starting the API. No database is touched.
+// For `dotnet ef migrations add`; never connects.
 internal sealed class SalesDbContextFactory : IDesignTimeDbContextFactory<SalesDbContext>
 {
     public SalesDbContext CreateDbContext(string[] args)

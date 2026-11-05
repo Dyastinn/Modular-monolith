@@ -2,5 +2,6 @@ namespace Erp.Modules.Sales.Domain;
 
 internal static class ApprovalPolicy
 {
-    public static readonly Money Threshold = new(50_000m);  // orders over ₱50,000 are flagged high-value
+    // Orders above this need a manager; at or below it they are approved on submit.
+    public static readonly Money Threshold = new(50_000m);
 }

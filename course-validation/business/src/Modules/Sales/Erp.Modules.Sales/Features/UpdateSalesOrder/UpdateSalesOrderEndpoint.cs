@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-// The id comes from the route, the lines from the body — no "id in URL vs id in body" ambiguity.
 internal sealed record UpdateSalesOrderRequest(IReadOnlyList<CreateSalesOrderLineDto> Lines);
 
 internal sealed class UpdateSalesOrderEndpoint : ICarterModule

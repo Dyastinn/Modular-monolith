@@ -20,7 +20,7 @@
     .pill.role { color:var(--accent2); }
     main { display:grid; grid-template-columns:340px 1fr; gap:18px; padding:18px 22px; max-width:1200px; }
     @media (max-width:820px){ main{ grid-template-columns:1fr; } }
-    .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:1px; }
+    .card { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:16px; margin-bottom:18px; }
     .card h2 { margin:0 0 12px; font-size:14px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); }
     label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
     input, select { width:100%; padding:9px 10px; background:var(--panel2); border:1px solid var(--line);
@@ -28,12 +28,6 @@
     button { cursor:pointer; border:none; border-radius:8px; padding:9px 14px; font:inherit; font-weight:600; color:#08101f; background:var(--accent); }
     button.secondary { background:var(--panel2); color:var(--ink); border:1px solid var(--line); }
     button.ghost { background:transparent; color:var(--accent); padding:4px 8px; font-weight:600; }
-    button.danger { background:var(--danger); color:#1a0206; }
-    button.ok { background:var(--accent2); }
-    button:disabled { opacity:.45; cursor:not-allowed; }
-    .row { display:flex; gap:8px; align-items:end; }
-    .row > * { flex:1; }
-    .row.compact > * { flex:none; }
     .muted { color:var(--muted); }
     .quick { display:flex; gap:6px; margin-top:8px; }
     .quick button { flex:1; padding:7px; font-size:12px; background:var(--panel2); color:var(--ink); border:1px solid var(--line); }
@@ -43,6 +37,8 @@
     .status { font-size:11px; padding:2px 8px; border-radius:999px; border:1px solid var(--line); }
     .s-Draft{color:var(--muted)} .s-PendingApproval{color:var(--warn)} .s-Approved{color:var(--accent2)}
     .s-Cancelled{color:var(--danger)} .s-Rejected{color:var(--danger)}
+    .status.ok { color:var(--accent2); border-color:var(--accent2); }
+    .status.err { color:var(--danger); border-color:var(--danger); }
     .lines-editor .lineRow { display:flex; gap:8px; margin-bottom:6px; }
     .lines-editor .lineRow select { flex:2; } .lines-editor .lineRow input { flex:1; }
     #toast { position:fixed; right:18px; bottom:18px; display:flex; flex-direction:column; gap:8px; z-index:50; }
@@ -54,25 +50,10 @@
     .actions { display:flex; gap:6px; flex-wrap:wrap; }
     code { background:var(--panel2); padding:1px 6px; border-radius:6px; font-size:12px; }
     a.link { color:var(--accent); }
-    /* --- auth inspector --- */
-    .auth-grid { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
-    @media (max-width:720px){ .auth-grid { grid-template-columns:1fr; } }
-    .subttl { font-size:12px; font-weight:600; color:var(--ink); display:flex; align-items:center; gap:8px; margin-bottom:6px; }
-    .status.ok { color:var(--accent2); border-color:var(--accent2); }
-    .status.err { color:var(--danger); border-color:var(--danger); }
-    .status.warn { color:var(--warn); border-color:var(--warn); }
-    .tokraw { font-family:ui-monospace,Consolas,monospace; font-size:12px; word-break:break-all; background:var(--panel2);
-      border:1px solid var(--line); border-radius:8px; padding:8px 10px; min-height:34px; }
-    #claimsTable td { padding:5px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
-    #claimsTable .ckey { color:var(--muted); font-family:ui-monospace,Consolas,monospace; width:32%; }
-    #claimsTable .cval { font-family:ui-monospace,Consolas,monospace; word-break:break-all; }
-    .authlog { display:flex; flex-direction:column; gap:5px; max-height:220px; overflow:auto; }
-    .authlog .ev { padding:6px 9px; background:var(--panel2); border:1px solid var(--line); border-left:3px solid var(--line);
-      border-radius:7px; font-size:12px; }
-    .authlog .ev.ok { border-left-color:var(--accent2); }
-    .authlog .ev.err { border-left-color:var(--danger); }
-    .authlog .ev.warn { border-left-color:var(--warn); }
-    .authlog .evt { color:var(--muted); font-variant-numeric:tabular-nums; margin-right:4px; }
+    .authlog { display:flex; flex-direction:column; gap:5px; max-height:200px; overflow:auto; }
+    .authlog .ev { padding:6px 9px; background:var(--panel2); border:1px solid var(--line); border-left:3px solid var(--line); border-radius:7px; font-size:12px; }
+    .authlog .ev.ok { border-left-color:var(--accent2); } .authlog .ev.err { border-left-color:var(--danger); } .authlog .ev.warn { border-left-color:var(--warn); }
+    .authlog .evt { color:var(--muted); margin-right:4px; }
   </style>
 </head>
 <body>
@@ -80,116 +61,78 @@
     <h1>🧾 ERP Sales</h1>
     <span class="tag">Modular Monolith · VSA — test console</span>
     <div class="who">
-      <a class="link" href="/swagger" target="_blank">Swagger</a>
+      <a class="link" href="http://localhost:5264/swagger" target="_blank">Swagger</a>
       <span id="whoami" class="hidden"><span class="pill" id="userPill"></span> <span class="pill role" id="rolePill"></span></span>
       <button id="logoutBtn" class="secondary hidden" onclick="logout()">Log out</button>
     </div>
   </header>
 
-  <!-- LOGIN VIEW -->
   <main id="loginView">
     <div></div>
     <div class="card" style="max-width:380px;margin:40px auto;">
       <h2>Sign in</h2>
-      <label>API key <span class="muted">(sent as <code>X-Api-Key</code> on every request — §9b)</span></label>
-      <input id="apiKey" placeholder="the ApiKey the server expects" />
-      <label>Username</label>
-      <input id="u" value="manager" />
+      <label>API key <span class="muted">(sent as <code>X-Api-Key</code> on every request)</span></label>
+      <input id="apiKey" placeholder="ApiKeys:web from appsettings.Development.json" />
+      <label>Email</label>
+      <input id="u" value="manager@erp.local" />
       <label>Password</label>
       <input id="p" type="password" value="Password123!" />
       <div class="quick">
-        <button onclick="fill('rep')">rep</button>
-        <button onclick="fill('manager')">manager</button>
-        <button onclick="fill('admin')">admin</button>
+        <button onclick="fill('rep@erp.local')">rep</button>
+        <button onclick="fill('manager@erp.local')">manager</button>
+        <button onclick="fill('admin@erp.local')">admin</button>
       </div>
       <div style="margin-top:14px"><button style="width:100%" onclick="login()">Log in</button></div>
-      <p class="muted" style="font-size:12px;margin-top:12px">Seed users all use password <code>Password123!</code>.
-        Only <b>SalesManager</b>/<b>Admin</b> can approve.</p>
-
-      <details style="margin-top:8px;border-top:1px solid var(--line);padding-top:12px">
-        <summary style="cursor:pointer;color:var(--accent);font-size:13px;font-weight:600">Change or reset password →</summary>
-        <p class="muted" style="font-size:12px;margin:8px 0">
-          Prove your <b>current</b> password to set a new one via <code>POST /auth/change-password</code>. This is
-          also the way back in when your password has <b>expired</b> (login refuses an expired password and sends
-          you here). Changing it rotates your security stamp — an instant logout of every device — so log in again after.
-        </p>
-        <label>Username</label>
-        <input id="cpUser" placeholder="username" />
-        <label>Current password</label>
-        <input id="cpCur" type="password" placeholder="current (or expired) password" />
-        <label>New password <span class="muted">(min 8 chars, different from current)</span></label>
-        <input id="cpNew" type="password" placeholder="new password" />
-        <div style="margin-top:12px"><button class="secondary" style="width:100%" onclick="changePassword()">Change password</button></div>
-      </details>
+      <p class="muted" style="font-size:12px;margin-top:12px">Dev users all use <code>Password123!</code>.
+        Five wrong passwords lock an account for 15 minutes.</p>
     </div>
   </main>
 
-  <!-- APP VIEW -->
-  <main id="appView" class="hidden" >
-    <div class="card" id="authCard" style="grid-column:1 / -1; " >
-      <h2>🔐 Auth &amp; tokens — how the access + refresh flow works</h2>
-      <p class="muted" style="font-size:12px;margin:-6px 0 4px">
-        The <b>access token</b> (a short-lived JWT) proves who you are on every request. When it expires the API answers
-        <code>401</code>; this console then trades the <b>refresh token</b> at <code>POST /auth/refresh</code> for a
-        brand-new pair (<b>rotation</b>) and retries the original call — so you stay signed in without re-entering your
-        password. Watch it happen in the log below.
-      </p>
-      <div class="auth-grid">
-        <div>
-          <div class="subttl">Access token — JWT claims <span id="accExp" class="status"></span></div>
-          <table id="claimsTable"><tbody><tr><td class="muted" colspan="2">No access token.</td></tr></tbody></table>
-          <div class="split" style="margin-top:8px;align-items:center">
-            <span class="muted" style="font-size:11px">raw token:</span>
-            <button class="ghost" onclick="toggleRaw('acc')">reveal / hide</button>
-          </div>
-          <div id="accRaw" class="tokraw">—</div>
-        </div>
-        <div>
-          <div class="subttl">Refresh token <span class="status warn">opaque · single-use</span></div>
-          <p class="muted" style="font-size:12px;margin:0 0 6px">
-            No claims — just a random string. The server keeps only its <b>SHA-256 hash</b>, and every refresh
-            <b>rotates</b> it (the old one is spent).
-            <button class="ghost" onclick="toggleRaw('ref')">reveal / hide</button>
-          </p>
-          <div id="refRaw" class="tokraw">—</div>
-          <div class="subttl" style="margin-top:12px">Event log — the flow, narrated</div>
-          <div id="authLog" class="authlog"></div>
-        </div>
-      </div>
-      <div class="split" style="margin-top:14px">
-        <button class="secondary" onclick="simulateExpiry()">⏱️ Force access-token expiry, then retry</button>
-        <button class="secondary" onclick="manualRefresh()">🔄 Rotate refresh token now</button>
-      </div>
-      <p class="muted" style="font-size:11px;margin-top:8px">
-        “Force expiry” swaps your access token for a locally-forged <b>expired</b> one, then fires a request — reproducing
-        the real 15-minute mark so you can watch the <code>401</code> → rotate → retry dance in the log.
-      </p>
-    </div>
-
+  <main id="appView" class="hidden">
     <div>
       <div class="card">
         <h2 id="orderCardTitle">New order</h2>
         <label>Customer</label>
         <select id="customer">
-          <option value="1">1 — Acme Corp (credit 50k / owes 10k)</option>
-          <option value="2">2 — Beta Industries (credit 5k / owes 4.5k)</option>
+          <option value="1">1 — Acme Corp (limit ₱50k, owes ₱10k)</option>
+          <option value="2">2 — Beta Industries (limit ₱5k, owes ₱4.5k)</option>
           <option value="3">3 — Gamma Traders (BLOCKED)</option>
+          <option value="4">4 — Delta Holdings (limit ₱200k)</option>
+          <option value="5">5 — Epsilon Retail (limit ₱5M)</option>
         </select>
         <label>Lines</label>
         <div id="linesEditor" class="lines-editor"></div>
         <button class="secondary" onclick="addLineRow()">+ Add line</button>
         <div style="margin-top:14px"><button id="submitOrderBtn" style="width:100%" onclick="saveOrder()">Create draft order</button></div>
         <div id="editHint" class="hidden" style="margin-top:8px">
-          <button class="secondary" style="width:100%" onclick="cancelEdit()">✕ Cancel edit — start a new order</button>
+          <button class="secondary" style="width:100%" onclick="cancelEdit()">✕ Cancel edit</button>
         </div>
-        <p class="muted" style="font-size:12px;margin-top:10px">Items: 1 Widget $25 · 2 Gadget $40 · 3 Restricted Kit $500 (Controlled — managers only, cap 5).</p>
+        <p class="muted" style="font-size:12px;margin-top:10px">Orders over ₱50,000 wait for a manager (who didn't create
+          them); smaller ones are approved on submit.</p>
+      </div>
+
+      <div class="card">
+        <h2>Session</h2>
+        <div class="split" style="margin-bottom:10px">
+          <span class="status" id="accExp"></span>
+        </div>
+        <div class="split">
+          <button class="secondary" onclick="simulateExpiry()">⏱️ Break the access token, then retry</button>
+          <button class="secondary" onclick="logoutEverywhere()">🚪 Sign out everywhere</button>
+        </div>
+        <label style="margin-top:14px">Change password <span class="muted">(min 12 characters)</span></label>
+        <input id="cpCur" type="password" placeholder="current password" />
+        <input id="cpNew" type="password" placeholder="new password" style="margin-top:6px" />
+        <div style="margin-top:8px"><button class="secondary" style="width:100%" onclick="changePassword()">Change password</button></div>
+        <label style="margin-top:14px">Event log</label>
+        <div id="authLog" class="authlog"></div>
       </div>
     </div>
 
     <div>
       <div class="card">
         <h2>Orders</h2>
-        <div class="row compact" style="margin-bottom:12px">
+        <div class="split" style="margin-bottom:12px">
           <select id="statusFilter" style="flex:1">
             <option value="">All statuses</option>
             <option>Draft</option><option>PendingApproval</option><option>Approved</option>
@@ -213,328 +156,231 @@
   <div id="toast"></div>
 
 <script>
-// This page is a standalone file — open it straight from disk (double-click) while the API runs.
-// It talks to the API cross-origin; change this if you run the API on a different port.
+// Open this file straight from disk while the API runs. Change API if you run it on another port.
 const API = "http://localhost:5264";
-let token = sessionStorage.getItem("erp_token") || null;
-let refreshToken = sessionStorage.getItem("erp_refresh") || null;
-let me = JSON.parse(sessionStorage.getItem("erp_me") || "null");
-// The API now requires an app-level API key (X-Api-Key) on EVERY request — even /auth/login (§9b).
-// It's remembered for this tab so you only paste it once.
-let apiKey = sessionStorage.getItem("erp_apikey") || "";
+const ITEMS = { 1:{name:"Widget",price:25}, 2:{name:"Gadget",price:40}, 3:{name:"Restricted Kit",price:500}, 4:{name:"Server Rack",price:75000} };
+const peso = n => "₱" + Number(n).toLocaleString("en-PH", {minimumFractionDigits:2, maximumFractionDigits:2});
 
-const ITEMS = { 1:{name:"Widget",price:25}, 2:{name:"Gadget",price:40}, 3:{name:"Restricted Kit",price:500} };
+let s = JSON.parse(sessionStorage.getItem("erp") || "{}");   // {apiKey, token, refreshToken, expiresAt, me}
+const save = () => sessionStorage.setItem("erp", JSON.stringify(s));
 
-function fill(user){ document.getElementById("u").value=user; document.getElementById("p").value="Password123!"; }
+function fill(email){ document.getElementById("u").value = email; document.getElementById("p").value = "Password123!"; }
 
 function toast(title, body, kind){
-  const el=document.createElement("div"); el.className="msg "+(kind||"");
-  el.innerHTML="<b>"+title+"</b>"+(body?("<span class='muted'>"+body+"</span>"):"");
+  const el = document.createElement("div"); el.className = "msg " + (kind || "");
+  el.innerHTML = "<b>" + title + "</b>" + (body ? "<span class='muted'>" + body + "</span>" : "");
   document.getElementById("toast").appendChild(el);
-  setTimeout(()=>el.remove(), 5000);
+  setTimeout(() => el.remove(), 5000);
 }
 
-// ───────────────────────────────────────────────────────────────────────────
-// AUTH INSPECTOR — makes the (normally invisible) access/refresh flow visible.
-// ───────────────────────────────────────────────────────────────────────────
-const authEvents=[];                 // newest-first list of narrated auth steps
-const rawShown={acc:false, ref:false};
-
+const events = [];
 function authLog(msg, kind){
-  authEvents.unshift({t:new Date(), msg, kind:kind||""});
-  if(authEvents.length>40) authEvents.length=40;
-  renderAuthLog();
-}
-function renderAuthLog(){
-  const el=document.getElementById("authLog"); if(!el) return;
-  el.innerHTML=authEvents.length
-    ? authEvents.map(e=>`<div class="ev ${e.kind}"><span class="evt">${e.t.toLocaleTimeString()}</span>${e.msg}</div>`).join("")
-    : `<div class="muted" style="padding:6px">No auth events yet — log in to start.</div>`;
+  events.unshift({t:new Date(), msg, kind:kind || ""}); events.length = Math.min(events.length, 40);
+  document.getElementById("authLog").innerHTML = events.map(e =>
+    `<div class="ev ${e.kind}"><span class="evt">${e.t.toLocaleTimeString()}</span>${e.msg}</div>`).join("");
 }
 
-// Decode a JWT payload (base64url) WITHOUT verifying it — checking the signature is the server's job, not ours.
-function decodeJwt(t){
-  try{
-    let s=t.split(".")[1].replace(/-/g,"+").replace(/_/g,"/");
-    s+="=".repeat((4-s.length%4)%4);
-    return JSON.parse(decodeURIComponent(escape(atob(s))));
-  }catch{ return null; }
-}
-function fmtDur(secs){
-  const m=Math.floor(Math.abs(secs)/60), s=Math.abs(secs)%60;
-  return (secs<0?"-":"")+m+":"+String(s).padStart(2,"0");
-}
-function mask(s){ return !s?"—":(s.length<=18? "•".repeat(s.length) : s.slice(0,10)+"…"+s.slice(-6)); }
-
-// Redraw the claims table + the two raw-token boxes from the current token/refreshToken.
-function renderTokens(){
-  const tb=document.querySelector("#claimsTable tbody"); if(!tb) return;
-  const p=token?decodeJwt(token):null;
-  const dateClaims={exp:1,iat:1,nbf:1};   // seconds-since-epoch → show as a readable local time
-  tb.innerHTML=!p
-    ? `<tr><td class="muted" colspan="2">No access token.</td></tr>`
-    : Object.entries(p).map(([k,v])=>{
-        const disp=dateClaims[k] ? new Date(v*1000).toLocaleString()+` <span class="muted">(${v})</span>` : v;
-        return `<tr><td class="ckey">${k}</td><td class="cval">${disp}</td></tr>`;
-      }).join("");
-  const acc=document.getElementById("accRaw"), ref=document.getElementById("refRaw");
-  if(acc) acc.textContent = token ? (rawShown.acc?token:mask(token)) : "—";
-  if(ref) ref.textContent = refreshToken ? (rawShown.ref?refreshToken:mask(refreshToken)) : "—";
-  updateExpBadge();
-  renderAuthLog();
-}
-function toggleRaw(which){
-  rawShown[which]=!rawShown[which];
-  const el=document.getElementById(which==="acc"?"accRaw":"refRaw");
-  const val=which==="acc"?token:refreshToken;
-  if(el) el.textContent = val ? (rawShown[which]?val:mask(val)) : "—";
-}
-// The live "expires in mm:ss" badge — the whole point of a short access token.
 function updateExpBadge(){
-  const badge=document.getElementById("accExp"); if(!badge) return;
-  const p=token?decodeJwt(token):null;
-  if(!p||!p.exp){ badge.textContent=""; badge.className="status"; return; }
-  const secs=Math.floor(p.exp - Date.now()/1000);
-  if(secs>0){ badge.textContent="valid · expires in "+fmtDur(secs); badge.className="status ok"; }
-  else{ badge.textContent="EXPIRED "+fmtDur(secs)+" ago — next request auto-rotates"; badge.className="status err"; }
+  const b = document.getElementById("accExp");
+  if(!s.expiresAt){ b.textContent = ""; return; }
+  const secs = Math.floor((s.expiresAt - Date.now()) / 1000);
+  b.textContent = secs > 0 ? `access token valid · ${Math.floor(secs/60)}:${String(secs%60).padStart(2,"0")} left`
+                           : "access token expired — next call refreshes it";
+  b.className = "status " + (secs > 0 ? "ok" : "err");
 }
 setInterval(updateExpBadge, 1000);
 
-// Forge a locally-EXPIRED access token so the next request 401s — exactly what the real 15-min mark does.
-// (The signature is bogus, so the server rejects it and the console's silent-refresh path takes over.)
-function forgeExpiredToken(){
-  const enc=o=>btoa(JSON.stringify(o)).replace(/=/g,"").replace(/\+/g,"-").replace(/\//g,"_");
-  const now=Math.floor(Date.now()/1000);
-  const header=enc({alg:"HS256",typ:"JWT"});
-  const payload=enc({sub:(me&&me.username)||"user", role:(me&&me.role)||"", iat:now-16*60, exp:now-60, _demo:"locally-forged-expired"});
-  return header+"."+payload+".not-a-real-signature";
-}
-function simulateExpiry(){
-  if(!refreshToken){ toast("Nothing to expire","Log in first.","err"); return; }
-  token=forgeExpiredToken(); sessionStorage.setItem("erp_token",token);
-  authLog("⏱️ <b>Access token forced to expired</b> (simulating the 15-minute mark). Firing a request…","warn");
-  renderTokens();
-  loadOrders();   // any protected call now 401s → watch api() rotate + retry in the log
-}
-async function manualRefresh(){
-  if(!refreshToken){ toast("No refresh token","Log in first.","err"); return; }
-  const ok=await refresh();
-  if(!ok){ toast("Refresh failed","Refresh token expired or revoked — log in again.","err"); showLogin(); }
-  renderTokens();
-}
-
-async function api(method, path, body, _retried){
-  const headers={"Content-Type":"application/json"};
-  if(apiKey) headers["X-Api-Key"]=apiKey;   // app-level gate — required before auth even runs (§9b)
-  if(token) headers["Authorization"]="Bearer "+token;
-  const res=await fetch(API+path,{method,headers,body:body?JSON.stringify(body):undefined});
-  const text=await res.text();
-  let data=null; try{ data=text?JSON.parse(text):null; }catch{ data=text; }
+async function api(method, path, body, retried){
+  const headers = {"Content-Type":"application/json"};
+  if(s.apiKey) headers["X-Api-Key"] = s.apiKey;
+  if(s.token) headers["Authorization"] = "Bearer " + s.token;
+  const res = await fetch(API + path, {method, headers, body: body ? JSON.stringify(body) : undefined});
+  const text = await res.text();
+  let data = null; try { data = text ? JSON.parse(text) : null; } catch { data = text; }
   if(!res.ok){
-    // The 15-min access token likely expired → rotate the refresh token once and retry transparently.
-    if(res.status===401 && refreshToken && !_retried && !path.startsWith("/auth/")){
-      authLog("• <code>"+method+" "+path.split("?")[0]+"</code> → <b>401</b> — access token expired/invalid. Rotating…","warn");
-      if(await refresh()){
-        authLog("↩ Retrying <code>"+method+" "+path.split("?")[0]+"</code> with the fresh access token.","ok");
-        return api(method, path, body, true);
-      }
+    if(res.status === 401 && s.refreshToken && !retried && !path.startsWith("/auth/login")){
+      authLog(`<code>${method} ${path.split("?")[0]}</code> → 401. Refreshing…`, "warn");
+      if(await refresh()) return api(method, path, body, true);
     }
-    const detail = data && data.detail ? data.detail
-      : (data && data.error ? data.error                          // e.g. "Missing or invalid API key." (§9b)
-      : (data && data.errors ? data.errors.join(", ")
-      : (typeof data==="string"&&data ? data : res.status+" "+res.statusText)));
-    throw {status:res.status, detail, data};
+    const detail = data?.detail || data?.error || (data?.errors && (Array.isArray(data.errors) ? data.errors.join(", ")
+      : Object.values(data.errors).flat().join(", "))) || data?.title || `${res.status} ${res.statusText}`;
+    throw {status:res.status, detail};
   }
   return data;
 }
 
-// Trade the refresh token for a new access+refresh pair (rotation). Returns true on success.
+function keepTokens(r){
+  s.token = r.accessToken; s.refreshToken = r.refreshToken; s.expiresAt = Date.now() + r.expiresIn * 1000; save();
+}
+
 async function refresh(){
-  try{
-    authLog("↻ <code>POST /auth/refresh</code> — trading the refresh token for a new pair…");
-    const res=await fetch(API+"/auth/refresh",{method:"POST",headers:{"Content-Type":"application/json","X-Api-Key":apiKey},body:JSON.stringify({refreshToken})});
-    if(!res.ok){
-      refreshToken=null;
-      authLog("✗ Refresh rejected ("+res.status+") — token expired, reused, or revoked. Log in again.","err");
-      renderTokens();
-      return false;
-    }
-    const r=await res.json();
-    token=r.accessToken; refreshToken=r.refreshToken;
-    sessionStorage.setItem("erp_token",token); sessionStorage.setItem("erp_refresh",refreshToken);
-    authLog("✓ Rotated — old refresh token <b>spent</b>, new access + refresh issued (same family).","ok");
-    renderTokens();
-    return true;
-  }catch{ authLog("✗ Refresh network error.","err"); return false; }
+  const res = await fetch(API + "/auth/refresh", {method:"POST",
+    headers:{"Content-Type":"application/json", "X-Api-Key":s.apiKey}, body:JSON.stringify({refreshToken:s.refreshToken})});
+  if(!res.ok){ authLog("Refresh rejected — signed out elsewhere, or the session expired.", "err"); return false; }
+  keepTokens(await res.json());
+  authLog("✓ <code>POST /auth/refresh</code> — new access + refresh token.", "ok");
+  return true;
 }
 
 async function login(){
   try{
-    // Capture the API key first — it's required on the login request itself (§9b).
-    apiKey=document.getElementById("apiKey").value.trim();
-    sessionStorage.setItem("erp_apikey",apiKey);
-    const r=await api("POST","/auth/login",{username:document.getElementById("u").value, password:document.getElementById("p").value});
-    token=r.accessToken; refreshToken=r.refreshToken; me={username:r.username, role:r.role};
-    sessionStorage.setItem("erp_token",token); sessionStorage.setItem("erp_refresh",refreshToken); sessionStorage.setItem("erp_me",JSON.stringify(me));
-    authLog("● Logged in — server issued a fresh access token + refresh token (a new family opened).","ok");
-    showApp(); toast("Welcome, "+me.username, me.role, "ok"); loadOrders();
+    s = {apiKey: document.getElementById("apiKey").value.trim()};
+    keepTokens(await api("POST", "/auth/login", {email:document.getElementById("u").value, password:document.getElementById("p").value}));
+    s.me = await api("GET", "/auth/me"); save();
+    authLog("● Signed in.", "ok");
+    showApp(); loadOrders();
   }catch(e){ toast("Login failed", e.detail, "err"); }
 }
 
-// Change (or reset) a password. Anonymous + credential-verifying, so it works even when the password has
-// expired — the current password IS the proof. Needs the X-Api-Key like every request (§9b).
-async function changePassword(){
-  const key=document.getElementById("apiKey").value.trim();
-  if(key){ apiKey=key; sessionStorage.setItem("erp_apikey",apiKey); }   // remember the app key for the call
-  const username=document.getElementById("cpUser").value.trim();
-  const currentPassword=document.getElementById("cpCur").value;
-  const newPassword=document.getElementById("cpNew").value;
-  if(!username||!currentPassword||!newPassword){ toast("Missing fields","Username, current and new password are all required.","err"); return; }
+function simulateExpiry(){
+  s.token = "broken-on-purpose"; save();
+  authLog("⏱️ Access token replaced with garbage. Next call should 401, refresh, and retry.", "warn");
+  loadOrders();
+}
+
+async function logoutEverywhere(){
   try{
-    await api("POST","/auth/change-password",{username,currentPassword,newPassword});   // 204 on success
-    authLog("🔑 <code>POST /auth/change-password</code> for <b>"+username+"</b> — stamp rotated; every old refresh token is now dead.","ok");
-    toast("Password changed","Logged out everywhere — sign in with the new password.","ok");
-    // Prefill sign-in with the new credentials so the next step is one click.
-    document.getElementById("u").value=username;
-    document.getElementById("p").value=newPassword;
-    document.getElementById("cpCur").value=""; document.getElementById("cpNew").value="";
-  }catch(e){ toast("Change failed ("+e.status+")", e.detail, "err"); }
+    await api("POST", "/auth/logout-everywhere");
+    authLog("🚪 Security stamp rotated: every session of this user is dead, including this refresh token.", "ok");
+    toast("Signed out everywhere", "Log in again.", "ok");
+    forget();
+  }catch(e){ toast("Failed", e.detail, "err"); }
 }
+
+async function changePassword(){
+  try{
+    await api("POST", "/auth/manage/info", {oldPassword:document.getElementById("cpCur").value, newPassword:document.getElementById("cpNew").value});
+    toast("Password changed", "Other sessions are now signed out.", "ok");
+    document.getElementById("cpCur").value = ""; document.getElementById("cpNew").value = "";
+  }catch(e){ toast("Change failed (" + e.status + ")", e.detail, "err"); }
+}
+
 async function logout(){
-  authLog("○ <code>POST /auth/logout</code> — revoking this whole token family.");
-  try{ if(refreshToken) await fetch(API+"/auth/logout",{method:"POST",headers:{"Content-Type":"application/json","X-Api-Key":apiKey},body:JSON.stringify({refreshToken})}); }catch{}
-  token=null; refreshToken=null; me=null; sessionStorage.clear();
-  if(apiKey) sessionStorage.setItem("erp_apikey",apiKey);   // app key isn't a user credential — keep it
-  showLogin();
+  try{ await api("POST", "/auth/logout"); }catch{}
+  forget();
 }
+function forget(){ s = {apiKey: s.apiKey}; save(); showLogin(); }
 
 function showApp(){
   document.getElementById("loginView").classList.add("hidden");
   document.getElementById("appView").classList.remove("hidden");
   document.getElementById("whoami").classList.remove("hidden");
   document.getElementById("logoutBtn").classList.remove("hidden");
-  document.getElementById("userPill").textContent="👤 "+me.username;
-  document.getElementById("rolePill").textContent=me.role;
-  if(document.querySelectorAll("#linesEditor .lineRow").length===0) addLineRow();
-  renderTokens();
+  document.getElementById("userPill").textContent = "👤 " + s.me.username;
+  document.getElementById("rolePill").textContent = s.me.role;
+  if(!document.querySelector("#linesEditor .lineRow")) addLineRow();
 }
 function showLogin(){
   document.getElementById("appView").classList.add("hidden");
   document.getElementById("loginView").classList.remove("hidden");
-  document.getElementById("apiKey").value=apiKey;   // remember the key across logout/reload
-
+  document.getElementById("apiKey").value = s.apiKey || "";
   document.getElementById("whoami").classList.add("hidden");
   document.getElementById("logoutBtn").classList.add("hidden");
 }
 
 function addLineRow(itemId, qty){
-  const div=document.createElement("div"); div.className="lineRow";
-  div.innerHTML=`<select>${Object.entries(ITEMS).map(([id,i])=>`<option value="${id}">${id} — ${i.name} ($${i.price})</option>`).join("")}</select>
-    <input type="number" min="1" value="${qty||1}" />
+  const div = document.createElement("div"); div.className = "lineRow";
+  div.innerHTML = `<select>${Object.entries(ITEMS).map(([id,i]) => `<option value="${id}">${id} — ${i.name} (${peso(i.price)})</option>`).join("")}</select>
+    <input type="number" min="1" value="${qty || 1}" />
     <button class="ghost" onclick="this.parentElement.remove()">✕</button>`;
-  if(itemId) div.querySelector("select").value=String(itemId);
+  if(itemId) div.querySelector("select").value = String(itemId);
   document.getElementById("linesEditor").appendChild(div);
 }
 
-// editingId === null → creating a new draft (POST); a number → editing that draft's lines (PUT).
-let editingId=null;
+let editingId = null;
+const currentLines = () => [...document.querySelectorAll("#linesEditor .lineRow")].map(r =>
+  ({itemId:Number(r.querySelector("select").value), quantity:Number(r.querySelector("input").value)}));
 
-function currentLines(){
-  return [...document.querySelectorAll("#linesEditor .lineRow")].map(r=>({
-    itemId:Number(r.querySelector("select").value), quantity:Number(r.querySelector("input").value)
-  }));
-}
-
-// Load a Draft order's lines into the editor and switch the card into "edit" mode (PUT on save).
 async function startEdit(id){
   try{
-    const o=await api("GET","/sales-orders/"+id);
-    if(o.status!=="Draft"){ toast("Cannot edit","Only Draft orders can be edited.","err"); return; }
-    editingId=id;
-    document.getElementById("customer").value=String(o.customerId);
-    document.getElementById("customer").disabled=true;   // customer can't change on a draft update
-    document.getElementById("linesEditor").innerHTML="";
-    (o.lines.length?o.lines:[{itemId:1,quantity:1}]).forEach(l=>addLineRow(l.itemId,l.quantity));
-    document.getElementById("orderCardTitle").textContent="Edit draft #"+id;
-    document.getElementById("submitOrderBtn").textContent="Save changes to #"+id;
+    const o = await api("GET", "/sales-orders/" + id);
+    editingId = id;
+    document.getElementById("customer").value = String(o.customerId);
+    document.getElementById("customer").disabled = true;
+    document.getElementById("linesEditor").innerHTML = "";
+    o.lines.forEach(l => addLineRow(l.itemId, l.quantity));
+    document.getElementById("orderCardTitle").textContent = "Edit draft #" + id;
+    document.getElementById("submitOrderBtn").textContent = "Save changes to #" + id;
     document.getElementById("editHint").classList.remove("hidden");
-    window.scrollTo({top:0,behavior:"smooth"});
-  }catch(e){ toast("Load for edit failed ("+e.status+")", e.detail, "err"); }
+  }catch(e){ toast("Load failed (" + e.status + ")", e.detail, "err"); }
 }
-
 function cancelEdit(){
-  editingId=null;
-  document.getElementById("customer").disabled=false;
-  document.getElementById("linesEditor").innerHTML=""; addLineRow();
-  document.getElementById("orderCardTitle").textContent="New order";
-  document.getElementById("submitOrderBtn").textContent="Create draft order";
+  editingId = null;
+  document.getElementById("customer").disabled = false;
+  document.getElementById("linesEditor").innerHTML = ""; addLineRow();
+  document.getElementById("orderCardTitle").textContent = "New order";
+  document.getElementById("submitOrderBtn").textContent = "Create draft order";
   document.getElementById("editHint").classList.add("hidden");
 }
 
-// One save button, two verbs: POST a new draft, or PUT the edited lines of an existing one.
 async function saveOrder(){
-  const lines=currentLines();
+  const lines = currentLines();
   try{
     if(editingId){
-      await api("PUT","/sales-orders/"+editingId,{lines});
-      toast("Draft updated","#"+editingId+" lines saved","ok");
-      cancelEdit(); loadOrders();
+      await api("PUT", "/sales-orders/" + editingId, {lines});
+      toast("Draft updated", "#" + editingId, "ok"); cancelEdit();
     }else{
-      const customerId=Number(document.getElementById("customer").value);
-      const r=await api("POST","/sales-orders",{customerId,lines});
-      toast("Order created","#"+r.id+" (Draft)","ok");
-      document.getElementById("linesEditor").innerHTML=""; addLineRow(); loadOrders();
+      const r = await api("POST", "/sales-orders", {customerId:Number(document.getElementById("customer").value), lines});
+      toast("Order created", "#" + r.id + " (Draft)", "ok");
+      document.getElementById("linesEditor").innerHTML = ""; addLineRow();
     }
-  }catch(e){ toast((editingId?"Update":"Create")+" rejected ("+e.status+")", e.detail, "err"); }
+    loadOrders();
+  }catch(e){ toast("Rejected (" + e.status + ")", e.detail, "err"); }
 }
 
 async function act(id, verb){
-  try{ await api("POST",`/sales-orders/${id}/${verb}`); toast("OK","Order #"+id+" → "+verb,"ok"); loadOrders(); if(currentDetail===id) viewDetail(id); }
-  catch(e){ toast(verb+" rejected ("+e.status+")", e.detail, "err"); }
+  let body;
+  if(verb === "reject"){
+    const reason = prompt("Why is this order rejected?");
+    if(!reason) return;
+    body = {reason};
+  }
+  try{
+    await api("POST", `/sales-orders/${id}/${verb}`, body);
+    toast("OK", `#${id} → ${verb}`, "ok"); loadOrders(); if(currentDetail === id) viewDetail(id);
+  }catch(e){ toast(verb + " rejected (" + e.status + ")", e.detail, "err"); }
 }
 
 async function loadOrders(){
-  const status=document.getElementById("statusFilter").value;
-  const qs=new URLSearchParams({page:1,pageSize:50}); if(status) qs.set("status",status);
+  const qs = new URLSearchParams({page:1, pageSize:50});
+  const status = document.getElementById("statusFilter").value; if(status) qs.set("status", status);
   try{
-    const r=await api("GET","/sales-orders?"+qs.toString());
-    const body=document.getElementById("ordersBody");
-    if(!r.items.length){ body.innerHTML=`<tr><td colspan="6" class="muted">No orders.</td></tr>`; return; }
-    const canApprove = me.role==="SalesManager"||me.role==="Admin";
-    body.innerHTML=r.items.map(o=>{
-      const acts=[`<button class="ghost" onclick="viewDetail(${o.id})">view</button>`];
-      if(o.status==="Draft") acts.push(`<button class="ghost" onclick="startEdit(${o.id})">edit</button>`);
-      if(o.status==="Draft") acts.push(`<button class="ghost" onclick="act(${o.id},'submit')">submit</button>`);
-      if(o.status==="PendingApproval"&&canApprove) acts.push(`<button class="ghost" onclick="act(${o.id},'approve')">approve</button>`);
-      if(["Draft","PendingApproval","Approved"].includes(o.status)) acts.push(`<button class="ghost" onclick="act(${o.id},'cancel')">cancel</button>`);
+    const r = await api("GET", "/sales-orders?" + qs);
+    const body = document.getElementById("ordersBody");
+    if(!r.items.length){ body.innerHTML = `<tr><td colspan="6" class="muted">No orders.</td></tr>`; return; }
+    const isManager = ["SalesManager", "Admin"].includes(s.me.role);
+    body.innerHTML = r.items.map(o => {
+      const a = [`<button class="ghost" onclick="viewDetail(${o.id})">view</button>`];
+      if(o.status === "Draft") a.push(`<button class="ghost" onclick="startEdit(${o.id})">edit</button>`, `<button class="ghost" onclick="act(${o.id},'submit')">submit</button>`);
+      if(o.status === "PendingApproval" && isManager) a.push(`<button class="ghost" onclick="act(${o.id},'approve')">approve</button>`, `<button class="ghost" onclick="act(${o.id},'reject')">reject</button>`);
+      if(["Draft","PendingApproval","Approved"].includes(o.status)) a.push(`<button class="ghost" onclick="act(${o.id},'cancel')">cancel</button>`);
       return `<tr><td>${o.id}</td><td>${o.orderNumber}</td><td>${o.customerName}</td>
-        <td><span class="status s-${o.status}">${o.status}</span></td>
-        <td>$${o.total.toFixed(2)}</td><td><div class="actions">${acts.join("")}</div></td></tr>`;
+        <td><span class="status s-${o.status}">${o.status}</span></td><td>${peso(o.total)}</td>
+        <td><div class="actions">${a.join("")}</div></td></tr>`;
     }).join("");
-  }catch(e){ toast("Load failed ("+e.status+")", e.detail, "err"); }
+  }catch(e){ toast("Load failed (" + e.status + ")", e.detail, "err"); }
 }
 
-let currentDetail=null;
+let currentDetail = null;
 async function viewDetail(id){
-  currentDetail=id;
+  currentDetail = id;
   try{
-    const o=await api("GET","/sales-orders/"+id);
+    const o = await api("GET", "/sales-orders/" + id);
     document.getElementById("detailCard").classList.remove("hidden");
-    document.getElementById("detailBody").innerHTML=`
+    document.getElementById("detailBody").innerHTML = `
       <div class="split" style="margin-bottom:10px">
-        <span class="pill">#${o.id} ${o.orderNumber}</span>
-        <span class="pill">${o.customerName}</span>
-        <span class="pill"><span class="status s-${o.status}">${o.status}</span></span>
-        <span class="pill">Total $${o.total.toFixed(2)}</span>
+        <span class="pill">#${o.id} ${o.orderNumber}</span><span class="pill">${o.customerName}</span>
+        <span class="pill"><span class="status s-${o.status}">${o.status}</span></span><span class="pill">Total ${peso(o.total)}</span>
       </div>
+      ${o.approvedUtc ? `<p class="muted">Approved ${new Date(o.approvedUtc).toLocaleString()} ${o.approvedBy ? "by user " + o.approvedBy : "automatically"}</p>` : ""}
+      ${o.rejectionReason ? `<p class="muted">Rejected: ${o.rejectionReason}</p>` : ""}
       <table><thead><tr><th>Item</th><th>Qty</th><th>Unit</th><th>Line</th></tr></thead><tbody>
-      ${o.lines.map(l=>`<tr><td>${l.itemName}</td><td>${l.quantity}</td><td>$${l.unitPrice.toFixed(2)}</td><td>$${l.lineTotal.toFixed(2)}</td></tr>`).join("")}
+      ${o.lines.map(l => `<tr><td>${l.itemName}</td><td>${l.quantity}</td><td>${peso(l.unitPrice)}</td><td>${peso(l.lineTotal)}</td></tr>`).join("")}
       </tbody></table>`;
-  }catch(e){ toast("Detail failed ("+e.status+")", e.detail, "err"); }
+  }catch(e){ toast("Detail failed (" + e.status + ")", e.detail, "err"); }
 }
 
-// boot
-if(token && me){ authLog("Restored session from this browser tab (tokens were in sessionStorage)."); showApp(); loadOrders(); } else { showLogin(); }
+if(s.token && s.me){ showApp(); loadOrders(); } else { showLogin(); }
 </script>
 </body>
 </html>

@@ -1,7 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Implementations of the BuildingBlocks abstractions. Referenced ONLY by Erp.Api: a module that could see
-       this project could reach a connection string or HttpContext directly. -->
+  <!-- Referenced only by Erp.Api, so no module can reach a connection string or HttpContext. -->
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
@@ -13,6 +12,7 @@
   <ItemGroup>
     <PackageReference Include="Npgsql" />
     <PackageReference Include="Dapper" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
   </ItemGroup>
 
 </Project>

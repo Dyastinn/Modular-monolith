@@ -1,6 +1,6 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- Everything a module is allowed to use. Depends on nothing heavy: no EF Core, no SQL client, no ASP.NET. -->
+  <!-- Keep this free of EF Core, SQL clients and ASP.NET: every module and domain depends on it. -->
   <ItemGroup>
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="Mediator.Abstractions" />

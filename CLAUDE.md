@@ -48,41 +48,41 @@ every piece of it — and no more words than that took.
    it land. Later phases link back; they don't re-explain.
 2. **Progressive.** Each phase builds only on what earlier phases established. Never forward-reference an
    undefined API, never say "as you know." **Each phase ends in a runnable, verifiable result.**
+   **Introduce each package, tool, file, concept and config option only in the lesson that first uses it**,
+   explain it there, never add anything "for later", and when a later lesson replaces something, refactor
+   it with a before/after and remove the old one. Full rule: [WRITING-STYLE.md](WRITING-STYLE.md)
+   ("Introduce each thing only when it's needed" and "Build up, then refactor").
 3. **No phantom APIs.** Every type and method shown is defined where the reader has already met it, or
    right there, with its DI registration. Nothing on the critical path is "left as an exercise."
 4. **Pain first, solution second** — but briefly. Show the naive version and why it hurts in a few
    lines, then the fix. Don't stage a long drama for a small point.
 5. **Explain the reasoning, not just the mechanics** — one or two sentences of *why* per decision.
 6. **Be honest about costs.** Name each pattern's downsides (mediator indirection, EF change-tracking
-   overhead, two data-access tools, best-effort vs. outbox). Mark real caveats with ⚠️.
+   overhead, two data-access tools, best-effort vs. outbox), in the voice: *"Now, let's be honest about the
+   cost here: …"*
 7. **Production means production.** The final build has no "known shortcut" left in it. If an early phase
    uses a simpler version for teaching, a later phase **replaces it** and says so — the course never ends
    on a shortcut.
 
-### Write like a person, not like an AI
+### The voice — read [WRITING-STYLE.md](WRITING-STYLE.md) before writing any lesson
+
+Every lesson uses the instructor voice adapted from the *Teach me Driving* study guides (user's choice,
+2026-11-05), **in English only**: a greeting and "Are you ready? Let's begin!", "you" and "let's",
+check-ins like "Easy, right?", "To remember it easily:" memory aids, a warm close ("Good luck,
+developer!"), and "Let's check!" recall questions with **no answers shown** (answers live in
+ANSWER-KEY.md). **No `>` callouts, no emoji markers, no terse labels** ("Note:", "Heads-up:"); caveats and
+WebForms translations are sentences in the voice. [WRITING-STYLE.md](WRITING-STYLE.md) has the full rules,
+the section order, and a sample.
 
 - **Don't** open with "In today's fast-paced world," "Let's dive in," "It's important to note that," "By
-  leveraging," or "In conclusion." Don't restate the heading, pad with "As we discussed," or end a section
-  by summarising it.
-- **Don't** write symmetrical listicles where every bullet has the same rhythm, and don't hedge everything.
-- **Do** use "you," concrete numbers, and real names from this domain (`SalesOrder`, `SalesManager`, ₱).
-- **Do** admit when something is awkward or arbitrary. Keep the voice: 👨‍🏫 plainspoken senior, occasionally
-  wry, never breathless.
+  leveraging," or "In conclusion," and don't end a section by summarising it.
+- **Do** use concrete numbers and real names from this domain (`SalesOrder`, `SalesManager`, ₱).
 - **Cut ruthlessly.** If a paragraph can lose half its words and keep its meaning, it should.
-
-### Fixed structure and callouts
-
-- **Every phase keeps its shape:** opening frame ("What you'll build"), "Why it's designed this way," a
-  worked request trace, "Common mistakes & best practices," a **Checkpoint** (runnable), and **"Check
-  Yourself"** questions. Short sections are fine; missing ones aren't.
-- **Consistent analogies** — mediator = *post office*; atomicity = *turnstile*; JWT = *festival
-  wristband*; modules = *islands / locked floors*; VSA = *taco drawer*; value object = *any ₱1,000 bill is
-  as good as any other*; contracts project = *the service window on a locked floor*. Don't invent
-  competing ones.
-- **Callouts:** 💡 analogy · ❓ "you might be wondering" · ⚠️ caveat · 🔑 key point · 🚫 out of scope ·
-  🧭 "from WebForms" translation · ✅/❌ best practice · 📦 "create this project now".
-- **Diagrams:** prefer **Mermaid** blocks in the Markdown (diffable, render on GitHub/VS Code). Use an image
-  (SVG in `plan-business-tutorial/images/`) only when Mermaid can't express it — e.g. a UI screenshot.
+- **Consistent analogies** — mediator = *post office*; atomicity = *turnstile*; modules = *islands with one
+  service window* (the contracts project); VSA = *taco drawer*; value object = *any ₱1,000 bill is as good
+  as any other*. Don't invent competing ones.
+- **Diagrams:** Mermaid blocks. An image (in `plan-business-tutorial/images/`) only when Mermaid can't
+  express it, e.g. a UI screenshot.
 - **File references in prose use Markdown links**, not backticks or bare paths.
 
 ---
@@ -94,9 +94,15 @@ every piece of it — and no more words than that took.
 every transaction** · **Dapper + schema-qualified SQL functions for reads (SELECTs only)** — PostgreSQL
 procedures can't return result sets, so the read side is `RETURNS TABLE` functions — **shipped through EF Core
 migrations** · **`martinothamar/Mediator`** (source-generated, MIT) · **CQRS-lite** · **FluentValidation** ·
-**JWT bearer for API clients + HttpOnly cookie auth for the browser**, role-based · **Blazor WebAssembly +
-MudBlazor**, hosted by `Erp.Api` · **OpenTelemetry** (traces, metrics, logs) + health checks · **xUnit +
-AwesomeAssertions**.
+**ASP.NET Core Identity** (`AddIdentityApiEndpoints` / `MapIdentityApi`): cookies for the browser, bearer +
+refresh tokens for other clients, lockout, password policy, role-based authorization; keys persisted to
+PostgreSQL · **Blazor WebAssembly + MudBlazor**, hosted by `Erp.Api` · **OpenTelemetry** (traces, metrics,
+logs, OTLP export) + health checks; **Aspire AppHost** as the dev-only dashboard · **transactional outbox** ·
+**xUnit + AwesomeAssertions**.
+
+> **Auth is library-only (2026-11-05).** No hand-written JWT minting, refresh-token tables, password hashing
+> or token rotation. If Identity can't do something, say so and choose another *library* (OpenIddict for
+> SSO/OAuth) rather than writing token code. `/auth/register` is blocked: staff accounts are created by admins.
 
 > **Database changed on 2026-11-05: SQL Server → PostgreSQL.** Any remaining `usp_`, `rowversion`, `GO`,
 > `[brackets]`, LocalDB or `Microsoft.Data.SqlClient` in a lesson is stale and due for conversion.
@@ -107,7 +113,8 @@ Buyers receive the source and inherit every dependency's licence. **Only permiss
 (MIT, Apache-2.0, BSD).** Never a per-developer commercial licence, a revenue-threshold "community"
 licence, or a copyleft licence that would bind the buyer. Known traps, all **banned**: MediatR (paid since
 2025), FluentAssertions ≥ 8 (paid), AutoMapper (paid since 2025), MassTransit ≥ 9 (paid), QuestPDF
-(revenue-gated — use PdfSharp/MigraDoc), Telerik/Syncfusion/DevExpress, Seq (commercial). **Check the
+(revenue-gated — use PdfSharp/MigraDoc), Telerik/Syncfusion/DevExpress, Seq (commercial), Duende
+IdentityServer (revenue-gated). **Check the
 licence of any package before adding it**, and record it in the third-party notices file.
 
 ### Banned in the built solution
@@ -115,7 +122,7 @@ Clean Architecture's four-layer project split · a generic `Repository<T>` · an
 `DbContext` (the DbContext *is* the unit of work; don't hide it) · EF Core for **reads** in query handlers
 (reads are Dapper) · Dapper for **writes** · message brokers (RabbitMQ, Kafka, MassTransit) · Redis /
 distributed caching · microservices · AutoMapper · Docker as a *requirement* (the product deploys to IIS; a
-Dockerfile may be offered as an option only).
+Dockerfile may be offered as an option only) · hand-written authentication/token code (see above).
 
 These may appear only in a lesson's *"when you'd add this later, and why not now"* discussion.
 
@@ -130,7 +137,7 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
    `.Contracts` projects only — never another module's main project.** Contracts projects reference nothing
    but `Erp.Shared.BuildingBlocks`. This is what keeps the reference graph acyclic when modules call each
    other in both directions.
-2. **No cross-schema SQL.** No `JOIN` or FK across module schemas (not even to `identity.app_user` for a
+2. **No cross-schema SQL.** No `JOIN` or FK across module schemas (not even to `identity.users` for a
    "created by" column — store the id, no FK); no DbContext mapping another module's tables. Cross-module data goes through a contract call or an integration event.
 3. **`internal` has framework consequences — keep the fixes.** Carter's `AddCarter()` only scans public
    types, so each module **hand-registers** its `ICarterModule`s; `AddValidatorsFromAssembly` **must** pass
@@ -159,7 +166,7 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
    | Reading data for a screen or report | **Query handler** → Dapper → SQL function |
    | Safety when two people act at once (reserve stock, lost-update guard) | **EF Core** — the `xmin` row version as a concurrency token, or one atomic `ExecuteUpdate` with a guard in the `WHERE` |
    | One module needs another (must be same transaction) | **Synchronous contract** in the other module's `.Contracts` |
-   | One module reacts afterward | **Integration event** via the **outbox** (same transaction, dispatched by a background worker, at-least-once) |
+   | Something reacts afterward | **Domain event** raised by the aggregate → `OutboxInterceptor` writes it in the same `SaveChanges` → `OutboxDispatcher` delivers it to `INotificationHandler<T>` after commit. At-least-once: **handlers must be idempotent** |
    | "This endpoint is role-X only, full stop" | **Endpoint** (`RequireAuthorization` / role policy) |
    | Auth that depends on the data ("your own customers only") | **Handler/domain** via `ICurrentUser` |
 
@@ -173,8 +180,11 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
 - **Two files per feature:** `XxxHandler.cs` (Command/Query + Result/DTOs + Validator + Handler) and
   `XxxEndpoint.cs` (Request/Response + Carter module). **Never** technical-layer folders (`Commands/`,
   `Handlers/`, `Validators/`, `Endpoints/`).
-- **Mediator:** `martinothamar/Mediator` — `ICommand<T>`/`ICommandHandler<,>`, `IQuery<T>`/`IQueryHandler<,>`,
-  pipeline behaviours for validation, logging and tracing. Handlers return `ValueTask`.
+- **Mediator:** `martinothamar/Mediator` — `ICommand<T>`/`ICommandHandler<,>`, `IQuery<T>`/`IQueryHandler<,>`;
+  pipeline = `TelemetryBehavior` (span + duration metric + log, outermost) then `ValidationBehavior`.
+  Handlers return `ValueTask`. Handlers never publish events themselves — the outbox does.
+- **Value objects that appear in domain events** need `[JsonConstructor]` on their validating constructor, or
+  the outbox round-trip silently zeroes them (caught by `An_event_survives_the_round_trip_through_the_outbox`).
 - **Base types** in `Erp.Shared.BuildingBlocks`: `Entity<TId>`, `AggregateRoot<TId>` (`where TId : struct`,
   repeated on derived classes), `IDomainEvent`, `DomainException`.
 - **Strongly-typed IDs** (`readonly record struct SalesOrderId(long Value)`) with EF value converters; never a
@@ -207,11 +217,16 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
   generator's MSG0005 ("no handler") stays ON — never suppress it globally.
 - **Dev seed data** lives in each module's `Infrastructure/Sql/DevSeed.sql`, runs only when
   `Database:SeedDevelopmentData` is true (Development/tests), and is idempotent.
-- **Role strings are literal:** `SalesRep`, `SalesManager`, `InventoryClerk`, `Purchaser`, `Accountant`,
-  `Admin` — defined once as constants, never paraphrased.
+- **Roles** live once in `Erp.Shared.BuildingBlocks.Roles` (`SalesRep`, `SalesManager`, `Admin`; later
+  `InventoryClerk`, `Purchaser`, `Accountant`) and are seeded into `identity.roles` by migration. Staff have
+  exactly one role. Never type a role string.
+- **Least privilege in production:** the app connects as `erp_app` (rows only), migrations run as `erp_owner`
+  via `ConnectionStrings:ErpDbMigrations` (see `deploy/postgres/create-roles.sql`).
 - **Money is Philippine Pesos (₱)**, `numeric(18,2)`. Quantities are whole numbers today; they become
   `numeric(18,3)` when items gain units of measure (ROADMAP M3).
-- **Every dependency is permissively licensed** (see §3) and listed in the third-party notices file.
+- **Every dependency is permissively licensed and free** (see §3) and listed in the third-party notices file.
+- **Code comments are minimal.** None on self-explanatory code. Where one is needed, one short line with the
+  important, non-obvious *why* (a trap, a constraint). The lessons carry the explanations, not the code.
 
 ---
 
