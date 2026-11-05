@@ -1,10 +1,10 @@
 using Erp.Modules.Sales.Domain;
 using Erp.Shared.BuildingBlocks;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace Erp.Modules.Sales.UnitTests;
 
-// Phase 12 §3 — the business rules, tested with no database. These should be the bulk of the tests.
+// The business rules, tested with no database. These should be the bulk of the tests.
 public class CustomerRuleTests
 {
     [Fact]
@@ -52,10 +52,12 @@ public class CategoryRuleTests
 
 public class SalesOrderStateTests
 {
+    private static readonly DateTime Now = new(2026, 11, 5, 9, 0, 0, DateTimeKind.Utc);
+
     [Fact]
     public void Cannot_add_lines_to_a_submitted_order()
     {
-        var order = SalesOrder.Create("SO-1", new CustomerId(1), new UserId(1));
+        var order = SalesOrder.Create("SO-1", new CustomerId(1), new UserId(1), Now);
         order.AddLine(new ItemId(1), new Quantity(1), new Money(25));
         order.Submit();
         order.Invoking(o => o.AddLine(new ItemId(2), new Quantity(1), new Money(40)))
@@ -65,22 +67,22 @@ public class SalesOrderStateTests
     [Fact]
     public void Cannot_approve_a_draft_order()
     {
-        var order = SalesOrder.Create("SO-1", new CustomerId(1), new UserId(1));
+        var order = SalesOrder.Create("SO-1", new CustomerId(1), new UserId(1), Now);
         order.AddLine(new ItemId(1), new Quantity(1), new Money(100));
-        order.Invoking(o => o.Approve(new UserId(9))).Should().Throw<DomainException>();
+        order.Invoking(o => o.Approve(new UserId(9), Now)).Should().Throw<DomainException>();
     }
 
     [Fact]
     public void Cannot_submit_an_empty_order()
     {
-        var order = SalesOrder.Create("SO-1", new CustomerId(1), new UserId(1));
+        var order = SalesOrder.Create("SO-1", new CustomerId(1), new UserId(1), Now);
         order.Invoking(o => o.Submit()).Should().Throw<DomainException>().WithMessage("*no lines*");
     }
 
     [Fact]
     public void Order_over_threshold_is_flagged_high_value()   // tests the FLAG, not a workflow branch
     {
-        var order = SalesOrder.Create("SO-1", new CustomerId(1), new UserId(1));
+        var order = SalesOrder.Create("SO-1", new CustomerId(1), new UserId(1), Now);
         order.AddLine(new ItemId(1), new Quantity(1), new Money(60_000));  // > ₱50,000 threshold
         order.RequiresApproval.Should().BeTrue();
     }
@@ -88,10 +90,10 @@ public class SalesOrderStateTests
     [Fact]
     public void Full_legal_lifecycle_is_allowed()
     {
-        var order = SalesOrder.Create("SO-1", new CustomerId(1), new UserId(1));
+        var order = SalesOrder.Create("SO-1", new CustomerId(1), new UserId(1), Now);
         order.AddLine(new ItemId(1), new Quantity(2), new Money(25));
         order.Submit();
-        order.Approve(new UserId(9));
+        order.Approve(new UserId(9), Now);
         order.Status.Should().Be(SalesOrderStatus.Approved);
         order.ApprovedBy.Should().Be(new UserId(9));
     }
@@ -106,7 +108,7 @@ public class SalesOrderStateTests
     [Fact]
     public void Total_is_the_sum_of_lines()
     {
-        var order = SalesOrder.Create("SO-1", new CustomerId(1), new UserId(1));
+        var order = SalesOrder.Create("SO-1", new CustomerId(1), new UserId(1), Now);
         order.AddLine(new ItemId(1), new Quantity(2), new Money(25));   // 50
         order.AddLine(new ItemId(2), new Quantity(3), new Money(40));   // 120
         order.Total.Amount.Should().Be(170m);

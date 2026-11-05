@@ -2,75 +2,43 @@ using System.Security.Claims;
 using System.Text;
 using Carter;
 using Erp.Api;
-using Erp.Api.Auth;
 using Erp.Api.Security;
+using Erp.Modules.Identity;
 using Erp.Modules.Inventory;
 using Erp.Modules.Sales;
-using Erp.Shared.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
+using Erp.Shared.Infrastructure;
+using Mediator;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options =>
-{
-    options.SwaggerDoc("v1", new OpenApiInfo { Title = "Erp Sales API", Version = "v1" });
-    // Let testers paste a JWT into the Swagger "Authorize" box.
-    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        Name = "Authorization",
-        Type = SecuritySchemeType.Http,
-        Scheme = "bearer",
-        BearerFormat = "JWT",
-        In = ParameterLocation.Header,
-        Description = "Paste the token from POST /auth/login (no 'Bearer ' prefix needed)."
-    });
-    options.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
-    {
-        { new OpenApiSecuritySchemeReference("Bearer", doc, null), new List<string>() }
-    });
+// ── Platform ─────────────────────────────────────────────────────────────────────────────────────────────
+builder.Services.AddSharedInfrastructure(builder.Configuration);   // connections, ICurrentUser, IClock
 
-    // The ApiKeyMiddleware (Phase 4 §11) gates every non-exempt path, including the ones Swagger's
-    // "Try it out" calls. Without this, every try-it-out returns 401 "Missing or invalid API key".
-    options.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
-    {
-        Name = "X-Api-Key",
-        Type = SecuritySchemeType.ApiKey,
-        In = ParameterLocation.Header,
-        Description = "The client application's API key (see ApiKeys in appsettings.Development.json)."
-    });
-    options.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
-    {
-        { new OpenApiSecuritySchemeReference("ApiKey", doc, null), new List<string>() }
-    });
+// The mediator, generated at compile time. Scoped, because handlers use the scoped module DbContexts.
+// Behaviours run in this order: Logging OUTERMOST (so it sees validation failures too), then Validation.
+builder.Services.AddMediator((MediatorOptions options) =>
+{
+    options.ServiceLifetime = ServiceLifetime.Scoped;
+    options.Assemblies = [typeof(IdentityModule), typeof(SalesModule), typeof(InventoryModule)];
+    options.PipelineBehaviors = [typeof(LoggingBehavior<,>), typeof(ValidationBehavior<,>)];
 });
 
-builder.Services.AddCarter();   // discovers every feature's ICarterModule endpoint
-
-builder.Services.AddSharedInfrastructure(builder.Configuration);   // mediator, Dapper, JWT, ICurrentUser
+// ── Modules (registration order = migration and seed order) ─────────────────────────────────────────────
+builder.Services.AddIdentityModule(builder.Configuration);
 builder.Services.AddSalesModule(builder.Configuration);
 builder.Services.AddInventoryModule(builder.Configuration);
+builder.Services.AddCarter();   // Carter's own services; each module registered its (internal) endpoints itself
 
-// The auth slices live in the HOST assembly, so the module scans don't see them — register them explicitly.
-builder.Services.AddScoped<IRequestHandler<LoginCommand, LoginResult>, LoginHandler>();
-builder.Services.AddScoped<IValidator<LoginCommand>, LoginValidator>();
-builder.Services.AddScoped<IRequestHandler<RefreshCommand, LoginResult>, RefreshHandler>();
-builder.Services.AddScoped<IRequestHandler<LogoutCommand, Unit>, LogoutHandler>();
-builder.Services.AddScoped<IRequestHandler<LogoutAllCommand, Unit>, LogoutAllHandler>();
-builder.Services.AddScoped<IRequestHandler<ChangePasswordCommand, Unit>, ChangePasswordHandler>();
-builder.Services.AddScoped<IValidator<ChangePasswordCommand>, ChangePasswordValidator>();
-
-// JWT token validation (separate from token creation at login).
+// ── Authentication: validate the JWT on every request ───────────────────────────────────────────────────
 var jwt = builder.Configuration.GetSection("Jwt");
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
-        // CRITICAL: keep JWT claim names as issued, so "sub" reads back as "sub" (Phase 4 §7 gotcha).
-        options.MapInboundClaims = false;
+        options.MapInboundClaims = false;   // keep claim names as issued, so "sub" stays "sub"
         options.TokenValidationParameters = new TokenValidationParameters
         {
             ValidateIssuer = true,   ValidIssuer = jwt["Issuer"],
@@ -87,10 +55,34 @@ builder.Services.AddAuthorization();
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 builder.Services.AddProblemDetails();
 
-// CORS so the standalone test console (test-console/index.html, opened straight from disk) can call the
-// API cross-origin. Bearer tokens travel in the Authorization header (no cookies), so AllowAnyOrigin is fine.
-builder.Services.AddCors(o => o.AddPolicy("test-console", p =>
-    p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
+// ── API docs (development) ──────────────────────────────────────────────────────────────────────────────
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen(options =>
+{
+    options.SwaggerDoc("v1", new OpenApiInfo { Title = "Erp API", Version = "v1" });
+    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
+    {
+        Name = "Authorization", Type = SecuritySchemeType.Http, Scheme = "bearer", BearerFormat = "JWT",
+        In = ParameterLocation.Header, Description = "Paste the accessToken from POST /auth/login."
+    });
+    options.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
+    {
+        { new OpenApiSecuritySchemeReference("Bearer", doc, null), new List<string>() }
+    });
+    options.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
+    {
+        Name = "X-Api-Key", Type = SecuritySchemeType.ApiKey, In = ParameterLocation.Header,
+        Description = "The client application's key (ApiKeys in appsettings.Development.json)."
+    });
+    options.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
+    {
+        { new OpenApiSecuritySchemeReference("ApiKey", doc, null), new List<string>() }
+    });
+});
+
+// CORS so the standalone test console (test-console/index.html, opened from disk) can call the API.
+// Bearer tokens travel in a header, not a cookie, so AllowAnyOrigin is safe here.
+builder.Services.AddCors(o => o.AddPolicy("test-console", p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
 
 var app = builder.Build();
 
@@ -102,21 +94,16 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-// Create/patch the database from each module's embedded SQL scripts (dev convenience).
-await DatabaseInitializer.RunAsync(app);
+await app.InitializeDatabaseAsync();   // migrations (+ dev seed) when enabled in config
 
 app.UseCors("test-console");
-
-// 0) App-level gate: is this even one of our known client apps? (Phase 4 §11). Placed AFTER UseCors so the
-// CORS preflight is handled first, and BEFORE authentication so unknown clients are rejected up front.
-app.UseMiddleware<ApiKeyMiddleware>();
-
-app.UseAuthentication();   // 1) read & validate the token → figure out WHO you are
-app.UseAuthorization();    // 2) check WHETHER you're allowed
+app.UseMiddleware<ApiKeyMiddleware>();   // 0) is this one of our client apps? (before auth: guards /auth/login too)
+app.UseAuthentication();                 // 1) who are you?
+app.UseAuthorization();                  // 2) are you allowed?
 
 app.MapGet("/health", () => Results.Ok("healthy"));
-app.MapCarter();   // discovers every feature's ICarterModule endpoint
+app.MapCarter();
 
 app.Run();
 
-public partial class Program { }   // makes Program visible to the integration tests (Phase 12)
+public partial class Program { }   // lets the integration tests boot the app

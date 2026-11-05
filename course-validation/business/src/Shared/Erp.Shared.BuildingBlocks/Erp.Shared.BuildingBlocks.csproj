@@ -1,15 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- Everything a module is allowed to use. Depends on nothing heavy: no EF Core, no SQL client, no ASP.NET. -->
   <ItemGroup>
     <PackageReference Include="FluentValidation" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Mediator.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" />
   </ItemGroup>
-
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
 
 </Project>

@@ -1,242 +1,252 @@
 # CLAUDE.md — Guardrails for This Repository
 
-> **Read this before editing anything.** This repo is a **teaching curriculum**, not a normal app. Its
-> value is pedagogical: one architecture, taught properly, with every decision deliberate and every step
-> explained. The failure mode here is **derailing** — "helpfully" changing a convention, adding a banned
-> technology, refactoring away an intentional simplification, skipping an explanation because it seems
-> obvious, or introducing an API the reader hasn't been shown. This file exists to prevent that. When a
-> request conflicts with a rule here, **stop and flag the conflict** instead of silently breaking the course.
+> **Read this before editing anything.** This repo is a **course whose end result is a real, sellable
+> product**: a working ERP (Sales, Inventory, Purchasing, Invoicing) built as a **Modular Monolith with
+> Vertical Slice Architecture (VSA)**, with a Blazor front end, that a business can actually run. The
+> lessons teach the reader to build it; the reference build *is* the product. The failure modes here are
+> (a) **derailing** — swapping a decided technology, adding a banned one, or introducing an API the reader
+> hasn't been shown — and (b) **shipping something that only looks finished**. When a request conflicts
+> with a rule here, **stop and flag the conflict** instead of silently breaking the course.
+>
+> **Direction changed on 2026-11-05.** The course used to be a tutorial with deliberate shortcuts, a
+> hand-rolled mediator, and Dapper + stored procedures for everything, with EF Core banned. It is now a
+> production course. The current plan and progress live in [ROADMAP.md](ROADMAP.md). Where an older lesson
+> or code file still reflects the old rules, the **rules in this file win** — that file is due for
+> conversion, not a precedent.
 
 ---
 
 ## 1. What this repository is
 
-A course that teaches how to build a **Sales Order module** for a fictional ERP as a **Modular Monolith
-with Vertical Slice Architecture (VSA)**. The deliverable is mostly **Markdown lessons** (plus `Erp.slnx`
-and a `src/` skeleton).
-
 | Path | What it is |
 |---|---|
-| `plan-business-tutorial/` | **The course.** The only course. Phases 0–15b (Phases 15 and 15b are *optional* and are the only phases that change the taught architecture; 15b follows on from 15), plus `00a-FOUNDATIONS.md`, `GLOSSARY.md`, `LEARNING-RESOURCES.md`. Hands-on, production-*shaped*: JWT, roles, credit limits, concurrency — the reader builds it themselves. |
-| `course-validation/business/` | A complete, runnable reference implementation of the tutorial, plus `FINDINGS.md` (a validation log). Not teaching material; it's there to check the lessons against reality. Matches Phases 0–14. |
-| `course-validation/business-phase15/` | The **same** build with the **optional Phase 15 *and* 15b** refactors applied (per-module contracts + `internal`, then Sales shrunk to a single public type). Backs both `15-scaling-the-wall.md` and `15b-internal-all-the-way.md` — one copy, not two, deliberately. Diverges from the base build's "contract in `Shared`, neither module references the other." Not a stray folder — don't delete it. |
+| `plan-business-tutorial/` | **The course.** The only course. Phases run in order; each ends in something runnable. Plus `00a-FOUNDATIONS.md`, `GLOSSARY.md`, `LEARNING-RESOURCES.md`, `ANSWER-KEY.md`. |
+| `course-validation/business/` | **The reference build = the product.** The complete, runnable app the course ends in. Every lesson's code must match it. `FINDINGS.md` is the validation log. |
+| `ROADMAP.md` | The conversion plan: milestones, decisions, status. Update it as work lands. |
+| `runbooks/` | Operational runbooks (deployment to specific environments). |
 | `README.md` | The front door. Keep it in sync with any structural change. |
 
-**The tutorial is self-contained and it is the whole product.** There are no companion courses, no sibling
-folders, no "see the other plan for the slow version." Everything the reader needs is in
-`plan-business-tutorial/`. If a concept is needed, it gets explained *there*, at the point it's needed.
+**There is one reference build, and its job is to prove the tutorial works.** `course-validation/business-phase15/`
+used to back the optional Phases 15/15b; those designs (per-module contracts + `internal`) are now the
+**main path**, so it was folded into `course-validation/business/` and **removed on 2026-11-05**. Don't
+recreate a second build.
 
-> There used to be `plan-beginner-friendly/` and `plan-Opus/` folders. They were **deleted on purpose** —
-> nobody read them and they pulled effort away from the real course. **Do not recreate them**, do not add
-> links to them, and do not reintroduce their vocabulary (`INotification`, `Submit(bool approvalGranted)`,
-> `tx.Inner`, `IPricingService`, `IUnitOfWork`). If you find a surviving reference to either folder, that's
-> a bug — remove it.
+**The course is self-contained.** No companion courses, no sibling folders. `plan-beginner-friendly/` and
+`plan-Opus/` were **deleted on purpose** — do not recreate them, link to them, or reintroduce their
+vocabulary (`INotification`, `Submit(bool approvalGranted)`, `tx.Inner`, `IPricingService`).
 
 ---
 
-## 2. How this course teaches — progressive, complete, honest
+## 2. How this course teaches — progressive, complete, honest, *lean*
 
-This is the part most likely to get eroded, so it comes before the technical rules. **A lesson that is
-technically correct but skips the "why" has failed.**
+A lesson that is technically correct but skips the "why" has failed. **So has a lesson that buries the
+point under explanation.** The reader should finish each phase with working code and a clear reason for
+every piece of it — and no more words than that took.
 
-1. **Assume nothing about the reader.** Not that they know DDD, CQRS, dependency injection, `async`/`await`,
-   what an aggregate is, why a `record struct` exists, or what a race condition looks like. If a phase uses
-   an idea, that phase (or an earlier one) must have taught it. When in doubt, explain it.
-2. **Progressive.** Each phase builds only on what earlier phases actually established. Never forward-
-   reference an undefined API and never say "as you know." If Phase 8 needs something, Phase 8 teaches it or
-   Phase 1–7 already did. **Each phase must end in a runnable, verifiable result** the reader can see working
-   before moving on.
-3. **No shortcuts, no hand-waving.** Every type and method shown is defined somewhere the reader has already
-   met — or defined right there, in full, with its DI registration. No phantom APIs. No "the details don't
-   matter here." No "left as an exercise" for anything on the critical path.
-4. **Pain first, solution second.** Show the naive version and *why it hurts* before presenting the fix
-   (the mediator, the anemic-vs-rich domain, the concurrency race). Never lead with the answer. The reader
-   should feel the problem before they're handed the tool.
-5. **Explain the reasoning, not just the mechanics.** "Put the rule in the domain" is worthless without "…
-   because a rule in the validator can't be unit-tested with the entity it's about, and it silently stops
-   being enforced the moment another slice writes the same data."
-6. **Be honest about costs.** Every pattern's downsides get named — mediator indirection, reflection cost,
-   the `IDbTransaction`-can't-cross-a-network caveat, best-effort event dispatch. Never oversell. If
-   something is a simplification, say so with a ⚠️.
+1. **Assume nothing, explain once.** Don't assume DDD, CQRS, DI, `async`/`await`, EF Core, or what a race
+   condition looks like. Teach a concept **once, where it's first needed**, in the fewest words that make
+   it land. Later phases link back; they don't re-explain.
+2. **Progressive.** Each phase builds only on what earlier phases established. Never forward-reference an
+   undefined API, never say "as you know." **Each phase ends in a runnable, verifiable result.**
+3. **No phantom APIs.** Every type and method shown is defined where the reader has already met it, or
+   right there, with its DI registration. Nothing on the critical path is "left as an exercise."
+4. **Pain first, solution second** — but briefly. Show the naive version and why it hurts in a few
+   lines, then the fix. Don't stage a long drama for a small point.
+5. **Explain the reasoning, not just the mechanics** — one or two sentences of *why* per decision.
+6. **Be honest about costs.** Name each pattern's downsides (mediator indirection, EF change-tracking
+   overhead, two data-access tools, best-effort vs. outbox). Mark real caveats with ⚠️.
+7. **Production means production.** The final build has no "known shortcut" left in it. If an early phase
+   uses a simpler version for teaching, a later phase **replaces it** and says so — the course never ends
+   on a shortcut.
 
 ### Write like a person, not like an AI
 
-The prose should read like a patient senior engineer explaining something at a whiteboard. Concretely:
-
-- **Don't** open sections with "In today's fast-paced world," "Let's dive in," "It's important to note that,"
-  "By leveraging," or "In conclusion."
-- **Don't** pad with filler ("As we discussed," "Now that we've covered"), restate the heading as the first
-  sentence, or end a section by summarizing what the reader just read.
-- **Don't** write in symmetrical, listicle-shaped paragraphs where every bullet has the same length and
-  rhythm. Vary sentence length. Let some points be one clause.
-- **Don't** hedge everything ("this can potentially help improve"). Say what's true. Say what's a trade-off.
-- **Do** use direct address ("you"), concrete numbers, and real examples with real names from this domain
-  (`SalesOrder`, `SalesManager`, ₱ amounts).
-- **Do** admit when something is awkward, when a convention is arbitrary, or when you're simplifying.
-- **Do** keep the existing voice: 👨‍🏫 "from your senior," plainspoken, occasionally wry, never breathless.
+- **Don't** open with "In today's fast-paced world," "Let's dive in," "It's important to note that," "By
+  leveraging," or "In conclusion." Don't restate the heading, pad with "As we discussed," or end a section
+  by summarising it.
+- **Don't** write symmetrical listicles where every bullet has the same rhythm, and don't hedge everything.
+- **Do** use "you," concrete numbers, and real names from this domain (`SalesOrder`, `SalesManager`, ₱).
+- **Do** admit when something is awkward or arbitrary. Keep the voice: 👨‍🏫 plainspoken senior, occasionally
+  wry, never breathless.
+- **Cut ruthlessly.** If a paragraph can lose half its words and keep its meaning, it should.
 
 ### Fixed structure and callouts
 
-- **Every phase keeps its shape:** an opening frame ("What you'll build" / "In one sentence"), "Why it's
-  designed this way," a worked request trace, "Why each component exists," "Common mistakes & best
-  practices," a **Checkpoint** (something runnable), and **"Check Yourself"** questions at the end. Every
-  phase has the Checkpoint and Check Yourself; don't drop them.
-- **Consistent analogies** — don't invent competing ones: mediator = *post office*; atomicity = *turnstile*;
-  JWT = *festival wristband*; modules = *islands / locked floors*; VSA = *taco drawer*; value object = *any
-  ₱1,000 bill is as good as any other* (per `GLOSSARY.md`).
-- **Callout conventions:** 💡 analogy · ❓ "you might be wondering" · ⚠️ honest caveat/limitation · 🔑 key
-  point · 🚫 out of scope · 🧭 "from WebForms" translation · ✅/❌ best practice · 📦 "create this project now".
-  Reuse these; don't invent new emoji semantics. (📎 used to mean "link to the slow version in a sibling
-  folder" — that meaning is retired along with the folders.)
-- **File references in prose use Markdown links** (`[file.md](path)`), not backticks or bare paths.
+- **Every phase keeps its shape:** opening frame ("What you'll build"), "Why it's designed this way," a
+  worked request trace, "Common mistakes & best practices," a **Checkpoint** (runnable), and **"Check
+  Yourself"** questions. Short sections are fine; missing ones aren't.
+- **Consistent analogies** — mediator = *post office*; atomicity = *turnstile*; JWT = *festival
+  wristband*; modules = *islands / locked floors*; VSA = *taco drawer*; value object = *any ₱1,000 bill is
+  as good as any other*; contracts project = *the service window on a locked floor*. Don't invent
+  competing ones.
+- **Callouts:** 💡 analogy · ❓ "you might be wondering" · ⚠️ caveat · 🔑 key point · 🚫 out of scope ·
+  🧭 "from WebForms" translation · ✅/❌ best practice · 📦 "create this project now".
+- **Diagrams:** prefer **Mermaid** blocks in the Markdown (diffable, render on GitHub/VS Code). Use an image
+  (SVG in `plan-business-tutorial/images/`) only when Mermaid can't express it — e.g. a UI screenshot.
+- **File references in prose use Markdown links**, not backticks or bare paths.
 
 ---
 
-## 3. The locked stack — never swap, never "modernize" away
+## 3. The locked stack
 
-.NET 10 · C# · **Modular Monolith + VSA** · **Carter** over ASP.NET minimal APIs · **Dapper + stored
-procedures** (NO ORM) · **hand-rolled mediator** (Phase 2 also *compares* the free `martinothamar/Mediator`)
-· **CQRS-lite** · **FluentValidation** · **SQL Server**, schema-per-module · **explicit ADO.NET transactions
-in handlers** · **JWT bearer + role auth**.
+.NET 10 · C# · **Modular Monolith + VSA** · **Carter** over minimal APIs · **PostgreSQL** (16+; developed on
+18), schema-per-module, snake_case names (`EFCore.NamingConventions`) · **EF Core (Npgsql) for every write and
+every transaction** · **Dapper + schema-qualified SQL functions for reads (SELECTs only)** — PostgreSQL
+procedures can't return result sets, so the read side is `RETURNS TABLE` functions — **shipped through EF Core
+migrations** · **`martinothamar/Mediator`** (source-generated, MIT) · **CQRS-lite** · **FluentValidation** ·
+**JWT bearer for API clients + HttpOnly cookie auth for the browser**, role-based · **Blazor WebAssembly +
+MudBlazor**, hosted by `Erp.Api` · **OpenTelemetry** (traces, metrics, logs) + health checks · **xUnit +
+AwesomeAssertions**.
 
-### Banned technologies — do NOT introduce them into lessons or code
-Clean Architecture's four-layer project split · **EF Core / any ORM** · Docker · Redis · RabbitMQ ·
-MassTransit · any message broker · microservices · distributed caching · a generic `Repository<T>` ·
-an `IUnitOfWork` abstraction over the transaction.
+> **Database changed on 2026-11-05: SQL Server → PostgreSQL.** Any remaining `usp_`, `rowversion`, `GO`,
+> `[brackets]`, LocalDB or `Microsoft.Data.SqlClient` in a lesson is stale and due for conversion.
 
-> ✅ **The lessons and `course-validation/business/` are in sync** (verified 2026-07-10: solution builds
-> clean, 14 unit + 7 integration tests pass). If you change one, change the other in the same edit — a
-> reference build that contradicts the lesson is worse than no reference build.
->
-> ✅ **`course-validation/business-phase15/` backs the optional Phases 15 *and* 15b** (per-module contracts +
-> `internal`, then Sales reduced to a single public type; verified 2026-07-20: builds clean, 14 unit + 8
-> integration tests pass). It is a copy of the base build with *only* those two phases' changes applied. The
-> base build stays at the Phases 0–14 design on purpose — do **not** "fix" the base build to match either
-> phase, and keep the two in sync (mirror base changes into the copy, preserving its per-module-contract and
-> `internal` differences).
->
-> ⚠️ **`internal` in that build has three framework consequences — don't "simplify" them away.** They are the
-> substance of Phase 15b: (a) `AddSalesModule` hand-registers `ICarterModule` endpoints because `AddCarter()`
-> only scans `public` types — delete that loop and every Sales route 404s silently; (b)
-> `AddValidatorsFromAssembly` **must** keep `includeInternalTypes: true` or validation stops running with no
-> error at all; (c) `InternalsVisibleTo` is granted per module to **test** assemblies only — never to another
-> module. `Order_with_no_lines_is_rejected_by_the_internal_validator` is the regression guard for (b); the
-> other 21 tests pass with that bug present, so don't remove it.
+### Licensing rule — the source code is sold
 
-The **only** place these may appear is a lesson's explicit *"when you'd add this later, and why not now"*
-discussion (Phase 13's checklist and Phase 14's extensions). Never as part of the built solution.
+Buyers receive the source and inherit every dependency's licence. **Only permissive open-source licences
+(MIT, Apache-2.0, BSD).** Never a per-developer commercial licence, a revenue-threshold "community"
+licence, or a copyleft licence that would bind the buyer. Known traps, all **banned**: MediatR (paid since
+2025), FluentAssertions ≥ 8 (paid), AutoMapper (paid since 2025), MassTransit ≥ 9 (paid), QuestPDF
+(revenue-gated — use PdfSharp/MigraDoc), Telerik/Syncfusion/DevExpress, Seq (commercial). **Check the
+licence of any package before adding it**, and record it in the third-party notices file.
 
-> **MediatR** specifically is avoided (it moved to a paid license for larger orgs in 2025). Don't
-> reintroduce it. The hand-rolled mediator is the lesson; `martinothamar/Mediator` is the sanctioned free
-> alternative Phase 2 compares.
+### Banned in the built solution
+Clean Architecture's four-layer project split · a generic `Repository<T>` · an `IUnitOfWork` wrapper over
+`DbContext` (the DbContext *is* the unit of work; don't hide it) · EF Core for **reads** in query handlers
+(reads are Dapper) · Dapper for **writes** · message brokers (RabbitMQ, Kafka, MassTransit) · Redis /
+distributed caching · microservices · AutoMapper · Docker as a *requirement* (the product deploys to IIS; a
+Dockerfile may be offered as an option only).
+
+These may appear only in a lesson's *"when you'd add this later, and why not now"* discussion.
 
 ---
 
 ## 4. The non-negotiable architecture rules
 
-1. **Modules are islands.** `Sales` never references `Inventory` (or vice-versa). Cross-module work goes
-   through a **published contract in `Shared`** (e.g. `IStockReservation`) or an **integration event** —
-   never a direct `using` or a cross-schema SQL `JOIN`/FK. The absent project reference *is* the wall.
-   *(The **one** sanctioned exception is the optional Phase 15/15b / `business-phase15` variant, where a module
-   owns its contract and the wall becomes `internal` + a one-way reference instead of an absent one. That is
-   the only place a module-to-module project reference is allowed, and only there.)*
-2. **Keep the Domain pure.** Inside a module, `Features/` and `Infrastructure/` depend on `Domain/`;
-   `Domain/` depends only on `Shared.BuildingBlocks`. No SQL, web, Carter, Dapper, or `HttpContext` in the
-   domain. Ever.
-2b. **`Shared/` is exactly two projects, and stays that way.** `Erp.Shared.BuildingBlocks` (folders
-   `Domain/`, `Abstractions/`, `Messaging/`; **one flat namespace `Erp.Shared.BuildingBlocks`** regardless of
-   folder) holds everything a module may use and depends on nothing. `Erp.Shared.Infrastructure` holds the
-   implementations and is referenced **only by `Erp.Api`** — that absent reference is what stops a module
-   touching a connection string, a signing key, or `HttpContext`. **Do not re-split `BuildingBlocks` into
-   `Common`/`Messaging`/etc.** Those projects existed until 2026-07-20 and were merged on purpose: every
-   module referenced all of them, so the boundaries enforced nothing. The rule is *a project boundary exists
-   to make something a compile error; folders organise code you're allowed to use* — taught in Phase 1 §3b.
-3. **Where each kind of logic lives** (this "split" is the entire skill the course teaches — keep it sacred):
+1. **Modules are islands with one service window.** A module is `Erp.Modules.X` (**everything `internal`**
+   except its one public entry class, e.g. `SalesModule.AddSalesModule`) plus, as soon as another module
+   needs something from it, `Erp.Modules.X.Contracts` (**the only public surface**: contract interfaces,
+   their DTOs, integration events). Don't create an empty Contracts project ahead of need. A module may reference **other modules'
+   `.Contracts` projects only — never another module's main project.** Contracts projects reference nothing
+   but `Erp.Shared.BuildingBlocks`. This is what keeps the reference graph acyclic when modules call each
+   other in both directions.
+2. **No cross-schema SQL.** No `JOIN` or FK across module schemas (not even to `identity.app_user` for a
+   "created by" column — store the id, no FK); no DbContext mapping another module's tables. Cross-module data goes through a contract call or an integration event.
+3. **`internal` has framework consequences — keep the fixes.** Carter's `AddCarter()` only scans public
+   types, so each module **hand-registers** its `ICarterModule`s; `AddValidatorsFromAssembly` **must** pass
+   `includeInternalTypes: true`; EF configurations and the Mediator source generator must be checked
+   against internal types. `InternalsVisibleTo` is granted **only to test assemblies and to `Erp.Api`** —
+   the Mediator source generator runs in the host and emits code that names each module's internal
+   commands and handlers (verified 2026-11-05: without it, `CS0122`). **Never to another module**, and
+   `Erp.Api` uses that access only for composition, never for business code. Keep the regression tests that
+   prove each of these (e.g. `Order_with_no_lines_is_rejected_by_the_internal_validator`) and the
+   architecture test that fails if a module grants `InternalsVisibleTo` to another module.
+4. **Keep the Domain pure.** `Domain/` depends only on `Erp.Shared.BuildingBlocks`. No EF Core attributes,
+   SQL, Carter, Dapper, or `HttpContext` in the domain. EF mapping lives in `Infrastructure/` as
+   `IEntityTypeConfiguration<T>` (fluent API only).
+5. **`Shared/` is exactly two projects.** `Erp.Shared.BuildingBlocks` (one flat namespace; folders
+   `Domain/`, `Abstractions/`, `Messaging/`) depends on nothing heavy and holds what every module may use.
+   `Erp.Shared.Infrastructure` holds implementations and is referenced **only by `Erp.Api`**. Don't re-split
+   `BuildingBlocks` — *a project boundary exists to make something a compile error; folders organise code
+   you're allowed to use.*
+6. **Where each kind of logic lives** — the core skill the course teaches. Keep it sacred:
 
    | Concern | Home |
    |---|---|
    | "Is the request well-formed?" (shape: positive ids, ≥1 line) | **Validator** (FluentValidation, in the handler file) |
-   | "Is this operation allowed?" (blocked customer, credit limit, status transition, approval threshold) | **Domain** — a method on the entity/value object it's about |
-   | "Load → do → save" coordination | **Handler** (no business `if`s) |
-   | Safety when two people act at once (reserve stock, lost-update guard) | **SQL** — one atomic statement / stored proc |
-   | One module needs another (must be same transaction) | **Synchronous contract** in `Shared` |
-   | One module reacts afterward (best-effort) | **Domain event** (dispatched after commit) |
-   | "This endpoint is role-X only, full stop" | **Endpoint** (`RequireRole`) |
+   | "Is this operation allowed?" (blocked customer, credit limit, status transition, approval threshold) | **Domain** — a method on the entity/value object |
+   | "Load → do → save" coordination | **Command handler** (EF Core, no business `if`s) |
+   | Reading data for a screen or report | **Query handler** → Dapper → SQL function |
+   | Safety when two people act at once (reserve stock, lost-update guard) | **EF Core** — the `xmin` row version as a concurrency token, or one atomic `ExecuteUpdate` with a guard in the `WHERE` |
+   | One module needs another (must be same transaction) | **Synchronous contract** in the other module's `.Contracts` |
+   | One module reacts afterward | **Integration event** via the **outbox** (same transaction, dispatched by a background worker, at-least-once) |
+   | "This endpoint is role-X only, full stop" | **Endpoint** (`RequireAuthorization` / role policy) |
    | Auth that depends on the data ("your own customers only") | **Handler/domain** via `ICurrentUser` |
 
-   A business `if` in a handler, or a business rule in a validator/stored proc, is a **defect** in this
-   course. So is a rule that needs a database to unit-test.
+   A business `if` in a handler, a business rule in a validator or stored procedure, or a rule that needs a
+   database to unit-test is a **defect**.
 
 ---
 
-## 5. Conventions to preserve when writing or editing code
+## 5. Conventions to preserve
 
 - **Two files per feature:** `XxxHandler.cs` (Command/Query + Result/DTOs + Validator + Handler) and
-  `XxxEndpoint.cs` (Request/Response + Carter `ICarterModule`). **Never** split into technical-layer folders
-  (`Commands/`, `Handlers/`, `Validators/`, `Endpoints/`) — that's the anti-pattern VSA rejects.
-- **Handlers use the marker interfaces** `ICommandHandler<,>` / `IQueryHandler<,>` (defined in Phase 2), not
-  raw `IRequestHandler<,>`. The demo `PingHandler` is the one exception.
-- **Base types live in `Erp.Shared.BuildingBlocks`** and are written out in **Phase 1 §4b**: `Entity<TId>`,
-  `AggregateRoot<TId>` (both `where TId : struct` — the constraint must be repeated on the derived class or
-  it's `CS0453`), `IDomainEvent`, `DomainException`.
-- **Strongly-typed IDs** (`readonly record struct SalesOrderId(long Value)`), never bare `long` for an id
-  in the domain.
-- **Rich domain:** private setters, `Create()` factory + private constructor for rehydration, computed
-  `Total` (never a settable field), guarded `Transition`, value objects (`Money`, `Quantity`) that reject
-  invalid values in their constructor.
-- **Repositories are aggregate-specific** (`ISalesOrderRepository`), never a generic `Repository<T>`.
-- **Stored procs are schema-qualified** in both definition *and* every C# call
-  (`"sales.usp_SalesOrder_Insert"`, never bare `"usp_..."`).
-- **Transactions are raw ADO.NET, explicit and visible in the handler:** open the connection from the
-  factory, `conn.BeginTransaction()`, writes run on that transaction, commit at the end; **throw =
-  rollback**. There is deliberately **no `IUnitOfWork`** — the transaction boundary stays something the
-  reader can see. Read-only validation happens *before* the transaction starts.
-- **Domain events dispatch after commit** (best-effort), via `IDomainEvent` / `IDomainEventHandler<T>` /
-  `IDomainEventDispatcher`.
-- **Role strings are the literal values** `SalesRep`, `SalesManager`, `Admin` — never `"Manager"` or other
-  paraphrases (a typo silently breaks an auth check).
-- **Money is Philippine Pesos (₱)** throughout.
+  `XxxEndpoint.cs` (Request/Response + Carter module). **Never** technical-layer folders (`Commands/`,
+  `Handlers/`, `Validators/`, `Endpoints/`).
+- **Mediator:** `martinothamar/Mediator` — `ICommand<T>`/`ICommandHandler<,>`, `IQuery<T>`/`IQueryHandler<,>`,
+  pipeline behaviours for validation, logging and tracing. Handlers return `ValueTask`.
+- **Base types** in `Erp.Shared.BuildingBlocks`: `Entity<TId>`, `AggregateRoot<TId>` (`where TId : struct`,
+  repeated on derived classes), `IDomainEvent`, `DomainException`.
+- **Strongly-typed IDs** (`readonly record struct SalesOrderId(long Value)`) with EF value converters; never a
+  bare `long` id in the domain.
+- **Rich domain:** private setters, `Create()` factory + private parameterless constructor for EF, computed
+  `Total`, guarded state transitions, value objects (`Money`, `Quantity`) that reject invalid values.
+- **Writes:** the command handler uses **the module's DbContext directly** — load the aggregate, call domain
+  methods, `SaveChangesAsync`. The DbContext already *is* a repository and a unit of work; no per-aggregate
+  repository, no generic `Repository<T>`, no `IUnitOfWork` wrapper. One `SaveChangesAsync` is atomic on its
+  own; when a command also calls **another module's contract**, the transaction is **explicit and visible in
+  the handler** (`BeginTransactionAsync` … `CommitAsync`) and is passed to the contract, which joins it
+  (`UseTransaction`). A throw means rollback.
+- **One DbContext per module**, mapped to that module's schema, with its own migrations history table in
+  that schema. Every module DbContext in a request uses the **same `DbConnection`** (`ISharedConnection`),
+  which is what lets a contract join the caller's transaction. Concurrency: a shadow
+  `Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin")` on each aggregate root (PostgreSQL's
+  built-in row version); `DbUpdateConcurrencyException` → 409. An aggregate whose child rows can change on
+  their own (order lines) must touch the root row on save, or its version is never checked — see
+  `SalesDbContext.SaveChangesAsync` and its integration test.
+- **Each module's DbContext has a static `Configure(options, connection)`** used both at runtime and by its
+  `IDesignTimeDbContextFactory`, so `dotnet ef` and the running app can never disagree. Table names are
+  explicit and singular (`ToTable("sales_order")`).
+- **Reads:** query handlers call SQL functions with Dapper (`SELECT * FROM sales.search_sales_orders(@...)`).
+  Functions are **schema-qualified in their definition and every C# call**, live as one `.sql` file each in
+  the module's `Infrastructure/Sql/Functions/` named `schema.function.vN.sql`, and are applied by a migration
+  via `migrationBuilder.Sql`. **A shipped migration or script is never edited** — a changed function gets a
+  `.v2` file and a new migration. Dapper maps snake_case columns to PascalCase records
+  (`MatchNamesWithUnderscores`, set once in `AddSharedInfrastructure`).
+- **Domain events:** raise an event only in the same change that adds its first handler. The Mediator
+  generator's MSG0005 ("no handler") stays ON — never suppress it globally.
+- **Dev seed data** lives in each module's `Infrastructure/Sql/DevSeed.sql`, runs only when
+  `Database:SeedDevelopmentData` is true (Development/tests), and is idempotent.
+- **Role strings are literal:** `SalesRep`, `SalesManager`, `InventoryClerk`, `Purchaser`, `Accountant`,
+  `Admin` — defined once as constants, never paraphrased.
+- **Money is Philippine Pesos (₱)**, `numeric(18,2)`. Quantities are whole numbers today; they become
+  `numeric(18,3)` when items gain units of measure (ROADMAP M3).
+- **Every dependency is permissively licensed** (see §3) and listed in the third-party notices file.
 
 ---
 
-## 6. Intentional simplifications — flagged, not bugs
+## 6. Production bar — what "done" means
 
-These are known, documented limitations left as learning exercises. **Do not silently "fix" them in the
-base lessons**; they are called out with ⚠️ notes and listed on the Phase 13 checklist / Phase 14 extensions.
+The finished product has **no deliberate shortcuts**. In particular the old tutorial simplifications are
+**resolved**, not documented:
 
-- **Credit limit counts only the committed balance**, not in-flight draft/pending orders (Phase 5 §7).
-- **`OnHand` never decreases** in the base build (no shipment step; Phase 14 extension).
-- **`RequiresApproval` is a surfaced flag**, not a workflow branch (auto-approve is a Phase 14 extension).
-- **Domain-event dispatch is best-effort**, not guaranteed (the outbox is a Phase 14 extension).
-- **No rate limiting or HTTPS enforcement** in the base build (Phase 13 checklist).
+- Credit limit counts committed **and** in-flight (submitted/approved, unbilled) exposure.
+- Stock moves for real: receiving increases `OnHand`, shipping decreases it, adjustments are audited.
+- Approval is an actual workflow (pending → approved/rejected), not a flag.
+- Cross-module reactions go through a **transactional outbox**; no event is lost on a crash.
+- Rate limiting, HTTPS/HSTS, security headers, and a CSP for the Blazor app are on.
+- Observability: structured logs, traces and metrics via OpenTelemetry; `/health/live` and
+  `/health/ready`; correlation ids in every log line.
+- The app installs from the docs alone: migrations bundle, first-run admin, IIS guide.
 
-*(Refresh tokens are **not** a deferred simplification — they're built into the base build in Phase 4c:
-short access tokens + rotating refresh tokens with reuse detection, keyed to a `SecurityStamp` and capped by
-the DB password-expiry.)*
-
-If a change genuinely *implements* one of these, do it as the documented extension and update the
-checklist — don't graft it into the base flow where it would muddy a first read.
+A lesson may still *start* from a simpler version for teaching — rule 2.7 — as long as a later phase
+replaces it.
 
 ---
 
-## 7. Pre-edit checklist (run this before changing a lesson)
+## 7. Pre-edit checklist
 
-1. **Does this belong in the locked stack / respect the banned list?** If it adds banned tech to the built
-   solution, stop.
-2. **Does it keep the "where logic lives" split intact?** No business rules leaking into validators,
-   handlers, or stored procs.
-3. **Is every type/method I introduce defined and registered, and already familiar to the reader** at this
-   point in the sequence (no forward-referencing an undefined API)?
-4. **Did I explain the *why*, starting from the pain?** Or did I just show the answer?
-5. **Would a reader who knows only what earlier phases taught be able to follow this?** If it assumes
-   outside knowledge, either teach it here or cut it.
-6. **Does the phase still end in something runnable the reader can verify?**
-7. **Did I preserve phase structure, analogies, and callout conventions — and does the prose still sound
-   like a person?** (See §2.)
-8. **Are `.NET 10` / API claims current?** (e.g. `Microsoft.AspNetCore.OpenApi` is the .NET 9+ default;
-   Swashbuckle is now third-party; `IExceptionHandler`, `Rfc2898DeriveBytes.Pbkdf2`, `.slnx` all exist.)
-9. **Did I leave any link pointing at a deleted sibling folder?** There must be none.
-10. **If I touched the solution layout, feature convention, or the rules — did I update `README.md`?**
+1. **Stack and licence:** does this stay inside §3 and add only permissively licensed packages?
+2. **Logic placement:** does it keep the §4.6 split intact?
+3. **Boundaries:** everything in a module `internal`; only `.Contracts` public; no module→module main-project
+   reference; no cross-schema SQL?
+4. **No phantom APIs:** is every type/method defined, registered, and already met by the reader?
+5. **Why, briefly:** did I give the reason — in as few words as it takes?
+6. **Runnable:** does the phase still end in something the reader can verify?
+7. **Lesson ↔ build in sync:** if I changed one, did I change the other in the same edit, and do the build
+   and tests still pass?
+8. **Current APIs:** are `.NET 10` / EF Core 10 / package API claims current?
+9. **Structure, analogies, callouts, voice** preserved (§2)?
+10. **README.md and ROADMAP.md** updated if structure, conventions, or progress changed?
 
-When in doubt, **ask or flag** rather than guess. A confused-but-consistent lesson is recoverable; a
-silently derailed one teaches the wrong thing.
+When in doubt, **ask or flag** rather than guess.

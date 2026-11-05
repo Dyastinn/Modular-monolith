@@ -1,10 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
-using FluentAssertions;
+using AwesomeAssertions;
 
 namespace Erp.Integration.Tests;
 
-// End-to-end through the real HTTP + SQL pipeline (Phase 12 §5).
+// End-to-end through the real HTTP + database pipeline.
 [Collection("Integration")]
 public class SalesOrderWorkflowTests
 {
@@ -81,13 +81,26 @@ public class SalesOrderWorkflowTests
 
     // Regression guard: `page`/`pageSize` must be `int?` on the endpoint. Declared as a non-nullable `int`,
     // minimal-API model binding treats them as REQUIRED, and this bare call fails with 400 before the
-    // handler ever runs — so the query's `Page = 1` default is never reached. See Phase 10 §6.
+    // handler ever runs.
     [Fact]
     public async Task Search_with_no_query_string_returns_the_first_page()
     {
         var client = await LoggedInAs("rep");
         var search = await client.GetAsync("/sales-orders");
         search.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    // Regression guard: the validators are `internal`, and FluentValidation's assembly scanner
+    // SKIPS internal types unless AddSalesModule passes `includeInternalTypes: true`. Get that wrong and
+    // nothing throws — validation just silently stops running, and this order (zero lines) sails past
+    // CreateSalesOrderValidator into the handler and is happily persisted as 201 Created.
+    [Fact]
+    public async Task Order_with_no_lines_is_rejected_by_the_internal_validator()
+    {
+        var client = await LoggedInAs("manager");
+        var create = await client.PostAsJsonAsync("/sales-orders",
+            new { customerId = 1, lines = Array.Empty<object>() });
+        create.StatusCode.Should().Be(HttpStatusCode.BadRequest);   // 400, not 201 — the validator ran
     }
 
     [Fact]

@@ -1,53 +1,63 @@
 using System.Diagnostics;
 using FluentValidation;
+using Mediator;
 using Microsoft.Extensions.Logging;
 
 namespace Erp.Shared.BuildingBlocks;
 
-// Cross-cutting behaviors shared by every module (Phase 11 §3-4). Registered once by AddMessaging,
-// LoggingBehavior OUTERMOST so it logs even requests that fail validation.
-public sealed class LoggingBehavior<TRequest, TResponse>(ILogger<LoggingBehavior<TRequest, TResponse>> log)
-    : IPipelineBehavior<TRequest, TResponse>
-    where TRequest : IRequest<TResponse>
+// Wraps every command and query. Registered in Program.cs (PipelineBehaviors), Logging OUTERMOST so it also
+// logs requests that fail validation.
+public sealed class LoggingBehavior<TMessage, TResponse>(ILogger<LoggingBehavior<TMessage, TResponse>> log)
+    : IPipelineBehavior<TMessage, TResponse>
+    where TMessage : IMessage
 {
-    public async Task<TResponse> Handle(
-        TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken ct)
+    public async ValueTask<TResponse> Handle(
+        TMessage message, MessageHandlerDelegate<TMessage, TResponse> next, CancellationToken ct)
     {
-        var name = typeof(TRequest).Name;
-        log.LogInformation("→ {Request}", name);
+        var name = typeof(TMessage).Name;
         var sw = Stopwatch.StartNew();
         try
         {
-            var response = await next();
-            log.LogInformation("← {Request} in {Ms}ms", name, sw.ElapsedMilliseconds);
+            var response = await next(message, ct);
+            log.LogInformation("{Request} handled in {ElapsedMs} ms", name, sw.ElapsedMilliseconds);
             return response;
         }
         catch (Exception ex)
         {
-            log.LogWarning(ex, "✗ {Request} failed in {Ms}ms", name, sw.ElapsedMilliseconds);
-            throw;   // rethrow — logging observes, it doesn't swallow
+            log.LogWarning(ex, "{Request} failed after {ElapsedMs} ms", name, sw.ElapsedMilliseconds);
+            throw;   // logging observes; it never swallows
         }
     }
 }
 
-public sealed class ValidationBehavior<TRequest, TResponse>(IEnumerable<IValidator<TRequest>> validators)
-    : IPipelineBehavior<TRequest, TResponse> where TRequest : IRequest<TResponse>
+// Runs every FluentValidation validator for the message; throws before the handler if any fail.
+public sealed class ValidationBehavior<TMessage, TResponse>(IEnumerable<IValidator<TMessage>> validators)
+    : IPipelineBehavior<TMessage, TResponse>
+    where TMessage : IMessage
 {
-    public async Task<TResponse> Handle(
-        TRequest request, RequestHandlerDelegate<TResponse> next, CancellationToken ct)
+    public async ValueTask<TResponse> Handle(
+        TMessage message, MessageHandlerDelegate<TMessage, TResponse> next, CancellationToken ct)
     {
-        if (validators.Any())
-        {
-            var context = new ValidationContext<TRequest>(request);
-            var failures = validators
-                .Select(v => v.Validate(context))
-                .SelectMany(r => r.Errors)
-                .Where(f => f is not null)
-                .ToList();
+        var failures = new List<FluentValidation.Results.ValidationFailure>();
+        foreach (var validator in validators)
+            failures.AddRange((await validator.ValidateAsync(message, ct)).Errors);
 
-            if (failures.Count != 0)
-                throw new ValidationException(failures);   // stop here; the handler never runs
-        }
-        return await next();
+        if (failures.Count != 0)
+            throw new ValidationException(failures);
+
+        return await next(message, ct);
+    }
+}
+
+public static class DomainEventPublishing
+{
+    // Publish an aggregate's events, then forget them. Call it AFTER the save has committed.
+    public static async Task PublishDomainEventsAsync<TId>(
+        this IPublisher publisher, AggregateRoot<TId> aggregate, CancellationToken ct) where TId : struct
+    {
+        var events = aggregate.DomainEvents.ToList();
+        aggregate.ClearEvents();
+        foreach (var e in events)
+            await publisher.Publish(e, ct);   // Publish(object): dispatches on the event's runtime type
     }
 }

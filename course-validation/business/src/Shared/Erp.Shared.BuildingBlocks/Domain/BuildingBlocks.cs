@@ -1,8 +1,8 @@
+using Mediator;
+
 namespace Erp.Shared.BuildingBlocks;
 
-// Generic scaffolding every module's domain reuses (Phase 1 §4). Depends on nothing.
-// NOTE: AggregateRoot repeats `where TId : struct` — the beginner text omits it, which fails to
-// compile (CS0453). This is the corrected form.
+// Base types every module's domain reuses. `where TId : struct` must be repeated on derived classes (CS0453).
 public abstract class Entity<TId> where TId : struct
 {
     public TId Id { get; protected set; }
@@ -16,7 +16,9 @@ public abstract class AggregateRoot<TId> : Entity<TId> where TId : struct
     public void ClearEvents() => _events.Clear();
 }
 
-public interface IDomainEvent { }
+// A fact the domain records ("order approved"). It's a Mediator notification, so in-module reactions are
+// ordinary INotificationHandler<T> classes.
+public interface IDomainEvent : INotification { }
 
-// Part of the domain vocabulary every module reuses (Phase 11 §6).
+// A business rule said no. Maps to HTTP 422.
 public class DomainException(string message) : Exception(message);

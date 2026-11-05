@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Inventory's service window: the ONLY public surface other modules may reference. It references no
+       module, so a module can depend on it without ever creating a reference cycle. -->
+
+</Project>

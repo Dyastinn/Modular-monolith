@@ -6,12 +6,19 @@
     <Project Path="src/Shared/Erp.Shared.BuildingBlocks/Erp.Shared.BuildingBlocks.csproj" />
     <Project Path="src/Shared/Erp.Shared.Infrastructure/Erp.Shared.Infrastructure.csproj" />
   </Folder>
-  <Folder Name="/src/Modules/">
-    <Project Path="src/Modules/Sales/Erp.Modules.Sales.csproj" />
-    <Project Path="src/Modules/Inventory/Erp.Modules.Inventory.csproj" />
+  <Folder Name="/src/Modules/Identity/">
+    <Project Path="src/Modules/Identity/Erp.Modules.Identity/Erp.Modules.Identity.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Sales/">
+    <Project Path="src/Modules/Sales/Erp.Modules.Sales/Erp.Modules.Sales.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Inventory/">
+    <Project Path="src/Modules/Inventory/Erp.Modules.Inventory/Erp.Modules.Inventory.csproj" />
+    <Project Path="src/Modules/Inventory/Erp.Modules.Inventory.Contracts/Erp.Modules.Inventory.Contracts.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Erp.Modules.Sales.UnitTests/Erp.Modules.Sales.UnitTests.csproj" />
     <Project Path="tests/Erp.Integration.Tests/Erp.Integration.Tests.csproj" />
+    <Project Path="tests/Erp.Architecture.Tests/Erp.Architecture.Tests.csproj" />
   </Folder>
 </Solution>
