@@ -1,131 +1,131 @@
-# Learning Resources — Where to Go Deeper on Each Concept
+# Learning Resources — Where to Go Deeper
 
-> 👨‍🏫 **From your senior:** You don't need to study all of this. Use it like a doctor's referral: when
-> a specific concept in a phase won't click, come here, find that concept, and go do a *little* focused
-> practice. Then come back. Learning in small, targeted doses beats trying to read a whole textbook.
+Good day, developer! You don't need to study all of this. Use it like a doctor's referral: when one idea in a
+lesson won't click, find it here, do a little focused practice, and come back. Small, targeted doses beat
+reading a whole textbook.
 
-> ⚠️ **About links:** I've named official, stable sources rather than pasting fragile deep links.
-> The reliable move is to **search the exact phrase I give you** on the site named. Official docs get
-> reorganized; the search box doesn't.
+About the links: this page names official, stable sources and gives you the exact phrase to search for,
+instead of deep links that break when a site is reorganized. The search box doesn't break.
 
----
+## The absolute basics
 
-## The absolute basics (do these first if you're new to C#)
-
-| If you're shaky on... | Go learn... | Where |
+| If you're shaky on | Search for | Where |
 |---|---|---|
-| C# language itself | "C# tutorial for beginners" — variables, classes, methods | **Microsoft Learn** (learn.microsoft.com) → search *"C# for beginners"*. There's a free video series with that exact name. |
-| Just want to *run* C# in a browser | Interactive C# lessons, no setup | Microsoft Learn → *"Learn C# with online tutorials"* (runs in the browser). |
-| What .NET even is | ".NET fundamentals overview" | Microsoft Learn → search *".NET fundamentals"*. |
+| The C# language | *"C# for beginners"*: a free video series | Microsoft Learn (learn.microsoft.com) |
+| Running C# with no setup | *"Learn C# with online tutorials"*: runs in the browser | Microsoft Learn |
+| What .NET is | *".NET fundamentals"* | Microsoft Learn |
 
-**A concrete first-week plan if you're brand new:**
-1. Do a "C# for beginners" video series (a weekend).
-2. Write a tiny console app that makes a `Dog` class with a `Bark()` method and calls it. That's it.
-3. *Then* start Phase 0. You'll be ready.
+If you're brand new, spend one weekend on the beginners' series, write a tiny console app with a `Dog` class
+and a `Bark()` method, and then start [lesson 01](01-solution-setup.md). Read
+[Foundations](00a-FOUNDATIONS.md) first, too.
 
----
+## Lesson by lesson
 
-## Concept-by-concept referrals
+**Interfaces and dependency injection** (from [lesson 01](01-solution-setup.md))
+Search Microsoft Learn for *"Dependency injection in .NET"*; the introduction and first example are enough.
+To practice, make an `IAnimal` with a `Speak()` method, and a `Dog` and a `Cat` that answer differently.
+Notice that the caller holds an `IAnimal` without knowing which one it got.
 
-### Interfaces & Dependency Injection (needed from [Phase 1](01-solution-setup.md) on)
-- Search Microsoft Learn for **"Dependency injection in .NET"** — the official guide. Read just the
-  intro and the first example.
-- Search for **"C# interfaces"** on Microsoft Learn.
-- 🎯 **Practice:** make an `IAnimal` interface with a `Speak()` method, then a `Dog` and a `Cat` that
-  implement it differently. Feel how the caller can hold an `IAnimal` without knowing which one.
+**Minimal APIs and Carter** (from [lesson 02](02-mediator.md))
+Search Microsoft Learn for *"Minimal APIs overview"*. For Carter, search *"Carter GitHub"*: the README shows
+the `ICarterModule` pattern. Learn minimal APIs first; Carter is a thin layer over them.
 
-### async / await (needed from [Phase 2](02-mediator-own-vs-free.md) on)
-- Search Microsoft Learn for **"Asynchronous programming with async and await"**.
-- 🎯 Don't go deep. You only need "await means wait for the answer." Come back to the theory later.
+**`async` and `await`** (from [lesson 02](02-mediator.md))
+Search *"Asynchronous programming with async and await"*. Don't go deep: "await means wait for the answer"
+is all the course needs.
 
-### ASP.NET Core, Minimal APIs & Carter (the web endpoints — [Phase 1](01-solution-setup.md) & [2](02-mediator-own-vs-free.md))
-- Search Microsoft Learn for **"Minimal APIs overview"** and **"Tutorial: Create a minimal API"**.
-- Carter: search **"Carter GitHub"** — the README shows the `ICarterModule` pattern we use so each feature
-  owns its own endpoint. It's a thin layer *over* minimal APIs, so learn minimal APIs first.
-- 🎯 **Practice:** build a hello-world minimal API with one `GET /hello` that returns `"hi"`, then move that
-  route into an `ICarterModule` and call `app.MapCarter()`. That's literally our `/sales/ping` skeleton.
+**The mediator and FluentValidation** ([lesson 02](02-mediator.md))
+Search *"mediator pattern refactoring guru"* for friendly diagrams, and *"martinothamar Mediator GitHub"* for
+the library we use. For validation, read only the *"Creating your first validator"* page of the
+FluentValidation documentation. Notice that a validator checks shape, never business rules.
 
-### Dapper & stored procedures ([Phase 3](03-database-schema.md), [3b](03b-data-access.md), [6](06-create-order.md))
-- Dapper's own docs: search for **"Dapper GitHub"** (the project README is the best tutorial).
-- Stored procedures: Microsoft Learn → **"CREATE PROCEDURE (Transact-SQL)"** and
-  **"Stored procedures (Database Engine)"**.
-- 🎯 **Practice:** in SQL Server, create a tiny `Person` table and a `usp_Person_Insert` proc, then
-  call it from a 20-line C# console app using Dapper. Once that works, Phase 6's repository is 80% familiar.
+**Records, structs and enums** ([lesson 03](03-domain-model.md))
+Search Microsoft Learn for *"C# records"*, *"C# struct types"* and *"C# enumeration types"*. To practice,
+write `readonly record struct Money(decimal Amount)`, try `new Money(-5)`, then add the check that throws.
+That's lesson 03's value object in miniature.
 
-### Password hashing & JWTs ([Phase 4](04-jwt-auth.md), all five parts)
-- Microsoft Learn: search **"Rfc2898DeriveBytes.Pbkdf2"** and **"ASP.NET Core JWT bearer authentication"**.
-- For the token format itself, search **"JWT introduction"** — any explainer that shows the three
-  dot-separated parts and stresses that the payload is *signed, not encrypted*.
-- 🎯 **Practice:** paste a token from your own `POST /auth/login` into a JWT decoder website and read the
-  claims. Seeing your own `role: SalesRep` in plain text is the moment "signed, not encrypted" lands.
+**Unit testing with xUnit** ([lesson 03](03-domain-model.md))
+Search *"Unit testing C# with xUnit"*. Write one test that asserts `2 + 2 == 4`, and run it. Silly, but it
+teaches the rhythm.
 
-### Records, structs, enums ([Phase 5](05-domain-model.md))
-- Microsoft Learn: search **"C# records"**, **"C# struct types"**, **"C# enumeration types"**.
-- 🎯 **Practice:** make `readonly record struct Money(decimal Amount)` and try to create a
-  `Money(-5)` — then add the check that throws. That *is* Phase 5's value-object idea in miniature.
+**PostgreSQL and SQL** ([lesson 04](04-database.md))
+The official tutorial at postgresql.org, *"Tutorial"* in the documentation, covers tables, queries and joins
+in an afternoon. For schemas, search *"PostgreSQL schemas documentation"*.
 
-### FluentValidation (input validation — [Phase 6](06-create-order.md), wired up in [Phase 11](11-cross-cutting.md))
-- Search **"FluentValidation documentation"** — read just the "Creating your first validator" page.
-- 🎯 **Practice:** write an `AbstractValidator<T>` with two `RuleFor` lines. Notice it only checks *shape*
-  (is the field present/positive?), never *business rules* — that distinction is the whole Phase 6 lesson.
+**EF Core** ([lesson 04](04-database.md) onwards)
+Search Microsoft Learn for *"Getting started with EF Core"*, then *"EF Core migrations overview"*. For the
+provider, search *"Npgsql Entity Framework Core provider"*. Read about change tracking last; it makes sense
+once you've saved a few objects.
 
-### Transactions & concurrency ([Phase 7](07-submit-reserve-concurrency.md) — the hard one)
-- Microsoft Learn: search **"SQL Server transactions"** and **"Transaction locking and row versioning
-  guide"**.
-- Concept to internalize: **race condition**. Search *"race condition explained"* — any beginner
-  explanation with the "two people withdraw from one bank account at once" example.
-- 🎯 This is genuinely the hardest idea in the whole project. Re-read [Phase 7 §5](07-submit-reserve-concurrency.md)
-  — the naive C# version, then the timeline — three times. It's supposed to be hard. Don't feel bad.
+**ASP.NET Core Identity** ([lesson 05](05-sign-in.md))
+Search Microsoft Learn for *"Use Identity to secure a Web API backend for SPAs"*: it's the page about
+`MapIdentityApi`. For why we use length over composition rules, search *"NIST SP 800-63B passwords"*.
 
-### Unit testing with xUnit (starts in [Phase 5 §10](05-domain-model.md), completed in [Phase 12](12-testing.md))
-- Microsoft Learn: search **"Unit testing C# with xUnit"** (there's a tutorial by that name).
-- 🎯 **Practice:** write one test that asserts `2 + 2 == 4` using xUnit and run it. Silly, but it
-  teaches you the `[Fact]` + `Assert` rhythm you'll use for the real domain tests.
+**Transactions and concurrency** ([lesson 07](07-submit.md) and [lesson 08](08-approve-reject-cancel.md))
+Search *"race condition explained"* for the classic "two people withdraw from one account" example, then the
+PostgreSQL documentation's *"Explicit locking"* and *"Transaction isolation"* pages. For EF Core's side,
+search *"EF Core handling concurrency conflicts"*. This is the hardest idea in the course. Re-read lesson 07's
+naive version and its timeline more than once; it's supposed to be hard.
 
----
+**Dapper and SQL functions** ([lesson 10](10-reads.md))
+Search *"Dapper GitHub"*: the README is the best tutorial. For functions, the PostgreSQL documentation's
+*"CREATE FUNCTION"* page; look at the `RETURNS TABLE` examples.
 
-## The big architecture ideas (read *after* you've felt them in the phases)
+**The outbox** ([lesson 11](11-events-outbox.md))
+Search *"transactional outbox pattern microservices.io"*. It's written for microservices, but the problem it
+solves, saving and announcing in one step, is exactly ours.
 
-> 👨‍🏫 Honestly? These concepts make *far* more sense after you've built a bit than before. Don't
-> front-load them. Build Phases 1–4 first, *then* if you want the "grand theory," read these.
+**OpenTelemetry** ([lesson 12](12-observability.md))
+Search *".NET observability with OpenTelemetry"* on Microsoft Learn, and read *"Observability primer"* on
+opentelemetry.io for what logs, traces and metrics each answer.
 
-| Concept | What to search for | Note |
+**Web security** ([lesson 13](13-security-hardening.md))
+The OWASP *"Cheat Sheet Series"* has a short page for each topic: *"HTTP Strict Transport Security"*,
+*"Content Security Policy"*, *"Authentication"*. For ASP.NET Core's limiter, search *"Rate limiting middleware
+in ASP.NET Core"*.
+
+**Integration tests** ([lesson 14](14-testing.md))
+Search Microsoft Learn for *"Integration tests in ASP.NET Core"*: it explains `WebApplicationFactory`.
+
+**IIS and backups** ([lesson 15](15-deploy-iis.md), [lesson 16](16-production-checklist.md))
+Search Microsoft Learn for *"Host ASP.NET Core on Windows with IIS"* and *"Troubleshoot ASP.NET Core on
+Azure App Service and IIS"*: the second has every 500.xx code. For backups, the PostgreSQL documentation's
+*"Backup and Restore"* chapter.
+
+## The big architecture ideas
+
+These make far more sense after you've built a few lessons than before. Don't front-load them.
+
+| Idea | Search for | Why |
 |---|---|---|
-| Modular Monolith | Search *"Modular Monolith Milan Jovanović"* and *"Modular Monolith with DDD Kamil Grzybek"* | The architecture this whole project uses. Grzybek's sample repo is the canonical deep example. |
-| Vertical Slice Architecture | Search *"Vertical Slice Architecture Jimmy Bogard"* | Jimmy Bogard coined the popular version; his talks are approachable. This is how we organize *inside* each module. |
-| Domain-Driven Design (DDD) | *"Domain-Driven Design distilled"* (a famously short, readable book by Vaughn Vernon) | The short one. Avoid the giant "blue book" until much later. |
-| Clean Architecture (for contrast) | *"Clean Architecture Uncle Bob"* — his original blog post is free and short | We deliberately do **not** use its four-layer split — read it to understand *what we replaced and why* (see [Phase 1 §2](01-solution-setup.md)). |
-| CQRS | Microsoft Learn → *"CQRS pattern"* in the Azure Architecture Center | Read it, then re-read [Phase 2 §2](02-mediator-own-vs-free.md) and [Phase 10](10-queries-search.md) to see why we do the *lite* version. |
-| Mediator pattern | Search *"mediator pattern refactoring guru"* | refactoring.guru has the friendliest diagrams for design patterns. |
-| MediatR (the famous library) | Search *"MediatR GitHub"* | Skim it to see our `Sender.cs` is the same shapes. Note we don't *use* it — it moved to a paid license for larger orgs in 2025, which is why [Phase 2](02-mediator-own-vs-free.md) compares the MIT-licensed `martinothamar/Mediator` instead. |
+| Modular monolith | *"Modular Monolith with DDD Kamil Grzybek"* | The deepest public example of the architecture this course uses |
+| Vertical slices | *"Vertical Slice Architecture Jimmy Bogard"* | How we organize inside each module |
+| Domain-driven design | *"Domain-Driven Design Distilled"*, a short book by Vaughn Vernon | The short one. Leave the big "blue book" for much later |
+| Clean Architecture, for contrast | *"The Clean Architecture"*, Robert C. Martin's original blog post | We don't use its layer split. Read it to understand what we replaced, and why |
+| CQRS | *"CQRS pattern"* in the Azure Architecture Center | Then re-read lesson 02 and lesson 10 to see why we do the lite version |
 
----
-
-## How to actually practice (not just read)
+## How to actually practice
 
 Reading about code is like reading about swimming. You have to get in the water.
 
-1. **Type the examples yourself.** Don't copy-paste. Typing forces you to read every line. You'll make
-   typos, the compiler will complain, and *fixing those complaints is where learning happens.*
-2. **Break things on purpose.** Delete a line, see what error you get, put it back. Now you know what
-   that error *means* next time.
-3. **Explain it to a rubber duck.** Seriously — say the concept out loud to an object on your desk. If
-   you get stuck mid-sentence, that's the exact spot you don't understand yet. (This is a real,
-   named technique: "rubber duck debugging.")
-4. **Keep a `what-i-learned.md` file.** One line per "aha." You'll be amazed looking back in a month.
+1. **Type the examples yourself.** Typing makes you read every line, and fixing your own typos is where the
+   learning happens.
+2. **Break things on purpose.** Delete a line, read the error, put it back. Now you know that error.
+3. **Explain it out loud**, to a colleague or to a rubber duck on your desk. Where you stumble is exactly
+   what you don't understand yet.
+4. **Keep a `what-i-learned.md` file.** One line per "aha". Look back in a month.
+
+## When you've been stuck for twenty minutes
+
+1. Re-read the section slowly, out loud.
+2. Look up any fuzzy word in the [glossary](GLOSSARY.md) or [Foundations](00a-FOUNDATIONS.md).
+3. Try the lesson's "Let's check!" questions. Sometimes answering one explains another.
+4. Search the exact error message. Someone has hit it before.
+5. Ask a specific question. "It doesn't work" can't be answered; "I expected X, I got Y, here's my code" gets
+   help fast.
+
+You're allowed to be slow. Slow and understanding beats fast and confused every time. Good luck, developer!
 
 ---
 
-## When you're stuck for more than ~20 minutes
-
-Being stuck is part of the job — but *staying* stuck alone isn't productive. In order:
-
-1. Re-read the relevant phase section slowly, out loud.
-2. Check the [GLOSSARY.md](GLOSSARY.md) and [00a-FOUNDATIONS.md](00a-FOUNDATIONS.md) for any word that's
-   fuzzy.
-3. Try the phase's **Check Yourself** questions — sometimes attempting the answer explains the question.
-4. Search the *exact error message* (copy-paste it into a search engine). Someone has hit it before.
-5. Ask a specific question. "It doesn't work" is unanswerable; "I expected X, I got Y, here's my code"
-   gets help fast.
-
-You're allowed to be slow. Slow and understanding beats fast and confused every time.
+← [Start here](00-START-HERE.md)

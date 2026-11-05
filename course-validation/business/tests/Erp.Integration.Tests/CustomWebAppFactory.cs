@@ -23,7 +23,7 @@ public sealed class CustomWebAppFactory : WebApplicationFactory<Program>
     public CustomWebAppFactory()
     {
         if (OwnerConnectionString is null)
-            DropTestDatabase();
+            DropDatabase(TestConnectionString);
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -61,10 +61,10 @@ public sealed class CustomWebAppFactory : WebApplicationFactory<Program>
         return client;
     }
 
-    private static void DropTestDatabase()
+    public static void DropDatabase(string connectionString)
     {
-        var target = new NpgsqlConnectionStringBuilder(TestConnectionString);
-        var admin = new NpgsqlConnectionStringBuilder(TestConnectionString) { Database = "postgres", Pooling = false };
+        var target = new NpgsqlConnectionStringBuilder(connectionString);
+        var admin = new NpgsqlConnectionStringBuilder(connectionString) { Database = "postgres", Pooling = false };
         using var conn = new NpgsqlConnection(admin.ConnectionString);
         conn.Open();
         using var drop = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{target.Database}\" WITH (FORCE)", conn);

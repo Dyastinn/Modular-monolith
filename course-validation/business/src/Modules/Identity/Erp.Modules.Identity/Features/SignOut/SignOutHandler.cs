@@ -25,7 +25,7 @@ internal sealed class SignOutEverywhereHandler(UserManager<AppUser> users, SignI
     public async ValueTask<Unit> Handle(SignOutEverywhereCommand cmd, CancellationToken ct)
     {
         var user = await users.FindByIdAsync(currentUser.UserId.ToString())
-            ?? throw new NotFoundException("User not found.");
+            ?? throw new InvalidOperationException("The signed-in user no longer exists.");
         await users.UpdateSecurityStampAsync(user);
         await signIn.SignOutAsync();
         return Unit.Value;

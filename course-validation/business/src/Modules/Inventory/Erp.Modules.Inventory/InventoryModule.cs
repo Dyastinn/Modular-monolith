@@ -3,14 +3,13 @@ using Erp.Modules.Inventory.Contracts;
 using Erp.Modules.Inventory.Infrastructure;
 using Erp.Shared.BuildingBlocks;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Erp.Modules.Inventory;
 
 public static class InventoryModule
 {
-    public static IServiceCollection AddInventoryModule(this IServiceCollection services, IConfiguration config)
+    public static IServiceCollection AddInventoryModule(this IServiceCollection services)
     {
         // On the shared connection, so Inventory can join a transaction Sales started.
         services.AddDbContext<InventoryDbContext>((sp, o) =>

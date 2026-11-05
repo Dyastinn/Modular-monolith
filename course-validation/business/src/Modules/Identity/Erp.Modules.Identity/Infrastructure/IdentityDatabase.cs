@@ -2,11 +2,10 @@ using System.Data.Common;
 using Erp.Shared.BuildingBlocks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Erp.Modules.Identity.Infrastructure;
 
-internal sealed class IdentityDatabase(IServiceProvider services) : IModuleDatabase
+internal sealed class IdentityDatabase(UserManager<AppUser> users) : IModuleDatabase
 {
     public const string DevPassword = "Password123!";
 
@@ -24,7 +23,6 @@ internal sealed class IdentityDatabase(IServiceProvider services) : IModuleDatab
     // Through UserManager rather than SQL, so passwords are hashed exactly as in real use.
     public async Task SeedDevelopmentDataAsync(DbConnection ownerConnection, CancellationToken ct)
     {
-        var users = services.GetRequiredService<UserManager<AppUser>>();
         (string Email, string Role)[] devUsers =
             [("rep@erp.local", Roles.SalesRep), ("manager@erp.local", Roles.SalesManager), ("admin@erp.local", Roles.Admin)];
 

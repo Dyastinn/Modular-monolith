@@ -1,6 +1,4 @@
 namespace Erp.Shared.BuildingBlocks;
 
-// Mapped to HTTP statuses by GlobalExceptionHandler.
+// Mapped to HTTP 404 by GlobalExceptionHandler.
 public class NotFoundException(string message) : Exception(message);
-public class ForbiddenException(string message) : Exception(message);
-public class ConcurrencyException(string message) : Exception(message);

@@ -1,337 +1,376 @@
 # Glossary — Every Term in Plain English
 
-Keep this open while you read the phases. Terms are grouped by topic, not alphabetized, so related ideas sit
-together. Each has a one-line "official-ish" meaning **and** an everyday analogy.
+Keep this open while you read the lessons. Terms are grouped by topic, so related ideas sit together. Each
+one has a plain meaning, the lesson where it first appears, and sometimes an everyday picture to hold on to.
 
 ---
 
 ## The big architecture words
 
-**Domain**
-The part of your code that is about the *business* — orders, customers, money, rules — and nothing about
-databases or websites. *Analogy: the actual recipe, separate from the oven and the plates.*
+**Domain** (03)
+The part of the code that's about the business: orders, customers, money, rules. Nothing about databases or
+websites.
 
-**Business rule**
-A statement about what the business allows. "Only draft orders can be submitted." "Orders over ₱50,000 are
-flagged as high-value." *Analogy: the rules of a board game.*
+**Business rule** (03)
+A statement about what the business allows. "Only drafts can be edited." "Orders over ₱50,000 need a
+manager."
 
-**Invariant**
-A rule that must *always* be true about an object, no matter what. "An order's total always equals the sum of
-its lines." *Analogy: "you can't have negative money in Monopoly."*
+**Invariant** (03)
+A rule that's always true about an object. "An order's total always equals the sum of its lines."
 
-**Anemic domain (a bad thing)**
-A `SalesOrder` object that's just a bag of data with no rules — anyone can set anything. The rules end up
-scattered in other files and drift apart. *Analogy: a vending machine that hands out snacks even when you
-didn't pay, because the "did they pay?" check lives in a different machine across the room.*
+**Rich domain** (03)
+Objects that enforce their own rules, so they can't be put into an illegal state. Its opposite, an *anemic*
+domain, is bags of data whose rules live somewhere else and drift apart.
 
-**Rich domain (the goal)**
-The opposite: the `SalesOrder` object *itself* enforces its rules. You literally cannot put it in an illegal
-state. *Analogy: a good vending machine — it won't dispense until you've paid.*
+**Monolith** (01)
+One program you deploy and run, as opposed to many separate services talking over a network.
 
----
+**Modular monolith** (01)
+One program, split inside into modules with real walls between them.
 
-## The modular monolith structure
+**Module** (01)
+One business area (Sales, Inventory, Identity) with its own code, its own schema and its own DbContext.
+Picture an island with one service window: everything inside is private, and other modules can only ask at
+the window.
 
-**Monolith**
-One deployable program (one thing you run and ship), as opposed to many separate networked services.
+**Contracts project** (07)
+A module's service window: `Erp.Modules.X.Contracts`, the only public part of a module. It holds the
+interfaces and data other modules may use, and references nothing but BuildingBlocks, so modules can call
+each other without forming a cycle.
 
-**Modular monolith**
-One deployable program, but internally split into self-contained **modules** with clear walls, each *able* to
-become its own program later. *Analogy: one office building where each department has its own locked floor.*
+**Vertical slice** (01)
+Everything for one feature in one folder, usually two files: `XxxHandler.cs` and `XxxEndpoint.cs`. Picture a
+taco drawer: everything for tacos in one drawer, instead of tortillas in one room and salsa in another.
 
-**Module**
-A self-contained slice of the app for one business capability — `Sales`, `Inventory` — with its own domain,
-features, and database schema. One module never reaches into another's internals. *Analogy: a department that
-keeps its own files and won't let other departments rummage through them.*
+**BuildingBlocks and Infrastructure** (01)
+The two shared projects. `Erp.Shared.BuildingBlocks` is the shared vocabulary every module may use: base
+classes and small interfaces. `Erp.Shared.Infrastructure` holds the real implementations, and only the host
+references it.
 
-**Shared kernel** (`src/Shared/...`)
-The small set of building blocks the modules lean on: base domain types (`BuildingBlocks`), common helpers and
-**interfaces** (`Common`), and the mediator (`Messaging`). A fourth project, `Infrastructure`, holds the
-*implementations* of those interfaces (SQL Server, JWT, `HttpContext`) — and **no module references it**; only
-the host does. *Analogy: the building's shared utilities. Every floor uses the power sockets (`Common`); nobody
-but the building manager goes down to the generator room (`Infrastructure`).*
+**Host / composition root** (01)
+`Erp.Api`: the one project that references everything and wires it together in `Program.cs`.
 
-**Vertical slice (feature)**
-Everything for one task ("create a sales order") kept together in one small folder — as two files: the handler
-file (Command, Result, Validator, Handler) and the endpoint file (Request, Response, endpoint). *Analogy: the
-"taco drawer" — everything for tacos in one drawer, not spread across five.*
+**`internal`** (01)
+A C# keyword: visible inside this project only. Every type in a module is `internal` except its one entry
+class, such as `SalesModule`.
 
-**Contract (published interface)**
-The *only* sanctioned way one module talks to another synchronously: a small interface in the shared kernel
-that one module implements and another calls (e.g. `IStockReservation`). *Analogy: the request slip you send
-through another department's front desk — you never walk into their filing room.* *(The optional
-[Phase 15](15-scaling-the-wall.md) refactor moves each contract out of the shared kernel and into the module
-that owns it — same idea, different home.)*
+**`InternalsVisibleTo`** (02)
+Lets one named project see another's `internal` types. Granted only to `Erp.Api`, where the mediator's
+generator runs, and to test projects. Never to another module.
 
-**Port**
-An interface a module (or the platform) declares for a capability *it* needs — `ISalesOrderRepository`,
-`IDbConnectionFactory`, `ICurrentUser` — implemented by its own Infrastructure or by the host, never by
-another module. **A port is not a contract:** a port is how you reach *your own* plumbing; a contract is a
-promise *between modules*. The tell is who implements it. *Analogy: the wall socket — you code against the
-socket's shape and never care which generator is behind the wall.*
+## Building the solution
 
-**Integration event**
-A published announcement one module makes that other modules can subscribe to ("SalesOrderCancelled"). Used
-for "react afterwards," best-effort reactions across the wall. *Analogy: a company-wide memo — anyone who
-cares can act on it.*
+**`.slnx`** (01)
+The solution file in its newer XML format. Lists the projects.
 
-**The two rules that replace "Clean Architecture layers"**
-(1) *Modules are islands* — a module never references another's internals (compiler-enforced by having no
-project reference). (2) *Keep the Domain pure* — inside a module, `Features/` and `Infrastructure/` depend on
-`Domain/`, but `Domain/` depends only on shared building blocks, so business rules stay testable in
-milliseconds. *Analogy: clean interior walls (islands) + a recipe that never names your oven brand (pure
-domain).*
+**`Directory.Build.props`** (01)
+Settings every project in the folder shares, such as the target framework.
 
-**Composition root**
-The one place (`Erp.Api/Program.cs`) where every module gets wired together at startup
-(`AddSalesModule()` + `AddInventoryModule()` + `MapCarter()`). *Analogy: the breaker panel where all wiring
-meets.*
+**Central package management** (01)
+Every package version lives once, in `Directory.Packages.props`. Projects name a package without a version.
 
----
+**Transitive pinning** (04)
+Makes a version in `Directory.Packages.props` win even for packages you didn't reference directly, so a
+patched version is used everywhere.
 
-## Commands, queries, handlers
+**Source generator** (02)
+Code that runs during the build and writes more code. The mediator uses one, so there's no reflection at
+runtime.
 
-**Command**
-A request that *changes* something. "Create this order." "Submit this order." *Analogy: an instruction —
-"paint the wall blue."*
+## Commands, queries and the mediator
 
-**Query**
-A request that *reads* something and changes nothing. "Show me order #42." *Analogy: a question — "what color
-is the wall?"*
+**Command** (02)
+A request to change something: `SubmitSalesOrderCommand`.
 
-**Handler**
-The worker that carries out one specific command or query. `CreateSalesOrderHandler` handles the
-`CreateSalesOrderCommand`. *Analogy: the specific employee whose whole job is processing new orders.*
+**Query** (02)
+A request to read something, changing nothing: `SearchSalesOrdersQuery`.
 
-**DTO (Data Transfer Object)**
-A plain, dumb data shape used to hand information across a boundary (like an API response or a query result).
-No rules, no behavior — just fields. *Analogy: a filled-out paper form.*
+**Handler** (02)
+The class that does the work for one command or query.
 
----
+**CQRS-lite** (02)
+Treating commands and queries differently, in one database. Here: writes through EF Core, reads through
+Dapper and SQL functions.
+
+**Mediator** (02)
+Delivers each command or query to its handler, so the endpoint never knows which class does the work.
+Picture a post office: the endpoint addresses the envelope, the mediator delivers it, the handler opens it.
+We use `martinothamar/Mediator`.
+
+**Pipeline behavior** (02)
+Code that wraps every handler, like a filter: `TelemetryBehavior` (timing, tracing, logging), then
+`ValidationBehavior`.
+
+**Validator** (02)
+A FluentValidation class that checks a request's *shape*: positive ids, at least one line. Never business
+rules.
 
 ## The web edge
 
-**Minimal API**
-ASP.NET Core's lightweight way to declare HTTP endpoints as small functions, without controllers. *Analogy: a
-sticky note "when this URL is hit, do this" instead of a whole filing system.*
+**Minimal API** (02)
+ASP.NET Core's lightweight way to map a URL to a function: `app.MapPost("/sales-orders", ...)`.
 
-**Carter**
-A thin library over minimal APIs that lets each feature declare its own endpoint (an `ICarterModule`) right
-next to its handler, and auto-discovers them all. VSA carried to the web edge. *Analogy: a reception desk on
-each department's floor, instead of one giant switchboard in the lobby.*
+**Carter** (02)
+A small library that lets each feature keep its endpoints in its own class (`ICarterModule`).
 
-**FluentValidation**
-A small library for writing input-validation rules ("CustomerId must be > 0") in one readable place. *Analogy:
-a checklist the mailroom runs before a form is allowed further in.*
+**Middleware** (13)
+A step every request passes through, in order: exception handling, HTTPS, headers, API key, sign-in, rate
+limits.
 
-**Middleware**
-A step in the HTTP pipeline that every request passes through *before* any endpoint runs — the API-key gate,
-authentication, CORS. Each piece can inspect the request, wave it through, or reject it on the spot; the order
-they're wired in is the order they run. *Analogy: the sequence of checkpoints at an airport — ticket check,
-then security, then the gate — and you can't reorder them without chaos.*
+**Problem Details** (06)
+The standard JSON shape for errors (RFC 9457): `status`, `title`, `detail`, plus our `traceId`.
 
----
+**Status codes we use** (06)
+400 malformed request, 401 not signed in, 403 not allowed, 404 not found, 409 someone else changed it first,
+422 breaks a business rule, 429 too many requests, 500 our bug.
 
-## The mediator
+## Domain building blocks
 
-**Mediator**
-A dispatcher. You give it a command; it finds the right handler and runs it. You never know *which* handler or
-how it's wired. *Analogy: a post office — you drop a letter, they deliver it.*
+**Entity** (03)
+An object with an identity that lasts: customer 42 is still customer 42 after a name change.
 
-**`ISender` / `Send(command)`**
-The one thing you call to use the mediator. `sender.Send(myCommand)` = "post office, please handle this."
-*Analogy: dropping the letter in the mailbox.*
+**Value object** (03)
+An object defined only by its value, and impossible to create invalid: `Money`, `Quantity`. Any ₱1,000
+bill is as good as any other.
 
-**Pipeline behavior**
-Extra steps that automatically wrap *every* command — like logging or validation — written once instead of in
-every handler. *Analogy: every package gets weighed and stamped automatically.*
+**Aggregate / aggregate root** (03)
+A group of objects saved and changed together, with one entry point that guards the rules. `SalesOrder` is
+the root; its lines can only change through it.
 
----
+**Strongly-typed id** (03)
+`readonly record struct CustomerId(long Value)` instead of a bare `long`, so the compiler stops you mixing up
+ids.
 
-## Domain-Driven Design building blocks
+**Factory method** (03)
+A static `Create(...)` that checks the rules before an object exists. The object's constructor stays
+private.
 
-**Entity**
-A business object with an identity that lives over time. Two orders with the same details are still *different
-orders*. *Analogy: two people named John Smith are still two different people.*
+**`DomainException`** (03)
+Thrown when a business rule says no. The API turns it into a 422.
 
-**Value object**
-A business object defined purely by its values, immutable. `Money(10)` is `Money(10)` — interchangeable.
-*Analogy: any ₱1,000 bill is as good as any other.*
-
-**Aggregate**
-A cluster of related objects that must stay consistent together and are treated as one unit. A `SalesOrder`
-plus its `SalesOrderLine`s form one aggregate. *Analogy: an order form and its line items — saved together.*
-
-**Aggregate root**
-The single "front door" to an aggregate. Outside code holds the `SalesOrder`, never grabs a `SalesOrderLine`
-directly. The root guards all the rules. *Analogy: you talk to the store manager, not the stock in the back.*
-
-**Domain event**
-A note that something business-meaningful happened: "SalesOrderSubmitted." Other code (even another module)
-can react later. *Analogy: a "Sold!" bell that rings — anyone listening can react.*
-
-**Domain service**
-A rare special class for stateless domain *logic* that spans *multiple* aggregates and belongs to none of
-them — and does **no** I/O (no database, no network). Example: a policy that spreads a whole-order discount
-across its lines. Used sparingly. *Analogy: a translator you hire only when two departments need to talk.*
-*(Note: something that merely **looks up data** — a class that reads item prices out of a table, say — is a
-**read port / data access**, not a domain service. The I/O is the tell.)*
-
-**Repository**
-The object that saves and loads *one kind* of aggregate. `ISalesOrderRepository` loads and saves
-`SalesOrder`s. *Analogy: the filing clerk for one specific cabinet.*
-
-**Strongly-typed ID**
-A distinct type per thing — `SalesOrderId`, `CustomerId`, `ItemId` — instead of a plain `long`. The
-compiler stops you passing a customer's id where an order's id is expected. *Analogy: color-coded keys — the
-red key won't fit the blue lock.*
-
----
+**Domain event** (11)
+Something the domain says has happened: `SalesOrderApproved`. Other code can react to it afterwards.
 
 ## Database words
 
-**SQL Server**
-The database program that stores our data in tables.
+**PostgreSQL** (04)
+The database. Free, open source, runs on Windows and Linux.
 
-**Schema (database)**
-A named grouping of tables/procs inside one database. Each module owns its own (`sales`, `inventory`) — the
-database-level echo of the module walls. *Analogy: each department's own labeled filing cabinet.*
+**Schema** (04)
+A named group of tables inside one database: `sales`, `inventory`, `identity`. One per module.
 
-**Stored procedure ("proc")**
-A named, saved SQL command living inside the database. Our C# calls it by name. *Analogy: a saved recipe the
-kitchen already knows.*
+**snake_case** (04)
+`sales_order`, `customer_id`: PostgreSQL's naming style. EF Core translates from C#'s PascalCase.
 
-**Dapper**
-A tiny library that runs our SQL and maps results into C# objects — without hiding the SQL. *Analogy: a
-helpful assistant who runs to the filing cabinet with the exact instructions you wrote.*
+**EF Core** (04)
+Microsoft's object-relational mapper. Here it does every write and every transaction.
 
-**ORM (Object-Relational Mapper), e.g. Entity Framework**
-A bigger library that auto-generates SQL and tracks changes. Powerful, but hides the database. We're **not**
-using one — on purpose. *Analogy: a robot chef that cooks from vague descriptions; you stop learning to cook.*
+**DbContext** (04)
+EF Core's gateway to the database for one module. It tracks the objects you loaded and saves all their
+changes in one go, so it already is the unit of work; we don't wrap it in repositories.
 
-**Transaction**
-A group of database changes that either *all* succeed or *all* get undone. *Analogy: transferring money — both
-the withdrawal and the deposit happen, or neither.*
+**Change tracking** (04)
+EF Core remembers what each loaded object looked like, and `SaveChangesAsync` writes only what changed.
 
-**Concurrency**
-What happens when two people act at the same moment. Handling it wrong sells the same last item twice.
-*Analogy: two people grabbing for the last sale item.*
+**Value converter** (04)
+Tells EF Core how to store a type it doesn't know: `CustomerId` as a `bigint`, `Money` as a `numeric`.
 
-**Race condition**
-A concurrency bug where the result depends on who happened to go first, and both can "win" incorrectly.
-*Analogy: both shoppers grab the last item because neither noticed the other.*
+**Migration** (04)
+A C# file describing one change to the schema. EF Core records which ones each database has had.
 
-**Atomic**
-An operation that happens as one indivisible step — nothing sneaks in halfway. The database can make "check
-stock AND reserve it" atomic. *Analogy: a turnstile that lets exactly one person through at a time.*
+**Migration bundle** (15)
+One `.exe` containing a module's migrations. Run it with a connection string and it applies whatever is
+missing.
 
-**Optimistic concurrency / `rowversion`**
-A safety check: "only save my change if nobody else changed this since I loaded it." *Analogy: "I'll sign this
-contract only if it's still the exact copy I read."*
+**Seed data** (04)
+Sample rows for development: `DevSeed.sql`, run only when `Database:SeedDevelopmentData` is on.
 
-**Idempotent**
-Safe to run more than once with the same end result — a guarded `CREATE TABLE` that no-ops if the table
-exists, a logout that returns success for an already-revoked token. Anything that might be retried or re-run
-should be idempotent. *Analogy: pressing the elevator call button five times still summons one elevator.*
+**Transaction** (07)
+A group of changes that all happen or none do. Picture a turnstile: either you're through, or you're not.
+There's no halfway.
 
-**Saga**
-How a multi-step operation stays correct when its steps *can't* share one database transaction (they cross
-services or databases): each step gets a compensating "undo," and a failure runs the undos instead of a
-rollback. This course never needs one — its one cross-module write shares a transaction — but extracting
-Inventory into its own service would turn "reserve stock" into exactly this ([Phase 7](07-submit-reserve-concurrency.md)'s
-honest note). *Analogy: booking a flight and a hotel separately — if the hotel falls through, you don't
-"roll back" the flight; you cancel it.*
+**Atomic** (07)
+Happens completely or not at all, with no in-between state anyone can see.
 
-**Outbox**
-A table where events are written *in the same transaction* as the state change they announce, then sent by a
-background reader. It upgrades "best-effort, after commit" ([Phase 8](08-approval-cancellation.md)) to
-"guaranteed, eventually" — the event can't be lost between the commit and the send. A
-[Phase 14](14-going-further.md) extension. *Analogy: the out-tray on your desk — the letter is safely written
-and sitting there even if the mail cart doesn't come until tomorrow.*
+**Shared connection** (07)
+One database connection per request, used by every module's DbContext, so a contract can join the
+caller's transaction.
 
----
+**Sequence** (06)
+A database counter that hands out each number once, even under load: the order numbers.
 
-## CQRS
+**Race condition** (07)
+A bug that only shows when two things happen at the same moment, like two people buying the last item.
 
-**CQRS**
-"Command Query Responsibility Segregation" — handle *changes* and *reads* differently, with different code
-paths. *Analogy: the bank teller (careful) vs. the ATM screen (fast).*
+**`FOR UPDATE`** (07)
+Locks the rows a query reads until the transaction ends. Anyone else who wants them waits.
 
-**CQRS-lite (what we build)**
-Separate command and query *code*, but the *same one database*. We do **not** build separate databases, event
-sourcing, or eventual consistency (the heavy stuff full CQRS adds).
+**Lost update** (08)
+Two people change the same thing; the second save silently overwrites the first.
 
----
+**Optimistic concurrency** (08)
+Don't lock; check on save that nobody changed the row since you read it. If someone did, refuse with 409.
 
-## Security words
+**`xmin`** (08)
+PostgreSQL's built-in row version, changed on every update. EF Core uses it as the concurrency token.
 
-**Authentication** vs **authorization**
-Authentication answers *who are you?* (login). Authorization answers *are you allowed to do this?* (roles).
-Two different questions, in that order. *Analogy: the bouncer checks your ID, then checks whether your ticket
-covers the VIP room.*
+**Dapper** (10)
+A small library that runs SQL and maps the rows to C# objects. Here it does every read.
 
-**JWT (JSON Web Token)**
-A short, signed string the server hands you at login and you send back on every later request. It carries your
-identity and role *inside it*, and the signature means the server can trust it without looking anything up.
-*Analogy: a festival wristband — the gate staff read it and wave you through; they don't phone the box office.*
+**SQL function** (10)
+A named query stored in the database, called like `SELECT * FROM sales.search_sales_orders(...)`. We use
+functions because PostgreSQL procedures can't return rows.
 
-**Claim**
-One fact inside a JWT: `sub` (which user), `name`, `role`. *Analogy: the printed line on the wristband saying
-"VIP."*
+**Least privilege** (13)
+Give each account only the rights it needs. The app connects as `erp_app` (read and write rows); only
+deployments use `erp_owner` (change tables).
 
-**Access token**
-The short-lived JWT (15 minutes here) you attach to every request. Short on purpose: a stolen one expires fast.
+**Default privileges** (13)
+`ALTER DEFAULT PRIVILEGES`: rights given automatically on everything a role creates from now on.
 
-**Refresh token**
-A long-lived, single-use secret you trade in for a fresh access token when the old one expires — so the user
-isn't forced to log in every 15 minutes. It's stored in the database (hashed), unlike the access token.
+## Events and the outbox
 
-**Rotation and reuse detection**
-Every refresh **rotates**: you hand in your token and get a brand-new one, and the old one is dead. If a dead
-token is ever presented again, that means someone copied it — so we revoke the whole chain of tokens descended
-from it. *Analogy: a cloakroom ticket you swap for a new one each visit; if two people turn up with the same
-old ticket, something's wrong and the coat gets held.*
+**Outbox** (11)
+A table where each module writes its events in the same transaction as the change, so an event can't be
+lost or sent for something that never happened.
 
-**`SecurityStamp`**
-A random value stored on the user row and baked into every refresh token. Changing the password changes the
-stamp, which instantly invalidates every outstanding refresh token on every device. *Analogy: rekeying the
-lock — every old key stops working at once.*
+**Interceptor** (11)
+Code EF Core runs around `SaveChanges`. Ours copies domain events into the outbox.
 
-**API key (`X-Api-Key`)**
-A secret identifying the **calling application** (the web app, the mobile app) rather than the user. It gates
-even anonymous endpoints like `/auth/login`, which a JWT cannot. *Analogy: the wristband says who you are; the
-key on the delivery door says which company's van you drove up in.*
+**Dispatcher** (11)
+A background service that reads the outbox and hands each event to its handlers.
 
-**Password hash / salt**
-We never store passwords. We store the output of a slow, one-way function (PBKDF2) fed the password plus a
-random per-user **salt**, so identical passwords hash differently and guessing is expensive. *Analogy: you
-can't un-bake a cake, and every cake got a different pinch of salt.*
+**At-least-once delivery** (11)
+Every event is delivered, possibly more than once.
 
-**`ICurrentUser`**
-The interface a handler uses to ask "who is calling?" without touching `HttpContext`. It's how data-dependent
-authorization ("only your own customers") stays testable. *Analogy: asking the front desk who's in the lobby,
-instead of walking out to look.*
+**Idempotent** (11)
+Doing it twice has the same effect as doing it once. Every event handler must be.
 
----
+**`SKIP LOCKED`** (11)
+Lets two dispatchers share the outbox: each skips rows the other has locked.
 
-## Testing words
+**`BackgroundService` / `IHostedService`** (11, 15)
+Code ASP.NET Core starts with the app. A `BackgroundService` keeps running (the dispatcher); an
+`IHostedService` can simply do one thing at startup (the first admin).
 
-**Walking skeleton**
-The thinnest version of the app that runs end-to-end (web request → response) but does almost nothing. Built
-first to prove the plumbing. *Analogy: framing a house and running one lightbulb before decorating.*
+## Sign-in and security
 
-**Unit test**
-Tests one small piece (usually a domain rule) with no database, no website. Super fast. *Analogy:
-taste-testing the sauce alone.*
+**Authentication / authorization** (05)
+Who are you? / What may you do?
 
-**Integration test**
-Tests several real pieces together, including a real database. Slower. *Analogy: cooking the actual dish and
-tasting it.*
+**ASP.NET Core Identity** (05)
+Microsoft's sign-in library: users, roles, password hashing, lockout, cookies, tokens. We write no sign-in
+code ourselves.
 
-**End-to-end (e2e) test**
-Tests a whole workflow through the real API, start to finish. Slowest, fewest. *Analogy: serving a full meal
-to a guest.*
+**Password hash** (05)
+A one-way, deliberately slow scramble of a password. The database never stores the password itself.
 
-**Fixture**
-Setup code that prepares the world for a test (e.g. creates a fresh test database). *Analogy: setting the
-table before the meal.*
+**Lockout** (05)
+After 5 wrong passwords, the account refuses sign-in for 15 minutes.
+
+**Claim** (05)
+One fact about the signed-in user, such as their id or role.
+
+**Bearer token / refresh token** (05)
+The access token proves who you are for a short while; the refresh token buys a new one. For apps that
+aren't browsers.
+
+**Cookie** (05)
+How a browser stays signed in. The browser sends it automatically.
+
+**Security stamp** (05)
+A random value stored with each user and copied into their tokens. Changing it ("sign out everywhere", a new
+password) ends every session.
+
+**`ICurrentUser`** (05)
+The small interface handlers use to ask who's calling.
+
+**Role** (03)
+`SalesRep`, `SalesManager`, `Admin`. Each person has exactly one.
+
+**Rate limiting** (13)
+A budget of requests per caller per minute. Over it, the API answers 429.
+
+**HTTPS / HSTS** (13)
+HTTPS encrypts the connection. HSTS tells the browser to never use plain HTTP for this site again.
+
+**Security headers** (13)
+Response headers that tell the browser to be careful: no framing, no guessing content types.
+
+**CSP (Content Security Policy)** (13)
+A header listing what a page may load. For our JSON responses: nothing at all.
+
+**CORS** (13)
+The browser rule that stops a web page on one site calling an API on another, unless the API allows it.
+
+**API key** (13)
+A secret per client *program*, sent as `X-Api-Key`. Says which app is calling, not which user.
+
+**Data protection keys** (13)
+The keys Identity uses to protect cookies and tokens. Stored in the database so restarts sign nobody out.
+
+## Observability
+
+**Observability** (12)
+Being able to tell what the running app is doing, from the outside.
+
+**Logs, traces, metrics** (12)
+Logs: what happened. Traces: where the time went in one request. Metrics: how much and how often, over time.
+
+**Span** (12)
+One timed step inside a trace: the HTTP request, the handler, one SQL query.
+
+**Trace id** (12)
+One id shared by every span and log line of a request. Returned as `X-Trace-Id`.
+
+**OpenTelemetry / OTLP** (12)
+The open standard for producing telemetry, and the protocol for sending it anywhere.
+
+**Health checks** (12)
+`/health/live`: is the process up? `/health/ready`: can it reach the database?
+
+**Aspire dashboard** (12)
+A development tool that shows logs, traces and metrics live. Not for production.
+
+## Testing
+
+**Unit test** (03)
+Tests one piece, the domain, with no database. Fast.
+
+**Integration test** (14)
+Runs the whole API in memory against a real PostgreSQL database.
+
+**`WebApplicationFactory`** (14)
+Starts the API inside a test without a web server.
+
+**Architecture test** (14)
+A test that fails when a module breaks a boundary rule, such as referencing another module's main project.
+
+**AwesomeAssertions** (03)
+The readable `.Should().Be(...)` assertions. A free fork of FluentAssertions, whose newer versions are paid.
+
+## Deployment
+
+**IIS** (15)
+Windows' web server.
+
+**Hosting Bundle** (15)
+The installer that puts .NET and the ASP.NET Core Module on a Windows server.
+
+**ASP.NET Core Module (ANCM)** (15)
+The IIS module that starts our app and hands it every request.
+
+**In-process hosting** (15)
+The app runs inside IIS's own worker process, `w3wp.exe`.
+
+**App pool** (15)
+The Windows process an IIS site runs in, with its own identity and settings.
+
+**`app_offline.htm`** (15)
+Drop this file into the site and ANCM stops the app and shows the page. Remove it and the app starts again.
+
+**Framework-dependent publish** (15)
+A published app that uses the .NET runtime installed on the server, rather than carrying its own.
+
+**`pg_dump` / `pg_restore`** (16)
+PostgreSQL's tools to back up a database to one file, and to restore it.

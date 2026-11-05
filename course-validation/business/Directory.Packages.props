@@ -17,7 +17,7 @@
 
     <!-- Data: PostgreSQL. EF Core for writes, Dapper for reads -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.14" />            <!-- MIT -->
-    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.14" /> <!-- MIT -->
+    <PackageVersion Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.14" /> <!-- MIT; pinned so the Npgsql provider (needs ≥ 10.0.4) uses the same EF Core as everything else -->
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.14" />     <!-- MIT -->
     <PackageVersion Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.3" />     <!-- PostgreSQL license (permissive) -->
     <PackageVersion Include="Npgsql" Version="10.0.3" />                                    <!-- PostgreSQL license (permissive) -->
@@ -41,17 +41,12 @@
     <PackageVersion Include="Npgsql.OpenTelemetry" Version="10.0.3" />                          <!-- PostgreSQL license -->
     <!-- Aspire (MIT, dev-time dashboard only) is versioned by the Sdk attribute in Erp.AppHost.csproj. -->
 
-    <!-- Extensions abstractions -->
-    <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.14" />
-    <PackageVersion Include="Microsoft.Extensions.DependencyInjection.Abstractions" Version="10.0.14" />
-    <PackageVersion Include="Microsoft.Extensions.Logging.Abstractions" Version="10.0.14" />
 
     <!-- Testing -->
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.14" />        <!-- MIT -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />                  <!-- MIT -->
     <PackageVersion Include="xunit" Version="2.9.3" />                                     <!-- Apache-2.0 -->
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />                 <!-- Apache-2.0 -->
-    <PackageVersion Include="coverlet.collector" Version="6.0.4" />                        <!-- MIT -->
     <!-- AwesomeAssertions, not FluentAssertions: FluentAssertions 8+ needs a paid license for commercial use. -->
     <PackageVersion Include="AwesomeAssertions" Version="9.6.0" />                          <!-- Apache-2.0 -->
   </ItemGroup>

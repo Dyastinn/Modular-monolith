@@ -1,13 +1,68 @@
 # Course Validation — Findings Log
 
-Building `plan-business-tutorial` from scratch, as a student would.
-Environment: .NET 10.0.301 SDK, SQL Server LocalDB (MSSQLLocalDB, v13 / SQL 2016), Windows 11.
+Building `plan-business-tutorial` from scratch, as a student would, and checking every lesson against the
+reference build in [business/](business/).
 
 Legend: 🔴 blocker · 🟠 significant · 🟡 minor/polish · 💡 suggestion
 
-> **Note:** this log predates the removal of the `plan-beginner-friendly` and `plan-Opus` folders. Findings
-> that referred to those courses have been dropped; findings about the business tutorial are kept as-is,
-> including ones since fixed.
+Newest first. Everything below the 2026-11-06 entry was written for the **retired** SQL Server / Dapper /
+hand-rolled-mediator course (phases, not lessons). It's kept as history; its file and phase names no longer
+exist.
+
+---
+
+## Production course, lessons 00–16 — 2026-11-06
+
+Environment: .NET SDK 10.0.403, PostgreSQL 18.6 (local), Windows 11, Windows PowerShell 5.1.
+
+**Test suite:** 22 unit + 6 architecture + 25 integration, all passing.
+
+### 🟠 Fixed — a production install had no way to sign in
+No seed runs outside Development, and `/auth/register` is blocked, so a fresh install had no users and no
+way to create one. Added `InitialAdmin` (Identity module, `IHostedService`): creates an Admin from
+`InitialAdmin:Email`/`Password` only while there are no users at all. Proven by
+`A_fresh_install_gets_its_first_admin_from_configuration` on its own empty, unseeded database. Taught in
+lesson 15.
+
+### 🟠 Fixed — a 400's `detail` leaked FluentValidation's developer message
+`detail` was `ex.Message`: `Validation failed: -- Lines: An order needs at least one line. Severity: Error`.
+It's now the messages joined into a sentence (they're also in `errors`). The validator regression test now
+asserts the detail. Lesson 06 updated.
+
+### 🟡 Fixed — `₱` garbled in Windows PowerShell 5.1
+Problem details were sent as `application/problem+json` with no charset, and PS 5.1 doesn't assume UTF-8.
+Now `; charset=utf-8`, asserted by the same test.
+
+### 🟡 Fixed — smaller lesson items
+- Lesson 13 said the eleventh sign-in gets a 429, ignoring the sign-in made just before in the same minute.
+- Lessons 13 and 14 gave `create-roles.sql` a repo path (`course-validation/business/...`) instead of a path
+  relative to the reader's solution.
+
+### 🟡 Open — data-protection keys stored unencrypted
+On first start in Production the app warns `No XML encryptor configured`. True: the keys in
+`identity.data_protection_keys` are plain XML. Listed in lesson 16 and ROADMAP M7 (protect with a
+certificate before the first sale).
+
+### ✅ Verified live
+- **Migration bundles**: `dotnet ef migrations bundle` per module; `--connection` overrides the design-time
+  factory's placeholder `DbConnection`. All three applied as `erp_owner` to a database made by
+  `create-roles.sql`. The first run logs a harmless `Failed executing DbCommand` for the missing history table.
+- **The published app in Production as `erp_app`**: `/health/live` and `/health/ready` 200; no API key 401;
+  `/auth/register` 404; the initial admin signs in and `/auth/me` says Admin; the order list is empty;
+  security headers present.
+- **Backup and restore**: `pg_dump -Fc` as `erp_owner`; then database and roles dropped, `create-roles.sql`
+  run again as on a new server, `pg_restore` as `erp_owner` with no extra flags. `erp_app` can read, insert,
+  call the SQL functions and use the order-number sequence. The lesson 16 restore drill (scratch database
+  owned by `erp_owner`) also works.
+- **The PowerShell companion** (00b): the setup block and the checkpoints for lessons 05–13 run on Windows
+  PowerShell 5.1 against the reference API, with the statuses and messages the lessons promise.
+
+### Not verified
+- **IIS itself.** There's no IIS on this machine. Lesson 15's IIS steps (features, Hosting Bundle, app pool,
+  environment variables, bindings, `removeServerHeader`) are written from Microsoft's documentation and need
+  one run on a real Windows Server 2019+ before the first sale.
+- **Lessons followed from an empty folder.** Each lesson's code was checked against the reference build, not
+  rebuilt from scratch in sequence.
 
 ---
 

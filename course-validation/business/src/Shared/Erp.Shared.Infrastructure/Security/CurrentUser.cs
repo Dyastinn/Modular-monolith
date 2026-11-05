@@ -12,5 +12,4 @@ public sealed class CurrentUser(IHttpContextAccessor accessor) : ICurrentUser
     public long UserId => long.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
     public string Username => User.FindFirstValue(ClaimTypes.Name)!;
     public string Role => User.FindFirstValue(ClaimTypes.Role)!;   // staff have exactly one role
-    public bool IsInRole(string role) => User.IsInRole(role);
 }

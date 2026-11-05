@@ -19,14 +19,14 @@ builder.Services.AddSharedInfrastructure(builder.Configuration);
 builder.Services.AddMediator((MediatorOptions options) =>
 {
     options.ServiceLifetime = ServiceLifetime.Scoped;   // handlers use scoped DbContexts
-    options.Assemblies = [typeof(IdentityModule), typeof(SalesModule), typeof(InventoryModule)];
+    options.Assemblies = [typeof(IdentityModule), typeof(SalesModule)];
     options.PipelineBehaviors = [typeof(TelemetryBehavior<,>), typeof(ValidationBehavior<,>)];   // outermost first
 });
 
 // Registration order = migration and seed order.
 builder.Services.AddIdentityModule(builder.Configuration);
-builder.Services.AddSalesModule(builder.Configuration);
-builder.Services.AddInventoryModule(builder.Configuration);
+builder.Services.AddSalesModule();
+builder.Services.AddInventoryModule();
 builder.Services.AddCarter();
 
 builder.Services.AddAuthorization();

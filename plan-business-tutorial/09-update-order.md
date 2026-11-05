@@ -1,49 +1,79 @@
-# Phase 9 — Updating a Draft Order's Lines
+# Lesson 09 — Update an Order: The Lost Update in the Lines
 
-> Self-contained: a familiar variation on the create slice ([Phase 6](06-create-order.md)), which you've
-> already built. Money is in **Philippine Pesos (₱)**. If this phase feels repetitive, that's the point —
-> the repeated shape is the maintainability win, and by the end you'll be able to place a new feature
-> without thinking about where its pieces go.
+Good day, developer! Reps make mistakes, and customers change their minds, so a draft order needs to be
+editable. Today we'll add that, and you'll see why it's short: the domain already knows how. Then we'll find a
+sneaky hole in last lesson's lost-update protection, one that only shows up when you change an order's lines
+and nothing else. About an hour. Are you ready? Let's begin!
 
----
+## What we'll build
 
-> ⏱️ **Time for this phase:** ~45 min–1 hr. Deliberately short — it's a familiar variation on Create, and
-> that familiarity *is* the point. If it feels quick, the pattern has landed.
+- `PUT /sales-orders/{id}`: replace a **draft** order's lines, with every create-time rule checked again.
+- A small change to `SalesDbContext` so two people editing the same draft can't silently overwrite each
+  other.
 
-## 1. What we're building
+## Why we build it this way
 
-`PUT /sales-orders/{id}` — replace the lines on a **Draft** order. Only drafts can be edited (once
-submitted, inventory is reserved and it's too late to freely change). Re-runs the same create-time
-business checks against the new lines.
+### Replace, don't patch
 
-## 2. Why it's designed this way
+The request carries the order's complete new list of lines, and we replace the old ones. That's simpler and
+safer than sending "add this, remove that, change the other" instructions: there's no way for the client and
+server to disagree about what the order looks like afterwards.
 
-- **Only drafts are editable.** This is a *domain* rule — `AddLine`/`ClearLines` already throw if the
-  order isn't a Draft ([Phase 5](05-domain-model.md)). The handler doesn't re-check status; it just calls
-  the domain and lets it refuse. That's the domain being authoritative.
-- **Same checks as create.** New lines could introduce a restricted category, blow a quantity cap, or
-  push over the credit limit — so we re-validate exactly as [Phase 6](06-create-order.md) did. We reuse
-  the same domain methods, not copy their logic.
-- **"Replace the lines" not "diff the lines."** For a draft with no reservations, the simplest correct
-  approach is: clear the lines, add the new set. No clever merge needed. Simplicity is a feature.
+And every rule runs again: blocked customer, category limits, credit. A draft that was fine yesterday might
+not be today.
 
-## 3. The command and validator
+### The hole in the version check
+
+Last lesson, we made EF Core check each row's `xmin` version when it saves. Now picture this. Ana and Ben
+both open the same draft. Ana replaces its lines and saves. Ben replaces them too, and saves a second later.
+
+What does EF Core write when the lines change? It deletes the old rows in `sales_order_line` and inserts the
+new ones. **It never updates the `sales_order` row itself**, because nothing on the order changed, only its
+lines. And the version check only runs on rows that get an `UPDATE`. So Ben's save goes straight through,
+Ana's lines vanish, and nobody is told. Clear so far?
+
+The fix: whenever an order's lines change, also touch the order's own row. Then the order gets an `UPDATE`,
+the `xmin` check runs, and Ben gets a 409.
+
+## 1. Touch the order when its lines change
+
+In `SalesDbContext`, override `SaveChangesAsync`:
 
 ```csharp
-// src/Modules/Sales/Features/UpdateSalesOrder/UpdateSalesOrderHandler.cs
+public override Task<int> SaveChangesAsync(CancellationToken ct = default)
+{
+    // A lines-only edit never updates the order row, so its xmin would never be checked. Touch it.
+    if (ChangeTracker.Entries<SalesOrderLine>().Any(l => l.State != EntityState.Unchanged))
+        foreach (var order in ChangeTracker.Entries<SalesOrder>().Where(o => o.State == EntityState.Unchanged))
+            order.Property(o => o.Status).IsModified = true;
+
+    return base.SaveChangesAsync(ct);
+}
+```
+
+The **change tracker** is EF Core's notebook of everything it loaded and what happened to it since. If any
+line was added, deleted or modified, we mark the order's `Status` as modified. The value doesn't actually
+change, but EF now writes `UPDATE sales_order SET status = ... WHERE id = ... AND xmin = ...`, and that's
+all we need: the version check runs.
+
+To remember it easily: changing a page in a book should change the book's edition number too.
+
+## 2. The update slice
+
+```csharp
+// src/Modules/Sales/Erp.Modules.Sales/Features/UpdateSalesOrder/UpdateSalesOrderHandler.cs
 using Erp.Modules.Sales.Domain;
-using Erp.Shared.BuildingBlocks;        // NotFoundException, ICurrentUser
-using Erp.Shared.BuildingBlocks;   // IDbConnectionFactory
+using Erp.Modules.Sales.Infrastructure;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
+using Mediator;
+using Microsoft.EntityFrameworkCore;
 
 namespace Erp.Modules.Sales.Features;
 
-public sealed record UpdateSalesOrderCommand(
-    long OrderId,
-    IReadOnlyList<CreateSalesOrderLineDto> Lines) : ICommand<Unit>;   // reuse the line DTO from Phase 6
+internal sealed record UpdateSalesOrderCommand(long OrderId, IReadOnlyList<CreateSalesOrderLineDto> Lines) : ICommand;
 
-public sealed class UpdateSalesOrderValidator : AbstractValidator<UpdateSalesOrderCommand>
+internal sealed class UpdateSalesOrderValidator : AbstractValidator<UpdateSalesOrderCommand>
 {
     public UpdateSalesOrderValidator()
     {
@@ -56,136 +86,68 @@ public sealed class UpdateSalesOrderValidator : AbstractValidator<UpdateSalesOrd
         });
     }
 }
-```
 
-## 4. The handler
-
-```csharp
-public sealed class UpdateSalesOrderHandler(
-    ISalesOrderRepository orders,
-    ICustomerRepository customers,
-    IItemRepository items,
-    IDbConnectionFactory factory,
-    ICurrentUser currentUser) : ICommandHandler<UpdateSalesOrderCommand, Unit>   // command marker (Phase 2)
+internal sealed class UpdateSalesOrderHandler(SalesDbContext db, ICurrentUser currentUser)
+    : ICommandHandler<UpdateSalesOrderCommand>
 {
-    public async Task<Unit> Handle(UpdateSalesOrderCommand cmd, CancellationToken ct)
+    public async ValueTask<Unit> Handle(UpdateSalesOrderCommand cmd, CancellationToken ct)
     {
-        var order = await orders.GetAsync(new SalesOrderId(cmd.OrderId), ct)
+        var orderId = new SalesOrderId(cmd.OrderId);
+        var order = await db.SalesOrders.SingleOrDefaultAsync(o => o.Id == orderId, ct)
             ?? throw new NotFoundException($"Sales order {cmd.OrderId} not found.");
 
-        // DOMAIN guards "draft only": ClearLines throws if the order isn't a Draft.
         order.ClearLines();
 
-        var customer = await customers.GetAsync(order.CustomerId, ct)
-            ?? throw new NotFoundException("Customer not found.");
+        var customer = await db.Customers.SingleAsync(c => c.Id == order.CustomerId, ct);
         customer.EnsureNotBlocked();
 
         var itemIds = cmd.Lines.Select(l => l.ItemId).Distinct().ToList();
-        var itemLookup = (await items.GetForOrderAsync(itemIds, ct)).ToDictionary(i => i.ItemId);
-        var qtyByCategory = new Dictionary<long, int>();
+        var items = await db.Items.Include(i => i.Category)
+            .Where(i => itemIds.Contains(i.Id)).ToDictionaryAsync(i => i.Id, ct);
 
+        var qtyByCategory = new Dictionary<long, int>();
         foreach (var line in cmd.Lines)
         {
-            if (!itemLookup.TryGetValue(line.ItemId, out var item) || !item.IsActive)
+            if (!items.TryGetValue(line.ItemId, out var item) || !item.IsActive)
                 throw new NotFoundException($"Item {line.ItemId} not found or inactive.");
 
             item.Category.EnsureRoleAllowed(currentUser.Role);
-            qtyByCategory.TryGetValue(item.Category.Id, out var running);
-            running += line.Quantity;
-            qtyByCategory[item.Category.Id] = running;
-            item.Category.EnsureQuantityAllowed(running);
+            qtyByCategory[item.CategoryId] = qtyByCategory.GetValueOrDefault(item.CategoryId) + line.Quantity;
+            item.Category.EnsureQuantityAllowed(qtyByCategory[item.CategoryId]);
 
-            order.AddLine(new ItemId(line.ItemId), new Quantity(line.Quantity), item.UnitPrice);
+            order.AddLine(new ItemId(item.Id), new Quantity(line.Quantity), item.UnitPrice);
         }
 
-        customer.EnsureWithinCreditLimit(order.Total);
+        customer.EnsureWithinCreditLimit(order.Total, await db.PendingTotalAsync(customer.Id, order.Id, ct));
 
-        using var conn = factory.Create();
-        await conn.OpenAsync(ct);
-        using var tx = conn.BeginTransaction();
-        try
-        {
-            await orders.ReplaceLinesAsync(order, tx, ct);   // delete old lines, insert new, update total
-            tx.Commit();
-        }
-        catch
-        {
-            tx.Rollback();
-            throw;
-        }
-
+        await db.SaveChangesAsync(ct);
         return Unit.Value;
     }
 }
 ```
 
-> ❓ **You might be wondering: "This is almost identical to the create handler. Isn't that copy-paste I
-> should refactor away?"** Fair instinct — but be careful. The two *look* similar yet answer different
-> questions ("build a new order" vs "re-line an existing draft"), and premature "don't repeat yourself"
-> often couples things that should evolve independently. A little duplication between two sibling slices
-> is *healthier* than a shared "helper" that both are forced to bend around. The Vertical Slice
-> philosophy explicitly tolerates this. If the shared logic were large and truly identical, you'd extract
-> a small domain method (which we did — `EnsureRoleAllowed` etc. *are* the shared logic, and they live in
-> the domain, not duplicated). What's left is orchestration, and that's fine to repeat.
+`order.ClearLines()` comes first for a reason: it's also the "drafts only" check. If the order has been
+submitted, the domain throws right there, before we load anything else. The line loop is the same as in
+create; the order just already exists.
 
-> ❓ **You might be wondering: "Where's the status check for 'draft only'? The handler doesn't have
-> one."** Exactly — and that's the point. `order.ClearLines()` and `order.AddLine()` throw if the order
-> isn't a Draft. The rule lives in the domain, so the handler doesn't (and shouldn't) re-check it. If you
-> catch yourself writing `if (order.Status != Draft)` here, delete it — the domain already guarantees it.
-
-## 5. The repository `ReplaceLinesAsync`
-
-> ℹ️ **First add this method to the `ISalesOrderRepository` interface** from
-> [Phase 6 §4](06-create-order.md) — next to `AddAsync`/`GetAsync`/`UpdateStatusAsync`:
-> `Task ReplaceLinesAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct);`. The handler above
-> calls it *through the interface*, so the interface has to declare it before this implementation will
-> satisfy it. It's the one new repository method this slice needs.
+You may notice the line-building loop is a copy of the one in create. That's a deliberate choice of vertical
+slices: each feature owns its code, so changing how update works can never break create. If the copies ever
+need to change *together*, that's the signal to move the shared part into the domain.
 
 ```csharp
-public async Task ReplaceLinesAsync(SalesOrder order, IDbTransaction tx, CancellationToken ct)
-{
-    var conn = tx.Connection!;
-    // Delete existing lines, then insert the current set, then refresh the header total.
-    await conn.ExecuteAsync(new CommandDefinition(
-        "sales.usp_SalesOrderLine_DeleteByOrder", new { SalesOrderId = order.Id.Value },
-        transaction: tx, commandType: CommandType.StoredProcedure, cancellationToken: ct));
+// src/Modules/Sales/Erp.Modules.Sales/Features/UpdateSalesOrder/UpdateSalesOrderEndpoint.cs
+using Carter;
+using Erp.Shared.BuildingBlocks;
+using Mediator;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Routing;
 
-    foreach (var line in order.Lines)
-        await conn.ExecuteAsync(new CommandDefinition(
-            "sales.usp_SalesOrderLine_Insert",
-            new { SalesOrderId = order.Id.Value, ItemId = line.ItemId.Value,
-                  Quantity = line.Quantity.Value, UnitPrice = line.UnitPrice.Amount },
-            transaction: tx, commandType: CommandType.StoredProcedure, cancellationToken: ct));
+namespace Erp.Modules.Sales.Features;
 
-    await conn.ExecuteAsync(new CommandDefinition(
-        "sales.usp_SalesOrder_UpdateTotal",
-        new { Id = order.Id.Value, TotalAmount = order.Total.Amount },
-        transaction: tx, commandType: CommandType.StoredProcedure, cancellationToken: ct));
-}
-```
+internal sealed record UpdateSalesOrderRequest(IReadOnlyList<CreateSalesOrderLineDto> Lines);
 
-All three steps — delete, insert, update total — run on the same transaction, so a failure leaves the
-order's lines exactly as they were.
-
-> ⚠️ **Notice what this update does *not* check: `RowVersion`.** [Phase 8](08-approval-cancellation.md) just
-> taught you the version-checked `UPDATE` that stops a **lost update** — and `ReplaceLinesAsync` doesn't use
-> it. That's a deliberate scope cut, and you should know exactly what it costs: if two sales reps open the
-> same draft and both save, the second save silently wins. Nobody is told. The transaction still keeps each
-> save *atomic* (you never get half a set of lines), but atomicity is not the same guarantee as "nobody
-> overwrote me" — that was Phase 8's whole point.
->
-> Closing it is a small, satisfying exercise and reuses machinery you already have: pass `order.RowVersion`
-> into a version-checked `usp_SalesOrder_UpdateTotal` (`WHERE Id = @Id AND RowVersion = @RowVersion`), and
-> throw `ConcurrencyException` on rowcount `0`, exactly as `UpdateStatusAsync` does. It's on the
-> [Phase 13 checklist](13-wrap-up-checklist.md). We leave it out of the base flow only so this slice stays
-> about *re-lining a draft* rather than re-teaching concurrency.
-
-## 6. The endpoint (Carter module in the feature folder)
-
-`Modules/Sales/Features/UpdateSalesOrder/UpdateSalesOrderEndpoint.cs`:
-
-```csharp
-public sealed class UpdateSalesOrderEndpoint : ICarterModule
+internal sealed class UpdateSalesOrderEndpoint : ICarterModule
 {
     public void AddRoutes(IEndpointRouteBuilder app) =>
         app.MapPut("/sales-orders/{id:long}",
@@ -194,80 +156,69 @@ public sealed class UpdateSalesOrderEndpoint : ICarterModule
                 await sender.Send(new UpdateSalesOrderCommand(id, body.Lines), ct);
                 return Results.NoContent();
             })
-            .RequireAuthorization(p => p.RequireRole("SalesRep", "SalesManager", "Admin"));
+            .RequireAuthorization(p => p.RequireRole(Roles.SalesRep, Roles.SalesManager, Roles.Admin));
 }
-
-public sealed record UpdateSalesOrderRequest(IReadOnlyList<CreateSalesOrderLineDto> Lines);
 ```
 
-> 💡 Notice the endpoint takes the id from the **route** (`{id}`) and the lines from the **body**, then
-> combines them into the command. Keeping the id out of the body avoids the "id in the URL disagrees with
-> id in the body" ambiguity — a small but real API best practice.
+The order's id comes from the URL, and only the lines come in the body. That way there's never a question of
+which id wins when the URL says 7 and the body says 8.
 
-## 7. How the request flows
+## How a request flows
 
-A SalesRep edits draft order #7, changing it to 3 Widgets:
-
-```
-1. Auth ok (SalesRep).
-2. Validator: id > 0 ✓, 1 line ✓, qty 3 > 0 ✓.
-3. Load order #7. order.ClearLines() → it's a Draft, so allowed.
-   (If #7 were PendingApproval, ClearLines throws → 422 "Lines can only be changed on a draft order".)
-4. Re-run checks: not blocked ✓, category role ✓, category cap ✓.
-5. AddLine ×1 → total ₱75. EnsureWithinCreditLimit ✓.
-6. BEGIN TRAN → delete old lines, insert new line, update total → COMMIT.
-7. 204 No Content.
+```mermaid
+sequenceDiagram
+  participant A as Ana
+  participant B as Ben
+  participant DB as PostgreSQL
+  A->>DB: load draft 7 (xmin = 100)
+  B->>DB: load draft 7 (xmin = 100)
+  A->>DB: delete/insert lines; UPDATE sales_order ... WHERE xmin = 100  → 1 row (xmin becomes 101)
+  B->>DB: delete/insert lines; UPDATE sales_order ... WHERE xmin = 100  → 0 rows
+  DB-->>B: 409 Conflict: reload and try again
 ```
 
-## 7b. Checkpoint — edit a draft, and prove a non-draft refuses ✅
+## Mistakes to avoid
 
-Take a **Draft** order (from Phase 6), then change its lines:
+- Accepting "patch" instructions for lines. Replacing the whole list is simpler, and nothing can drift.
+- Skipping the rules on update because they "already ran on create". The customer may be blocked today.
+- Trusting the version check to cover child rows. It only checks rows that get an `UPDATE`.
+- Taking the order id from the body as well as the URL.
+
+## Let's run it!
 
 ```bash
-DRAFT=2   # a Draft order's id
+TOKEN=$(curl -s -X POST http://localhost:5264/auth/login -H "Content-Type: application/json" \
+  -d '{"email":"rep@erp.local","password":"Password123!"}' | jq -r .accessToken)
 
-curl -X PUT "$BASE/sales-orders/$DRAFT" \
-     -H "X-Api-Key: $KEY" -H "Authorization: Bearer $TOKEN" \
-     -H "Content-Type: application/json" -d '{"lines":[{"itemId":1,"quantity":3}]}'   # → 204
+ID=$(curl -s -X POST http://localhost:5264/sales-orders -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"customerId":1,"lines":[{"itemId":1,"quantity":2}]}' | jq .id)
+
+curl -s -o /dev/null -w "%{http_code}\n" -X PUT http://localhost:5264/sales-orders/$ID -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"lines":[{"itemId":2,"quantity":3}]}'
+# 204: the draft now has 3 Gadgets instead of 2 Widgets
+
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:5264/sales-orders/$ID/submit -H "Authorization: Bearer $TOKEN"
+curl -s -X PUT http://localhost:5264/sales-orders/$ID -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"lines":[{"itemId":1,"quantity":1}]}' | jq .detail
+# "Lines can only be changed on a draft order."
 ```
 
-`SELECT TotalAmount FROM sales.SalesOrder WHERE Id = 2;` now reads ₱75 (3 × ₱25). Then try the same
-`PUT` against a **submitted** order and confirm it's refused with `422` "Lines can only be changed on a draft
-order" — with its lines untouched. If a draft re-lines cleanly and a submitted order rejects the edit,
-**Phase 9 is done and verifiable** — the domain, not the handler, is enforcing "draft only."
+The race itself is hard to time by hand with two terminals. [Lesson 14](14-testing.md) adds a test that loads
+the same draft twice, saves both, and proves the second one fails.
 
-## 8. Why each component exists
+## Let's check!
 
-| Component | Why |
-|---|---|
-| `UpdateSalesOrderCommand` | The order id + the new lines. |
-| `UpdateSalesOrderValidator` | Input shape only. |
-| `UpdateSalesOrderHandler` | Re-applies create-time rules to the new lines; relies on the domain for "draft only". |
-| `ReplaceLinesAsync` | Atomically swaps the lines and refreshes the total. |
+1. Why does update replace the whole list of lines, instead of patching it?
+2. Ana and Ben edit the same draft's lines. Without the `SaveChangesAsync` override, why doesn't the `xmin`
+   check catch it?
+3. What exactly does the override change, and why is that enough?
+4. Why is `order.ClearLines()` the first thing the handler does to the order?
+5. Create and update share a loop of code. Why is that acceptable here, and when would it stop being?
 
-## 9. Common mistakes & best practices
-
-- ❌ **A status `if` in the handler.** ✅ Let `ClearLines`/`AddLine` enforce "draft only" from the
-  domain.
-- ❌ **Skipping the re-checks** ("they passed at create"). ✅ New lines are new facts; re-validate role,
-  cap, and credit.
-- ❌ **Editing a submitted order's lines** (stock is already reserved). ✅ Domain refuses it; if the user
-  needs changes, they cancel (releasing stock) and create anew — an intentional business flow.
-- ❌ **Over-refactoring create/update into one "smart" method.** ✅ A little sibling-slice duplication is
-  healthier than forced coupling; the *rules* are already shared (in the domain).
-- ✅ **Best practice: id from route, data from body.** Avoids ambiguity and is conventional REST.
+And that's where this lesson ends. Drafts can be edited safely, even by two people at once. Next time, we
+change direction: instead of changing data, we'll read it, fast, for screens and searches. Good luck,
+developer!
 
 ---
 
-## ✅ Check Yourself
-
-> Try each one before you look. [Model answers](ANSWER-KEY.md#phase-9-update-order) — but attempting first is what makes them stick.
-
-1. Why doesn't the update handler contain a `if (status != Draft)` check?
-2. Why re-run the credit/category checks on update instead of trusting the create-time result?
-3. Why is a little duplication between the create and update handlers acceptable here?
-4. Why take the id from the route and the lines from the body?
-
----
-
-← Previous: [Phase 8 — Approval & cancellation](08-approval-cancellation.md) · [Tutorial overview](00-START-HERE.md) · Next: [Phase 10 — Queries: get one and search with paging](10-queries-search.md) →
+← [Lesson 08 — Approve, reject, cancel](08-approve-reject-cancel.md) · Next: [Lesson 10 — Reads](10-reads.md) →

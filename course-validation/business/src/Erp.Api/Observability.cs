@@ -1,5 +1,5 @@
 using System.Diagnostics;
-using Erp.Shared.BuildingBlocks;
+using Erp.Shared.Infrastructure;
 using Npgsql;
 using OpenTelemetry;
 using OpenTelemetry.Metrics;

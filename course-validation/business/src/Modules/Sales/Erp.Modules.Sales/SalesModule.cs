@@ -4,14 +4,13 @@ using Erp.Modules.Sales.Infrastructure;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Erp.Modules.Sales;
 
 public static class SalesModule
 {
-    public static IServiceCollection AddSalesModule(this IServiceCollection services, IConfiguration config)
+    public static IServiceCollection AddSalesModule(this IServiceCollection services)
     {
         var assembly = typeof(SalesModule).Assembly;
 

@@ -94,7 +94,7 @@ Status: ⬜ not started · 🟨 in progress · ✅ done
 - [x] Rewrite [CLAUDE.md](CLAUDE.md) for the new stack and production bar
 - [x] This roadmap
 
-### M1 — Foundation swap (existing features, new plumbing) ✅ code · ⬜ lessons
+### M1 — Foundation swap (existing features, new plumbing) ✅ code · ✅ lessons
 Goal: the current Sales/Inventory features behave exactly as before, on the new stack. Tests stay green.
 - [x] Spike: `martinothamar/Mediator` 3.0.2 and `internal` handlers in another assembly → generator in the
       host fails with `CS0122`; **works when the module grants `InternalsVisibleTo("Erp.Api")`**. Adopted.
@@ -103,7 +103,7 @@ Goal: the current Sales/Inventory features behave exactly as before, on the new 
 - [x] Merge builds: `business-phase15` code copied over `business`; `business-phase15` removed
 - [x] Identity extracted from `Erp.Api/Auth` into `Erp.Modules.Identity` (brought forward from M3)
 - [x] `Erp.Modules.Inventory.Contracts` holds `IStockReservation`; Sales references only that
-- [x] Hand-rolled mediator replaced by `martinothamar/Mediator`; logging + validation behaviours ported
+- [x] Hand-rolled mediator replaced by `martinothamar/Mediator`; logging + validation behaviors ported
 - [x] PostgreSQL + EF Core: per-module DbContext, value converters for ids/`Money`/`Quantity`, owned order lines
 - [x] Handlers use the DbContext directly (no repositories); explicit transaction only where a contract joins in
 - [x] Shared connection (`ISharedConnection`) so Inventory joins Sales' transaction — proven by a rollback test
@@ -112,14 +112,14 @@ Goal: the current Sales/Inventory features behave exactly as before, on the new 
       `ExecuteUpdate` for stock reservation (race test)
 - [x] Refresh-token rotation race closed (`revoked_utc` concurrency token → treated as reuse)
 - [x] Cross-schema FKs to `identity.app_user` removed
-- [x] AwesomeAssertions; every package licence checked;
+- [x] AwesomeAssertions; every package license checked;
       [THIRD-PARTY-NOTICES.md](course-validation/business/THIRD-PARTY-NOTICES.md)
 - [x] Patched transitive versions pinned (`CentralPackageTransitivePinningEnabled`)
 - [x] Architecture tests for the boundary rules (6)
 - [x] Errors are RFC 9457 `application/problem+json` with a `traceId`
 - [x] Unhandled domain events removed (only `SalesOrderApproved`, which has a handler); MSG0005 stays on
 
-### M2 — Production bar on existing scope ✅ code · ⬜ lessons
+### M2 — Production bar on existing scope ✅ code · ✅ lessons
 - [x] Transactional outbox: `OutboxInterceptor` (same SaveChanges) + `OutboxDispatcher` (background,
       `FOR UPDATE SKIP LOCKED`, retries, at-least-once); handlers no longer publish
 - [x] OpenTelemetry logs/traces/metrics (OTLP when configured), `X-Trace-Id` header, `traceId` in errors,
@@ -140,26 +140,41 @@ Goal: the current Sales/Inventory features behave exactly as before, on the new 
 - [x] Code comments trimmed to the non-obvious *why* (user request)
 
 ### M3 — Complete Sales, Inventory, Identity ⬜
-- [ ] User management (Identity module already extracted in M1)
+- [ ] User management (Identity module already extracted in M1): admin creates/disables users, resets passwords
+- [ ] Real `IEmailSender<AppUser>` (SMTP via MailKit, MIT) so `/auth/forgotPassword` actually sends mail —
+      today it silently sends nothing
 - [ ] Quantities become `numeric(18,3)` when items gain units of measure
 - [ ] Customers CRUD; items/categories CRUD; warehouses
 - [ ] Stock receipts, adjustments, shipments, movement history
+- [ ] Sign-in audit: who signed in when, and failed attempts (in the product scope; promised in lesson 16)
+- [ ] Decide with the first customer: may a SalesRep see/change every order, or only their own? Today: every
+      order. If "own only", it's a handler rule via `ICurrentUser`
 
 ### M4 — Blazor front end ⬜
 - [ ] `Erp.Web` (WASM + MudBlazor) hosted by `Erp.Api`; cookie auth; role-aware navigation
 - [ ] Screens for M3 features: orders (with line editing), customers, items, stock, users
 - [ ] CSP and security headers for the hosted app
+- [ ] Two-factor sign-in (Identity's authenticator-app support) switched on, with its setup screen
 
 ### M5 — Purchasing ⬜
 ### M6 — Invoicing ⬜ (BIR check first)
-### M7 — Packaging & install ⬜
-- [ ] Migrations bundle, first-run admin, IIS guide (from 14b), backup/restore guide, release checklist
+### M7 — Packaging & install 🟨
+- [x] Migration bundles per module, run as `erp_owner` (verified 2026-11-06) — lesson 15
+- [x] First-run admin from `InitialAdmin` settings (brought forward: a production install had no way to sign
+      in) — lesson 15, `FirstRunTests`
+- [x] IIS guide — lesson 15. ⚠️ Written from Microsoft's docs; **run it once on a real Windows Server 2019+**
+- [x] Backup (nightly `pg_dump`) and restore drill (verified 2026-11-06) — lesson 16
+- [ ] **Encrypt data-protection keys at rest** (certificate; the app warns `No XML encryptor configured`).
+      Before the first sale
+- [ ] Release checklist
 - [ ] Buyer monitoring guide: "quick live view" (standalone Aspire dashboard — in-memory, no alerts) vs
       "real monitoring" (free OTLP backend with retention + alerts, e.g. SigNoz or Grafana stack); just
       `OTEL_EXPORTER_OTLP_ENDPOINT` either way. The Aspire AppHost stays dev-only.
+- [ ] The 2012 R2 dev server is out of support (ESU ended 2026-10-13) and can't run lesson 15 as written; see
+      [runbooks/14b-deploy-ws2012r2.md](runbooks/14b-deploy-ws2012r2.md). Upgrade, or ask for a 2012 R2 variant
 
-### L — Lessons 🟨
-Rewritten against the M1 + M2 build. Lessons for M3+ are written when that code lands.
+### L — Lessons ✅ (M1 + M2)
+Rewritten against the M1 + M2 build (2026-11-06); the old phase files are deleted. Lessons for M3+ are written when that code lands.
 
 Domain before database: with EF Core the schema follows the model, and the rules get unit tests from day one.
 
@@ -167,16 +182,16 @@ Domain before database: with EF Core the schema follows the model, and the rules
 |---|---|---|
 | 00 / 00a / 00b | Start here · Foundations · PowerShell | same files, updated |
 | 01 | Solution setup — modules, `internal`, central packages, base types | 01 + 15 + 15b |
-| 02 | Mediator — the pain, then `martinothamar/Mediator` + behaviours | 02 |
+| 02 | Mediator — the pain, then `martinothamar/Mediator` + behaviors | 02 |
 | 03 | Domain model + its unit tests | 05 |
 | 04 | Database — PostgreSQL, EF Core per module, shared connection, migrations, seed | 03 + 03b |
 | 05 | Sign-in — ASP.NET Core Identity | 04, 04a–04e |
-| 06 | Create an order | 06 |
+| 06 | Create an order (+ error responses) | 06 |
 | 07 | Submit — Inventory module, contract, one transaction, credit lock | 07 |
 | 08 | Approve, reject, cancel | 08 |
 | 09 | Update an order — lost updates and `xmin` | 09 |
 | 10 | Reads — Dapper + SQL functions | 10 + 03a |
-| 11 | Cross-cutting — validation, errors, the outbox | 11 |
+| 11 | Events and the outbox | 11 |
 | 12 | Observability — OpenTelemetry, health, Aspire | **new** |
 | 13 | Security hardening — rate limits, HTTPS, headers, least privilege | parts of 13 |
 | 14 | Testing — integration and architecture tests | 12 |
@@ -185,6 +200,27 @@ Domain before database: with EF Core the schema follows the model, and the rules
 
 ⚠️ A reader's migration history is longer than the reference build's (e.g. `AddOutbox` in lesson 11); the
 reference squashed each module into one `InitialCreate` before release. The resulting schema is identical.
+
+**What each lesson introduces / refactors** (the "only when needed" rule — keep this in sync):
+
+| # | Introduces | Refactors (before → after) |
+|---|---|---|
+| 01 | slnx, Directory.Build.props, empty Directory.Packages.props (CPM), 4 projects, `SalesModule.AddSalesModule()` | — |
+| 02 | Mediator.Abstractions, FluentValidation (+DI ext), Logging.Abstractions, Carter, Mediator.SourceGenerator; `LoggingBehavior`, `ValidationBehavior`; IVT Erp.Api; Ping slice | — |
+| 03 | `Entity`, `AggregateRoot` (empty), `DomainException`, `Roles`; Money/Quantity/ids, Customer, ItemCategory, SalesOrder (+status rules, ApprovalPolicy, OrderNumbering); unit test project (xunit, runner, Test.Sdk, AwesomeAssertions) | — |
+| 04 | PostgreSQL install; Npgsql; Npgsql EF, NamingConventions, EF Design; transitive pinning + EF Relational pin; `IModuleDatabase` (Module, MigrateAsync(ct), Seed(ct)), `EmbeddedSql`; `NpgsqlDataSource`; `PostgresDatabase.EnsureExistsAsync`; `Item` + private EF ctors; SalesDbContext `Configure(o, NpgsqlDataSource)` (no xmin, no sequence); dotnet-ef manifest; DevSeed; DatabaseStartup | — |
+| 05 | Identity (AddIdentityApiEndpoints, MapIdentityApi, /register blocked, roles seeded via HasData, dev users via UserManager), `ICurrentUser`+`CurrentUser`, `/auth/me`, sign-out-everywhere | — |
+| 06 | `IClock`/`SystemClock`, `NotFoundException`, `GlobalExceptionHandler` (problem+json: 400/404/422/500), Swagger (Swashbuckle), order-number sequence (`HasSequence` + `NextOrderNumberAsync`), create slice, `PendingTotalAsync`; delete Ping | — |
+| 07 | Inventory module + Contracts project, `IStockReservation`, atomic `ExecuteUpdate`, `LockCustomerAsync` (FOR UPDATE) | `NpgsqlDataSource` per context → `ISharedConnection` + `Configure(o, DbConnection)` (one transaction across modules) |
+| 08 | Approve/reject/cancel slices; `xmin` row version on Customer + SalesOrder (two approvals race on a customer balance) | GlobalExceptionHandler gains `DbUpdateConcurrencyException` → 409 |
+| 09 | Update slice | `SaveChangesAsync` override: touch root on line-only edits |
+| 10 | Dapper, `IDbConnectionFactory`, SQL functions + `AddReadFunctions` migration, `MatchNamesWithUnderscores`, get + search slices | — |
+| 11 | `IDomainEvent`, events on `AggregateRoot`, `IAggregateRoot`, `OutboxMessage`, `OutboxInterceptor`, `OutboxDispatcher`, `IModuleDatabase.Schema`, `SalesOrderApproved` + audit handler, `[JsonConstructor]` (round-trip test shows the bug) | — |
+| 12 | OpenTelemetry packages, `ErpTelemetry` + `Observability.cs` (Infrastructure/host), `X-Trace-Id`, health checks, `DatabaseHealthCheck`, Aspire AppHost | `LoggingBehavior` (BuildingBlocks) → `TelemetryBehavior` (Infrastructure) |
+| 13 | `RateLimitPolicies`, rate limiting, HSTS/HTTPS, `SecurityHeadersMiddleware`, CORS from config, `ApiKeyMiddleware`, no Server header, create-roles.sql, DataProtection.EntityFrameworkCore (keys in DB) | `IModuleDatabase.MigrateAsync(ct)` → `MigrateAsync(ownerConnection, ct)` + `ErpDbMigrations` |
+| 14 | `public partial class Program`, integration tests (Mvc.Testing, Npgsql, Dapper), architecture tests | — |
+| 15 | `InitialAdmin` (`IHostedService`) + `InitialAdmin` settings, `FirstRunTests` + `OwnDatabaseFact`; migration bundles; IIS + Hosting Bundle, app pool (No Managed Code, AlwaysRunning, no idle timeout/recycle) with settings as app pool environment variables, preload, HTTPS binding, `removeServerHeader`/`X-Powered-By`, `app_offline.htm` redeploy | `CustomWebAppFactory.DropTestDatabase()` → `DropDatabase(connectionString)` |
+| 16 | Nightly `pg_dump` (scheduled task, password file), restore drill; done / missing checklist; when to add left-out tools | — |
 
 ---
 
@@ -211,3 +247,9 @@ reference squashed each module into one `InitialCreate` before release. The resu
   + 10 integration tests pass.** Lessons not yet converted.
 - **2026-11-05** — M2 code complete: **22 unit + 6 architecture + 23 integration tests pass** (also as the
   least-privilege `erp_app` role). Auth switched to ASP.NET Core Identity at the user's request.
+- **2026-11-06** — Lessons 00–16 rewritten for M1 + M2 in the WRITING-STYLE voice; old phase files deleted;
+  glossary, answer key, foundations, PowerShell companion, resources and README rewritten. Added the
+  first-run admin; 400 responses now carry a readable `detail`, and problem details declare UTF-8. Verified
+  live: migration bundles, the published app in Production as `erp_app`, backup → restore onto fresh roles,
+  and the PowerShell companion on PS 5.1. **22 unit + 6 architecture + 25 integration tests pass.** IIS itself
+  not yet run (see [course-validation/FINDINGS.md](course-validation/FINDINGS.md)).

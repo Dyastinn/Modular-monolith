@@ -151,7 +151,14 @@ public class SalesOrderWorkflowTests(CustomWebAppFactory factory)
         var manager = await factory.ClientFor(Manager);
         var create = await manager.PostAsJsonAsync("/sales-orders", new { customerId = 1, lines = Array.Empty<object>() });
         create.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        create.Content.Headers.ContentType!.ToString().Should().Be("application/problem+json; charset=utf-8");
+        var problem = await create.Content.ReadFromJsonAsync<Problem>();
+        problem!.Detail.Should().Be("An order needs at least one line.");
+        problem.Errors.Should().Equal("An order needs at least one line.");
     }
+
+    private sealed record Problem(string Detail, string[] Errors);
 
     private static async Task<int> ReservedRacks()
     {

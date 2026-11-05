@@ -13,7 +13,7 @@
     <PackageReference Include="Mediator.Abstractions" />
     <!-- Generates code naming every module's internal handlers: why modules grant InternalsVisibleTo("Erp.Api"). -->
     <PackageReference Include="Mediator.SourceGenerator" PrivateAssets="all" />
-    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Npgsql.OpenTelemetry" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
     <PackageReference Include="OpenTelemetry.Extensions.Hosting" />

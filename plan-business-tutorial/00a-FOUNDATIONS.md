@@ -1,342 +1,250 @@
-# Foundations — The Stuff You Need *Before* Phase 1
+# Foundations — The C# You Need Before Lesson 01
 
-> 👨‍🏫 **A note from your senior:** If any phase ever uses a word and your brain goes "wait, what's
-> that?", come back here first. There is *no shame* in not knowing these yet — every single senior dev
-> was confused by all of this once. Read this slowly. You don't need to memorize it; you need to be
-> able to *recognize* these things when they show up.
+Good day, developer! Before we build anything, let's make sure the everyday C# words won't trip you up.
+This page isn't about our architecture; it's about the building blocks the architecture is made of. You
+don't need to memorize it. You need to recognize these things when they show up, and come back here when
+one doesn't make sense. Every senior developer was confused by all of this once. Are you ready? Let's
+begin!
 
-This file explains the plain C# and programming ideas the phases lean on. It is **not** about our
-architecture — it's about the building blocks the architecture is made of.
+## 0. How to read a code example without panicking
 
----
+Don't try to understand every character at once. Instead:
 
-## 0. How to read code examples without panicking
+1. **Read the method names first.** They usually say what happens: `Create`, `AddLine`, `Submit`.
+2. **Skip the punctuation on the first pass.** `<T>`, `=>`, `?`, `async`: get the gist first.
+3. **Then come back here** and decode the symbols.
 
-When you see a code block, don't try to understand every character at once. Do this instead:
+Understanding what the code is trying to do comes before understanding every symbol. Always.
 
-1. **Read the comments first** (the lines starting with `//`). They tell you the *intent*.
-2. **Find the method names** — they usually say what happens (`Create`, `AddLine`, `Submit`).
-3. **Ignore the punctuation** on the first pass. `<T>`, `=>`, `?`, `async` — skip them, get the gist.
-4. **Then** go back and decode the symbols using this file.
+## 1. What are C# and .NET?
 
-Understanding *what code is trying to do* comes before understanding *every symbol*. Always.
+**C#** is the language we write in: the words and the grammar. **.NET** is the platform that runs it. It
+compiles your code and comes with a huge library of ready-made tools for the web, databases and more. We use
+**.NET 10**.
 
----
+To **compile** means to translate the C# you wrote into something the computer can run. If the compiler
+finds a mistake, you get an error instead of a program. That's good news: a compile error is a bug caught
+before any user met it. This course sets things up on purpose so that certain mistakes, like one module
+reaching into another, become compile errors. When a lesson says "the compiler stops you", that's what it
+means.
 
-## 1. What is C#? What is .NET?
+## 2. Classes, objects and `new`
 
-- **C#** ("C-sharp") is the programming *language* we write in. It's the words and grammar.
-- **.NET** is the *platform* that runs C# — it compiles your code and provides a huge library of
-  ready-made tools (for web, database, etc.). We're using **.NET 10**.
-- **Compile** means "translate the C# you wrote into something the computer can actually run." If your
-  code has a mistake the compiler can catch, it *won't compile* — you get an error instead of a running
-  program. **A compile error is your friend**: it caught a bug before your users did.
-
-> 💡 In this project we deliberately set things up so that certain *mistakes* cause compile errors. When
-> the plan says "the compiler stops you," that's this: the translation step refuses, and you fix it
-> before it ever runs.
-
----
-
-## 2. Classes, objects, and `new`
-
-- A **class** is a blueprint. `class SalesOrder { ... }` describes what a sales order *is* and what it can
-  *do*.
-- An **object** (also called an "instance") is one actual thing built from that blueprint. You make one
-  with the keyword `new`: `var dog = new Dog();`
-- **Analogy:** the class is the cookie *cutter*; each object is a *cookie* you stamp out with it.
+A **class** is a blueprint. `class Dog { ... }` describes what a dog is and what it can do. An **object** is
+one actual thing built from that blueprint, made with `new`. The class is the cookie cutter; each object is
+a cookie.
 
 ```csharp
-public class Dog          // the blueprint
+public class Dog
 {
-    public string Name;   // a piece of data every dog has
-    public void Bark() { /* ... */ }   // something every dog can do
+    public string Name { get; set; } = "";   // data every dog has
+    public void Bark() { }                   // something every dog can do
 }
 
-var rex = new Dog();      // rex is one actual dog object
+var rex = new Dog();   // one actual dog
 rex.Name = "Rex";
-rex.Bark();               // call the Bark method on rex
+rex.Bark();
 ```
 
-### Properties, fields, methods
+A **property** (`Name`, `Status`, `Total`) is data an object holds. A **method** (`Bark()`, `Submit()`) is
+something it can do. The dot means "reach into this object": `rex.Name`, `order.Submit(...)`.
 
-- A **field** or **property** is a piece of *data* an object holds (`Name`, `Status`, `Total`).
-- A **method** is an *action* an object can perform (`Bark()`, `Submit()`, `AddLine()`).
-- The dot `.` means "reach into this object and get/do this." `rex.Name`, `order.Submit()`.
-
-### Getters, setters, and why we hide setters
+### Why we hide setters
 
 ```csharp
-public string Status { get; set; }        // anyone can READ and WRITE Status
-public string Status { get; private set; } // anyone can READ, but only THIS class can WRITE
+public string Status { get; set; }           // anyone can read it, and anyone can change it
+public string Status { get; private set; }   // anyone can read it, only this class can change it
 ```
 
-That `private set` is a **huge deal in this project.** It's how the `SalesOrder` protects its rules:
-outside code can *look* at the status, but can only *change* it by calling a method like `Submit()` —
-which checks the rules first. (This is the whole "rich vs. anemic" idea, and
-[Phase 5](05-domain-model.md) is built on it.)
+That `private set` matters a lot in this course. It's how a `SalesOrder` protects its rules: other code can
+look at the status, but can only change it by calling a method like `Submit(...)`, which checks the rules
+first. [Lesson 03](03-domain-model.md) is built on it.
 
----
+## 3. Interfaces: a promise, not the real thing
 
-## 3. Interfaces — the single most important idea to get
-
-An **interface** is a *promise about what methods something has*, without saying *how* they work.
-
-Think of a wall outlet. The outlet is an **interface**: "I promise to provide power through these two
-slots." A lamp, a phone charger, a laptop — they all just need a plug that fits. They don't care what
-power plant made the electricity. You can swap the power source behind the wall and the lamp never
-knows.
+An **interface** promises what something can do, without saying how. Think of a wall outlet: it promises
+power through two slots. The lamp doesn't care which power plant is behind the wall.
 
 ```csharp
-public interface ISalesOrderRepository   // the "shape" — note the I prefix, a C# convention
+public interface IClock          // the I prefix is a C# convention for interfaces
 {
-    Task AddAsync(SalesOrder order);          // "I promise: you can call AddAsync and pass a SalesOrder"
-    Task<SalesOrder?> GetAsync(SalesOrderId id); // "I promise: call GetAsync and get a SalesOrder back"
+    DateTime UtcNow { get; }      // "I promise you can ask me the time"
 }
 ```
 
-An interface has **no actual code inside the methods** — just their names and shapes. Somewhere else, a
-real class *implements* it (fills in the actual code):
+There's no code inside an interface, only the shape. A real class **implements** it:
 
 ```csharp
-public class SalesOrderRepository : ISalesOrderRepository   // ": ISalesOrderRepository" = "I implement it"
+public sealed class SystemClock : IClock   // ": IClock" means "I keep that promise"
 {
-    public async Task AddAsync(SalesOrder order) { /* real database code here */ }
-    public async Task<SalesOrder?> GetAsync(SalesOrderId id) { /* real database code here */ }
+    public DateTime UtcNow => DateTime.UtcNow;
 }
 ```
 
-**Why do we care so much?** Because code that depends on the *interface* (`ISalesOrderRepository`) doesn't
-know or care about the real database code. That's what lets the `Domain` stay pure, and what lets us
-swap a real database for a fake one in tests. **When you see an `I` in front of a type name
-(`ISender`, `ISalesOrderRepository`, `IStockReservation`), it's almost always an interface — a promise, not the
-real thing.**
+Why care? Because code that only knows `IClock` works with *any* clock. In the app, it gets the real one. In
+a test, it gets a clock stopped at 9:00 a.m. on a Monday, so a time-based rule can be tested exactly. When you
+see an `I` in front of a type name (`IClock`, `ICurrentUser`, `IStockReservation`), read it as "a promise".
 
----
+## 4. Dependency injection: "hand me what I need"
 
-## 4. Dependency Injection (DI) — "give me what I need, I won't go get it"
-
-Look at this class:
+Look at this class from lesson 08:
 
 ```csharp
-public class CreateSalesOrderHandler(ISalesOrderRepository orders, ICustomerRepository customers)
+internal sealed class CancelSalesOrderHandler(SalesDbContext db, IStockReservation stock)
 {
-    // orders and customers are handed TO this class from outside.
+    // db and stock are handed to this class from outside
 }
 ```
 
-The handler *needs* a repository to do its job. But instead of building one itself
-(`new SalesOrderRepository(...)`), it says "someone hand me one that fits the `ISalesOrderRepository` shape."
-That handing-over is **Dependency Injection**.
+The handler needs a database context and a way to release stock. It doesn't create them with `new`; it
+says "whoever creates me, hand me these". That handing-over is **dependency injection**, or DI.
 
-### The parentheses after the class name
-
-`class CreateSalesOrderHandler(ISalesOrderRepository orders, ...)` looks odd the first time. Those
-parentheses are a **primary constructor** — modern C# shorthand for "to build one of these, you must supply
-an `orders` and a `customers`, and I'll keep them as fields." Every method in the class can then just use
-`orders` by name. The long-hand version says exactly the same thing:
+Those parentheses right after the class name are a **primary constructor**: modern shorthand for "to build
+one of these, you must supply a `db` and a `stock`, and I'll keep them". The long way says the same thing:
 
 ```csharp
-public class CreateSalesOrderHandler          // the old way — same meaning, four times the typing
+internal sealed class CancelSalesOrderHandler
 {
-    private readonly ISalesOrderRepository _orders;
-    private readonly ICustomerRepository _customers;
+    private readonly SalesDbContext _db;
+    private readonly IStockReservation _stock;
 
-    public CreateSalesOrderHandler(ISalesOrderRepository orders, ICustomerRepository customers)
+    public CancelSalesOrderHandler(SalesDbContext db, IStockReservation stock)
     {
-        _orders = orders;
-        _customers = customers;
+        _db = db;
+        _stock = stock;
     }
 }
 ```
 
-Nearly every handler, repository, and service in this course uses the short form. When you see parentheses
-right after a class name, read them as **"these get handed to me when I'm created."**
+Think of a chef who doesn't own a farm. They ask for eggs and flour, and the kitchen supplies them. The chef
+cooks the same way whichever farm the eggs came from. In the app, the kitchen supplies the real Inventory
+service; in a test, it can supply something else. The kitchen's supply list is written once, at startup,
+in `Program.cs` and each module's `AddXxxModule` method. That place is called the **composition root**.
 
-**Analogy:** you're a chef. You don't own a farm. You just say "I need eggs and flour," and the kitchen
-supplies them. You cook the same way whether the eggs came from farm A or farm B. DI is the kitchen
-supplying your ingredients.
+## 5. `async` and `await`: "this takes a moment, don't freeze"
 
-**Why it matters:** in real code the kitchen supplies the *real* repository; in tests the kitchen
-supplies a *fake* one. The handler doesn't change. This is why DI shows up everywhere in this project.
-
-> The place that decides "when someone asks for `ISalesOrderRepository`, give them a real
-> `SalesOrderRepository`" is called the **composition root** — it lives in `Program.cs`. Think of it as the
-> kitchen's supply list, written down once at startup.
-
----
-
-## 5. `async` and `await` — "this might take a while, don't freeze"
-
-Talking to a database or a website takes *time* (milliseconds, but that's ages for a computer). We don't
-want the whole program to freeze while waiting. So those methods are marked **`async`** and return a
-**`Task`** (a "this will be done later" ticket). You use **`await`** to say "wait for this to finish,
-but let other work happen meanwhile."
+Talking to a database takes time: milliseconds, but ages for a computer. Methods that wait like that are
+marked **`async`**, and return a **`Task`** or a **`ValueTask`**: a ticket for a result that arrives a little
+later. **`await`** means "wait for it here, but let other work run meanwhile".
 
 ```csharp
-public async Task<SalesOrder?> GetAsync(SalesOrderId id)   // async, returns a Task (a future result)
-{
-    var order = await database.LoadOrder(id);    // await = "pause here until it's loaded"
-    return order;
-}
+var order = await db.SalesOrders.SingleOrDefaultAsync(o => o.Id == orderId, ct);
 ```
 
-**Practical rules for reading our code:**
-- `Task<Something>` = "a Something, but it'll arrive a moment later."
-- `await x` = "wait for x to be ready, then give me the value inside."
-- If a method has `await` in it, it's marked `async`. That's just the rule.
-- **`CancellationToken ct`** you'll see passed around everywhere — it's a "stop early if the user gave
-  up / the request was cancelled" signal. You can mostly ignore it while reading; just pass it along.
+Rules of thumb for reading our code:
 
-You don't need to deeply understand *how* async works to follow this project. Just read `await foo()` as
-"do foo and wait for the answer."
+- `Task<Order>` or `ValueTask<Order>`: "an `Order`, arriving a moment later". Our handlers return
+  `ValueTask`, a lighter ticket for results that are often ready straight away.
+- `await x`: "wait for `x`, then give me what's inside".
+- A method containing `await` is marked `async`. That's just the rule.
+- **`CancellationToken ct`** appears everywhere. It's a "stop early, the caller gave up" signal. Just pass
+  it along.
 
----
+## 6. Generics: the `<T>` thing
 
-## 6. Generics — the `<T>` thing
-
-Sometimes code should work with *any* type. `T` is a placeholder for "whatever type you plug in."
-
-**Analogy:** a cardboard box doesn't care what's inside. A "box of `T`" can be a box of shoes
-(`Box<Shoe>`) or a box of books (`Box<Book>`). Same box design, different contents.
+Sometimes code should work with any type. `T` is a placeholder for "whatever type you plug in". A
+cardboard box doesn't care what's inside: `Box<Shoe>` and `Box<Book>` are the same box design.
 
 ```csharp
-public interface IRequestHandler<TRequest, TResponse>   // works for ANY request + response types
+internal sealed class CancelSalesOrderHandler : ICommandHandler<CancelSalesOrderCommand>
+internal sealed class SearchSalesOrdersHandler : IQueryHandler<SearchSalesOrdersQuery, PagedResult<SalesOrderSummaryDto>>
 ```
 
-When you see `<TRequest, TResponse>` or `<T>`, read it as "this is a fill-in-the-blank type." When it's
-*used*, the blanks get filled: `IRequestHandler<CreateSalesOrderCommand, SalesOrderId>` means "the handler
-for a `CreateSalesOrderCommand` that gives back a `SalesOrderId`." You don't need to write generic code in
-this project much — you mostly *fill in the blanks*.
+Read the second one as "the handler for a `SearchSalesOrdersQuery`, which gives back a page of order
+summaries". You'll rarely write generic code yourself; you'll mostly fill in the blanks.
 
-**The `<T>` you'll see most is a *collection* — a list of things:**
+The `<T>` you'll see most is a list:
 
-- **`List<SalesOrderLine>`** = "a list of order lines you can add to and remove from." (A `List<T>` is the
-  everyday resizable list.)
-- **`IReadOnlyList<SalesOrderLine>`** = "a list you can *look at* but not change." The `SalesOrder` exposes
-  its lines as `IReadOnlyList<...>` on purpose: outside code can read the lines, but can only *add* one by
-  calling `AddLine(...)` — which checks the rules first. It's the same "protect your own data" idea as
-  `private set` from §2, applied to a list. When you see `IReadOnlyList<T>`, read it as "a look-but-don't-
-  touch list."
+- **`List<SalesOrderLine>`**: a list you can add to and remove from.
+- **`IReadOnlyList<SalesOrderLine>`**: a list you can look at but not change. `SalesOrder` shows its lines
+  this way on purpose. Other code can read them, but can only add one through `AddLine(...)`, which checks
+  the rules. It's the `private set` idea, applied to a list.
 
-You won't build these types; you'll just *read* and *loop over* them (`foreach (var line in order.Lines)`).
+You'll also spot `in` and `out` on some generic interfaces. They're fine print that lets the compiler
+accept related types in more places. You never need to write them in this course.
 
----
+## 7. `class`, `record`, `struct`
 
-## 7. `record`, `struct`, `class` — three ways to make a type
+- **`class`**: the normal kind. Objects with an identity and behavior. `SalesOrder` is a class.
+- **`record`**: made for holding data, with value equality and easy copying built in. Commands, queries and
+  results are records: `record CancelSalesOrderCommand(long OrderId)`.
+- **`struct`**: a lightweight value, for tiny things. Our ids are structs:
+  `readonly record struct SalesOrderId(long Value)`, a small, unchangeable wrapper around a number.
 
-You'll see all three. Rough differences, enough to read the code:
+For reading purposes, `record` and `struct` here mostly mean "a small data holder". Don't overthink it.
 
-- **`class`** — the normal one. Objects with identity and behavior. `Order` is a class.
-- **`record`** — a class optimized for *holding data*, with handy built-in features (easy equality,
-  easy copying). We use records for commands, queries, and DTOs: `record CreateOrderCommand(...)`.
-- **`struct`** — a lightweight value type, good for tiny things. Our strongly-typed IDs are structs:
-  `readonly record struct SalesOrderId(long Value)` — a tiny, unchangeable wrapper around a number.
-
-For reading purposes: **`record` and `struct` here mostly mean "a small data holder."** Don't overthink
-it yet.
-
----
-
-## 8. Enums — a fixed list of named options
-
-An **enum** is a type that can only be one of a set list of named values.
+## 8. Enums: a fixed list of names
 
 ```csharp
-public enum SalesOrderStatus { Draft, PendingApproval, Approved, Cancelled, Rejected }
+internal enum SalesOrderStatus { Draft, PendingApproval, Approved, Cancelled, Rejected }
 ```
 
-Now `SalesOrderStatus` can *only* be one of those five. You can't set it to `"Banana"` or `"draftt"` (typo) —
-the compiler won't allow it. That's why [Phase 5](05-domain-model.md) gives an order's status an enum
-instead of a plain string: strings let typos and nonsense in; enums don't. (Those five names really are the
-whole lifecycle of an order in this system — you'll meet each one as we build it.)
+A `SalesOrderStatus` can only ever be one of those five. You can't set it to `"draftt"` by accident; the
+compiler won't allow it. That's why an order's status is an enum and not a string. And those five really are
+an order's whole life; you'll build each step.
 
----
+## 9. Exceptions: "stop, something's wrong"
 
-## 9. Exceptions — "stop, something's wrong"
-
-When code hits a situation it can't or shouldn't continue past, it **throws an exception** — it
-basically shouts "NOPE!" and stops, jumping out of the current work.
+When code reaches a point it mustn't go past, it **throws** an exception: it stops and jumps out of the
+current work.
 
 ```csharp
 if (Status != SalesOrderStatus.Draft)
-    throw new DomainException("Only draft orders can be submitted.");
+    throw new DomainException("Lines can only be changed on a draft order.");
 ```
 
-- **`throw`** = raise the alarm and stop here.
-- The `DomainException` carries a message explaining what went wrong.
-- Higher-up code can **catch** exceptions and decide what to do (e.g., turn it into a "400 Bad Request"
-  web response).
+Code further up can **catch** it and decide what to do. In this course, a broken business rule throws a
+`DomainException`, and the API turns it into a clear "422" answer for the caller. That's the order refusing
+to do something illegal, which is exactly what we want.
 
-In this project, when a business rule is broken, the domain *throws* a `DomainException`. That's the
-`SalesOrder` refusing to do something illegal — exactly what we want.
-
----
-
-## 10. Some symbols you'll keep seeing
+## 10. Symbols you'll keep seeing
 
 | Symbol | Name | Read it as |
 |---|---|---|
-| `=>` | "fat arrow" | "produces" or "goes to." `x => x.Name` = "from x, take Name." |
-| `?` after a type | nullable | "might be nothing." `SalesOrder?` = "a SalesOrder, or null (nothing)." |
-| `??` | null-coalescing | "or else." `a ?? b` = "a, but if a is nothing, use b." |
-| `!` after a value | null-forgiving | "trust me, this isn't nothing." `config["Key"]!` tells the compiler to stop warning that the value might be null — *you* are vouching for it. (See the note below the table.) |
-| `_lines` | leading underscore | a convention meaning "private field, internal to this class." |
-| `//` | comment | a note for humans; the computer ignores it. Read these first! |
-| `public` / `private` | access | `public` = anyone can use it; `private` = only this class can. |
-| `sealed` | no subclasses | "this class can't be inherited from." We mark most classes `sealed` — it says "nothing builds on this," which makes the code easier to reason about. You can read past it. |
-| `= default!` | "assigned later, stop warning" | a placeholder on a property that a factory or the database will fill in before anyone reads it. The `!` is the same null-forgiving mark as above. |
-| `var` | inferred type | "figure out the type for me." `var x = 5;` → x is an int. |
+| `=>` | fat arrow | "produces". `o => o.Id` means "from `o`, take `Id`" |
+| `?` after a type | nullable | "might be nothing". `SalesOrder?` is "an order, or `null`" |
+| `??` | null-coalescing | "or else". `a ?? b` means "`a`, but if it's nothing, `b`" |
+| `?? throw` | | "or else stop here". Common after a lookup that must find something |
+| `!` after a value | null-forgiving | "trust me, this isn't nothing". A human vouches, not the compiler |
+| `_lines` | leading underscore | a private field, internal to its class |
+| `//` | comment | a note for humans; the computer ignores it |
+| `public` / `internal` / `private` | access | anyone / this project only / this class only |
+| `sealed` | no subclasses | "nothing builds on this class". Most of ours are sealed |
+| `var` | inferred type | "work out the type for me". `var x = 5;` makes `x` an `int` |
 
-**About that `!` (and why the compiler nags at all):** modern .NET projects turn on **nullable reference
-types** — the compiler tracks which values might be `null` and warns you *before* you get the classic
-`NullReferenceException` at runtime. That's why you see `SalesOrder?` (this genuinely might be nothing —
-handle it) versus `SalesOrder` (the compiler will hold you to it never being nothing). The `!` is the escape
-hatch for the places where you know something the compiler can't — "this config value exists," "this
-transaction always has a connection." Every `!` in this course is a small promise; read it as "checked by a
-human, not the compiler."
+About that `?` and `!`: modern .NET projects turn on **nullable reference types**. The compiler tracks which
+values might be `null` and warns you *before* the classic crash at runtime. `SalesOrder?` says "handle the
+nothing case"; plain `SalesOrder` says "this is never nothing". The `!` is the escape hatch for places where
+you know something the compiler can't.
 
-You'll also spot `in` and `out` on some generic interfaces (`IRequest<out TResponse>`,
-`IRequestHandler<in TRequest, …>`). Those are **variance** markers — fine print that lets the compiler accept
-related types in more places. You never need to write or reason about them in this course; just don't let
-them stop your eye.
+## 11. What are a database and SQL?
 
----
+A **database** keeps data after the program stops. We use **PostgreSQL**, a free, open-source database. Data
+lives in **tables**, much like spreadsheets: a `sales_order` table has columns (`id`, `customer_id`,
+`status`) and one row per order. **SQL** is the language for talking to it: "give me every approved order",
+"insert this row".
 
-## 11. What is SQL? What is a database?
+We talk to PostgreSQL in two ways, and [lesson 04](04-database.md) and [lesson 10](10-reads.md) explain why:
 
-- A **database** stores your data permanently (so it survives when the program stops). We use **SQL
-  Server**.
-- Data lives in **tables** — like spreadsheets. A `SalesOrder` table has columns (SalesOrderId,
-  CustomerId, Status…) and rows (one per order).
-- **SQL** is the language for talking to the database: "give me all orders where status = submitted,"
-  "insert this new row."
-- A **stored procedure** ("proc") is a chunk of SQL saved *inside* the database with a name, so your C#
-  can just call it by name instead of sending raw SQL every time. (Much more in
-  [Phase 3](03-database-schema.md).)
-- **Dapper** is a small helper that runs our SQL and turns the rows it gets back into C# objects.
+- **EF Core** saves our C# objects for us. Every change to data goes through it.
+- **Dapper** runs a SQL query and turns the rows into C# objects. Every screen's data comes through it.
 
-Don't worry about writing SQL yet — the phases show you the exact procs. For now: **database = permanent
-storage in tables; SQL = the language to talk to it; stored proc = a saved, named SQL command.**
+Don't worry about writing SQL yet; the lessons show every line of it.
 
----
+## 12. When you feel lost
 
-## 12. A word about feeling lost
+If a lesson goes over your head, that's normal, and it isn't a sign you can't do this. Here's what works:
 
-If you read a phase and feel like it went over your head — **that is completely normal and it is not a
-sign you can't do this.** Here's what actually works:
+1. Read it once for the big idea, skipping the details.
+2. Try the "Let's check!" questions at the end. They show you exactly which part didn't land.
+3. Read it a second time. It'll be much easier.
+4. If one word blocks you, look it up in the [glossary](GLOSSARY.md) or on this page.
 
-1. Read it once for the *big idea*, ignoring details.
-2. Work the **Check Yourself** questions at the bottom of the phase — trying to answer them shows you
-   exactly which part you didn't actually absorb.
-3. Read it a *second* time. It'll be dramatically easier.
-4. If a specific word blocks you, look it up in [GLOSSARY.md](GLOSSARY.md) or here.
+Nobody learns this in one pass. Seniors just had more passes. That's the whole difference.
 
-Nobody learns this in one pass. Seniors just had more passes than you. That's the whole difference.
-
-Now go back to [00-START-HERE.md](00-START-HERE.md) for the plan, then start building in
-[01-solution-setup.md](01-solution-setup.md). You've got this.
+And that's where this page ends. Go back to [Start here](00-START-HERE.md) for the plan, then begin with
+[lesson 01](01-solution-setup.md). Good luck, developer!
 
 ---
 
-← Previous: [Overview — Start Here](00-START-HERE.md) · Next: [Phase 1 — Solution Setup](01-solution-setup.md) →
+← [Start here](00-START-HERE.md) · Next: [Lesson 01 — Solution setup](01-solution-setup.md) →

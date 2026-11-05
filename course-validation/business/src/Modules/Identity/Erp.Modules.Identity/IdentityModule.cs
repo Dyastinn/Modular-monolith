@@ -60,6 +60,8 @@ public static class IdentityModule
             .SetApplicationName("Erp")
             .PersistKeysToDbContext<ErpIdentityDbContext>();
 
+        services.AddHostedService<InitialAdmin>();
+
         // AddCarter() only finds public endpoint classes; ours are internal.
         foreach (var endpoint in typeof(IdentityModule).Assembly.GetTypes()
                      .Where(t => !t.IsAbstract && typeof(ICarterModule).IsAssignableFrom(t)))

@@ -5,12 +5,6 @@
     <ProjectReference Include="..\Erp.Modules.Inventory.Contracts\Erp.Modules.Inventory.Contracts.csproj" />
   </ItemGroup>
 
-  <!-- Erp.Api: the Mediator source generator runs there. Never grant this to another module. -->
-  <ItemGroup>
-    <InternalsVisibleTo Include="Erp.Api" />
-    <InternalsVisibleTo Include="Erp.Integration.Tests" />
-  </ItemGroup>
-
   <ItemGroup>
     <EmbeddedResource Include="Infrastructure\Sql\**\*.sql" />
   </ItemGroup>
@@ -19,7 +13,6 @@
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="EFCore.NamingConventions" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
-    <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
   </ItemGroup>
 
 </Project>

@@ -34,7 +34,7 @@ each one gets a row here in the same change.
 | Microsoft.EntityFrameworkCore.Design, dotnet-ef | MIT |
 | xUnit, xunit.runner.visualstudio | Apache-2.0 |
 | AwesomeAssertions | Apache-2.0 |
-| Microsoft.NET.Test.Sdk, Microsoft.AspNetCore.Mvc.Testing, coverlet.collector | MIT |
+| Microsoft.NET.Test.Sdk, Microsoft.AspNetCore.Mvc.Testing | MIT |
 | Aspire (Aspire.AppHost.Sdk, dashboard, orchestrator) — development dashboard only | MIT |
 
 ## Required server software
@@ -47,7 +47,7 @@ each one gets a row here in the same change.
 
 | Package | Why |
 |---|---|
-| MediatR | Commercial license required for larger organisations since 2025 |
+| MediatR | Commercial license required for larger organizations since 2025 |
 | FluentAssertions ≥ 8 | Paid license required for commercial use |
 | AutoMapper | Commercial license since 2025 |
 | QuestPDF | Free tier is revenue-gated, which would bind each buyer |
