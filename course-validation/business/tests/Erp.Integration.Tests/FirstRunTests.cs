@@ -27,13 +27,6 @@ public sealed class FirstRunFactory : WebApplicationFactory<Program>
         builder.UseSetting("Database:SeedDevelopmentData", "false");
         builder.UseSetting("InitialAdmin:Email", AdminEmail);
         builder.UseSetting("InitialAdmin:Password", AdminPassword);
-        builder.UseSetting("ApiKeys:tests", CustomWebAppFactory.TestApiKey);
-    }
-
-    protected override void ConfigureClient(HttpClient client)
-    {
-        client.DefaultRequestHeaders.Add("X-Api-Key", CustomWebAppFactory.TestApiKey);
-        base.ConfigureClient(client);
     }
 }
 
@@ -57,13 +50,13 @@ public class FirstRunTests(FirstRunFactory factory) : IClassFixture<FirstRunFact
     {
         var client = factory.CreateClient();
 
-        var login = await client.PostAsJsonAsync("/auth/login",
+        var login = await client.PostAsJsonAsync("/api/auth/login",
             new { email = FirstRunFactory.AdminEmail, password = FirstRunFactory.AdminPassword });
         login.StatusCode.Should().Be(HttpStatusCode.OK);
 
         var token = (await login.Content.ReadFromJsonAsync<Tokens>())!.AccessToken;
         client.DefaultRequestHeaders.Authorization = new("Bearer", token);
-        var me = await client.GetFromJsonAsync<Me>("/auth/me");
+        var me = await client.GetFromJsonAsync<Me>("/api/auth/me");
         me!.Role.Should().Be(Roles.Admin);
     }
 }

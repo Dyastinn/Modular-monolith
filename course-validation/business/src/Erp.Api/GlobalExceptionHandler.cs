@@ -15,8 +15,13 @@ internal sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> log
         var (status, title) = ex switch
         {
             ValidationException          => (StatusCodes.Status400BadRequest, "Validation failed"),
+            // Malformed JSON, a missing body: the request never reached a handler.
+            BadHttpRequestException bad  => (bad.StatusCode, "The request could not be read"),
             NotFoundException            => (StatusCodes.Status404NotFound, "Resource not found"),
             DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "Someone else changed this. Reload and try again."),
+            // A unique index caught what a check-then-insert missed: two people creating the same thing at once.
+            DbUpdateException { InnerException: Npgsql.PostgresException { SqlState: "23505" } }
+                                         => (StatusCodes.Status409Conflict, "That already exists. Reload and try again."),
             DomainException              => (StatusCodes.Status422UnprocessableEntity, "Business rule violated"),
             _                            => (StatusCodes.Status500InternalServerError, "Unexpected error")
         };

@@ -1,0 +1,55 @@
+@page "/receivables-aging"
+@attribute [Authorize(Roles = $"{Roles.Accountant},{Roles.Admin},{Roles.SalesManager}")]
+@inject ApiClient Api
+
+<PageTitle>Receivables aging · ERP</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h4">Receivables aging</MudText>
+    <MudSpacer />
+    <MudDatePicker Date="_asOf" DateChanged="OnDate" Label="As of" Style="max-width:200px" />
+</MudStack>
+
+@if (_report is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <MudSimpleTable Dense="true" Hover="true">
+        <thead>
+            <tr><th>Customer</th><th class="money">Not yet due</th><th class="money">1–30 days</th><th class="money">31–60</th>
+                <th class="money">61–90</th><th class="money">Over 90</th><th class="money">Total</th></tr>
+        </thead>
+        <tbody>
+            @foreach (var r in _report.Customers.Append(_report.Totals))
+            {
+                <tr style="@(r.CustomerId == 0 ? "font-weight:bold" : "")">
+                    <td>
+                        @if (r.CustomerId == 0) { @r.CustomerName }
+                        else { <MudLink Href="@($"invoices?search={Uri.EscapeDataString(r.CustomerName)}")">@r.CustomerName</MudLink> }
+                    </td>
+                    <td class="money">@Format.Peso(r.NotYetDue)</td>
+                    <td class="money">@Format.Peso(r.Days1To30)</td>
+                    <td class="money">@Format.Peso(r.Days31To60)</td>
+                    <td class="money">@Format.Peso(r.Days61To90)</td>
+                    <td class="money" style="@(r.Over90 > 0 ? "color:#c62828" : "")">@Format.Peso(r.Over90)</td>
+                    <td class="money">@Format.Peso(r.Total)</td>
+                </tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+    @if (_report.Customers.Count == 0) { <MudText Class="mt-4">Nobody owes anything on this date.</MudText> }
+}
+
+@code {
+    private DateTime? _asOf = DateTime.Today;
+    private AgingReport? _report;
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task OnDate(DateTime? date) { _asOf = date ?? DateTime.Today; await Load(); }
+
+    private async Task Load() =>
+        _report = await Api.Get<AgingReport>($"api/reports/receivables-aging?asOf={_asOf:yyyy-MM-dd}");
+}

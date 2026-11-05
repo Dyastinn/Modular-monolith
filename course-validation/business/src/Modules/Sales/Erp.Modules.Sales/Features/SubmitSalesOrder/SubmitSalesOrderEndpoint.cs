@@ -1,5 +1,4 @@
 using Carter;
-using Erp.Shared.BuildingBlocks;
 using Mediator;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -16,5 +15,5 @@ internal sealed class SubmitSalesOrderEndpoint : ICarterModule
                 await sender.Send(new SubmitSalesOrderCommand(id), ct);
                 return Results.NoContent();
             })
-            .RequireAuthorization(p => p.RequireRole(Roles.SalesRep, Roles.SalesManager, Roles.Admin));
+            .RequireAuthorization(p => p.RequireRole(SalesRoles.Sellers));
 }

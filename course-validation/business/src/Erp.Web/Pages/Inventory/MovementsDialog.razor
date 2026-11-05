@@ -1,0 +1,34 @@
+@inject ApiClient Api
+@inject UserDirectory Users
+
+<MudDialog>
+    <DialogContent>
+        <MudTable T="StockMovement" ServerData="Load" Dense="true" Hover="true" Elevation="0">
+            <HeaderContent>
+                <MudTh>When</MudTh><MudTh>What</MudTh><MudTh Class="money">Quantity</MudTh><MudTh>Reference / reason</MudTh><MudTh>By</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@Format.Date(context.OccurredUtc)</MudTd>
+                <MudTd>@context.Kind</MudTd>
+                <MudTd Class="money">@(context.Quantity > 0 ? "+" : "")@Format.Qty(context.Quantity) @Item.Unit</MudTd>
+                <MudTd>@(context.Reference ?? context.Reason)</MudTd>
+                <MudTd>@_names.GetValueOrDefault(context.UserId)</MudTd>
+            </RowTemplate>
+            <NoRecordsContent>No movements yet.</NoRecordsContent>
+            <PagerContent><MudTablePager /></PagerContent>
+        </MudTable>
+    </DialogContent>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public StockItem Item { get; set; } = default!;
+    private readonly Dictionary<long, string> _names = [];
+
+    private async Task<TableData<StockMovement>> Load(TableState state, CancellationToken ct)
+    {
+        var page = await Api.Page<StockMovement>($"api/items/{Item.Id}/movements", state);
+        foreach (var id in page.Items!.Select(m => m.UserId).Distinct()) _names[id] = await Users.NameOf(id);
+        return page;
+    }
+}

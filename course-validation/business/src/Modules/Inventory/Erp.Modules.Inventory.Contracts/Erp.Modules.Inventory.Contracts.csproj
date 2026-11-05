@@ -1,5 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
-  <!-- References no module, so any module can depend on it without creating a cycle. -->
+  <!-- References no module, only BuildingBlocks, so any module can depend on it without creating a cycle. -->
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\Shared\Erp.Shared.BuildingBlocks\Erp.Shared.BuildingBlocks.csproj" />
+  </ItemGroup>
 
 </Project>

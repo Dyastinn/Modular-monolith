@@ -61,33 +61,33 @@ once you've saved a few objects.
 Search Microsoft Learn for *"Use Identity to secure a Web API backend for SPAs"*: it's the page about
 `MapIdentityApi`. For why we use length over composition rules, search *"NIST SP 800-63B passwords"*.
 
-**Transactions and concurrency** ([lesson 07](07-submit.md) and [lesson 08](08-approve-reject-cancel.md))
+**Transactions and concurrency** ([lesson 09](09-submit.md) and [lesson 10](10-approve-reject-cancel.md))
 Search *"race condition explained"* for the classic "two people withdraw from one account" example, then the
 PostgreSQL documentation's *"Explicit locking"* and *"Transaction isolation"* pages. For EF Core's side,
 search *"EF Core handling concurrency conflicts"*. This is the hardest idea in the course. Re-read lesson 07's
 naive version and its timeline more than once; it's supposed to be hard.
 
-**Dapper and SQL functions** ([lesson 10](10-reads.md))
+**Dapper and SQL functions** ([lesson 08](08-find-orders.md))
 Search *"Dapper GitHub"*: the README is the best tutorial. For functions, the PostgreSQL documentation's
 *"CREATE FUNCTION"* page; look at the `RETURNS TABLE` examples.
 
-**The outbox** ([lesson 11](11-events-outbox.md))
+**The outbox** ([lesson 12](12-events-outbox.md))
 Search *"transactional outbox pattern microservices.io"*. It's written for microservices, but the problem it
 solves, saving and announcing in one step, is exactly ours.
 
-**OpenTelemetry** ([lesson 12](12-observability.md))
+**OpenTelemetry** ([lesson 14](14-observability.md))
 Search *".NET observability with OpenTelemetry"* on Microsoft Learn, and read *"Observability primer"* on
 opentelemetry.io for what logs, traces and metrics each answer.
 
-**Web security** ([lesson 13](13-security-hardening.md))
+**Web security** ([lesson 22](22-security-hardening.md))
 The OWASP *"Cheat Sheet Series"* has a short page for each topic: *"HTTP Strict Transport Security"*,
 *"Content Security Policy"*, *"Authentication"*. For ASP.NET Core's limiter, search *"Rate limiting middleware
 in ASP.NET Core"*.
 
-**Integration tests** ([lesson 14](14-testing.md))
+**Integration tests** ([lesson 13](13-testing.md))
 Search Microsoft Learn for *"Integration tests in ASP.NET Core"*: it explains `WebApplicationFactory`.
 
-**IIS and backups** ([lesson 15](15-deploy-iis.md), [lesson 16](16-production-checklist.md))
+**IIS and backups** ([lesson 24](24-deploy-iis.md), [lesson 25](25-production-checklist.md))
 Search Microsoft Learn for *"Host ASP.NET Core on Windows with IIS"* and *"Troubleshoot ASP.NET Core on
 Azure App Service and IIS"*: the second has every 500.xx code. For backups, the PostgreSQL documentation's
 *"Backup and Restore"* chapter.

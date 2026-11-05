@@ -17,6 +17,7 @@ internal sealed class ErpIdentityDbContext(DbContextOptions<ErpIdentityDbContext
     // The keys that encrypt sign-in cookies and tokens. Stored here so sessions survive restarts and are shared
     // by every instance of the app.
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
+    public DbSet<SignInAttempt> SignInAttempts => Set<SignInAttempt>();
 
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder o, DbConnection connection) =>
         o.UseNpgsql(connection, npg => npg.MigrationsHistoryTable("__EFMigrationsHistory", Schema))
@@ -27,15 +28,32 @@ internal sealed class ErpIdentityDbContext(DbContextOptions<ErpIdentityDbContext
         base.OnModelCreating(b);
         b.HasDefaultSchema(Schema);
 
-        b.Entity<AppUser>().ToTable("users");
+        b.Entity<AppUser>(e =>
+        {
+            e.ToTable("users");
+            e.Property(x => x.FullName).HasMaxLength(100);
+        });
         b.Entity<IdentityUserClaim<long>>().ToTable("user_claims");
         b.Entity<IdentityUserLogin<long>>().ToTable("user_logins");
         b.Entity<IdentityUserToken<long>>().ToTable("user_tokens");
         b.Entity<IdentityUserRole<long>>().ToTable("user_roles");
         b.Entity<IdentityRoleClaim<long>>().ToTable("role_claims");
         b.Entity<IdentityRole<long>>().ToTable("roles").HasData(
-            Role(1, AppRoles.SalesRep), Role(2, AppRoles.SalesManager), Role(3, AppRoles.Admin));
+            Role(1, AppRoles.SalesRep), Role(2, AppRoles.SalesManager), Role(3, AppRoles.Admin),
+            Role(4, AppRoles.InventoryClerk), Role(5, AppRoles.Purchaser), Role(6, AppRoles.Accountant));
         b.Entity<DataProtectionKey>().ToTable("data_protection_keys");
+
+        b.Entity<SignInAttempt>(e =>
+        {
+            e.ToTable("sign_in_attempt");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.Email).HasMaxLength(256);
+            e.Property(x => x.Outcome).HasMaxLength(30);
+            e.Property(x => x.IpAddress).HasMaxLength(45);
+            e.HasIndex(x => x.OccurredUtc);
+            e.HasIndex(x => x.Email);
+        });
 
         b.Entity<OutboxMessage>(e =>
         {

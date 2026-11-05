@@ -4,4 +4,7 @@ namespace Erp.Shared.BuildingBlocks;
 public interface IClock
 {
     DateTime UtcNow { get; }
+
+    // The calendar date where the business is (Company:TimeZone), for invoice and due dates.
+    DateOnly Today { get; }
 }

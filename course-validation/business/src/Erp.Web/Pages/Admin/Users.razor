@@ -1,0 +1,72 @@
+@page "/users"
+@attribute [Authorize(Roles = Roles.Admin)]
+@inject ApiClient Api
+@inject IDialogService Dialogs
+
+<PageTitle>Users · ERP</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h4">Users</MudText>
+    <MudSpacer />
+    <MudButton OnClick="() => Edit(null)" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PersonAdd">New user</MudButton>
+</MudStack>
+
+<MudTextField T="string" Value="_search" ValueChanged="OnSearch" Label="Name or email" DebounceInterval="400" Clearable="true" Class="mb-4" />
+
+<MudTable T="User" @ref="_table" ServerData="Load" Hover="true" Dense="true">
+    <HeaderContent>
+        <MudTh>Name</MudTh><MudTh>Email</MudTh><MudTh>Role</MudTh><MudTh>Status</MudTh><MudTh>Last sign-in</MudTh><MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.FullName</MudTd>
+        <MudTd>@context.Email</MudTd>
+        <MudTd>@Format.Words(context.Role)</MudTd>
+        <MudTd>
+            @if (context.IsDisabled) { <MudChip T="string" Size="Size.Small" Color="Color.Default">Disabled</MudChip> }
+            else if (context.LockedOutUntil is not null) { <MudChip T="string" Size="Size.Small" Color="Color.Error">Locked out</MudChip> }
+            else if (context.MustChangePassword) { <MudChip T="string" Size="Size.Small" Color="Color.Warning">Temporary password</MudChip> }
+            else { <MudChip T="string" Size="Size.Small" Color="Color.Success">Active</MudChip> }
+        </MudTd>
+        <MudTd>@Format.Date(context.LastSignIn)</MudTd>
+        <MudTd>
+            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" aria-label="Actions">
+                <MudMenuItem OnClick="() => Edit(context)">Edit name and role</MudMenuItem>
+                <MudMenuItem OnClick="() => ResetPassword(context)">Reset password</MudMenuItem>
+                <MudMenuItem OnClick="() => ToggleDisabled(context)">@(context.IsDisabled ? "Enable" : "Disable")</MudMenuItem>
+            </MudMenu>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>No users match.</NoRecordsContent>
+    <PagerContent><MudTablePager /></PagerContent>
+</MudTable>
+
+@code {
+    private MudTable<User> _table = default!;
+    private string? _search;
+
+    private Task<TableData<User>> Load(TableState state, CancellationToken ct) =>
+        Api.Page<User>(Url.With("api/users", ("search", _search)), state);
+
+    private Task OnSearch(string? text) { _search = text; return _table.ReloadServerData(); }
+
+    private async Task Edit(User? user)
+    {
+        var dialog = await Dialogs.ShowAsync<UserDialog>(user is null ? "New user" : $"Edit {user.FullName}",
+            new DialogParameters<UserDialog> { { d => d.User, user } });
+        if ((await dialog.Result) is { Canceled: false }) await _table.ReloadServerData();
+    }
+
+    private async Task ResetPassword(User user)
+    {
+        var dialog = await Dialogs.ShowAsync<ResetPasswordDialog>($"Reset password for {user.FullName}",
+            new DialogParameters<ResetPasswordDialog> { { d => d.User, user } });
+        if ((await dialog.Result) is { Canceled: false }) await _table.ReloadServerData();
+    }
+
+    private async Task ToggleDisabled(User user)
+    {
+        if (await Api.Post($"api/users/{user.Id}/{(user.IsDisabled ? "enable" : "disable")}",
+                success: user.IsDisabled ? "Enabled." : "Disabled. Their sessions end within a minute."))
+            await _table.ReloadServerData();
+    }
+}

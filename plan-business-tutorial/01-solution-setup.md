@@ -41,7 +41,7 @@ distributed transaction, and you're running five apps to sell one ERP.
 A **modular monolith** sits in between. It's **one** app and **one** database, split into **modules**
 (Sales, Inventory, and so on) whose walls are enforced by the **compiler**. A module's code is `internal`,
 so another module can't even name it. The only way in is a small public **contracts** project, which you'll
-meet in [lesson 07](07-submit.md).
+meet in [lesson 09](09-submit.md).
 
 To remember it easily: each module is an island with one service window. You can't walk onto the island.
 You can only ask at its window, and the window only offers what the island chose to offer.
@@ -238,7 +238,7 @@ Every lesson adds a stop to this trip.
 - Referencing `Erp.Shared.Infrastructure` from a module "just to get the connection". That's the one line
   that knocks the wall down.
 - Writing `public class` inside a module. Before you do, ask whether another module truly needs it. Usually
-  the answer is a contract ([lesson 07](07-submit.md)).
+  the answer is a contract ([lesson 09](09-submit.md)).
 
 ## Let's run it!
 

@@ -4,7 +4,13 @@ using AwesomeAssertions;
 using Erp.Modules.Identity;
 using Erp.Modules.Inventory;
 using Erp.Modules.Inventory.Contracts;
+using Erp.Modules.Invoicing;
+using Erp.Modules.Invoicing.Contracts;
+using Erp.Modules.Purchasing;
 using Erp.Modules.Sales;
+using Erp.Modules.Sales.Contracts;
+using Erp.Shared.BuildingBlocks;
+using Mediator;
 
 namespace Erp.Architecture.Tests;
 
@@ -12,9 +18,13 @@ namespace Erp.Architecture.Tests;
 public class ModuleBoundaryTests
 {
     private static readonly Assembly[] Modules =
-        [typeof(IdentityModule).Assembly, typeof(SalesModule).Assembly, typeof(InventoryModule).Assembly];
+    [
+        typeof(IdentityModule).Assembly, typeof(SalesModule).Assembly, typeof(InventoryModule).Assembly,
+        typeof(PurchasingModule).Assembly, typeof(InvoicingModule).Assembly
+    ];
 
-    private static readonly Assembly[] ContractsAssemblies = [typeof(IStockReservation).Assembly];
+    private static readonly Assembly[] ContractsAssemblies =
+        [typeof(IStockReservation).Assembly, typeof(ISalesOrders).Assembly, typeof(PaymentRecorded).Assembly];
 
     [Fact]
     public void A_module_references_other_modules_only_through_their_Contracts()
@@ -96,5 +106,22 @@ public class ModuleBoundaryTests
                     .Should().BeEmpty($"{type.FullName} is domain code and must stay free of data access and web types");
             }
         }
+    }
+
+    // Raise an event only with its first handler. An event nobody handles is a feature that silently does nothing.
+    [Fact]
+    public void Every_event_has_a_handler()
+    {
+        var events = Modules.Concat(ContractsAssemblies)
+            .SelectMany(a => a.GetTypes())
+            .Where(t => t is { IsAbstract: false, IsInterface: false } && typeof(IDomainEvent).IsAssignableFrom(t));
+
+        var handled = Modules.SelectMany(a => a.GetTypes())
+            .SelectMany(t => t.GetInterfaces())
+            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(INotificationHandler<>))
+            .Select(i => i.GetGenericArguments()[0])
+            .ToHashSet();
+
+        events.Where(e => !handled.Contains(e)).Select(e => e.FullName).Should().BeEmpty("every event needs at least one handler");
     }
 }

@@ -1,0 +1,10 @@
+@attribute [AllowAnonymous]
+@inject NavigationManager Nav
+
+@code {
+    protected override void OnInitialized()
+    {
+        var back = Nav.ToBaseRelativePath(Nav.Uri);
+        Nav.NavigateTo(string.IsNullOrEmpty(back) ? "login" : $"login?returnUrl={Uri.EscapeDataString(back)}");
+    }
+}

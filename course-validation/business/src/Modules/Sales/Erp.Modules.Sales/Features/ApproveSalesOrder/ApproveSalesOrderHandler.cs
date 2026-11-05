@@ -13,12 +13,11 @@ internal sealed class ApproveSalesOrderHandler(SalesDbContext db, ICurrentUser c
 {
     public async ValueTask<Unit> Handle(ApproveSalesOrderCommand cmd, CancellationToken ct)
     {
-        var orderId = new SalesOrderId(cmd.OrderId);
-        var order = await db.SalesOrders.SingleOrDefaultAsync(o => o.Id == orderId, ct)
-            ?? throw new NotFoundException($"Sales order {cmd.OrderId} not found.");
+        var approver = new UserId(currentUser.UserId);
+        var order = await db.GetVisibleOrderAsync(cmd.OrderId, approver, currentUser.Role, ct);
         var customer = await db.Customers.SingleAsync(c => c.Id == order.CustomerId, ct);
 
-        order.Approve(new UserId(currentUser.UserId), customer, clock.UtcNow);
+        order.Approve(approver, customer, clock.UtcNow);
 
         await db.SaveChangesAsync(ct);   // order, customer balance and outbox event: one transaction
         return Unit.Value;

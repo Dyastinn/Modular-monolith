@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.BlazorWebAssembly">
+
+  <!-- The browser app. It talks to Erp.Api over HTTP only: no project references to any module. -->
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.Authorization" />
+    <PackageReference Include="MudBlazor" />
+  </ItemGroup>
+
+  <!-- Role names are defined once, in BuildingBlocks. The file is compiled in here too, not copied. -->
+  <ItemGroup>
+    <Compile Include="..\Shared\Erp.Shared.BuildingBlocks\Abstractions\Roles.cs" Link="Shared\Roles.cs" />
+  </ItemGroup>
+
+</Project>

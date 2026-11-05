@@ -1,0 +1,15 @@
+@* One look for a status everywhere: green when done, amber when someone must act, grey when over. *@
+<MudChip T="string" Size="Size.Small" Color="ColorOf(Status)" Variant="Variant.Text">@Format.Words(Status)</MudChip>
+
+@code {
+    [Parameter, EditorRequired] public string Status { get; set; } = "";
+
+    private static Color ColorOf(string status) => status switch
+    {
+        "Approved" or "Shipped" or "Received" or "Paid" => Color.Success,
+        "PendingApproval" or "PartiallyReceived" or "PartiallyPaid" or "Sent" or "Issued" => Color.Warning,
+        "Rejected" or "Void" => Color.Error,
+        "Cancelled" or "Closed" => Color.Default,
+        _ => Color.Info
+    };
+}

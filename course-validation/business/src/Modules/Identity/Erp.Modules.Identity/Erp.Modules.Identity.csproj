@@ -12,10 +12,19 @@
   <ItemGroup>
     <InternalsVisibleTo Include="Erp.Api" />
     <InternalsVisibleTo Include="Erp.Integration.Tests" />
+    <InternalsVisibleTo Include="Erp.Modules.Identity.UnitTests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Infrastructure\Sql\**\*.sql" />
   </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Carter" />
+    <PackageReference Include="Dapper" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+    <PackageReference Include="MailKit" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" />
     <PackageReference Include="EFCore.NamingConventions" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />

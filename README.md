@@ -110,7 +110,7 @@ dotnet test     # 22 unit + 6 architecture + 25 integration
 
 The reference build is there to check your work, not to replace it. Build it yourself first, by following
 the lessons. To deploy it to a real server, follow
-[lesson 15](plan-business-tutorial/15-deploy-iis.md).
+[lesson 24](plan-business-tutorial/24-deploy-iis.md).
 
 ## Status
 

@@ -23,31 +23,166 @@ namespace Erp.Modules.Inventory.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
-            modelBuilder.Entity("Erp.Modules.Inventory.Domain.StockItem", b =>
+            modelBuilder.HasSequence("item_id_seq");
+
+            modelBuilder.HasSequence("shipment_id_seq");
+
+            modelBuilder.Entity("Erp.Modules.Inventory.Domain.Item", b =>
                 {
+                    b.Property<long>("Id")
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("AllowsFractions")
+                        .HasColumnType("boolean")
+                        .HasColumnName("allows_fractions");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<decimal>("OnHand")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)")
+                        .HasColumnName("on_hand");
+
+                    b.Property<decimal>("Reserved")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)")
+                        .HasColumnName("reserved");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<string>("Sku")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("sku");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("unit");
+
+                    b.HasKey("Id")
+                        .HasName("pk_item");
+
+                    b.HasIndex("Sku")
+                        .IsUnique()
+                        .HasDatabaseName("ix_item_sku");
+
+                    b.ToTable("item", "inventory", t =>
+                        {
+                            t.HasCheckConstraint("ck_item_not_over", "reserved <= on_hand");
+
+                            t.HasCheckConstraint("ck_item_on_hand", "on_hand >= 0");
+
+                            t.HasCheckConstraint("ck_item_reserved", "reserved >= 0");
+                        });
+                });
+
+            modelBuilder.Entity("Erp.Modules.Inventory.Domain.Shipment", b =>
+                {
+                    b.Property<long>("Id")
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("number");
+
+                    b.Property<string>("OrderNumber")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("order_number");
+
+                    b.Property<long>("SalesOrderId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("sales_order_id");
+
+                    b.Property<long>("ShippedBy")
+                        .HasColumnType("bigint")
+                        .HasColumnName("shipped_by");
+
+                    b.Property<DateTime>("ShippedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("shipped_utc");
+
+                    b.HasKey("Id")
+                        .HasName("pk_shipment");
+
+                    b.HasIndex("Number")
+                        .IsUnique()
+                        .HasDatabaseName("ix_shipment_number");
+
+                    b.HasIndex("SalesOrderId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_shipment_sales_order_id");
+
+                    b.ToTable("shipment", "inventory");
+                });
+
+            modelBuilder.Entity("Erp.Modules.Inventory.Domain.StockMovement", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
                     b.Property<long>("ItemId")
                         .HasColumnType("bigint")
                         .HasColumnName("item_id");
 
-                    b.Property<int>("OnHand")
+                    b.Property<int>("Kind")
                         .HasColumnType("integer")
-                        .HasColumnName("on_hand");
+                        .HasColumnName("kind");
 
-                    b.Property<int>("Reserved")
-                        .HasColumnType("integer")
-                        .HasColumnName("reserved");
+                    b.Property<DateTime>("OccurredUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_utc");
 
-                    b.HasKey("ItemId")
-                        .HasName("pk_stock_item");
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)")
+                        .HasColumnName("quantity");
 
-                    b.ToTable("stock_item", "inventory", t =>
-                        {
-                            t.HasCheckConstraint("ck_stock_item_not_over", "reserved <= on_hand");
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason");
 
-                            t.HasCheckConstraint("ck_stock_item_on_hand", "on_hand >= 0");
+                    b.Property<string>("Reference")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("reference");
 
-                            t.HasCheckConstraint("ck_stock_item_reserved", "reserved >= 0");
-                        });
+                    b.Property<long>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_stock_movement");
+
+                    b.HasIndex("ItemId", "OccurredUtc")
+                        .HasDatabaseName("ix_stock_movement_item_id_occurred_utc");
+
+                    b.ToTable("stock_movement", "inventory");
                 });
 
             modelBuilder.Entity("Erp.Shared.BuildingBlocks.OutboxMessage", b =>
@@ -92,6 +227,59 @@ namespace Erp.Modules.Inventory.Infrastructure.Migrations
                         .HasFilter("processed_utc IS NULL");
 
                     b.ToTable("outbox_message", "inventory");
+                });
+
+            modelBuilder.Entity("Erp.Modules.Inventory.Domain.Shipment", b =>
+                {
+                    b.OwnsMany("Erp.Modules.Inventory.Domain.ShipmentLine", "Lines", b1 =>
+                        {
+                            b1.Property<long>("Id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("bigint")
+                                .HasColumnName("id");
+
+                            NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b1.Property<long>("Id"));
+
+                            b1.Property<long>("ItemId")
+                                .HasColumnType("bigint")
+                                .HasColumnName("item_id");
+
+                            b1.Property<decimal>("Quantity")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("numeric(18,3)")
+                                .HasColumnName("quantity");
+
+                            b1.Property<long>("ShipmentId")
+                                .HasColumnType("bigint")
+                                .HasColumnName("shipment_id");
+
+                            b1.HasKey("Id")
+                                .HasName("pk_shipment_line");
+
+                            b1.HasIndex("ShipmentId")
+                                .HasDatabaseName("ix_shipment_line_shipment_id");
+
+                            b1.ToTable("shipment_line", "inventory", t =>
+                                {
+                                    t.HasCheckConstraint("ck_shipment_line_qty", "quantity > 0");
+                                });
+
+                            b1.WithOwner()
+                                .HasForeignKey("ShipmentId")
+                                .HasConstraintName("fk_shipment_line_shipment_shipment_id");
+                        });
+
+                    b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("Erp.Modules.Inventory.Domain.StockMovement", b =>
+                {
+                    b.HasOne("Erp.Modules.Inventory.Domain.Item", null)
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_stock_movement_item_item_id");
                 });
 #pragma warning restore 612, 618
         }

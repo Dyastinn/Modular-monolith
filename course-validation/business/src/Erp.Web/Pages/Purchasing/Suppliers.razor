@@ -1,0 +1,60 @@
+@page "/suppliers"
+@inject ApiClient Api
+@inject IDialogService Dialogs
+
+<PageTitle>Suppliers · ERP</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h4">Suppliers</MudText>
+    <MudSpacer />
+    <AuthorizeView Roles="@Buyers">
+        <MudButton OnClick="() => Edit(null)" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New supplier</MudButton>
+    </AuthorizeView>
+</MudStack>
+
+<MudTextField T="string" Value="_search" ValueChanged="OnSearch" Label="Name or TIN" DebounceInterval="400" Clearable="true" Class="mb-4" />
+
+<MudTable T="Supplier" @ref="_table" ServerData="Load" Hover="true" Dense="true">
+    <HeaderContent>
+        <MudTh>Name</MudTh><MudTh>TIN</MudTh><MudTh>Email</MudTh><MudTh>Phone</MudTh><MudTh>Terms</MudTh><MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.Name @if (!context.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</MudTd>
+        <MudTd>@context.Tin</MudTd>
+        <MudTd>@context.Email</MudTd>
+        <MudTd>@context.Phone</MudTd>
+        <MudTd>@context.PaymentTermsDays days</MudTd>
+        <MudTd>
+            <AuthorizeView Roles="@Buyers" Context="auth">
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => Edit(context)" aria-label="Edit" />
+                <MudButton Size="Size.Small" OnClick="() => Toggle(context)">@(context.IsActive ? "Deactivate" : "Activate")</MudButton>
+            </AuthorizeView>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>No suppliers match.</NoRecordsContent>
+    <PagerContent><MudTablePager /></PagerContent>
+</MudTable>
+
+@code {
+    private static readonly string Buyers = $"{Roles.Purchaser},{Roles.Admin}";
+    private MudTable<Supplier> _table = default!;
+    private string? _search;
+
+    private Task<TableData<Supplier>> Load(TableState state, CancellationToken ct) =>
+        Api.Page<Supplier>(Url.With("api/suppliers", ("search", _search)), state);
+
+    private Task OnSearch(string? text) { _search = text; return _table.ReloadServerData(); }
+
+    private async Task Edit(Supplier? supplier)
+    {
+        var dialog = await Dialogs.ShowAsync<SupplierDialog>(supplier is null ? "New supplier" : "Edit supplier",
+            new DialogParameters<SupplierDialog> { { d => d.Supplier, supplier } });
+        if ((await dialog.Result) is { Canceled: false }) await _table.ReloadServerData();
+    }
+
+    private async Task Toggle(Supplier supplier)
+    {
+        if (await Api.Post($"api/suppliers/{supplier.Id}/{(supplier.IsActive ? "deactivate" : "activate")}", success: "Saved."))
+            await _table.ReloadServerData();
+    }
+}

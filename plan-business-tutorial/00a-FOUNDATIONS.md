@@ -224,7 +224,7 @@ lives in **tables**, much like spreadsheets: a `sales_order` table has columns (
 `status`) and one row per order. **SQL** is the language for talking to it: "give me every approved order",
 "insert this row".
 
-We talk to PostgreSQL in two ways, and [lesson 04](04-database.md) and [lesson 10](10-reads.md) explain why:
+We talk to PostgreSQL in two ways, and [lesson 04](04-database.md) and [lesson 08](08-find-orders.md) explain why:
 
 - **EF Core** saves our C# objects for us. Every change to data goes through it.
 - **Dapper** runs a SQL query and turns the rows into C# objects. Every screen's data comes through it.

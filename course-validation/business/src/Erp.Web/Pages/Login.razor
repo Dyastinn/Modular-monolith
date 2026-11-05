@@ -1,0 +1,42 @@
+@page "/login"
+@attribute [AllowAnonymous]
+@inject CookieAuthenticationStateProvider Auth
+@inject NavigationManager Nav
+
+<PageTitle>Sign in · ERP</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraSmall" Class="mt-16">
+    <MudPaper Class="pa-8" Elevation="2">
+        <MudText Typo="Typo.h5" GutterBottom="true">Sign in</MudText>
+        <EditForm Model="this" OnSubmit="SignIn">
+            <MudStack Spacing="3">
+                <MudTextField @bind-Value="_email" Label="Email" InputType="InputType.Email" AutoFocus="true" Required="true" />
+                <MudTextField @bind-Value="_password" Label="Password" InputType="InputType.Password" Required="true" />
+                @if (_error is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true">@_error</MudAlert>
+                }
+                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy">Sign in</MudButton>
+                <MudLink Href="forgot-password" Typo="Typo.body2">Forgot your password?</MudLink>
+            </MudStack>
+        </EditForm>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    private string _email = "", _password = "";
+    private string? _error;
+    private bool _busy;
+
+    private async Task SignIn()
+    {
+        _busy = true;
+        _error = await Auth.SignInAsync(_email.Trim(), _password);
+        _busy = false;
+        // Only ever go back inside this app: an outside returnUrl would make this page an open redirect.
+        if (_error is null)
+            Nav.NavigateTo(ReturnUrl is { } back && !back.Contains("//") && !back.Contains(':') ? back : "");
+    }
+}

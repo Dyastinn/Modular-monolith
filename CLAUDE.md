@@ -96,9 +96,16 @@ procedures can't return result sets, so the read side is `RETURNS TABLE` functio
 migrations** · **`martinothamar/Mediator`** (source-generated, MIT) · **CQRS-lite** · **FluentValidation** ·
 **ASP.NET Core Identity** (`AddIdentityApiEndpoints` / `MapIdentityApi`): cookies for the browser, bearer +
 refresh tokens for other clients, lockout, password policy, role-based authorization; keys persisted to
-PostgreSQL · **Blazor WebAssembly + MudBlazor**, hosted by `Erp.Api` · **OpenTelemetry** (traces, metrics,
-logs, OTLP export) + health checks; **Aspire AppHost** as the dev-only dashboard · **transactional outbox** ·
-**xUnit + AwesomeAssertions**.
+PostgreSQL · **Blazor WebAssembly + MudBlazor**, hosted by `Erp.Api`, built along the way (every feature lesson
+adds its screen) · the API lives under **`/api`** · **OpenTelemetry** (traces, metrics, logs, OTLP export) +
+health checks; **Aspire AppHost** as the dev-only dashboard · **transactional outbox** · **xUnit +
+AwesomeAssertions** · **PdfSharp/MigraDoc** for invoices · **MailKit** for email · deployment: **Docker**
+(Linux containers, Docker Compose, Caddy for HTTPS) as the main path, **IIS** as the documented alternative.
+
+> **Direction update (2026-11-06, user decision).** The product runs on Docker; the interface is built in the
+> course, lesson by lesson, so there is no separate test console. The browser app signs in with Identity's
+> cookie; there are **no API keys** (a key shipped in a browser app is public). Add machine-client keys only
+> when a non-person client exists.
 
 > **Auth is library-only (2026-11-05).** No hand-written JWT minting, refresh-token tables, password hashing
 > or token rotation. If Identity can't do something, say so and choose another *library* (OpenIddict for
@@ -113,7 +120,7 @@ Buyers receive the source and inherit every dependency's licence. **Only permiss
 (MIT, Apache-2.0, BSD).** Never a per-developer commercial licence, a revenue-threshold "community"
 licence, or a copyleft licence that would bind the buyer. Known traps, all **banned**: MediatR (paid since
 2025), FluentAssertions ≥ 8 (paid), AutoMapper (paid since 2025), MassTransit ≥ 9 (paid), QuestPDF
-(revenue-gated — use PdfSharp/MigraDoc), Telerik/Syncfusion/DevExpress, Seq (commercial), Duende
+(revenue-gated — use PDFsharp/MigraDoc **6.2.4**: 6.5 and later are AGPL-3.0, checked 2026-11-06), Telerik/Syncfusion/DevExpress, Seq (commercial), Duende
 IdentityServer (revenue-gated). **Check the
 licence of any package before adding it**, and record it in the third-party notices file.
 
@@ -121,8 +128,9 @@ licence of any package before adding it**, and record it in the third-party noti
 Clean Architecture's four-layer project split · a generic `Repository<T>` · an `IUnitOfWork` wrapper over
 `DbContext` (the DbContext *is* the unit of work; don't hide it) · EF Core for **reads** in query handlers
 (reads are Dapper) · Dapper for **writes** · message brokers (RabbitMQ, Kafka, MassTransit) · Redis /
-distributed caching · microservices · AutoMapper · Docker as a *requirement* (the product deploys to IIS; a
-Dockerfile may be offered as an option only) · hand-written authentication/token code (see above).
+distributed caching · microservices · AutoMapper · Kubernetes or any orchestrator as a requirement (Compose on
+one host is the target) · Docker Desktop as a requirement for *servers* (it's paid for larger companies; servers
+run the free Docker Engine) · hand-written authentication/token code (see above).
 
 These may appear only in a lesson's *"when you'd add this later, and why not now"* discussion.
 
@@ -242,7 +250,9 @@ The finished product has **no deliberate shortcuts**. In particular the old tuto
 - Rate limiting, HTTPS/HSTS, security headers, and a CSP for the Blazor app are on.
 - Observability: structured logs, traces and metrics via OpenTelemetry; `/health/live` and
   `/health/ready`; correlation ids in every log line.
-- The app installs from the docs alone: migrations bundle, first-run admin, IIS guide.
+- The app installs from the docs alone: Docker Compose (or the IIS alternative), migration bundles, first-run
+  admin, backups.
+- Sign-in keys (data protection) are encrypted at rest with a certificate in Production.
 
 A lesson may still *start* from a simpler version for teaching — rule 2.7 — as long as a later phase
 replaces it.

@@ -1,5 +1,4 @@
 using Carter;
-using Erp.Shared.BuildingBlocks;
 using Mediator;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -16,5 +15,5 @@ internal sealed class ApproveSalesOrderEndpoint : ICarterModule
                 await sender.Send(new ApproveSalesOrderCommand(id), ct);
                 return Results.NoContent();
             })
-            .RequireAuthorization(p => p.RequireRole(Roles.SalesManager, Roles.Admin));   // managers only
+            .RequireAuthorization(p => p.RequireRole(SalesRoles.Managers));
 }

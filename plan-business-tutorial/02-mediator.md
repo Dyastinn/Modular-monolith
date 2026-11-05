@@ -13,7 +13,7 @@ automatically, without a single endpoint asking for it. It takes about an hour. 
 - Two **pipeline behaviors** that wrap every handler: one logs, one validates.
 - Carter endpoints that do just one thing: turn an HTTP request into a message and send it.
 - A throwaway `GET /ping` feature to prove it all works. We'll delete it in
-  [lesson 06](06-create-order.md).
+  [lesson 07](07-create-order.md).
 
 ## Why we build it this way
 
@@ -305,7 +305,7 @@ internals. In `Erp.Modules.Sales.csproj`:
 
 Does this weaken the module wall? No. The host already references every module; wiring them together is
 its job. What must never happen is a *module* seeing another module's internals, and
-[lesson 14](14-testing.md) adds a test that fails if one ever does. Not so hard, right?
+[lesson 13](13-testing.md) adds a test that fails if one ever does. Not so hard, right?
 
 ## How a request flows
 
@@ -354,7 +354,7 @@ curl -i "http://localhost:5264/ping?message="
 ```
 
 That 500 is good news for now: it proves the validator ran *before* the handler. It should really be a
-`400 Bad Request` with a tidy body, and [lesson 06](06-create-order.md) will make it one. In the API's
+`400 Bad Request` with a tidy body, and [lesson 07](07-create-order.md) will make it one. In the API's
 console you'll see the logging behavior's lines: `PingQuery handled in 0 ms`, then
 `PingQuery failed after 2 ms`.
 

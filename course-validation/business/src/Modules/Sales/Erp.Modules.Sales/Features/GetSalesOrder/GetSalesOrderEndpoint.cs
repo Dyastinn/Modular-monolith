@@ -15,5 +15,5 @@ internal sealed class GetSalesOrderEndpoint : ICarterModule
                 var dto = await sender.Send(new GetSalesOrderQuery(id), ct);
                 return dto is null ? Results.NotFound() : Results.Ok(dto);
             })
-            .RequireAuthorization();   // any signed-in user
+            .RequireAuthorization(p => p.RequireRole(SalesRoles.Readers));
 }

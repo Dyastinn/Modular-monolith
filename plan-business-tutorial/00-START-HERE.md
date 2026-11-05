@@ -80,7 +80,7 @@ it means you can build this and sell it, and your buyer owes nobody a license fe
 
 A few popular tools are left out on purpose: Clean Architecture's four-project split, a generic
 `Repository<T>`, message brokers like RabbitMQ, Redis, microservices, and Docker as a requirement. Each is
-good somewhere. [Lesson 16](16-production-checklist.md) tells you when you'd actually reach for them.
+good somewhere. [Lesson 25](25-production-checklist.md) tells you when you'd actually reach for them.
 
 If you came from WebForms, you'll feel at home faster than you think. Your `[WebMethod]` becomes a Carter
 endpoint, your `Button_Click` code-behind becomes a handler, and your `SqlCommand` and `DataSet` become EF
@@ -98,17 +98,17 @@ Each lesson builds on the one before, and each one ends with something you run a
 | 03 | [Domain model](03-domain-model.md) | The sales rules in plain C#, with unit tests from day one |
 | 04 | [Database](04-database.md) | PostgreSQL, EF Core, migrations, seed data |
 | 05 | [Sign-in](05-sign-in.md) | ASP.NET Core Identity: login, refresh, lockout, roles |
-| 06 | [Create an order](06-create-order.md) | The first real feature from end to end, with proper error responses |
-| 07 | [Submit](07-submit.md) | The Inventory module, safe stock reservation, one transaction across two modules |
-| 08 | [Approve, reject, cancel](08-approve-reject-cancel.md) | The approval workflow |
-| 09 | [Update an order](09-update-order.md) | Lost updates, and how PostgreSQL's `xmin` stops them |
-| 10 | [Reads](10-reads.md) | Dapper and SQL functions, shipped by migrations |
-| 11 | [Events and the outbox](11-events-outbox.md) | Reacting to what happened, reliably: domain events and a transactional outbox |
-| 12 | [Observability](12-observability.md) | Traces, metrics, logs, health checks, the Aspire dashboard |
-| 13 | [Security hardening](13-security-hardening.md) | Rate limits, HTTPS, security headers, a least-privilege database account |
-| 14 | [Testing](14-testing.md) | Integration tests and architecture tests |
-| 15 | [Deploy to IIS](15-deploy-iis.md) | A real Windows Server install |
-| 16 | [Production checklist](16-production-checklist.md) | What "done" means, and what comes next |
+| 06 | [Create an order](07-create-order.md) | The first real feature from end to end, with proper error responses |
+| 07 | [Submit](09-submit.md) | The Inventory module, safe stock reservation, one transaction across two modules |
+| 08 | [Approve, reject, cancel](10-approve-reject-cancel.md) | The approval workflow |
+| 09 | [Update an order](11-update-order.md) | Lost updates, and how PostgreSQL's `xmin` stops them |
+| 10 | [Reads](08-find-orders.md) | Dapper and SQL functions, shipped by migrations |
+| 11 | [Events and the outbox](12-events-outbox.md) | Reacting to what happened, reliably: domain events and a transactional outbox |
+| 12 | [Observability](14-observability.md) | Traces, metrics, logs, health checks, the Aspire dashboard |
+| 13 | [Security hardening](22-security-hardening.md) | Rate limits, HTTPS, security headers, a least-privilege database account |
+| 14 | [Testing](13-testing.md) | Integration tests and architecture tests |
+| 15 | [Deploy to IIS](24-deploy-iis.md) | A real Windows Server install |
+| 16 | [Production checklist](25-production-checklist.md) | What "done" means, and what comes next |
 
 All together, it's about 20 to 25 hours of focused work. Lessons 03, 04, 05 and 07 are the heaviest, so
 start those when you're fresh. If C# itself is new to you, read [00a-FOUNDATIONS.md](00a-FOUNDATIONS.md)

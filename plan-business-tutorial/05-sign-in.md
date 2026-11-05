@@ -323,7 +323,7 @@ Here's what each part decides:
 | The `/auth/register` filter | `MapIdentityApi` always maps it; this filter turns it into a 404 |
 
 The tokens and cookies are encrypted with keys that ASP.NET Core keeps in your user profile. On your machine,
-that's fine. On a real server it's a problem, and [lesson 13](13-security-hardening.md) moves the keys into
+that's fine. On a real server it's a problem, and [lesson 22](22-security-hardening.md) moves the keys into
 the database.
 
 And one honest gap: `/auth/forgotPassword` needs a way to send email, and we haven't given it one yet. For
@@ -588,7 +588,7 @@ curl -i -X POST http://localhost:5264/auth/login -H "Content-Type: application/j
 ```
 
 Five wrong passwords in a row would lock `rep@erp.local` for 15 minutes, so don't try that on a user you
-still need. [Lesson 14](14-testing.md) proves lockout with a throwaway user instead.
+still need. [Lesson 13](13-testing.md) proves lockout with a throwaway user instead.
 
 ## Let's check!
 
@@ -600,9 +600,9 @@ still need. [Lesson 14](14-testing.md) proves lockout with a throwaway user inst
 6. Why does `CurrentUser` live in Infrastructure, while `ICurrentUser` lives in BuildingBlocks?
 
 And that's where this lesson ends. People can now sign in, and the app knows who they are and what role
-they have. Next time, we build our first real feature from end to end: creating a sales order. Good luck,
-developer!
+they have. Next time, we give them somewhere to sign in: the browser app that every later lesson adds a
+screen to. Good luck, developer!
 
 ---
 
-← [Lesson 04 — Database](04-database.md) · Next: [Lesson 06 — Create an order](06-create-order.md) →
+← [Lesson 04 — Database](04-database.md) · Next: [Lesson 06 — The interface](06-interface.md) →

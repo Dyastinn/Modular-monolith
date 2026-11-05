@@ -32,6 +32,19 @@
     <PackageVersion Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.14" />       <!-- MIT -->
     <PackageVersion Include="Microsoft.AspNetCore.DataProtection.EntityFrameworkCore" Version="10.0.14" /> <!-- MIT -->
 
+    <!-- Email and documents -->
+    <PackageVersion Include="MailKit" Version="4.18.2" />                                   <!-- MIT -->
+    <!-- 6.2.4 is the LAST MIT release. PDFsharp 6.5+ is AGPL-3.0 and checks for a license at runtime: never upgrade. -->
+    <PackageVersion Include="PDFsharp-MigraDoc" Version="6.2.4" />                          <!-- MIT; not QuestPDF (revenue-gated) -->
+    <!-- Pinned: PDFsharp asks for 8.0.1, which has known vulnerabilities (GHSA-846f-f764-76mx). -->
+    <PackageVersion Include="System.Security.Cryptography.Pkcs" Version="10.0.14" />        <!-- MIT -->
+
+    <!-- Front end: Blazor WebAssembly, hosted by Erp.Api -->
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.14" />            <!-- MIT -->
+    <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.14" />     <!-- MIT -->
+    <PackageVersion Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.14" />          <!-- MIT -->
+    <PackageVersion Include="MudBlazor" Version="9.12.0" />                                               <!-- MIT -->
+
     <!-- Observability -->
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.20.1" />              <!-- Apache-2.0 -->
     <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.20.1" />      <!-- Apache-2.0 -->
@@ -49,5 +62,7 @@
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />                 <!-- Apache-2.0 -->
     <!-- AwesomeAssertions, not FluentAssertions: FluentAssertions 8+ needs a paid license for commercial use. -->
     <PackageVersion Include="AwesomeAssertions" Version="9.6.0" />                          <!-- Apache-2.0 -->
+    <!-- Browser tests drive the Edge or Chrome already installed; no browser is downloaded. -->
+    <PackageVersion Include="Microsoft.Playwright" Version="1.64.1" />                     <!-- MIT -->
   </ItemGroup>
 </Project>

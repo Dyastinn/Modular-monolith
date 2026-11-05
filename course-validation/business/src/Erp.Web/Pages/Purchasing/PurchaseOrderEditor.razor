@@ -1,0 +1,100 @@
+@page "/purchase-orders/new"
+@page "/purchase-orders/{Id:long}/edit"
+@attribute [Authorize(Roles = $"{Roles.Purchaser},{Roles.Admin}")]
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>@(Id is null ? "New purchase order" : "Edit purchase order") · ERP</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">@(Id is null ? "New purchase order" : $"Edit {_number}")</MudText>
+
+<MudPaper Class="pa-4 mb-4" Outlined="true">
+    <MudStack Spacing="3">
+        <MudAutocomplete T="Supplier" Label="Supplier" @bind-Value="_supplier" SearchFunc="FindSuppliers" ToStringFunc="s => s?.Name"
+                         DebounceInterval="300" />
+        <MudDatePicker Label="Expected delivery" @bind-Date="_expected" Clearable="true" />
+        <MudTextField @bind-Value="_notes" Label="Notes" Lines="2" MaxLength="1000" />
+    </MudStack>
+</MudPaper>
+
+<MudPaper Class="pa-4 mb-4" Outlined="true">
+    <MudText Typo="Typo.h6" GutterBottom="true">Lines</MudText>
+    @foreach (var line in _lines)
+    {
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mb-2">
+            <MudAutocomplete T="StockItem" Label="Item" @bind-Value="line.Item" SearchFunc="FindItems" Style="min-width:320px"
+                             ToStringFunc="@(i => i is null ? null : $"{i.Sku} · {i.Name}")" DebounceInterval="300" />
+            <MudNumericField T="decimal" Label="@($"Quantity{(line.Item is null ? "" : $" ({line.Item.Unit})")}")" @bind-Value="line.Quantity" Min="0" Style="max-width:160px" />
+            <MudNumericField T="decimal" Label="Unit cost (₱)" @bind-Value="line.UnitCost" Min="0" Format="N2" Style="max-width:160px" />
+            <MudText Class="money" Style="min-width:140px">@Format.Peso(line.Total)</MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" OnClick="() => _lines.Remove(line)" aria-label="Remove line" />
+        </MudStack>
+    }
+    <MudButton OnClick="() => _lines.Add(new Line())" StartIcon="@Icons.Material.Filled.Add" Variant="Variant.Text">Add line</MudButton>
+    <MudDivider Class="my-3" />
+    <MudText Typo="Typo.h6" Align="Align.Right">Total @Format.Peso(_lines.Sum(l => l.Total))</MudText>
+</MudPaper>
+
+<MudStack Row="true" Spacing="2">
+    <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="!CanSave">Save draft</MudButton>
+    <MudButton Href="@(Id is null ? "purchase-orders" : $"purchase-orders/{Id}")" Variant="Variant.Text">Back</MudButton>
+</MudStack>
+
+@code {
+    [Parameter] public long? Id { get; set; }
+
+    private sealed class Line
+    {
+        public StockItem? Item { get; set; }
+        public decimal Quantity { get; set; } = 1;
+        public decimal UnitCost { get; set; }
+        public decimal Total => Math.Round(Quantity * UnitCost, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private Supplier? _supplier;
+    private DateTime? _expected;
+    private string? _notes, _number;
+    private List<Line> _lines = [new()];
+
+    private bool CanSave => _supplier is not null && _lines.Count > 0 && _lines.All(l => l.Item is not null && l.Quantity > 0);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Id is null) return;
+        var po = await Api.Get<PurchaseOrderDetail>($"api/purchase-orders/{Id}");
+        if (po is null) return;
+        _number = po.Number;
+        _supplier = await Api.Get<Supplier>($"api/suppliers/{po.SupplierId}");
+        _expected = po.ExpectedDate?.ToDateTime(TimeOnly.MinValue);
+        _notes = po.Notes;
+        _lines = po.Lines.Select(l => new Line
+        {
+            Item = new StockItem(l.ItemId, l.Sku, l.ItemName, l.Unit, true, true, 0, 0, 0), Quantity = l.Quantity, UnitCost = l.UnitCost
+        }).ToList();
+    }
+
+    private async Task<IEnumerable<Supplier>> FindSuppliers(string? text, CancellationToken ct) =>
+        (await Api.Get<PagedResult<Supplier>>(Url.With("api/suppliers", ("search", text), ("activeOnly", true), ("pageSize", 20))))?.Items ?? [];
+
+    private async Task<IEnumerable<StockItem>> FindItems(string? text, CancellationToken ct) =>
+        (await Api.Get<PagedResult<StockItem>>(Url.With("api/items", ("search", text), ("activeOnly", true), ("pageSize", 20))))?.Items ?? [];
+
+    private async Task Save()
+    {
+        var body = new
+        {
+            supplierId = _supplier!.Id,
+            expectedDate = _expected is { } d ? DateOnly.FromDateTime(d) : (DateOnly?)null,
+            notes = _notes,
+            lines = _lines.Select(l => new { itemId = l.Item!.Id, quantity = l.Quantity, unitCost = l.UnitCost })
+        };
+        if (Id is null)
+        {
+            if (await Api.Create("api/purchase-orders", body, "Draft saved.") is { } newId) Nav.NavigateTo($"purchase-orders/{newId}");
+        }
+        else if (await Api.Put($"api/purchase-orders/{Id}", body, "Draft saved."))
+        {
+            Nav.NavigateTo($"purchase-orders/{Id}");
+        }
+    }
+}

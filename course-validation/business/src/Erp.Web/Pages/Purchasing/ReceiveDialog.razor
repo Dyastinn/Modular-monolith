@@ -1,0 +1,46 @@
+@inject ApiClient Api
+
+@* Count what actually arrived. Partial deliveries are normal: the order stays open for the rest. *@
+<MudDialog>
+    <DialogContent>
+        <MudSimpleTable Dense="true">
+            <thead><tr><th>Item</th><th class="money">Still to come</th><th>Arrived now</th></tr></thead>
+            <tbody>
+                @foreach (var line in _lines)
+                {
+                    <tr>
+                        <td>@line.Line.Sku · @line.Line.ItemName</td>
+                        <td class="money">@Format.Qty(line.Line.Outstanding) @line.Line.Unit</td>
+                        <td><MudNumericField T="decimal" @bind-Value="line.Arrived" Min="0" Max="line.Line.Outstanding" Style="max-width:140px" /></td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
+        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="!_lines.Any(l => l.Arrived > 0)">Put into stock</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public PurchaseOrderDetail Order { get; set; } = default!;
+
+    private sealed class Entry(PurchaseOrderLine line)
+    {
+        public PurchaseOrderLine Line { get; } = line;
+        public decimal Arrived { get; set; } = line.Outstanding;
+    }
+
+    private List<Entry> _lines = [];
+
+    protected override void OnInitialized() => _lines = Order.Lines.Where(l => l.Outstanding > 0).Select(l => new Entry(l)).ToList();
+
+    private async Task Save()
+    {
+        var lines = _lines.Where(l => l.Arrived > 0).Select(l => new { lineId = l.Line.Id, quantity = l.Arrived });
+        if (await Api.Post($"api/purchase-orders/{Order.Id}/receipts", new { lines }, "Received. Stock is updated."))
+            Dialog.Close(DialogResult.Ok(true));
+    }
+}

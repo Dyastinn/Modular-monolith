@@ -1,0 +1,47 @@
+@inject ApiClient Api
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="2" Style="min-width:400px">
+            <MudTextField @bind-Value="_email" Label="Email (they sign in with it)" InputType="InputType.Email" Disabled="User is not null" />
+            <MudTextField @bind-Value="_fullName" Label="Full name" MaxLength="100" />
+            <MudSelect T="string" @bind-Value="_role" Label="Role">
+                @foreach (var r in Roles.All)
+                {
+                    <MudSelectItem Value="r">@Format.Words(r)</MudSelectItem>
+                }
+            </MudSelect>
+            @if (User is null)
+            {
+                <MudTextField @bind-Value="_password" Label="Temporary password (at least 12 characters)" InputType="InputType.Password"
+                              HelperText="Give it to them in person. They must change it when they first sign in." />
+            }
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
+        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary"
+                   Disabled="string.IsNullOrWhiteSpace(_fullName) || string.IsNullOrWhiteSpace(_email)">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public User? User { get; set; }
+
+    private string _email = "", _fullName = "", _role = Roles.SalesRep, _password = "";
+
+    protected override void OnInitialized()
+    {
+        if (User is { } u) (_email, _fullName, _role) = (u.Email, u.FullName, u.Role);
+    }
+
+    private async Task Save()
+    {
+        var saved = User is null
+            ? await Api.Create("api/users", new { email = _email, fullName = _fullName, role = _role, temporaryPassword = _password },
+                "User created.") is not null
+            : await Api.Put($"api/users/{User.Id}", new { fullName = _fullName, role = _role }, "User saved.");
+        if (saved) Dialog.Close(DialogResult.Ok(true));
+    }
+}

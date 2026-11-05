@@ -1,0 +1,96 @@
+# The whole ERP on one Docker host. Settings and secrets come from .env next to this file (see .env.example).
+#   docker compose up -d --build      first install, and every upgrade after it
+name: erp
+
+services:
+  db:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      ERP_OWNER_PASSWORD: ${ERP_OWNER_PASSWORD:?Set ERP_OWNER_PASSWORD in .env}
+      ERP_APP_PASSWORD: ${ERP_APP_PASSWORD:?Set ERP_APP_PASSWORD in .env}
+      TZ: ${TZ:-Asia/Manila}
+    volumes:
+      - db-data:/var/lib/postgresql
+      - ../postgres/create-roles.sql:/erp/create-roles.sql:ro
+      - ./initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready --username postgres --dbname erp"]
+      interval: 5s
+      retries: 30
+    # No ports: only the other containers reach the database.
+
+  migrate:
+    build: { context: ../.., target: migrate }
+    environment:
+      ERP_OWNER_CONNECTION: Host=db;Database=erp;Username=erp_owner;Password=${ERP_OWNER_PASSWORD}
+    depends_on:
+      db: { condition: service_healthy }
+    restart: "no"
+
+  api:
+    build: { context: ../.., target: app }
+    restart: unless-stopped
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    environment:
+      ConnectionStrings__ErpDb: Host=db;Database=erp;Username=erp_app;Password=${ERP_APP_PASSWORD}
+      # Caddy is the only way in, so the app may trust its X-Forwarded-For and X-Forwarded-Proto headers.
+      ASPNETCORE_FORWARDEDHEADERS_ENABLED: "true"
+      DataProtection__CertificatePath: /run/secrets/dataprotection.pfx
+      DataProtection__CertificatePassword: ${DATAPROTECTION_CERTIFICATE_PASSWORD:?Set DATAPROTECTION_CERTIFICATE_PASSWORD in .env}
+      InitialAdmin__Email: ${INITIAL_ADMIN_EMAIL:-}
+      InitialAdmin__Password: ${INITIAL_ADMIN_PASSWORD:-}
+      Company__Name: ${COMPANY_NAME:?Set COMPANY_NAME in .env}
+      Company__Tin: ${COMPANY_TIN:-}
+      Company__Address: ${COMPANY_ADDRESS:-}
+      Company__VatRegistered: ${COMPANY_VAT_REGISTERED:-true}
+      Smtp__Host: ${SMTP_HOST:-}
+      Smtp__Port: ${SMTP_PORT:-587}
+      Smtp__Username: ${SMTP_USERNAME:-}
+      Smtp__Password: ${SMTP_PASSWORD:-}
+      Smtp__From: ${SMTP_FROM:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      TZ: ${TZ:-Asia/Manila}
+    secrets:
+      - dataprotection.pfx
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    depends_on: [api]
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      ERP_DOMAIN: ${ERP_DOMAIN:?Set ERP_DOMAIN in .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+  backup:
+    image: postgres:18
+    restart: unless-stopped
+    depends_on:
+      db: { condition: service_healthy }
+    environment:
+      PGPASSWORD: ${ERP_OWNER_PASSWORD}
+      BACKUP_TIME: ${BACKUP_TIME:-01:00}
+      KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      TZ: ${TZ:-Asia/Manila}
+    volumes:
+      - ./backup.sh:/backup.sh:ro
+      - ${BACKUP_DIR:-./backups}:/backups
+    entrypoint: ["/bin/sh", "/backup.sh"]
+
+secrets:
+  dataprotection.pfx:
+    file: ./secrets/dataprotection.pfx
+
+volumes:
+  db-data:
+  caddy-data:
+  caddy-config:

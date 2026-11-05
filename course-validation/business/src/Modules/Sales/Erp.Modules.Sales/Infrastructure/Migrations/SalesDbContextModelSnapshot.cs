@@ -25,6 +25,35 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
 
             modelBuilder.HasSequence("sales_order_number_seq");
 
+            modelBuilder.Entity("Erp.Modules.Sales.Domain.AppliedPayment", b =>
+                {
+                    b.Property<long>("PaymentId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("payment_id");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTime>("AppliedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("applied_utc");
+
+                    b.Property<long>("CustomerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("customer_id");
+
+                    b.Property<DateTime?>("ReversedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reversed_utc");
+
+                    b.HasKey("PaymentId")
+                        .HasName("pk_applied_payment");
+
+                    b.ToTable("applied_payment", "sales");
+                });
+
             modelBuilder.Entity("Erp.Modules.Sales.Domain.Customer", b =>
                 {
                     b.Property<long>("Id")
@@ -33,6 +62,11 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                         .HasColumnName("id");
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Address")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("address");
 
                     b.Property<decimal>("CreditLimit")
                         .HasPrecision(18, 2)
@@ -54,70 +88,32 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("outstanding_balance");
 
+                    b.Property<int>("PaymentTermsDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("payment_terms_days");
+
                     b.Property<uint>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("xid")
                         .HasColumnName("xmin");
 
+                    b.Property<string>("Tin")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("tin");
+
                     b.HasKey("Id")
                         .HasName("pk_customer");
+
+                    b.HasIndex("Name")
+                        .HasDatabaseName("ix_customer_name");
 
                     b.ToTable("customer", "sales", t =>
                         {
                             t.HasCheckConstraint("ck_customer_balance", "outstanding_balance >= 0");
 
                             t.HasCheckConstraint("ck_customer_credit_limit", "credit_limit >= 0");
-                        });
-                });
-
-            modelBuilder.Entity("Erp.Modules.Sales.Domain.Item", b =>
-                {
-                    b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("bigint")
-                        .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
-
-                    b.Property<long>("CategoryId")
-                        .HasColumnType("bigint")
-                        .HasColumnName("category_id");
-
-                    b.Property<bool>("IsActive")
-                        .HasColumnType("boolean")
-                        .HasColumnName("is_active");
-
-                    b.Property<string>("Name")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("character varying(200)")
-                        .HasColumnName("name");
-
-                    b.Property<string>("Sku")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("sku");
-
-                    b.Property<decimal>("UnitPrice")
-                        .HasPrecision(18, 2)
-                        .HasColumnType("numeric(18,2)")
-                        .HasColumnName("unit_price");
-
-                    b.HasKey("Id")
-                        .HasName("pk_item");
-
-                    b.HasIndex("CategoryId")
-                        .HasDatabaseName("ix_item_category_id");
-
-                    b.HasIndex("Sku")
-                        .IsUnique()
-                        .HasDatabaseName("ix_item_sku");
-
-                    b.ToTable("item", "sales", t =>
-                        {
-                            t.HasCheckConstraint("ck_item_unit_price", "unit_price >= 0");
                         });
                 });
 
@@ -130,8 +126,9 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
-                    b.Property<int>("MaxQuantityPerOrder")
-                        .HasColumnType("integer")
+                    b.Property<decimal>("MaxQuantityPerOrder")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)")
                         .HasColumnName("max_quantity_per_order");
 
                     b.Property<string>("Name")
@@ -155,6 +152,63 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                     b.ToTable("item_category", "sales", t =>
                         {
                             t.HasCheckConstraint("ck_item_category_max_qty", "max_quantity_per_order > 0");
+                        });
+                });
+
+            modelBuilder.Entity("Erp.Modules.Sales.Domain.SalesItem", b =>
+                {
+                    b.Property<long>("Id")
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    b.Property<bool>("AllowsFractions")
+                        .HasColumnType("boolean")
+                        .HasColumnName("allows_fractions");
+
+                    b.Property<long?>("CategoryId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("category_id");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<bool>("IsForSale")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_for_sale");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Sku")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("sku");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("unit");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("unit_price");
+
+                    b.HasKey("Id")
+                        .HasName("pk_item");
+
+                    b.HasIndex("CategoryId")
+                        .HasDatabaseName("ix_item_category_id");
+
+                    b.ToTable("item", "sales", t =>
+                        {
+                            t.HasCheckConstraint("ck_item_unit_price", "unit_price >= 0");
                         });
                 });
 
@@ -212,6 +266,10 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                         .HasColumnType("xid")
                         .HasColumnName("xmin");
 
+                    b.Property<DateTime?>("ShippedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("shipped_utc");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer")
                         .HasColumnName("status");
@@ -223,6 +281,9 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                     b.HasKey("Id")
                         .HasName("pk_sales_order");
 
+                    b.HasIndex("CreatedBy")
+                        .HasDatabaseName("ix_sales_order_created_by");
+
                     b.HasIndex("OrderNumber")
                         .IsUnique()
                         .HasDatabaseName("ix_sales_order_order_number");
@@ -232,7 +293,7 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
 
                     b.ToTable("sales_order", "sales", t =>
                         {
-                            t.HasCheckConstraint("ck_sales_order_status", "status BETWEEN 0 AND 4");
+                            t.HasCheckConstraint("ck_sales_order_status", "status BETWEEN 0 AND 5");
                         });
                 });
 
@@ -280,13 +341,12 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                     b.ToTable("outbox_message", "sales");
                 });
 
-            modelBuilder.Entity("Erp.Modules.Sales.Domain.Item", b =>
+            modelBuilder.Entity("Erp.Modules.Sales.Domain.SalesItem", b =>
                 {
                     b.HasOne("Erp.Modules.Sales.Domain.ItemCategory", "Category")
                         .WithMany()
                         .HasForeignKey("CategoryId")
                         .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired()
                         .HasConstraintName("fk_item_item_category_category_id");
 
                     b.Navigation("Category");
@@ -314,13 +374,26 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                                 .HasColumnType("bigint")
                                 .HasColumnName("item_id");
 
-                            b1.Property<int>("Quantity")
-                                .HasColumnType("integer")
+                            b1.Property<string>("ItemName")
+                                .IsRequired()
+                                .HasMaxLength(200)
+                                .HasColumnType("character varying(200)")
+                                .HasColumnName("item_name");
+
+                            b1.Property<decimal>("Quantity")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("numeric(18,3)")
                                 .HasColumnName("quantity");
 
                             b1.Property<long>("SalesOrderId")
                                 .HasColumnType("bigint")
                                 .HasColumnName("sales_order_id");
+
+                            b1.Property<string>("Unit")
+                                .IsRequired()
+                                .HasMaxLength(10)
+                                .HasColumnType("character varying(10)")
+                                .HasColumnName("unit");
 
                             b1.Property<decimal>("UnitPrice")
                                 .HasPrecision(18, 2)

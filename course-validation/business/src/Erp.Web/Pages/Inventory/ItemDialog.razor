@@ -1,0 +1,40 @@
+@inject ApiClient Api
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="2" Style="min-width:380px">
+            <MudTextField @bind-Value="_sku" Label="SKU" MaxLength="50" Disabled="Item is not null"
+                          HelperText="@(Item is null ? "Can't be changed later" : null)" />
+            <MudTextField @bind-Value="_name" Label="Name" MaxLength="200" />
+            <MudTextField @bind-Value="_unit" Label="Unit" MaxLength="10" HelperText="pc, box, kg, m, L…" />
+            <MudSwitch @bind-Value="_fractions" Label="Sold and counted in fractions (2.5 kg)" Color="Color.Primary" />
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
+        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary"
+                   Disabled="string.IsNullOrWhiteSpace(_sku) || string.IsNullOrWhiteSpace(_name) || string.IsNullOrWhiteSpace(_unit)">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public StockItem? Item { get; set; }
+
+    private string _sku = "", _name = "", _unit = "pc";
+    private bool _fractions;
+
+    protected override void OnInitialized()
+    {
+        if (Item is { } i) (_sku, _name, _unit, _fractions) = (i.Sku, i.Name, i.Unit, i.AllowsFractions);
+    }
+
+    private async Task Save()
+    {
+        var saved = Item is null
+            ? await Api.Create("api/items", new { sku = _sku, name = _name, unit = _unit, allowsFractions = _fractions },
+                "Item added. Set its price in the price list.") is not null
+            : await Api.Put($"api/items/{Item.Id}", new { name = _name, unit = _unit, allowsFractions = _fractions }, "Item saved.");
+        if (saved) Dialog.Close(DialogResult.Ok(true));
+    }
+}

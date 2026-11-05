@@ -1,0 +1,54 @@
+@page "/purchase-orders"
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>Purchase orders · ERP</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h4">Purchase orders</MudText>
+    <MudSpacer />
+    <AuthorizeView Roles="@Buyers">
+        <MudButton Href="purchase-orders/new" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New purchase order</MudButton>
+    </AuthorizeView>
+</MudStack>
+
+<MudStack Row="true" Spacing="4" Class="mb-4">
+    <MudTextField T="string" Value="_search" ValueChanged="OnSearch" Label="PO number or supplier" DebounceInterval="400" Clearable="true" />
+    <MudSelect T="string" Value="Status" ValueChanged="OnStatus" Label="Status" Clearable="true" Style="max-width:240px">
+        @foreach (var s in Statuses)
+        {
+            <MudSelectItem Value="s">@Format.Words(s)</MudSelectItem>
+        }
+    </MudSelect>
+</MudStack>
+
+<MudTable T="PurchaseOrderSummary" @ref="_table" ServerData="Load" Hover="true" Dense="true" OnRowClick="Open" RowStyle="cursor:pointer">
+    <HeaderContent>
+        <MudTh>PO</MudTh><MudTh>Supplier</MudTh><MudTh>Status</MudTh><MudTh Class="money">Total</MudTh><MudTh>Expected</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.Number</MudTd>
+        <MudTd>@context.SupplierName</MudTd>
+        <MudTd><StatusChip Status="@context.Status" /></MudTd>
+        <MudTd Class="money">@Format.Peso(context.Total)</MudTd>
+        <MudTd>@(context.ExpectedDate is { } d ? Format.Date(d) : "")</MudTd>
+    </RowTemplate>
+    <NoRecordsContent>No purchase orders match.</NoRecordsContent>
+    <PagerContent><MudTablePager /></PagerContent>
+</MudTable>
+
+@code {
+    [SupplyParameterFromQuery] public string? Status { get; set; }
+
+    private static readonly string[] Statuses = ["Draft", "Approved", "Sent", "PartiallyReceived", "Received", "Closed", "Cancelled"];
+    private static readonly string Buyers = $"{Roles.Purchaser},{Roles.Admin}";
+    private MudTable<PurchaseOrderSummary> _table = default!;
+    private string? _search;
+
+    private Task<TableData<PurchaseOrderSummary>> Load(TableState state, CancellationToken ct) =>
+        Api.Page<PurchaseOrderSummary>(Url.With("api/purchase-orders", ("status", Status), ("search", _search)), state);
+
+    private void Open(TableRowClickEventArgs<PurchaseOrderSummary> row) => Nav.NavigateTo($"purchase-orders/{row.Item!.Id}");
+    private Task OnSearch(string? text) { _search = text; return _table.ReloadServerData(); }
+    private Task OnStatus(string? status) { Status = status; return _table.ReloadServerData(); }
+}

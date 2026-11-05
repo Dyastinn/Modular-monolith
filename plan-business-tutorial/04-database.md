@@ -28,14 +28,14 @@ domain methods make, and on `SaveChangesAsync` writes only those changes, in one
 That tracking is what keeps our domain pure. `order.Submit(...)` only changes fields; EF Core works out the
 SQL. The domain never sees a database.
 
-Reading data for a screen is a different job, and [lesson 10](10-reads.md) uses a different tool for it.
+Reading data for a screen is a different job, and [lesson 08](08-find-orders.md) uses a different tool for it.
 Now, let's be honest about the cost: that's two data tools to learn. The rule that keeps it simple is this:
 **commands save with EF Core, queries read with Dapper.**
 
 ### One DbContext per module, one schema each
 
 Each module gets its own `DbContext` mapped to its own **schema**, a named group of tables. Sales' context
-maps only `sales.*` tables, and Inventory's (in [lesson 07](07-submit.md)) only `inventory.*`. A module can't
+maps only `sales.*` tables, and Inventory's (in [lesson 09](09-submit.md)) only `inventory.*`. A module can't
 query another module's tables, because its context doesn't even know they exist. The module wall reaches all
 the way into the database.
 
@@ -55,7 +55,7 @@ PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localho
 ```
 
 One thing to watch out for: `erp_dev_only` is a password for *your machine*, for development only. In
-production, the app gets its own account with far fewer rights; [lesson 13](13-security-hardening.md) sets
+production, the app gets its own account with far fewer rights; [lesson 22](22-security-hardening.md) sets
 that up.
 
 ## 2. What the host needs from a module's database
@@ -188,44 +188,13 @@ public static class PostgresDatabase
 This creates the database the first time the app runs. It connects to `postgres`, the maintenance database
 every PostgreSQL server has, asks whether ours exists, and creates it if not.
 
-## 4. Getting the domain ready for EF Core
+## 4. Why the domain already has private constructors
 
-Before we map anything, our domain needs two small additions. When EF Core loads a saved customer, it has
-to create a `Customer` object *without* running our rules, because loading history isn't a new business
-event. It does that through a constructor with no parameters, which can be private. So add one to
-`Customer`, `ItemCategory` and `SalesOrderLine`:
-
-```csharp
-private Customer() { }        // in Customer
-private ItemCategory() { }    // in ItemCategory
-private SalesOrderLine() { }  // in SalesOrderLine
-```
-
-`SalesOrder` already has one: `Create` uses it.
-
-And we need the items themselves. Until now, items were only ids on order lines. The database needs to store
-each item's price and category, so let's add the entity:
-
-```csharp
-// src/Modules/Sales/Erp.Modules.Sales/Domain/Items/Item.cs
-namespace Erp.Modules.Sales.Domain;
-
-// Something Sales can put on an order: its price and the category rules that limit who may order how much.
-internal sealed class Item
-{
-    public long Id { get; private set; }
-    public string Sku { get; private set; } = default!;
-    public string Name { get; private set; } = default!;
-    public long CategoryId { get; private set; }
-    public ItemCategory Category { get; private set; } = default!;
-    public Money UnitPrice { get; private set; }
-    public bool IsActive { get; private set; }
-
-    private Item() { }
-}
-```
-
-`Category` is a **navigation property**: when EF Core loads an item, it can load its category alongside it.
+Remember the private parameterless constructors we gave `Customer`, `ItemCategory`, `SalesItem`,
+`SalesOrder` and `SalesOrderLine` in lesson 03? This is who they're for. When EF Core loads a saved
+customer, it has to create a `Customer` object *without* running our rules, because loading history isn't a
+new business event. It calls the private constructor, then fills the properties through their private
+setters. The rest of the code still can't do either.
 
 ## 5. The Sales DbContext
 
@@ -285,7 +254,7 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
 
     public DbSet<SalesOrder> SalesOrders => Set<SalesOrder>();
     public DbSet<Customer> Customers => Set<Customer>();
-    public DbSet<Item> Items => Set<Item>();
+    public DbSet<SalesItem> SalesItems => Set<SalesItem>();
     public DbSet<ItemCategory> ItemCategories => Set<ItemCategory>();
 
     // Shared by the app and `dotnet ef`, so the two can't drift apart.
@@ -297,10 +266,12 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
     {
         c.Properties<SalesOrderId>().HaveConversion<SalesOrderIdConverter>();
         c.Properties<CustomerId>().HaveConversion<CustomerIdConverter>();
+        c.Properties<CategoryId>().HaveConversion<CategoryIdConverter>();
         c.Properties<ItemId>().HaveConversion<ItemIdConverter>();
         c.Properties<UserId>().HaveConversion<UserIdConverter>();
         c.Properties<Money>().HaveConversion<MoneyConverter>().HavePrecision(18, 2);
-        c.Properties<Quantity>().HaveConversion<QuantityConverter>();
+        c.Properties<Quantity>().HaveConversion<QuantityConverter>().HavePrecision(18, 3);
+        c.Properties<decimal>().HavePrecision(18, 3);
     }
 
     protected override void OnModelCreating(ModelBuilder b)
@@ -317,24 +288,27 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).UseIdentityColumn();
             e.Property(x => x.Name).HasMaxLength(200);
+            e.HasIndex(x => x.Name);
         });
 
         b.Entity<ItemCategory>(e =>
         {
             e.ToTable("item_category", t => t.HasCheckConstraint("ck_item_category_max_qty", "max_quantity_per_order > 0"));
             e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
             e.HasIndex(x => x.Name).IsUnique();
             e.Property(x => x.Name).HasMaxLength(100);
             e.Property(x => x.RequiredRole).HasMaxLength(50);
         });
 
-        b.Entity<Item>(e =>
+        b.Entity<SalesItem>(e =>
         {
             e.ToTable("item", t => t.HasCheckConstraint("ck_item_unit_price", "unit_price >= 0"));
             e.HasKey(x => x.Id);
-            e.HasIndex(x => x.Sku).IsUnique();
+            e.Property(x => x.Id).ValueGeneratedNever();   // Inventory's id
             e.Property(x => x.Sku).HasMaxLength(50);
             e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.Unit).HasMaxLength(10);
             e.HasOne(x => x.Category).WithMany().HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Restrict);
         });
 
@@ -347,6 +321,7 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
             e.Property(x => x.OrderNumber).HasMaxLength(30);
             e.Property(x => x.RejectionReason).HasMaxLength(500);
             e.HasIndex(x => new { x.CustomerId, x.Status });
+            e.HasIndex(x => x.CreatedBy);
             e.HasOne<Customer>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
             e.Ignore(x => x.Total);
             e.Ignore(x => x.RequiresApproval);
@@ -362,6 +337,8 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
                 l.WithOwner().HasForeignKey("SalesOrderId");
                 l.Property<long>("Id");
                 l.HasKey("Id");
+                l.Property(x => x.ItemName).HasMaxLength(200);
+                l.Property(x => x.Unit).HasMaxLength(10);
                 l.Ignore(x => x.LineTotal);
             });
             e.Navigation(x => x.Lines).HasField("_lines").UsePropertyAccessMode(PropertyAccessMode.Field);
@@ -371,10 +348,11 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
 
 internal sealed class SalesOrderIdConverter() : ValueConverter<SalesOrderId, long>(v => v.Value, v => new SalesOrderId(v));
 internal sealed class CustomerIdConverter() : ValueConverter<CustomerId, long>(v => v.Value, v => new CustomerId(v));
+internal sealed class CategoryIdConverter() : ValueConverter<CategoryId, long>(v => v.Value, v => new CategoryId(v));
 internal sealed class ItemIdConverter() : ValueConverter<ItemId, long>(v => v.Value, v => new ItemId(v));
 internal sealed class UserIdConverter() : ValueConverter<UserId, long>(v => v.Value, v => new UserId(v));
 internal sealed class MoneyConverter() : ValueConverter<Money, decimal>(v => v.Amount, v => new Money(v));
-internal sealed class QuantityConverter() : ValueConverter<Quantity, int>(v => v.Value, v => new Quantity(v));
+internal sealed class QuantityConverter() : ValueConverter<Quantity, decimal>(v => v.Value, v => new Quantity(v));
 
 // For `dotnet ef migrations add`; never connects.
 internal sealed class SalesDbContextFactory : IDesignTimeDbContextFactory<SalesDbContext>
@@ -395,7 +373,9 @@ That's a lot of configuration, so let's walk through it piece by piece:
 | `Configure(...)` | The one place the context is configured. The running app and the `dotnet ef` tool (through the factory at the bottom) both call it, so they can never disagree |
 | `UseSnakeCaseNamingConvention()` | `OrderNumber` becomes the column `order_number`, so hand-written SQL stays pleasant |
 | `MigrationsHistoryTable(..., Schema)` | Each module records its applied migrations inside its own schema |
-| `ConfigureConventions` | Tells EF once how to store each value object and id: a `Money` is a `numeric(18,2)` column, a `CustomerId` a `bigint`. The domain never mentions a column type |
+| `ConfigureConventions` | Tells EF once how to store each value object and id: a `Money` is a `numeric(18,2)` column, a `Quantity` a `numeric(18,3)`, a `CustomerId` a `bigint`. The domain never mentions a column type |
+| `ValueGeneratedNever()` on the item | An item's id will come from the warehouse's catalog ([lesson 16](16-item-catalog.md)), so the database must not invent one |
+| `ItemName` and `Unit` on the line | The snapshot from lesson 03, stored with the line |
 | `OwnsMany(Lines)` | The lines *belong* to the order: loaded with it, saved with it, deleted with it. `HasField("_lines")` lets EF fill the private list, so `Lines` stays read-only |
 | `Ignore(Total)` and friends | Computed in C#, never stored |
 | `HasCheckConstraint` | The database's own last line of defense. The domain already refuses negative money; the constraint catches anything that sneaks around it |
@@ -455,8 +435,8 @@ SELECT v.name, v.is_blocked, v.credit_limit, v.outstanding_balance
 FROM (VALUES ('Acme Corp',       FALSE,   50000, 10000),   -- ₱40,000 headroom
              ('Beta Industries', FALSE,    5000,  4500),   -- only ₱500 left
              ('Gamma Traders',   TRUE,    20000,     0),   -- blocked
-             ('Delta Holdings',  FALSE,  200000,     0),   -- room for two high-value orders, not three
-             ('Epsilon Retail',  FALSE, 5000000,     0))   -- large account for approval scenarios
+             ('Delta Holdings',  FALSE,  200000,     0),   -- two high-value orders, not three
+             ('Epsilon Retail',  FALSE, 5000000,     0))   -- large account for approvals
      AS v(name, is_blocked, credit_limit, outstanding_balance)
 WHERE NOT EXISTS (SELECT 1 FROM sales.customer);
 
@@ -467,19 +447,22 @@ FROM (VALUES ('General',    1000, NULL),
      AS v(name, max_quantity_per_order, required_role)
 WHERE NOT EXISTS (SELECT 1 FROM sales.item_category);
 
-INSERT INTO sales.item (sku, name, category_id, unit_price, is_active)
-SELECT v.sku, v.name, v.category_id, v.unit_price, TRUE
-FROM (VALUES ('GEN-001', 'Widget',         1,    25.00),
-             ('GEN-002', 'Gadget',         1,    40.00),
-             ('CTL-001', 'Restricted Kit', 2,   500.00),
-             ('GEN-003', 'Server Rack',    1, 75000.00))   -- one rack is over the ₱50,000 approval threshold
-     AS v(sku, name, category_id, unit_price)
+-- Same ids as the Inventory dev seed. In real use these rows arrive through ItemCatalogChanged.
+INSERT INTO sales.item (id, sku, name, unit, allows_fractions, is_active, category_id, unit_price, is_for_sale)
+SELECT v.id, v.sku, v.name, v.unit, v.allows_fractions, TRUE, v.category_id, v.unit_price, TRUE
+FROM (VALUES (1, 'GEN-001', 'Widget',         'pc', FALSE, 1,    25.00),
+             (2, 'GEN-002', 'Gadget',         'pc', FALSE, 1,    40.00),
+             (3, 'CTL-001', 'Restricted Kit', 'pc', FALSE, 2,   500.00),
+             (4, 'GEN-003', 'Server Rack',    'pc', FALSE, 1, 75000.00),   -- one rack is over the ₱50,000 threshold
+             (5, 'BLK-001', 'Copper Wire',    'kg', TRUE,  1,   620.50))
+     AS v(id, sku, name, unit, allows_fractions, category_id, unit_price)
 WHERE NOT EXISTS (SELECT 1 FROM sales.item);
 ```
 
 The `WHERE NOT EXISTS` lines make it safe to run every time the app starts: the second run inserts nothing.
 Each customer is there to trigger a rule, so keep their names in mind. You'll meet Beta and Gamma again
-soon.
+soon. The items carry explicit ids because those ids will belong to the warehouse's catalog, as the comment
+says. And Copper Wire is sold by the kilogram, so 2.5 of it is a fine order.
 
 ## 7. The host brings every module's database up to date
 
@@ -627,7 +610,7 @@ nothing new.
 
 1. Why does each module get its own DbContext and its own schema?
 2. What does `Configure(...)` protect you from, and who calls it?
-3. Why does `Customer` need a private constructor with no parameters now, when it didn't last lesson?
+3. Who calls `Customer`'s private parameterless constructor, and why can't it use `Create`?
 4. NuGet resolves the range "10.0.4 or newer" to which version, and why did we pin EF Core?
 5. Why does the seed script use `WHERE NOT EXISTS`?
 6. Why is there no foreign key from `sales_order.created_by` to a users table?

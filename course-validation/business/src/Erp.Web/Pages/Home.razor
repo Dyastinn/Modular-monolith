@@ -1,0 +1,50 @@
+@page "/"
+
+<PageTitle>Home · ERP</PageTitle>
+
+<AuthorizeView Context="auth">
+    <MudText Typo="Typo.h4" GutterBottom="true">Good day, @auth.User.Identity?.Name</MudText>
+    <MudText Class="mb-6 mud-text-secondary">Here's where your work starts.</MudText>
+
+    <MudGrid>
+        <AuthorizeView Roles="@SellerRoles">
+            <MudItem xs="12" sm="6" md="4">
+                <Tile Title="New sales order" Text="Pick a customer, add lines, submit." Href="sales-orders/new" Icon="@Icons.Material.Filled.AddShoppingCart" />
+            </MudItem>
+        </AuthorizeView>
+        <AuthorizeView Roles="@ManagerRoles">
+            <MudItem xs="12" sm="6" md="4">
+                <Tile Title="Waiting for approval" Text="Orders above ₱50,000 that need you." Href="sales-orders?status=PendingApproval" Icon="@Icons.Material.Filled.HowToReg" />
+            </MudItem>
+        </AuthorizeView>
+        <AuthorizeView Roles="@ClerkRoles">
+            <MudItem xs="12" sm="6" md="4">
+                <Tile Title="Ready to ship" Text="Approved orders waiting for the warehouse." Href="sales-orders?status=Approved" Icon="@Icons.Material.Filled.LocalShipping" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <Tile Title="Goods to receive" Text="Purchase orders on their way." Href="purchase-orders?status=Sent" Icon="@Icons.Material.Filled.Inventory" />
+            </MudItem>
+        </AuthorizeView>
+        <AuthorizeView Roles="@BuyerRoles">
+            <MudItem xs="12" sm="6" md="4">
+                <Tile Title="New purchase order" Text="Restock from a supplier." Href="purchase-orders/new" Icon="@Icons.Material.Filled.ShoppingCart" />
+            </MudItem>
+        </AuthorizeView>
+        <AuthorizeView Roles="@AccountantRoles">
+            <MudItem xs="12" sm="6" md="4">
+                <Tile Title="Overdue invoices" Text="Past their due date and not fully paid." Href="invoices?overdueOnly=true" Icon="@Icons.Material.Filled.Alarm" />
+            </MudItem>
+            <MudItem xs="12" sm="6" md="4">
+                <Tile Title="Receivables aging" Text="Who owes what, and how late." Href="receivables-aging" Icon="@Icons.Material.Filled.Assessment" />
+            </MudItem>
+        </AuthorizeView>
+    </MudGrid>
+</AuthorizeView>
+
+@code {
+    private static readonly string SellerRoles = $"{Roles.SalesRep},{Roles.SalesManager},{Roles.Admin}";
+    private static readonly string ManagerRoles = $"{Roles.SalesManager},{Roles.Admin}";
+    private static readonly string ClerkRoles = $"{Roles.InventoryClerk},{Roles.Admin}";
+    private static readonly string BuyerRoles = $"{Roles.Purchaser},{Roles.Admin}";
+    private static readonly string AccountantRoles = $"{Roles.Accountant},{Roles.Admin}";
+}

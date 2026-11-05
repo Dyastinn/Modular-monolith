@@ -1,6 +1,7 @@
 using AwesomeAssertions;
 using Erp.Modules.Sales.Domain;
 using Erp.Modules.Sales.Infrastructure;
+using Erp.Shared.BuildingBlocks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -22,10 +23,8 @@ public class ConcurrencyTests(CustomWebAppFactory factory)
         var aliceOrder = await aliceDb.SalesOrders.SingleAsync(o => o.Id == orderId);
         var bobOrder = await bobDb.SalesOrders.SingleAsync(o => o.Id == orderId);
 
-        aliceOrder.ClearLines();
-        aliceOrder.AddLine(new ItemId(1), new Quantity(3), new Money(25));
-        bobOrder.ClearLines();
-        bobOrder.AddLine(new ItemId(2), new Quantity(1), new Money(40));
+        aliceOrder.SetLines(await aliceDb.ResolveLinesAsync([(1, 3)], default), Roles.SalesRep);
+        bobOrder.SetLines(await bobDb.ResolveLinesAsync([(2, 1)], default), Roles.SalesRep);
 
         await aliceDb.SaveChangesAsync();
         var bobSaves = () => bobDb.SaveChangesAsync();
@@ -38,7 +37,7 @@ public class ConcurrencyTests(CustomWebAppFactory factory)
         var db = scope.ServiceProvider.GetRequiredService<SalesDbContext>();
         var now = DateTime.UtcNow;
         var order = SalesOrder.Create(await db.NextOrderNumberAsync(now, default), new CustomerId(1), new UserId(1), now);
-        order.AddLine(new ItemId(1), new Quantity(1), new Money(25));
+        order.SetLines(await db.ResolveLinesAsync([(1, 1)], default), Roles.SalesRep);
         db.SalesOrders.Add(order);
         await db.SaveChangesAsync();
         return order.Id;

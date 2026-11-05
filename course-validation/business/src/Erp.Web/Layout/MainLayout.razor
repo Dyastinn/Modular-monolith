@@ -1,0 +1,67 @@
+@inherits LayoutComponentBase
+@inject CookieAuthenticationStateProvider Auth
+@inject NavigationManager Nav
+
+<MudThemeProvider Theme="Theme" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<AuthorizeView>
+    <Authorized>
+        <MudLayout>
+            <MudAppBar Elevation="1" Dense="true">
+                <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
+                               OnClick="() => _drawerOpen = !_drawerOpen" aria-label="Menu" />
+                <MudText Typo="Typo.h6" Class="ml-2">ERP</MudText>
+                <MudSpacer />
+                <MudMenu Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Inherit" AnchorOrigin="Origin.BottomRight"
+                         aria-label="Account">
+                    <MudText Typo="Typo.body2" Class="px-4 pt-2">@context.User.Identity?.Name</MudText>
+                    <MudText Typo="Typo.caption" Class="px-4 pb-2">@Format.Words(RoleOf(context))</MudText>
+                    <MudDivider />
+                    <MudMenuItem Href="change-password">Change password</MudMenuItem>
+                    <MudMenuItem OnClick="() => SignOut(false)">Sign out</MudMenuItem>
+                    <MudMenuItem OnClick="() => SignOut(true)">Sign out everywhere</MudMenuItem>
+                </MudMenu>
+            </MudAppBar>
+            <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="1">
+                <NavMenu />
+            </MudDrawer>
+            <MudMainContent>
+                <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-6">
+                    @Body
+                </MudContainer>
+            </MudMainContent>
+        </MudLayout>
+    </Authorized>
+    <NotAuthorized>
+        @Body
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private bool _drawerOpen = true;
+
+    private static readonly MudTheme Theme = new()
+    {
+        PaletteLight = new PaletteLight { Primary = "#1e5aa8", AppbarBackground = "#1e5aa8" }
+    };
+
+    private static string RoleOf(AuthenticationState state) =>
+        state.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
+
+    // A temporary password from an admin must be replaced before anything else.
+    protected override async Task OnParametersSetAsync()
+    {
+        await Auth.GetAuthenticationStateAsync();
+        if (Auth.User is { MustChangePassword: true } && !Nav.Uri.EndsWith("/change-password"))
+            Nav.NavigateTo("change-password");
+    }
+
+    private async Task SignOut(bool everywhere)
+    {
+        await Auth.SignOutAsync(everywhere);
+        Nav.NavigateTo("login");
+    }
+}

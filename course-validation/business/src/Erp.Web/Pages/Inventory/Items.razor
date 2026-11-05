@@ -1,0 +1,84 @@
+@page "/items"
+@inject ApiClient Api
+@inject IDialogService Dialogs
+
+<PageTitle>Items and stock · ERP</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h4">Items and stock</MudText>
+    <MudSpacer />
+    <AuthorizeView Roles="@Keepers">
+        <MudButton OnClick="() => Edit(null)" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New item</MudButton>
+    </AuthorizeView>
+</MudStack>
+
+<MudStack Row="true" Spacing="4" Class="mb-4">
+    <MudTextField T="string" Value="_search" ValueChanged="OnSearch" Label="SKU or name" DebounceInterval="400" Clearable="true"
+                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
+    <MudSwitch T="bool" Value="_activeOnly" ValueChanged="OnActive" Label="Active only" Color="Color.Primary" />
+</MudStack>
+
+<MudTable T="StockItem" @ref="_table" ServerData="Load" Hover="true" Dense="true">
+    <HeaderContent>
+        <MudTh>SKU</MudTh><MudTh>Name</MudTh><MudTh>Unit</MudTh>
+        <MudTh Class="money">On hand</MudTh><MudTh Class="money">Reserved</MudTh><MudTh Class="money">Available</MudTh><MudTh></MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.Sku</MudTd>
+        <MudTd>@context.Name @if (!context.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</MudTd>
+        <MudTd>@context.Unit</MudTd>
+        <MudTd Class="money">@Format.Qty(context.OnHand)</MudTd>
+        <MudTd Class="money">@Format.Qty(context.Reserved)</MudTd>
+        <MudTd Class="money"><b>@Format.Qty(context.Available)</b></MudTd>
+        <MudTd>
+            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" aria-label="Actions">
+                <MudMenuItem OnClick="() => Movements(context)">Movement history</MudMenuItem>
+                <AuthorizeView Roles="@Keepers" Context="auth">
+                    <MudMenuItem OnClick="() => Adjust(context)">Adjust stock</MudMenuItem>
+                    <MudMenuItem OnClick="() => Edit(context)">Edit</MudMenuItem>
+                    <MudMenuItem OnClick="() => ToggleActive(context)">@(context.IsActive ? "Deactivate" : "Activate")</MudMenuItem>
+                </AuthorizeView>
+            </MudMenu>
+        </MudTd>
+    </RowTemplate>
+    <NoRecordsContent>No items match.</NoRecordsContent>
+    <PagerContent><MudTablePager /></PagerContent>
+</MudTable>
+
+@code {
+    private static readonly string Keepers = $"{Roles.InventoryClerk},{Roles.Admin}";
+    private MudTable<StockItem> _table = default!;
+    private string? _search;
+    private bool _activeOnly;
+
+    private Task<TableData<StockItem>> Load(TableState state, CancellationToken ct) =>
+        Api.Page<StockItem>(Url.With("api/items", ("search", _search), ("activeOnly", _activeOnly)), state);
+
+    private Task OnSearch(string? text) { _search = text; return _table.ReloadServerData(); }
+    private Task OnActive(bool value) { _activeOnly = value; return _table.ReloadServerData(); }
+
+    private async Task Edit(StockItem? item)
+    {
+        var dialog = await Dialogs.ShowAsync<ItemDialog>(item is null ? "New item" : $"Edit {item.Sku}",
+            new DialogParameters<ItemDialog> { { d => d.Item, item } });
+        if ((await dialog.Result) is { Canceled: false }) await _table.ReloadServerData();
+    }
+
+    private async Task Adjust(StockItem item)
+    {
+        var dialog = await Dialogs.ShowAsync<AdjustStockDialog>($"Adjust {item.Sku}",
+            new DialogParameters<AdjustStockDialog> { { d => d.Item, item } });
+        if ((await dialog.Result) is { Canceled: false }) await _table.ReloadServerData();
+    }
+
+    private Task Movements(StockItem item) =>
+        Dialogs.ShowAsync<MovementsDialog>($"{item.Sku} · {item.Name}",
+            new DialogParameters<MovementsDialog> { { d => d.Item, item } },
+            new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true });
+
+    private async Task ToggleActive(StockItem item)
+    {
+        if (await Api.Post($"api/items/{item.Id}/{(item.IsActive ? "deactivate" : "activate")}", success: "Saved."))
+            await _table.ReloadServerData();
+    }
+}

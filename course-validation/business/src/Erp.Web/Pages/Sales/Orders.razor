@@ -1,0 +1,63 @@
+@page "/sales-orders"
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>Sales orders · ERP</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
+    <MudText Typo="Typo.h4">Sales orders</MudText>
+    <MudSpacer />
+    <AuthorizeView Roles="@Sellers">
+        <MudButton Href="sales-orders/new" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New order</MudButton>
+    </AuthorizeView>
+</MudStack>
+
+<MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
+    <MudStack Row="true" Spacing="4">
+        <MudTextField T="string" Value="_search" ValueChanged="OnSearch" Label="Order number or customer" DebounceInterval="400"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Clearable="true" />
+        <MudSelect T="string" Value="Status" ValueChanged="OnStatus" Label="Status" Clearable="true" Style="max-width:240px">
+            @foreach (var s in Statuses)
+            {
+                <MudSelectItem Value="s">@Format.Words(s)</MudSelectItem>
+            }
+        </MudSelect>
+    </MudStack>
+</MudPaper>
+
+<MudTable T="SalesOrderSummary" @ref="_table" ServerData="Load" Hover="true" Dense="true"
+          OnRowClick="Open" RowStyle="cursor:pointer">
+    <HeaderContent>
+        <MudTh>Order</MudTh>
+        <MudTh>Customer</MudTh>
+        <MudTh>Status</MudTh>
+        <MudTh Class="money">Total</MudTh>
+        <MudTh>Created</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.OrderNumber</MudTd>
+        <MudTd>@context.CustomerName</MudTd>
+        <MudTd><StatusChip Status="@context.Status" /></MudTd>
+        <MudTd Class="money">@Format.Peso(context.Total)</MudTd>
+        <MudTd>@Format.Date(context.CreatedUtc)</MudTd>
+    </RowTemplate>
+    <NoRecordsContent>No orders match.</NoRecordsContent>
+    <PagerContent><MudTablePager /></PagerContent>
+</MudTable>
+
+@code {
+    [SupplyParameterFromQuery] public string? Status { get; set; }
+
+    private static readonly string[] Statuses = ["Draft", "PendingApproval", "Approved", "Shipped", "Rejected", "Cancelled"];
+    private static readonly string Sellers = $"{Roles.SalesRep},{Roles.SalesManager},{Roles.Admin}";
+    private MudTable<SalesOrderSummary> _table = default!;
+    private string? _search;
+
+    private Task<TableData<SalesOrderSummary>> Load(TableState state, CancellationToken ct) =>
+        Api.Page<SalesOrderSummary>(Url.With("api/sales-orders", ("status", Status), ("search", _search)), state);
+
+    private void Open(TableRowClickEventArgs<SalesOrderSummary> row) => Nav.NavigateTo($"sales-orders/{row.Item!.Id}");
+
+    private Task OnSearch(string? text) { _search = text; return _table.ReloadServerData(); }
+    private Task OnStatus(string? status) { Status = status; return _table.ReloadServerData(); }
+}

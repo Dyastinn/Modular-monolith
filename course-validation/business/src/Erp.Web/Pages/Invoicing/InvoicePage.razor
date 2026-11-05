@@ -1,0 +1,142 @@
+@page "/invoices/{Id:long}"
+@inject ApiClient Api
+@inject UserDirectory Users
+@inject IDialogService Dialogs
+@inject NavigationManager Nav
+
+<PageTitle>@(_invoice?.Number ?? "Invoice") · ERP</PageTitle>
+
+@if (_invoice is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+    return;
+}
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+    <MudText Typo="Typo.h4">@_invoice.Number</MudText>
+    <StatusChip Status="@_invoice.Status" />
+    <MudSpacer />
+    <MudButton Href="@($"api/invoices/{Id}/pdf")" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.PictureAsPdf">PDF</MudButton>
+    <AuthorizeView Roles="@Accountants">
+        @if (_invoice.Status is "Issued" or "PartiallyPaid")
+        {
+            <MudButton OnClick="RecordPayment" Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Payments">Record payment</MudButton>
+        }
+        @if (_invoice.Status == "Issued")
+        {
+            <MudButton OnClick="Void" Variant="Variant.Text" Color="Color.Error">Void</MudButton>
+        }
+        @if (_invoice.Status == "Void")
+        {
+            <MudButton OnClick="Reissue" Variant="Variant.Filled" Color="Color.Primary">Issue a replacement</MudButton>
+        }
+    </AuthorizeView>
+</MudStack>
+
+@if (_invoice.VoidReason is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">Void: @_invoice.VoidReason</MudAlert>
+}
+
+<MudGrid>
+    <MudItem xs="12" md="8">
+        <MudPaper Class="pa-4 mb-4" Outlined="true">
+            <MudText Typo="Typo.h6">@_invoice.CustomerName</MudText>
+            <MudText Typo="Typo.body2">@(_invoice.CustomerTin is null ? "" : $"TIN {_invoice.CustomerTin} · ")@_invoice.CustomerAddress</MudText>
+            <MudText Typo="Typo.body2" Class="mb-3">Order @_invoice.OrderNumber · Issued @Format.Date(_invoice.IssueDate) · Due @Format.Date(_invoice.DueDate)</MudText>
+            <MudSimpleTable Dense="true">
+                <thead><tr><th>Description</th><th class="money">Quantity</th><th class="money">Unit price</th><th class="money">Amount</th></tr></thead>
+                <tbody>
+                    @foreach (var l in _invoice.Lines)
+                    {
+                        <tr>
+                            <td>@l.Description</td>
+                            <td class="money">@Format.Qty(l.Quantity) @l.Unit</td>
+                            <td class="money">@Format.Peso(l.UnitPrice)</td>
+                            <td class="money">@Format.Peso(l.LineTotal)</td>
+                        </tr>
+                    }
+                    @if (_invoice.Vatable is { } vatable)
+                    {
+                        <tr><td colspan="3">VATable sales</td><td class="money">@Format.Peso(vatable)</td></tr>
+                        <tr><td colspan="3">VAT (12%)</td><td class="money">@Format.Peso(_invoice.Vat ?? 0)</td></tr>
+                    }
+                    <tr><td colspan="3"><b>Total</b></td><td class="money"><b>@Format.Peso(_invoice.Total)</b></td></tr>
+                    <tr><td colspan="3">Paid</td><td class="money">@Format.Peso(_invoice.AmountPaid)</td></tr>
+                    <tr><td colspan="3"><b>Balance due</b></td><td class="money"><b>@Format.Peso(_invoice.BalanceDue)</b></td></tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="4">
+        <MudPaper Class="pa-4" Outlined="true">
+            <MudText Typo="Typo.h6" GutterBottom="true">Payments</MudText>
+            @if (_invoice.Payments.Count == 0)
+            {
+                <MudText Typo="Typo.body2">None yet.</MudText>
+            }
+            @foreach (var p in _invoice.Payments)
+            {
+                <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
+                    <div>
+                        <MudText Typo="Typo.body2" Style="@(p.VoidedUtc is null ? "" : "text-decoration:line-through")">
+                            @Format.Peso(p.Amount) · @Format.Words(p.Method) · @Format.Date(p.PaidOn)
+                        </MudText>
+                        <MudText Typo="Typo.caption">@p.Reference @(p.VoidReason is null ? "" : $"(void: {p.VoidReason})")</MudText>
+                    </div>
+                    <MudSpacer />
+                    @if (p.VoidedUtc is null)
+                    {
+                        <AuthorizeView Roles="@Accountants" Context="auth">
+                            <MudIconButton Icon="@Icons.Material.Filled.Undo" Size="Size.Small" OnClick="() => VoidPayment(p)" aria-label="Void payment" />
+                        </AuthorizeView>
+                    }
+                </MudStack>
+            }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private static readonly string Accountants = $"{Roles.Accountant},{Roles.Admin}";
+    private InvoiceDetail? _invoice;
+
+    protected override Task OnParametersSetAsync() => Load();
+
+    private async Task Load()
+    {
+        _invoice = await Api.Get<InvoiceDetail>($"api/invoices/{Id}");
+        if (_invoice is null) Nav.NavigateTo("invoices");
+    }
+
+    private async Task RecordPayment()
+    {
+        var dialog = await Dialogs.ShowAsync<PaymentDialog>($"Payment for {_invoice!.Number}",
+            new DialogParameters<PaymentDialog> { { d => d.Invoice, _invoice } });
+        if ((await dialog.Result) is { Canceled: false }) await Load();
+    }
+
+    private async Task VoidPayment(Payment payment)
+    {
+        if (await ReasonDialog.Ask(Dialogs, "Void payment", $"Void the {Format.Peso(payment.Amount)} payment? The customer owes it again.", "Void")
+                is { } reason
+            && await Api.Post($"api/invoices/{Id}/payments/{payment.Id}/void", new { reason }, "Payment voided."))
+            await Load();
+    }
+
+    private async Task Void()
+    {
+        if (await ReasonDialog.Ask(Dialogs, "Void invoice", "The invoice number stays used, marked void. You can then issue a replacement.", "Void")
+                is { } reason
+            && await Api.Post($"api/invoices/{Id}/void", new { reason }, "Invoice voided."))
+            await Load();
+    }
+
+    private async Task Reissue()
+    {
+        if (await Api.Create($"api/invoices/{Id}/reissue", new { }, "Replacement issued.") is { } newId)
+            Nav.NavigateTo($"invoices/{newId}");
+    }
+}

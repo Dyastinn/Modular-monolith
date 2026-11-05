@@ -17,7 +17,6 @@ public sealed class CustomWebAppFactory : WebApplicationFactory<Program>
     // deploy/postgres/create-roles.sql, with migrations run as erp_owner. That database is not dropped.
     private static readonly string? OwnerConnectionString = Environment.GetEnvironmentVariable("ERP_TEST_DB_OWNER");
 
-    public const string TestApiKey = "test-suite-key";
     public const string Password = "Password123!";
 
     public CustomWebAppFactory()
@@ -32,23 +31,16 @@ public sealed class CustomWebAppFactory : WebApplicationFactory<Program>
         builder.UseSetting("ConnectionStrings:ErpDb", TestConnectionString);
         if (OwnerConnectionString is not null)
             builder.UseSetting("ConnectionStrings:ErpDbMigrations", OwnerConnectionString);
-        builder.UseSetting("ApiKeys:tests", TestApiKey);
         builder.UseSetting("RateLimiting:RequestsPerMinute", "100000");
         builder.UseSetting("RateLimiting:AuthRequestsPerMinute", "100000");
         builder.UseSetting("Outbox:PollIntervalMs", "200");
-    }
-
-    protected override void ConfigureClient(HttpClient client)
-    {
-        client.DefaultRequestHeaders.Add("X-Api-Key", TestApiKey);
-        base.ConfigureClient(client);
     }
 
     public sealed record Tokens(string AccessToken, string RefreshToken);
 
     public async Task<Tokens> LoginAsync(HttpClient client, string email, string password = Password)
     {
-        var response = await client.PostAsJsonAsync("/auth/login", new { email, password });
+        var response = await client.PostAsJsonAsync("/api/auth/login", new { email, password });
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<Tokens>())!;
     }

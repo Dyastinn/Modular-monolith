@@ -47,7 +47,7 @@ public class InventoryReservationTests(CustomWebAppFactory factory)
         (await GetReserved(RestrictedKitId)).Should().Be(0);   // Inventory really joined the caller's transaction
     }
 
-    private async Task<bool> ReserveInOwnCommittedTransaction(long itemId, int qty)
+    private async Task<bool> ReserveInOwnCommittedTransaction(long itemId, decimal qty)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var conn = scope.ServiceProvider.GetRequiredService<ISharedConnection>().Connection;
@@ -60,17 +60,15 @@ public class InventoryReservationTests(CustomWebAppFactory factory)
         return reserved;
     }
 
-    private static async Task<int> GetReserved(long itemId)
+    private static async Task<decimal> GetReserved(long itemId)
     {
         await using var conn = new NpgsqlConnection(CustomWebAppFactory.TestConnectionString);
-        return await conn.ExecuteScalarAsync<int>(
-            "SELECT reserved FROM inventory.stock_item WHERE item_id = @itemId", new { itemId });
+        return await conn.ExecuteScalarAsync<decimal>("SELECT reserved FROM inventory.item WHERE id = @itemId", new { itemId });
     }
 
-    private static async Task SetReserved(long itemId, int reserved)
+    private static async Task SetReserved(long itemId, decimal reserved)
     {
         await using var conn = new NpgsqlConnection(CustomWebAppFactory.TestConnectionString);
-        await conn.ExecuteAsync(
-            "UPDATE inventory.stock_item SET reserved = @reserved WHERE item_id = @itemId", new { itemId, reserved });
+        await conn.ExecuteAsync("UPDATE inventory.item SET reserved = @reserved WHERE id = @itemId", new { itemId, reserved });
     }
 }

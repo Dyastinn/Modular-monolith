@@ -1,9 +1,10 @@
-using Microsoft.EntityFrameworkCore.Diagnostics;
 using Carter;
+using Erp.Modules.Sales.Contracts;
 using Erp.Modules.Sales.Infrastructure;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace Erp.Modules.Sales;
@@ -18,6 +19,7 @@ public static class SalesModule
             SalesDbContext.Configure(o, sp.GetRequiredService<ISharedConnection>().Connection)
                 .AddInterceptors(sp.GetServices<IInterceptor>()));
         services.AddScoped<IModuleDatabase, SalesDatabase>();
+        services.AddScoped<ISalesOrders, SalesOrdersService>();
 
         // AddCarter() only finds public endpoint classes; ours are internal.
         foreach (var endpoint in assembly.GetTypes().Where(t => !t.IsAbstract && typeof(ICarterModule).IsAssignableFrom(t)))

@@ -4,7 +4,11 @@
     <ProjectReference Include="..\Modules\Identity\Erp.Modules.Identity\Erp.Modules.Identity.csproj" />
     <ProjectReference Include="..\Modules\Sales\Erp.Modules.Sales\Erp.Modules.Sales.csproj" />
     <ProjectReference Include="..\Modules\Inventory\Erp.Modules.Inventory\Erp.Modules.Inventory.csproj" />
+    <ProjectReference Include="..\Modules\Purchasing\Erp.Modules.Purchasing\Erp.Modules.Purchasing.csproj" />
+    <ProjectReference Include="..\Modules\Invoicing\Erp.Modules.Invoicing\Erp.Modules.Invoicing.csproj" />
     <ProjectReference Include="..\Shared\Erp.Shared.Infrastructure\Erp.Shared.Infrastructure.csproj" />
+    <!-- The browser app's files, served by this host from the same address as the API. Its code is not referenced. -->
+    <ProjectReference Include="..\Erp.Web\Erp.Web.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
@@ -13,6 +17,7 @@
     <PackageReference Include="Mediator.Abstractions" />
     <!-- Generates code naming every module's internal handlers: why modules grant InternalsVisibleTo("Erp.Api"). -->
     <PackageReference Include="Mediator.SourceGenerator" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" />
     <PackageReference Include="Npgsql.OpenTelemetry" />
     <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />

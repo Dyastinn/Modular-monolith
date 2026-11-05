@@ -1,0 +1,39 @@
+using Erp.Modules.Invoicing.Domain;
+using Erp.Modules.Sales.Contracts;
+using Erp.Shared.BuildingBlocks;
+using Microsoft.EntityFrameworkCore;
+
+namespace Erp.Modules.Invoicing.Infrastructure;
+
+// Bills one shipment. Safe to call again: if the shipment already has a live invoice, that one is returned.
+internal sealed class InvoiceIssuer(InvoicingDbContext db, ISalesOrders orders, IClock clock)
+{
+    public async Task<long> IssueForShipmentAsync(long shipmentId, long salesOrderId, CancellationToken ct)
+    {
+        if (await LiveInvoiceForAsync(shipmentId, ct) is { } existing) return existing;
+
+        var order = await orders.GetForInvoiceAsync(salesOrderId, ct);
+        var lines = order.Lines
+            .Select(l => new InvoiceLine(l.Description, l.Unit, new Quantity(l.Quantity), new Money(l.UnitPrice)))
+            .ToList();
+
+        await using var tx = await db.Database.BeginTransactionAsync(ct);
+        // Taking the next number locks the counter, so two deliveries of the same event are now in single file.
+        var number = await db.AllocateInvoiceNumberAsync(clock.UtcNow, ct);
+        if (await LiveInvoiceForAsync(shipmentId, ct) is { } raced) return raced;   // rollback: the number isn't used up
+
+        var invoice = Invoice.Issue(number, shipmentId, order.OrderId, order.OrderNumber, order.CustomerId, order.CustomerName,
+            order.CustomerTin, order.CustomerAddress, order.PaymentTermsDays, lines, clock.Today);
+        db.Invoices.Add(invoice);
+        await db.SaveChangesAsync(ct);
+        await tx.CommitAsync(ct);
+        return invoice.Id.Value;
+    }
+
+    private async Task<long?> LiveInvoiceForAsync(long shipmentId, CancellationToken ct)
+    {
+        var id = await db.Invoices.Where(i => i.ShipmentId == shipmentId && i.Status != InvoiceStatus.Void)
+            .Select(i => i.Id).FirstOrDefaultAsync(ct);
+        return id == default ? null : id.Value;
+    }
+}

@@ -15,7 +15,7 @@ public class AuthTests(CustomWebAppFactory factory)
     [Fact]
     public async Task Wrong_password_is_401()
     {
-        var response = await factory.CreateClient().PostAsJsonAsync("/auth/login",
+        var response = await factory.CreateClient().PostAsJsonAsync("/api/auth/login",
             new { email = "rep@erp.local", password = "not-the-password" });
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -25,7 +25,7 @@ public class AuthTests(CustomWebAppFactory factory)
     [Fact]
     public async Task Me_returns_the_signed_in_user_and_role()
     {
-        var me = await (await factory.ClientFor("manager@erp.local")).GetFromJsonAsync<Me>("/auth/me");
+        var me = await (await factory.ClientFor("manager@erp.local")).GetFromJsonAsync<Me>("/api/auth/me");
 
         me!.Username.Should().Be("manager@erp.local");
         me.Role.Should().Be(Roles.SalesManager);
@@ -37,7 +37,7 @@ public class AuthTests(CustomWebAppFactory factory)
         var client = factory.CreateClient();
         var tokens = await factory.LoginAsync(client, "rep@erp.local");
 
-        var refreshed = await client.PostAsJsonAsync("/auth/refresh", new { tokens.RefreshToken });
+        var refreshed = await client.PostAsJsonAsync("/api/auth/refresh", new { tokens.RefreshToken });
 
         refreshed.StatusCode.Should().Be(HttpStatusCode.OK);
     }
@@ -45,7 +45,7 @@ public class AuthTests(CustomWebAppFactory factory)
     [Fact]
     public async Task Self_registration_is_disabled()
     {
-        var response = await factory.CreateClient().PostAsJsonAsync("/auth/register",
+        var response = await factory.CreateClient().PostAsJsonAsync("/api/auth/register",
             new { email = "intruder@example.com", password = "LongEnoughPassword1" });
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
@@ -56,9 +56,9 @@ public class AuthTests(CustomWebAppFactory factory)
         var email = await CreateUser();
         var client = factory.CreateClient();
         for (var i = 0; i < 5; i++)
-            await client.PostAsJsonAsync("/auth/login", new { email, password = "wrong-password!" });
+            await client.PostAsJsonAsync("/api/auth/login", new { email, password = "wrong-password!" });
 
-        var withRightPassword = await client.PostAsJsonAsync("/auth/login", new { email, password = CustomWebAppFactory.Password });
+        var withRightPassword = await client.PostAsJsonAsync("/api/auth/login", new { email, password = CustomWebAppFactory.Password });
 
         withRightPassword.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
@@ -71,9 +71,9 @@ public class AuthTests(CustomWebAppFactory factory)
         var tokens = await factory.LoginAsync(client, email);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
 
-        (await client.PostAsync("/auth/logout-everywhere", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await client.PostAsync("/api/auth/logout-everywhere", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        var refresh = await client.PostAsJsonAsync("/auth/refresh", new { tokens.RefreshToken });
+        var refresh = await client.PostAsJsonAsync("/api/auth/refresh", new { tokens.RefreshToken });
         refresh.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 

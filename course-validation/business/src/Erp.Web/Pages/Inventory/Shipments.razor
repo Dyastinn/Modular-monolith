@@ -1,0 +1,36 @@
+@page "/shipments"
+@inject ApiClient Api
+@inject UserDirectory Users
+
+<PageTitle>Shipments · ERP</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-2">Shipments</MudText>
+<MudText Typo="Typo.body2" Class="mb-4">
+    To ship an approved order, open it from <MudLink Href="sales-orders?status=Approved">Ready to ship</MudLink> and choose Ship.
+</MudText>
+
+<MudTable T="Shipment" ServerData="Load" Hover="true" Dense="true">
+    <HeaderContent>
+        <MudTh>Shipment</MudTh><MudTh>Order</MudTh><MudTh>Lines</MudTh><MudTh>Shipped</MudTh><MudTh>By</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@context.Number</MudTd>
+        <MudTd><MudLink Href="@($"sales-orders/{context.SalesOrderId}")">@context.OrderNumber</MudLink></MudTd>
+        <MudTd>@context.LineCount</MudTd>
+        <MudTd>@Format.Date(context.ShippedUtc)</MudTd>
+        <MudTd>@_names.GetValueOrDefault(context.ShippedBy)</MudTd>
+    </RowTemplate>
+    <NoRecordsContent>Nothing has shipped yet.</NoRecordsContent>
+    <PagerContent><MudTablePager /></PagerContent>
+</MudTable>
+
+@code {
+    private readonly Dictionary<long, string> _names = [];
+
+    private async Task<TableData<Shipment>> Load(TableState state, CancellationToken ct)
+    {
+        var page = await Api.Page<Shipment>("api/shipments", state);
+        foreach (var id in page.Items!.Select(s => s.ShippedBy).Distinct()) _names[id] = await Users.NameOf(id);
+        return page;
+    }
+}

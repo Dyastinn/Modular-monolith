@@ -23,10 +23,11 @@ internal static class RateLimiting
                 return ValueTask.CompletedTask;
             };
 
+            // Only the API is budgeted. The app's own files (dozens on first load) and health checks are not.
             o.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
-                ctx.Request.Path.StartsWithSegments("/health")
-                    ? RateLimitPartition.GetNoLimiter("health")
-                    : RateLimitPartition.GetFixedWindowLimiter(ClientKey(ctx), _ => PerMinute(perClient)));
+                ctx.Request.Path.StartsWithSegments("/api")
+                    ? RateLimitPartition.GetFixedWindowLimiter(ClientKey(ctx), _ => PerMinute(perClient))
+                    : RateLimitPartition.GetNoLimiter("not-api"));
 
             // Sign-in endpoints: per IP and strict, to slow password guessing (lockout covers a single account).
             o.AddPolicy(RateLimitPolicies.Auth, ctx =>

@@ -1,0 +1,40 @@
+@page "/sign-in-log"
+@attribute [Authorize(Roles = Roles.Admin)]
+@inject ApiClient Api
+
+<PageTitle>Sign-in log · ERP</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">Sign-in log</MudText>
+
+<MudStack Row="true" Spacing="4" Class="mb-4">
+    <MudTextField T="string" Value="_email" ValueChanged="OnEmail" Label="Email" DebounceInterval="400" Clearable="true" />
+    <MudSwitch T="bool" Value="_failedOnly" ValueChanged="OnFailed" Label="Failed only" Color="Color.Error" />
+</MudStack>
+
+<MudTable T="SignInAttempt" @ref="_table" ServerData="Load" Dense="true" Hover="true" RowsPerPage="50">
+    <HeaderContent>
+        <MudTh>When</MudTh><MudTh>Email</MudTh><MudTh>Outcome</MudTh><MudTh>From</MudTh>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd>@Format.Date(context.OccurredUtc)</MudTd>
+        <MudTd>@context.Email</MudTd>
+        <MudTd>
+            <MudChip T="string" Size="Size.Small" Color="@(context.Outcome == "Succeeded" ? Color.Success : Color.Error)">@Format.Words(context.Outcome)</MudChip>
+        </MudTd>
+        <MudTd>@context.IpAddress</MudTd>
+    </RowTemplate>
+    <NoRecordsContent>No sign-in attempts match.</NoRecordsContent>
+    <PagerContent><MudTablePager PageSizeOptions="new[] { 50, 100 }" /></PagerContent>
+</MudTable>
+
+@code {
+    private MudTable<SignInAttempt> _table = default!;
+    private string? _email;
+    private bool _failedOnly;
+
+    private Task<TableData<SignInAttempt>> Load(TableState state, CancellationToken ct) =>
+        Api.Page<SignInAttempt>(Url.With("api/sign-in-attempts", ("email", _email), ("failedOnly", _failedOnly)), state);
+
+    private Task OnEmail(string? text) { _email = text; return _table.ReloadServerData(); }
+    private Task OnFailed(bool value) { _failedOnly = value; return _table.ReloadServerData(); }
+}

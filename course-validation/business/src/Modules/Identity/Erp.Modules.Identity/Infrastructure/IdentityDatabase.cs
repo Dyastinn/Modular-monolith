@@ -23,13 +23,20 @@ internal sealed class IdentityDatabase(UserManager<AppUser> users) : IModuleData
     // Through UserManager rather than SQL, so passwords are hashed exactly as in real use.
     public async Task SeedDevelopmentDataAsync(DbConnection ownerConnection, CancellationToken ct)
     {
-        (string Email, string Role)[] devUsers =
-            [("rep@erp.local", Roles.SalesRep), ("manager@erp.local", Roles.SalesManager), ("admin@erp.local", Roles.Admin)];
+        (string Email, string Name, string Role)[] devUsers =
+        [
+            ("rep@erp.local", "Rita Reyes", Roles.SalesRep),
+            ("manager@erp.local", "Manuel Santos", Roles.SalesManager),
+            ("admin@erp.local", "Ada Mendoza", Roles.Admin),
+            ("clerk@erp.local", "Carlo Bautista", Roles.InventoryClerk),
+            ("buyer@erp.local", "Bea Villanueva", Roles.Purchaser),
+            ("accountant@erp.local", "Ana Cruz", Roles.Accountant),
+        ];
 
-        foreach (var (email, role) in devUsers)
+        foreach (var (email, name, role) in devUsers)
         {
             if (await users.FindByEmailAsync(email) is not null) continue;
-            var user = new AppUser { UserName = email, Email = email, EmailConfirmed = true };
+            var user = new AppUser { UserName = email, Email = email, EmailConfirmed = true, FullName = name };
             ThrowIfFailed(await users.CreateAsync(user, DevPassword));
             ThrowIfFailed(await users.AddToRoleAsync(user, role));
         }

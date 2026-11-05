@@ -1,0 +1,29 @@
+html, body {
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+.boot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    color: #666;
+}
+
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 0.75rem 1.25rem;
+    background: #fff3cd;
+    box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
+    z-index: 2000;
+}
+
+.money {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}

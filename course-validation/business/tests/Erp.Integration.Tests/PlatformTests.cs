@@ -21,21 +21,45 @@ public class PlatformTests(CustomWebAppFactory factory)
     [Fact]
     public async Task Responses_carry_security_headers_and_a_trace_id()
     {
-        var response = await (await factory.ClientFor("rep@erp.local")).GetAsync("/sales-orders");
+        var response = await (await factory.ClientFor("rep@erp.local")).GetAsync("/api/sales-orders");
 
         response.Headers.GetValues("X-Content-Type-Options").Should().ContainSingle("nosniff");
         response.Headers.GetValues("X-Frame-Options").Should().ContainSingle("DENY");
         response.Headers.GetValues("X-Trace-Id").Single().Should().HaveLength(32);
     }
 
+    // Page addresses belong to the browser app; an unknown API address must stay a 404, not turn into a page.
+    [Fact]
+    public async Task Any_page_address_serves_the_app_but_an_unknown_api_address_is_404()
+    {
+        var client = factory.CreateClient();
+
+        var page = await client.GetAsync("/sales-orders/42");
+        page.StatusCode.Should().Be(HttpStatusCode.OK);
+        page.Content.Headers.ContentType!.MediaType.Should().Be("text/html");
+
+        (await client.GetAsync("/api/no-such-thing")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Pages_and_api_get_different_content_security_policies()
+    {
+        var client = factory.CreateClient();
+        var pageCsp = (await client.GetAsync("/")).Headers.GetValues("Content-Security-Policy").Single();
+        var apiCsp = (await client.GetAsync("/api/auth/me")).Headers.GetValues("Content-Security-Policy").Single();
+
+        pageCsp.Should().Contain("script-src 'self' 'wasm-unsafe-eval'").And.NotContain("unsafe-inline' 'self' 'wasm");
+        apiCsp.Should().StartWith("default-src 'none'");
+    }
+
     [Fact]
     public async Task An_approval_event_is_delivered_through_the_outbox()
     {
         var rep = await factory.ClientFor("rep@erp.local");
-        var create = await rep.PostAsJsonAsync("/sales-orders",
+        var create = await rep.PostAsJsonAsync("/api/sales-orders",
             new { customerId = 1, lines = new[] { new { itemId = 1, quantity = 1 } } });
         var id = (await create.Content.ReadFromJsonAsync<Created>())!.Id;
-        await rep.PostAsync($"/sales-orders/{id}/submit", null);   // auto-approved → SalesOrderApproved
+        await rep.PostAsync($"/api/sales-orders/{id}/submit", null);   // auto-approved → SalesOrderApproved
 
         await using var conn = new NpgsqlConnection(CustomWebAppFactory.TestConnectionString);
         const string sql = """

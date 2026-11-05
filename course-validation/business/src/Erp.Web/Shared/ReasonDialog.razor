@@ -1,0 +1,26 @@
+@* Asks for a reason before a step that needs one: reject, void, cancel. Returns the text, or nothing if cancelled. *@
+<MudDialog>
+    <DialogContent>
+        <MudText Class="mb-3">@Message</MudText>
+        <MudTextField @bind-Value="_reason" Label="Reason" Lines="3" MaxLength="500" Immediate="true" AutoFocus="true" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Back</MudButton>
+        <MudButton Color="Color.Error" Variant="Variant.Filled" Disabled="string.IsNullOrWhiteSpace(_reason)"
+                   OnClick="() => Dialog.Close(DialogResult.Ok(_reason.Trim()))">@Confirm</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public string Message { get; set; } = "";
+    [Parameter] public string Confirm { get; set; } = "Confirm";
+    private string _reason = "";
+
+    public static async Task<string?> Ask(IDialogService dialogs, string title, string message, string confirm)
+    {
+        var parameters = new DialogParameters<ReasonDialog> { { d => d.Message, message }, { d => d.Confirm, confirm } };
+        var result = await (await dialogs.ShowAsync<ReasonDialog>(title, parameters)).Result;
+        return result is { Canceled: false, Data: string reason } ? reason : null;
+    }
+}

@@ -21,6 +21,7 @@ public static class DependencyInjection
         // PostgreSQL names columns in snake_case (order_number); our DTOs use PascalCase (OrderNumber).
         // This tells Dapper that the two are the same name, for every read query in every module.
         Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
+        Dapper.SqlMapper.AddTypeHandler(new DateOnlyTypeHandler());
 
         // Every module's DbContext picks up the registered interceptors (see each module's AddXModule).
         services.AddSingleton<IInterceptor, OutboxInterceptor>();

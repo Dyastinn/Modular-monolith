@@ -1,0 +1,10 @@
+# Only what the build needs: no build output, no tests, no local secrets.
+**/bin/
+**/obj/
+**/.vs/
+**/*.user
+tests/
+deploy/docker/secrets/
+deploy/docker/backups/
+deploy/docker/.env
+release/

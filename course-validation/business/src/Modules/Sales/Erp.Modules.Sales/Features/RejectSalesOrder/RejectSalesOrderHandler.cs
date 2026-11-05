@@ -4,7 +4,6 @@ using Erp.Modules.Sales.Infrastructure;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
 using Mediator;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Erp.Modules.Sales.Features;
@@ -25,11 +24,10 @@ internal sealed class RejectSalesOrderHandler(SalesDbContext db, IStockReservati
 {
     public async ValueTask<Unit> Handle(RejectSalesOrderCommand cmd, CancellationToken ct)
     {
-        var orderId = new SalesOrderId(cmd.OrderId);
-        var order = await db.SalesOrders.SingleOrDefaultAsync(o => o.Id == orderId, ct)
-            ?? throw new NotFoundException($"Sales order {cmd.OrderId} not found.");
+        var manager = new UserId(currentUser.UserId);
+        var order = await db.GetVisibleOrderAsync(cmd.OrderId, manager, currentUser.Role, ct);
 
-        var toRelease = order.Reject(new UserId(currentUser.UserId), cmd.Reason, clock.UtcNow);
+        var toRelease = order.Reject(manager, cmd.Reason, clock.UtcNow);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         foreach (var line in toRelease)

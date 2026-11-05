@@ -1,0 +1,99 @@
+@page "/sales-orders/new"
+@page "/sales-orders/{Id:long}/edit"
+@attribute [Authorize(Roles = $"{Roles.SalesRep},{Roles.SalesManager},{Roles.Admin}")]
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>@(Id is null ? "New order" : "Edit order") · ERP</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-4">@(Id is null ? "New sales order" : $"Edit {_orderNumber}")</MudText>
+
+<MudPaper Class="pa-4 mb-4" Outlined="true">
+    <MudAutocomplete T="Customer" Label="Customer" @bind-Value="_customer" SearchFunc="FindCustomers" ToStringFunc="c => c?.Name"
+                     Disabled="Id is not null" ResetValueOnEmptyText="true" DebounceInterval="300" />
+    @if (_customer is not null)
+    {
+        <MudText Typo="Typo.body2" Class="mt-2">
+            Available credit: <b>@Format.Peso(_customer.AvailableCredit)</b> · Terms: @_customer.PaymentTermsDays days
+            @if (_customer.IsBlocked) { <MudChip T="string" Color="Color.Error" Size="Size.Small">Blocked</MudChip> }
+        </MudText>
+    }
+</MudPaper>
+
+<MudPaper Class="pa-4 mb-4" Outlined="true">
+    <MudText Typo="Typo.h6" GutterBottom="true">Lines</MudText>
+    @foreach (var line in _lines)
+    {
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mb-2">
+            <MudAutocomplete T="PriceListItem" Label="Item" @bind-Value="line.Item" SearchFunc="FindItems" Style="min-width:320px"
+                             ToStringFunc="@(i => i is null ? null : $"{i.Sku} · {i.Name}")" DebounceInterval="300" />
+            <MudNumericField T="decimal" Label="@($"Quantity{(line.Item is null ? "" : $" ({line.Item.Unit})")}")" @bind-Value="line.Quantity"
+                             Min="0" Step="@(line.Item?.AllowsFractions == true ? 0.5m : 1m)" Style="max-width:160px" />
+            <MudText Class="money" Style="min-width:140px">@Format.Peso(line.Total)</MudText>
+            <MudIconButton Icon="@Icons.Material.Filled.Delete" OnClick="() => _lines.Remove(line)" aria-label="Remove line" />
+        </MudStack>
+    }
+    <MudButton OnClick="() => _lines.Add(new Line())" StartIcon="@Icons.Material.Filled.Add" Variant="Variant.Text">Add line</MudButton>
+    <MudDivider Class="my-3" />
+    <MudText Typo="Typo.h6" Align="Align.Right">Total @Format.Peso(_lines.Sum(l => l.Total))</MudText>
+    @if (_lines.Sum(l => l.Total) > 50_000)
+    {
+        <MudText Typo="Typo.body2" Align="Align.Right" Color="Color.Warning">Over ₱50,000: a manager approves it after you submit.</MudText>
+    }
+</MudPaper>
+
+<MudStack Row="true" Spacing="2">
+    <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="!CanSave">Save draft</MudButton>
+    <MudButton Href="@(Id is null ? "sales-orders" : $"sales-orders/{Id}")" Variant="Variant.Text">Back</MudButton>
+</MudStack>
+
+@code {
+    [Parameter] public long? Id { get; set; }
+
+    private sealed class Line
+    {
+        public PriceListItem? Item { get; set; }
+        public decimal Quantity { get; set; } = 1;
+        public decimal Total => Item is null ? 0 : Math.Round(Item.UnitPrice * Quantity, 2, MidpointRounding.AwayFromZero);
+    }
+
+    private Customer? _customer;
+    private List<Line> _lines = [new()];
+    private string? _orderNumber;
+
+    private bool CanSave => _customer is not null && _lines.Count > 0 && _lines.All(l => l.Item is not null && l.Quantity > 0);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Id is null) return;
+        var order = await Api.Get<SalesOrderDetail>($"api/sales-orders/{Id}");
+        if (order is null) return;
+        _orderNumber = order.OrderNumber;
+        _customer = await Api.Get<Customer>($"api/customers/{order.CustomerId}");
+        var prices = await Api.Get<PagedResult<PriceListItem>>("api/price-list?forSaleOnly=true&pageSize=100");
+        _lines = order.Lines.Select(l => new Line
+        {
+            Item = prices?.Items.FirstOrDefault(p => p.Id == l.ItemId), Quantity = l.Quantity
+        }).ToList();
+    }
+
+    private async Task<IEnumerable<Customer>> FindCustomers(string? text, CancellationToken ct) =>
+        (await Api.Get<PagedResult<Customer>>(Url.With("api/customers", ("search", text), ("pageSize", 20))))?.Items ?? [];
+
+    private async Task<IEnumerable<PriceListItem>> FindItems(string? text, CancellationToken ct) =>
+        (await Api.Get<PagedResult<PriceListItem>>(Url.With("api/price-list", ("search", text), ("forSaleOnly", true), ("pageSize", 20))))?.Items ?? [];
+
+    private async Task Save()
+    {
+        var lines = _lines.Select(l => new { itemId = l.Item!.Id, quantity = l.Quantity }).ToList();
+        if (Id is null)
+        {
+            if (await Api.Create("api/sales-orders", new { customerId = _customer!.Id, lines }, "Draft saved.") is { } newId)
+                Nav.NavigateTo($"sales-orders/{newId}");
+        }
+        else if (await Api.Put($"api/sales-orders/{Id}", new { lines }, "Draft saved."))
+        {
+            Nav.NavigateTo($"sales-orders/{Id}");
+        }
+    }
+}

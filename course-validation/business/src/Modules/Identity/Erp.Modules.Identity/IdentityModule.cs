@@ -1,6 +1,8 @@
+using System.Security.Cryptography.X509Certificates;
 using Carter;
 using Erp.Modules.Identity.Infrastructure;
 using Erp.Shared.BuildingBlocks;
+using FluentValidation;
 using Microsoft.AspNetCore.Authentication.BearerToken;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.DataProtection;
@@ -38,7 +40,12 @@ public static class IdentityModule
                 o.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
             })
             .AddRoles<IdentityRole<long>>()
-            .AddEntityFrameworkStores<ErpIdentityDbContext>();
+            .AddEntityFrameworkStores<ErpIdentityDbContext>()
+            .AddSignInManager<ErpSignInManager>();
+
+        services.AddTransient<IEmailSender<AppUser>, SmtpEmailSender>();
+        // How soon a disabled account or a changed role ends a browser session (each check is one query).
+        services.Configure<SecurityStampValidatorOptions>(o => o.ValidationInterval = TimeSpan.FromMinutes(1));
 
         var auth = config.GetSection("Auth");
         services.Configure<BearerTokenOptions>(IdentityConstants.BearerScheme, o =>
@@ -56,11 +63,22 @@ public static class IdentityModule
             o.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
         });
 
-        services.AddDataProtection()
+        var dataProtection = services.AddDataProtection()
             .SetApplicationName("Erp")
             .PersistKeysToDbContext<ErpIdentityDbContext>();
 
+        // The keys live in a table the app can read. Encrypted with a certificate, a copy of that table alone
+        // (a backup, a stolen dump) can't be used to forge a sign-in.
+        var certificatePath = config["DataProtection:CertificatePath"];
+        if (!string.IsNullOrWhiteSpace(certificatePath))
+            dataProtection.ProtectKeysWithCertificate(
+                X509CertificateLoader.LoadPkcs12FromFile(certificatePath, config["DataProtection:CertificatePassword"]));
+        else if (config.GetValue("DataProtection:RequireCertificate", true))
+            throw new InvalidOperationException(
+                "Set DataProtection:CertificatePath and DataProtection:CertificatePassword: sign-in keys must be encrypted at rest.");
+
         services.AddHostedService<InitialAdmin>();
+        services.AddValidatorsFromAssembly(typeof(IdentityModule).Assembly, includeInternalTypes: true);
 
         // AddCarter() only finds public endpoint classes; ours are internal.
         foreach (var endpoint in typeof(IdentityModule).Assembly.GetTypes()
@@ -70,14 +88,14 @@ public static class IdentityModule
         return services;
     }
 
-    // /auth/login, /auth/refresh, /auth/manage/info (change password), /auth/forgotPassword, ...
+    // /auth/login, /auth/refresh, /auth/forgotPassword, /auth/resetPassword, /auth/manage/info, ...
     public static IEndpointRouteBuilder MapIdentityModule(this IEndpointRouteBuilder app)
     {
         app.MapGroup("/auth")
             .MapIdentityApi<AppUser>()
             .AddEndpointFilter(async (ctx, next) =>
                 // Staff accounts are created by an administrator, never by self sign-up.
-                ctx.HttpContext.Request.Path.StartsWithSegments("/auth/register")
+                ctx.HttpContext.Request.Path.Value?.EndsWith("/auth/register", StringComparison.OrdinalIgnoreCase) == true
                     ? Results.NotFound()
                     : await next(ctx))
             .RequireRateLimiting(RateLimitPolicies.Auth);

@@ -6,4 +6,9 @@ public static class Roles
     public const string SalesRep = "SalesRep";
     public const string SalesManager = "SalesManager";
     public const string Admin = "Admin";
+    public const string InventoryClerk = "InventoryClerk";
+    public const string Purchaser = "Purchaser";
+    public const string Accountant = "Accountant";
+
+    public static readonly string[] All = [SalesRep, SalesManager, Admin, InventoryClerk, Purchaser, Accountant];
 }

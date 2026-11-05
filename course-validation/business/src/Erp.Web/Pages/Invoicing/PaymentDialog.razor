@@ -1,0 +1,41 @@
+@inject ApiClient Api
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="2" Style="min-width:380px">
+            <MudText>Balance due: <b>@Format.Peso(Invoice.BalanceDue)</b></MudText>
+            <MudNumericField @bind-Value="_amount" Label="Amount (₱)" Min="0" Max="Invoice.BalanceDue" Format="N2" />
+            <MudDatePicker @bind-Date="_paidOn" Label="Paid on" MaxDate="DateTime.Today" />
+            <MudSelect T="string" @bind-Value="_method" Label="Method">
+                <MudSelectItem Value="@("Cash")">Cash</MudSelectItem>
+                <MudSelectItem Value="@("Check")">Check</MudSelectItem>
+                <MudSelectItem Value="@("BankTransfer")">Bank transfer</MudSelectItem>
+                <MudSelectItem Value="@("Other")">Other</MudSelectItem>
+            </MudSelect>
+            <MudTextField @bind-Value="_reference" Label="Reference (OR, check or bank reference)" MaxLength="100" />
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
+        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Success" Disabled="_amount <= 0 || _paidOn is null">Record</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public InvoiceDetail Invoice { get; set; } = default!;
+
+    private decimal _amount;
+    private DateTime? _paidOn = DateTime.Today;
+    private string _method = "Cash";
+    private string? _reference;
+
+    protected override void OnInitialized() => _amount = Invoice.BalanceDue;
+
+    private async Task Save()
+    {
+        var body = new { amount = _amount, paidOn = DateOnly.FromDateTime(_paidOn!.Value), method = _method, reference = _reference };
+        if (await Api.Create($"api/invoices/{Invoice.Id}/payments", body, "Payment recorded.") is not null)
+            Dialog.Close(DialogResult.Ok(true));
+    }
+}

@@ -1,0 +1,69 @@
+@inject ApiClient Api
+
+@* Category rules: who may sell its items, and how much of them one order may hold. *@
+<MudSimpleTable Dense="true" Hover="true" Class="ma-4">
+    <thead><tr><th>Name</th><th class="money">Max per order</th><th>Only for role</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var c in _categories)
+        {
+            <tr>
+                <td>@c.Name</td>
+                <td class="money">@Format.Qty(c.MaxQuantityPerOrder)</td>
+                <td>@(c.RequiredRole is null ? "Anyone who sells" : Format.Words(c.RequiredRole))</td>
+                <td>
+                    <AuthorizeView Roles="@Managers" Context="auth">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => Start(c)" aria-label="Edit" />
+                    </AuthorizeView>
+                </td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+<AuthorizeView Roles="@Managers">
+    <MudPaper Class="pa-4 ma-4" Outlined="true">
+        <MudText Typo="Typo.subtitle1" GutterBottom="true">@(_editing is null ? "New category" : $"Edit {_editing.Name}")</MudText>
+        <MudStack Row="true" Spacing="3" AlignItems="AlignItems.End" Wrap="Wrap.Wrap">
+            <MudTextField @bind-Value="_name" Label="Name" MaxLength="100" />
+            <MudNumericField @bind-Value="_max" Label="Max per order" Min="1" />
+            <MudSelect T="string" @bind-Value="_role" Label="Only for role" Clearable="true" Style="min-width:200px">
+                @foreach (var r in Roles.All)
+                {
+                    <MudSelectItem Value="r">@Format.Words(r)</MudSelectItem>
+                }
+            </MudSelect>
+            <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="string.IsNullOrWhiteSpace(_name)">Save</MudButton>
+            @if (_editing is not null) { <MudButton OnClick="() => Start(null)">Cancel</MudButton> }
+        </MudStack>
+    </MudPaper>
+</AuthorizeView>
+
+@code {
+    private static readonly string Managers = $"{Roles.SalesManager},{Roles.Admin}";
+    private List<ItemCategory> _categories = [];
+    private ItemCategory? _editing;
+    private string _name = "";
+    private decimal _max = 1000;
+    private string? _role;
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load() => _categories = await Api.Get<List<ItemCategory>>("api/item-categories") ?? [];
+
+    private void Start(ItemCategory? c)
+    {
+        _editing = c;
+        (_name, _max, _role) = c is null ? ("", 1000m, null) : (c.Name, c.MaxQuantityPerOrder, c.RequiredRole);
+    }
+
+    private async Task Save()
+    {
+        var body = new { name = _name, maxQuantityPerOrder = _max, requiredRole = _role };
+        var saved = _editing is null
+            ? await Api.Create("api/item-categories", body, "Category added.") is not null
+            : await Api.Put($"api/item-categories/{_editing.Id}", body, "Category saved.");
+        if (!saved) return;
+        Start(null);
+        await Load();
+    }
+}

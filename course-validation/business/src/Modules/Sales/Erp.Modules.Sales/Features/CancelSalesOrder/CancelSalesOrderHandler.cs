@@ -10,14 +10,12 @@ namespace Erp.Modules.Sales.Features;
 
 internal sealed record CancelSalesOrderCommand(long OrderId) : ICommand;
 
-internal sealed class CancelSalesOrderHandler(SalesDbContext db, IStockReservation stock)
+internal sealed class CancelSalesOrderHandler(SalesDbContext db, IStockReservation stock, ICurrentUser currentUser)
     : ICommandHandler<CancelSalesOrderCommand>
 {
     public async ValueTask<Unit> Handle(CancelSalesOrderCommand cmd, CancellationToken ct)
     {
-        var orderId = new SalesOrderId(cmd.OrderId);
-        var order = await db.SalesOrders.SingleOrDefaultAsync(o => o.Id == orderId, ct)
-            ?? throw new NotFoundException($"Sales order {cmd.OrderId} not found.");
+        var order = await db.GetVisibleOrderAsync(cmd.OrderId, new UserId(currentUser.UserId), currentUser.Role, ct);
         var customer = await db.Customers.SingleAsync(c => c.Id == order.CustomerId, ct);
 
         var toRelease = order.Cancel(customer);

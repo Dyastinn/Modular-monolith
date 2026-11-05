@@ -50,6 +50,16 @@ namespace Erp.Modules.Identity.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("email_confirmed");
 
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("full_name");
+
+                    b.Property<bool>("IsDisabled")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_disabled");
+
                     b.Property<bool>("LockoutEnabled")
                         .HasColumnType("boolean")
                         .HasColumnName("lockout_enabled");
@@ -57,6 +67,10 @@ namespace Erp.Modules.Identity.Infrastructure.Migrations
                     b.Property<DateTimeOffset?>("LockoutEnd")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("lockout_end");
+
+                    b.Property<bool>("MustChangePassword")
+                        .HasColumnType("boolean")
+                        .HasColumnName("must_change_password");
 
                     b.Property<string>("NormalizedEmail")
                         .HasMaxLength(256)
@@ -104,6 +118,52 @@ namespace Erp.Modules.Identity.Infrastructure.Migrations
                         .HasDatabaseName("UserNameIndex");
 
                     b.ToTable("users", "identity");
+                });
+
+            modelBuilder.Entity("Erp.Modules.Identity.Infrastructure.SignInAttempt", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("email");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(45)
+                        .HasColumnType("character varying(45)")
+                        .HasColumnName("ip_address");
+
+                    b.Property<DateTime>("OccurredUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_utc");
+
+                    b.Property<string>("Outcome")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("outcome");
+
+                    b.Property<long?>("UserId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("user_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_sign_in_attempt");
+
+                    b.HasIndex("Email")
+                        .HasDatabaseName("ix_sign_in_attempt_email");
+
+                    b.HasIndex("OccurredUtc")
+                        .HasDatabaseName("ix_sign_in_attempt_occurred_utc");
+
+                    b.ToTable("sign_in_attempt", "identity");
                 });
 
             modelBuilder.Entity("Erp.Shared.BuildingBlocks.OutboxMessage", b =>
@@ -227,6 +287,27 @@ namespace Erp.Modules.Identity.Infrastructure.Migrations
                             ConcurrencyStamp = "role-3",
                             Name = "Admin",
                             NormalizedName = "ADMIN"
+                        },
+                        new
+                        {
+                            Id = 4L,
+                            ConcurrencyStamp = "role-4",
+                            Name = "InventoryClerk",
+                            NormalizedName = "INVENTORYCLERK"
+                        },
+                        new
+                        {
+                            Id = 5L,
+                            ConcurrencyStamp = "role-5",
+                            Name = "Purchaser",
+                            NormalizedName = "PURCHASER"
+                        },
+                        new
+                        {
+                            Id = 6L,
+                            ConcurrencyStamp = "role-6",
+                            Name = "Accountant",
+                            NormalizedName = "ACCOUNTANT"
                         });
                 });
 

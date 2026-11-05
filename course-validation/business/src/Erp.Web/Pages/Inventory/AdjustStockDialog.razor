@@ -1,0 +1,32 @@
+@inject ApiClient Api
+
+@* A count correction: found, lost, damaged. Positive adds, negative removes. Every adjustment is kept with its reason. *@
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="2" Style="min-width:380px">
+            <MudText>On hand now: <b>@Format.Qty(Item.OnHand) @Item.Unit</b> (reserved @Format.Qty(Item.Reserved))</MudText>
+            <MudNumericField @bind-Value="_change" Label="@($"Change ({Item.Unit}): + found, − lost or damaged")" />
+            <MudTextField @bind-Value="_reason" Label="Reason" MaxLength="500" Lines="2" />
+            <MudText Typo="Typo.body2">After: @Format.Qty(Item.OnHand + _change) @Item.Unit</MudText>
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
+        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary"
+                   Disabled="_change == 0 || string.IsNullOrWhiteSpace(_reason)">Adjust</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public StockItem Item { get; set; } = default!;
+
+    private decimal _change;
+    private string _reason = "";
+
+    private async Task Save()
+    {
+        if (await Api.Post($"api/items/{Item.Id}/adjustments", new { quantity = _change, reason = _reason }, "Stock adjusted."))
+            Dialog.Close(DialogResult.Ok(true));
+    }
+}

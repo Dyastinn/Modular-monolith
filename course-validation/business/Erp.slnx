@@ -12,14 +12,27 @@
   </Folder>
   <Folder Name="/src/Modules/Sales/">
     <Project Path="src/Modules/Sales/Erp.Modules.Sales/Erp.Modules.Sales.csproj" />
+    <Project Path="src/Modules/Sales/Erp.Modules.Sales.Contracts/Erp.Modules.Sales.Contracts.csproj" />
   </Folder>
   <Folder Name="/src/Modules/Inventory/">
     <Project Path="src/Modules/Inventory/Erp.Modules.Inventory/Erp.Modules.Inventory.csproj" />
     <Project Path="src/Modules/Inventory/Erp.Modules.Inventory.Contracts/Erp.Modules.Inventory.Contracts.csproj" />
   </Folder>
+  <Folder Name="/src/Modules/Purchasing/">
+    <Project Path="src/Modules/Purchasing/Erp.Modules.Purchasing/Erp.Modules.Purchasing.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Invoicing/">
+    <Project Path="src/Modules/Invoicing/Erp.Modules.Invoicing/Erp.Modules.Invoicing.csproj" />
+    <Project Path="src/Modules/Invoicing/Erp.Modules.Invoicing.Contracts/Erp.Modules.Invoicing.Contracts.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Erp.Modules.Sales.UnitTests/Erp.Modules.Sales.UnitTests.csproj" />
+    <Project Path="tests/Erp.Modules.Inventory.UnitTests/Erp.Modules.Inventory.UnitTests.csproj" />
+    <Project Path="tests/Erp.Modules.Purchasing.UnitTests/Erp.Modules.Purchasing.UnitTests.csproj" />
+    <Project Path="tests/Erp.Modules.Invoicing.UnitTests/Erp.Modules.Invoicing.UnitTests.csproj" />
+    <Project Path="tests/Erp.Modules.Identity.UnitTests/Erp.Modules.Identity.UnitTests.csproj" />
     <Project Path="tests/Erp.Integration.Tests/Erp.Integration.Tests.csproj" />
     <Project Path="tests/Erp.Architecture.Tests/Erp.Architecture.Tests.csproj" />
+    <Project Path="tests/Erp.Web.UiTests/Erp.Web.UiTests.csproj" />
   </Folder>
 </Solution>

@@ -11,8 +11,8 @@ internal sealed class SearchSalesOrdersEndpoint : ICarterModule
     // int?, not int: a non-nullable query parameter is required, so a bare GET would be a 400.
     public void AddRoutes(IEndpointRouteBuilder app) =>
         app.MapGet("/sales-orders",
-            async (long? customerId, string? status, int? page, int? pageSize, ISender sender, CancellationToken ct) =>
+            async (long? customerId, string? status, string? search, int? page, int? pageSize, ISender sender, CancellationToken ct) =>
                 Results.Ok(await sender.Send(
-                    new SearchSalesOrdersQuery(customerId, status, page ?? 1, pageSize ?? 20), ct)))
-            .RequireAuthorization();
+                    new SearchSalesOrdersQuery(customerId, status, search, page ?? 1, pageSize ?? 20), ct)))
+            .RequireAuthorization(p => p.RequireRole(SalesRoles.Readers));
 }

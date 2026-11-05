@@ -27,7 +27,7 @@ internal sealed class InitialAdmin(IServiceScopeFactory scopes, IConfiguration c
             return;
         }
 
-        var admin = new AppUser { UserName = email, Email = email, EmailConfirmed = true };
+        var admin = new AppUser { UserName = email, Email = email, EmailConfirmed = true, FullName = "Administrator" };
         var result = await users.CreateAsync(admin, password);
         if (result.Succeeded)
             result = await users.AddToRoleAsync(admin, Roles.Admin);

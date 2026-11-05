@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed record CreateSalesOrderRequest(long CustomerId, IReadOnlyList<CreateSalesOrderLineDto> Lines);
+internal sealed record CreateSalesOrderRequest(long CustomerId, IReadOnlyList<OrderLineInput> Lines);
 
 internal sealed class CreateSalesOrderEndpoint : ICarterModule
 {
@@ -15,7 +15,7 @@ internal sealed class CreateSalesOrderEndpoint : ICarterModule
         app.MapPost("/sales-orders", async (CreateSalesOrderRequest body, ISender sender, CancellationToken ct) =>
         {
             var id = await sender.Send(new CreateSalesOrderCommand(body.CustomerId, body.Lines), ct);
-            return Results.Created($"/sales-orders/{id}", new { id });
+            return Results.Created($"/api/sales-orders/{id}", new { id });
         })
-        .RequireAuthorization(p => p.RequireRole(Roles.SalesRep, Roles.SalesManager, Roles.Admin));
+        .RequireAuthorization(p => p.RequireRole(SalesRoles.Sellers));
 }

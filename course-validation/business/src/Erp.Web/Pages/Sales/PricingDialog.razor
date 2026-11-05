@@ -1,0 +1,43 @@
+@inject ApiClient Api
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="2" Style="min-width:380px">
+            <MudText>@Item.Name (@Item.Unit)</MudText>
+            <MudNumericField @bind-Value="_price" Label="@($"Price per {Item.Unit} (₱)")" Min="0" Format="N2" />
+            <MudSelect T="long?" @bind-Value="_categoryId" Label="Category">
+                @foreach (var c in _categories)
+                {
+                    <MudSelectItem T="long?" Value="c.Id">@c.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudSwitch @bind-Value="_forSale" Label="For sale" Color="Color.Primary" />
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
+        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="_categoryId is null">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public PriceListItem Item { get; set; } = default!;
+
+    private List<ItemCategory> _categories = [];
+    private decimal _price;
+    private long? _categoryId;
+    private bool _forSale;
+
+    protected override async Task OnInitializedAsync()
+    {
+        (_price, _categoryId, _forSale) = (Item.UnitPrice, Item.CategoryId, Item.IsForSale);
+        _categories = await Api.Get<List<ItemCategory>>("api/item-categories") ?? [];
+    }
+
+    private async Task Save()
+    {
+        if (await Api.Put($"api/price-list/{Item.Id}", new { unitPrice = _price, categoryId = _categoryId, isForSale = _forSale }, "Price saved."))
+            Dialog.Close(DialogResult.Ok(true));
+    }
+}

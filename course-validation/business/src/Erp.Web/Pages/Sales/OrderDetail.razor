@@ -1,0 +1,143 @@
+@page "/sales-orders/{Id:long}"
+@inject ApiClient Api
+@inject UserDirectory Users
+@inject IDialogService Dialogs
+@inject NavigationManager Nav
+
+<PageTitle>@(_order?.OrderNumber ?? "Order") · ERP</PageTitle>
+
+@if (_order is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+    return;
+}
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+    <MudText Typo="Typo.h4">@_order.OrderNumber</MudText>
+    <StatusChip Status="@_order.Status" />
+    <MudSpacer />
+
+    @* The API decides what's allowed; the buttons only show what could make sense for this order and this person. *@
+    @if (_order.Status == "Draft")
+    {
+        <AuthorizeView Roles="@Sellers">
+            <MudButton Href="@($"sales-orders/{Id}/edit")" Variant="Variant.Outlined">Edit</MudButton>
+            <MudButton OnClick="Submit" Variant="Variant.Filled" Color="Color.Primary">Submit</MudButton>
+        </AuthorizeView>
+    }
+    @if (_order.Status == "PendingApproval")
+    {
+        <AuthorizeView Roles="@Managers">
+            <MudButton OnClick="Reject" Variant="Variant.Outlined" Color="Color.Error">Reject</MudButton>
+            <MudButton OnClick="Approve" Variant="Variant.Filled" Color="Color.Success">Approve</MudButton>
+        </AuthorizeView>
+    }
+    @if (_order.Status == "Approved")
+    {
+        <AuthorizeView Roles="@Shippers">
+            <MudButton OnClick="Ship" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.LocalShipping">Ship</MudButton>
+        </AuthorizeView>
+    }
+    @if (_order.Status is "Draft" or "PendingApproval" or "Approved")
+    {
+        <AuthorizeView Roles="@Sellers">
+            <MudButton OnClick="Cancel" Variant="Variant.Text" Color="Color.Error">Cancel order</MudButton>
+        </AuthorizeView>
+    }
+    @if (_order.Status == "Shipped")
+    {
+        <AuthorizeView Roles="@Billing">
+            <MudButton Href="@Url.With("invoices", ("search", _order.OrderNumber))" Variant="Variant.Outlined">Invoice</MudButton>
+        </AuthorizeView>
+    }
+</MudStack>
+
+<MudGrid>
+    <MudItem xs="12" md="8">
+        <MudPaper Class="pa-4" Outlined="true">
+            <MudText Typo="Typo.h6" GutterBottom="true">@_order.CustomerName</MudText>
+            <MudSimpleTable Dense="true" Hover="true">
+                <thead><tr><th>Item</th><th class="money">Quantity</th><th class="money">Unit price</th><th class="money">Amount</th></tr></thead>
+                <tbody>
+                    @foreach (var line in _order.Lines)
+                    {
+                        <tr>
+                            <td>@line.ItemName</td>
+                            <td class="money">@Format.Qty(line.Quantity) @line.Unit</td>
+                            <td class="money">@Format.Peso(line.UnitPrice)</td>
+                            <td class="money">@Format.Peso(line.LineTotal)</td>
+                        </tr>
+                    }
+                    <tr><td colspan="3"><b>Total</b></td><td class="money"><b>@Format.Peso(_order.Total)</b></td></tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="4">
+        <MudPaper Class="pa-4" Outlined="true">
+            <MudText Typo="Typo.h6" GutterBottom="true">History</MudText>
+            <MudText Typo="Typo.body2">Created by @_names.Created, @Format.Date(_order.CreatedUtc)</MudText>
+            @if (_order.SubmittedUtc is not null) { <MudText Typo="Typo.body2">Submitted @Format.Date(_order.SubmittedUtc)</MudText> }
+            @if (_order.ApprovedUtc is not null)
+            {
+                <MudText Typo="Typo.body2">Approved by @(_names.Approved ?? "automatic approval (₱50,000 or less)"), @Format.Date(_order.ApprovedUtc)</MudText>
+            }
+            @if (_order.RejectionReason is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">Rejected by @_names.Rejected: @_order.RejectionReason</MudAlert>
+            }
+            @if (_order.ShippedUtc is not null) { <MudText Typo="Typo.body2">Shipped @Format.Date(_order.ShippedUtc)</MudText> }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private static readonly string Sellers = $"{Roles.SalesRep},{Roles.SalesManager},{Roles.Admin}";
+    private static readonly string Managers = $"{Roles.SalesManager},{Roles.Admin}";
+    private static readonly string Shippers = $"{Roles.InventoryClerk},{Roles.Admin}";
+    private static readonly string Billing = $"{Roles.Accountant},{Roles.Admin},{Roles.SalesManager}";
+
+    private SalesOrderDetail? _order;
+    private (string Created, string? Approved, string? Rejected) _names = ("", null, null);
+
+    protected override Task OnParametersSetAsync() => Load();
+
+    private async Task Load()
+    {
+        _order = await Api.Get<SalesOrderDetail>($"api/sales-orders/{Id}");
+        if (_order is null) { Nav.NavigateTo("sales-orders"); return; }
+        _names = (await Users.NameOf(_order.CreatedBy),
+                  _order.ApprovedBy is null ? null : await Users.NameOf(_order.ApprovedBy),
+                  _order.RejectedBy is null ? null : await Users.NameOf(_order.RejectedBy));
+    }
+
+    private async Task Act(string action, string message)
+    {
+        if (await Api.Post($"api/sales-orders/{Id}/{action}", success: message)) await Load();
+    }
+
+    private Task Submit() => Act("submit", "Submitted. Stock is reserved.");
+    private Task Approve() => Act("approve", "Approved.");
+
+    private async Task Reject()
+    {
+        if (await ReasonDialog.Ask(Dialogs, "Reject order", "Tell the sales rep why. The reserved stock is released.", "Reject") is { } reason
+            && await Api.Post($"api/sales-orders/{Id}/reject", new { reason }, "Rejected."))
+            await Load();
+    }
+
+    private async Task Cancel()
+    {
+        var confirmed = await Dialogs.ShowMessageBoxAsync("Cancel order", "Cancel this order? Reserved stock is released and any charge is reversed.",
+            yesText: "Cancel order", cancelText: "Keep it");
+        if (confirmed == true) await Act("cancel", "Cancelled.");
+    }
+
+    private async Task Ship()
+    {
+        if (await Api.Create("api/shipments", new { salesOrderId = Id }, "Shipped. The invoice is being issued.") is not null)
+            await Load();
+    }
+}

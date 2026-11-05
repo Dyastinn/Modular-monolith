@@ -7,7 +7,9 @@
   <!-- Another module only through its .Contracts; never Erp.Shared.Infrastructure. -->
   <ItemGroup>
     <ProjectReference Include="..\..\..\Shared\Erp.Shared.BuildingBlocks\Erp.Shared.BuildingBlocks.csproj" />
+    <ProjectReference Include="..\Erp.Modules.Sales.Contracts\Erp.Modules.Sales.Contracts.csproj" />
     <ProjectReference Include="..\..\Inventory\Erp.Modules.Inventory.Contracts\Erp.Modules.Inventory.Contracts.csproj" />
+    <ProjectReference Include="..\..\Invoicing\Erp.Modules.Invoicing.Contracts\Erp.Modules.Invoicing.Contracts.csproj" />
   </ItemGroup>
 
   <!-- Erp.Api: the Mediator source generator runs there. Never grant this to another module. -->

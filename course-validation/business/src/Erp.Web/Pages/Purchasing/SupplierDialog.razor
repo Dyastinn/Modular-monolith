@@ -1,0 +1,41 @@
+@inject ApiClient Api
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="2" Style="min-width:420px">
+            <MudTextField @bind-Value="_name" Label="Name" MaxLength="200" />
+            <MudTextField @bind-Value="_tin" Label="TIN" MaxLength="20" />
+            <MudTextField @bind-Value="_address" Label="Address" Lines="2" MaxLength="500" />
+            <MudTextField @bind-Value="_email" Label="Email" InputType="InputType.Email" />
+            <MudTextField @bind-Value="_phone" Label="Phone" MaxLength="50" />
+            <MudNumericField @bind-Value="_terms" Label="Payment terms (days)" Min="0" Max="365" />
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
+        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="string.IsNullOrWhiteSpace(_name)">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public Supplier? Supplier { get; set; }
+
+    private string _name = "";
+    private string? _tin, _address, _email, _phone;
+    private int _terms = 30;
+
+    protected override void OnInitialized()
+    {
+        if (Supplier is { } s) (_name, _tin, _address, _email, _phone, _terms) = (s.Name, s.Tin, s.Address, s.Email, s.Phone, s.PaymentTermsDays);
+    }
+
+    private async Task Save()
+    {
+        var body = new { name = _name, tin = _tin, address = _address, email = _email, phone = _phone, paymentTermsDays = _terms };
+        var saved = Supplier is null
+            ? await Api.Create("api/suppliers", body, "Supplier added.") is not null
+            : await Api.Put($"api/suppliers/{Supplier.Id}", body, "Supplier saved.");
+        if (saved) Dialog.Close(DialogResult.Ok(true));
+    }
+}

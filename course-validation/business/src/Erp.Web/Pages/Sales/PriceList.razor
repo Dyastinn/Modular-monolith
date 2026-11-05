@@ -1,0 +1,64 @@
+@page "/price-list"
+@inject ApiClient Api
+@inject IDialogService Dialogs
+
+<PageTitle>Price list · ERP</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-2">Price list</MudText>
+<MudText Typo="Typo.body2" Class="mb-4">
+    New items appear here a few seconds after they're added in Inventory, without a price. Give them a price and a
+    category, and put them on sale.
+</MudText>
+
+<MudTabs Elevation="0" Outlined="true" Class="mb-4">
+    <MudTabPanel Text="Items">
+        <MudStack Row="true" Spacing="4" Class="pa-4">
+            <MudTextField T="string" Value="_search" ValueChanged="OnSearch" Label="SKU or name" DebounceInterval="400" Clearable="true" />
+            <MudSwitch T="bool" Value="_forSaleOnly" ValueChanged="OnForSale" Label="For sale only" Color="Color.Primary" />
+        </MudStack>
+        <MudTable T="PriceListItem" @ref="_table" ServerData="Load" Hover="true" Dense="true">
+            <HeaderContent>
+                <MudTh>SKU</MudTh><MudTh>Name</MudTh><MudTh>Unit</MudTh><MudTh>Category</MudTh>
+                <MudTh Class="money">Price</MudTh><MudTh>For sale</MudTh><MudTh></MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.Sku</MudTd>
+                <MudTd>@context.Name @if (!context.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</MudTd>
+                <MudTd>@context.Unit</MudTd>
+                <MudTd>@context.CategoryName</MudTd>
+                <MudTd Class="money">@Format.Peso(context.UnitPrice)</MudTd>
+                <MudTd>@(context.IsForSale ? "Yes" : "No")</MudTd>
+                <MudTd>
+                    <AuthorizeView Roles="@Managers" Context="auth">
+                        <MudButton Size="Size.Small" OnClick="() => Price(context)">Set price</MudButton>
+                    </AuthorizeView>
+                </MudTd>
+            </RowTemplate>
+            <NoRecordsContent>No items match.</NoRecordsContent>
+            <PagerContent><MudTablePager /></PagerContent>
+        </MudTable>
+    </MudTabPanel>
+    <MudTabPanel Text="Categories">
+        <Categories />
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private static readonly string Managers = $"{Roles.SalesManager},{Roles.Admin}";
+    private MudTable<PriceListItem> _table = default!;
+    private string? _search;
+    private bool _forSaleOnly;
+
+    private Task<TableData<PriceListItem>> Load(TableState state, CancellationToken ct) =>
+        Api.Page<PriceListItem>(Url.With("api/price-list", ("search", _search), ("forSaleOnly", _forSaleOnly)), state);
+
+    private Task OnSearch(string? text) { _search = text; return _table.ReloadServerData(); }
+    private Task OnForSale(bool value) { _forSaleOnly = value; return _table.ReloadServerData(); }
+
+    private async Task Price(PriceListItem item)
+    {
+        var dialog = await Dialogs.ShowAsync<PricingDialog>($"Price for {item.Sku}",
+            new DialogParameters<PricingDialog> { { d => d.Item, item } });
+        if ((await dialog.Result) is { Canceled: false }) await _table.ReloadServerData();
+    }
+}

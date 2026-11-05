@@ -1,8 +1,11 @@
+using System.Text.Json.Serialization;
 using Carter;
 using Erp.Api;
 using Erp.Api.Security;
 using Erp.Modules.Identity;
 using Erp.Modules.Inventory;
+using Erp.Modules.Invoicing;
+using Erp.Modules.Purchasing;
 using Erp.Modules.Sales;
 using Erp.Shared.BuildingBlocks;
 using Erp.Shared.Infrastructure;
@@ -19,7 +22,13 @@ builder.Services.AddSharedInfrastructure(builder.Configuration);
 builder.Services.AddMediator((MediatorOptions options) =>
 {
     options.ServiceLifetime = ServiceLifetime.Scoped;   // handlers use scoped DbContexts
-    options.Assemblies = [typeof(IdentityModule), typeof(SalesModule)];
+    // Every assembly that holds a message or a handler. Contracts hold the integration events: leave one out and
+    // publishing its events silently reaches nobody.
+    options.Assemblies =
+    [
+        typeof(IdentityModule), typeof(SalesModule), typeof(InventoryModule), typeof(PurchasingModule), typeof(InvoicingModule),
+        typeof(Erp.Modules.Inventory.Contracts.ItemCatalogChanged), typeof(Erp.Modules.Invoicing.Contracts.PaymentRecorded)
+    ];
     options.PipelineBehaviors = [typeof(TelemetryBehavior<,>), typeof(ValidationBehavior<,>)];   // outermost first
 });
 
@@ -27,12 +36,16 @@ builder.Services.AddMediator((MediatorOptions options) =>
 builder.Services.AddIdentityModule(builder.Configuration);
 builder.Services.AddSalesModule();
 builder.Services.AddInventoryModule();
+builder.Services.AddPurchasingModule();
+builder.Services.AddInvoicingModule(builder.Configuration);
 builder.Services.AddCarter();
 
 builder.Services.AddAuthorization();
 builder.Services.AddErpRateLimiting(builder.Configuration);
 builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database", tags: ["ready"]);
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
+// Enums travel as their names ("Cash"), not numbers, in both directions.
+builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
 builder.Services.AddProblemDetails();
 builder.Services.AddHsts(o =>
 {
@@ -56,19 +69,11 @@ builder.Services.AddSwaggerGen(options =>
     options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
         Name = "Authorization", Type = SecuritySchemeType.Http, Scheme = "bearer",
-        In = ParameterLocation.Header, Description = "The accessToken from POST /auth/login."
+        In = ParameterLocation.Header, Description = "The accessToken from POST /api/auth/login."
     });
     options.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
     {
         { new OpenApiSecuritySchemeReference("Bearer", doc, null), new List<string>() }
-    });
-    options.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
-    {
-        Name = "X-Api-Key", Type = SecuritySchemeType.ApiKey, In = ParameterLocation.Header
-    });
-    options.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
-    {
-        { new OpenApiSecuritySchemeReference("ApiKey", doc, null), new List<string>() }
     });
 });
 
@@ -90,15 +95,20 @@ if (app.Environment.IsDevelopment())
 await app.InitializeDatabaseAsync();
 
 app.UseCors();
-app.UseMiddleware<ApiKeyMiddleware>();
 app.UseAuthentication();
 app.UseRateLimiter();   // after authentication, so limits are per user where possible
 app.UseAuthorization();
 
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });   // the process is up
 app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains("ready") });
-app.MapIdentityModule();
-app.MapCarter();
+// The browser app is served from the same host, so the API gets a prefix of its own.
+var api = app.MapGroup("/api");
+api.MapIdentityModule();
+api.MapCarter();
+api.MapFallback(() => Results.NotFound());   // an unknown API address is a 404, never the app's page
+
+app.MapStaticAssets();
+app.MapFallbackToFile("index.html");          // any other address is a page of the app: let it route
 
 app.Run();
 

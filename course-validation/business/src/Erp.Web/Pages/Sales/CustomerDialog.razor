@@ -1,0 +1,42 @@
+@inject ApiClient Api
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="2" Style="min-width:420px">
+            <MudTextField @bind-Value="_name" Label="Name" Required="true" MaxLength="200" />
+            <MudTextField @bind-Value="_tin" Label="TIN" MaxLength="20" HelperText="Printed on invoices" />
+            <MudTextField @bind-Value="_address" Label="Address" Lines="2" MaxLength="500" />
+            <MudNumericField @bind-Value="_creditLimit" Label="Credit limit (₱)" Min="0" Format="N2" />
+            <MudNumericField @bind-Value="_terms" Label="Payment terms (days)" Min="0" Max="365" />
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
+        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="string.IsNullOrWhiteSpace(_name)">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public Customer? Customer { get; set; }
+
+    private string _name = "";
+    private string? _tin, _address;
+    private decimal _creditLimit;
+    private int _terms = 30;
+
+    protected override void OnInitialized()
+    {
+        if (Customer is not { } c) return;
+        (_name, _tin, _address, _creditLimit, _terms) = (c.Name, c.Tin, c.Address, c.CreditLimit, c.PaymentTermsDays);
+    }
+
+    private async Task Save()
+    {
+        var body = new { name = _name, tin = _tin, address = _address, creditLimit = _creditLimit, paymentTermsDays = _terms };
+        var saved = Customer is null
+            ? await Api.Create("api/customers", body, "Customer added.") is not null
+            : await Api.Put($"api/customers/{Customer.Id}", body, "Customer saved.");
+        if (saved) Dialog.Close(DialogResult.Ok(true));
+    }
+}

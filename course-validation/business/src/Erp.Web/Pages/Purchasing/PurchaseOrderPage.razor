@@ -1,0 +1,118 @@
+@page "/purchase-orders/{Id:long}"
+@inject ApiClient Api
+@inject UserDirectory Users
+@inject IDialogService Dialogs
+@inject NavigationManager Nav
+
+<PageTitle>@(_po?.Number ?? "Purchase order") · ERP</PageTitle>
+
+@if (_po is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+    return;
+}
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
+    <MudText Typo="Typo.h4">@_po.Number</MudText>
+    <StatusChip Status="@_po.Status" />
+    <MudSpacer />
+    @if (_po.Status == "Draft")
+    {
+        <AuthorizeView Roles="@Buyers">
+            <MudButton Href="@($"purchase-orders/{Id}/edit")" Variant="Variant.Outlined">Edit</MudButton>
+        </AuthorizeView>
+        <AuthorizeView Roles="@Roles.Admin">
+            <MudButton OnClick="@(() => Act("approve", "Approved."))" Variant="Variant.Filled" Color="Color.Success">Approve</MudButton>
+        </AuthorizeView>
+    }
+    @if (_po.Status == "Approved")
+    {
+        <AuthorizeView Roles="@Buyers">
+            <MudButton OnClick="@(() => Act("send", "Marked as sent to the supplier."))" Variant="Variant.Filled" Color="Color.Primary">Mark sent</MudButton>
+        </AuthorizeView>
+    }
+    @if (_po.Status is "Approved" or "Sent" or "PartiallyReceived")
+    {
+        <AuthorizeView Roles="@Receivers">
+            <MudButton OnClick="Receive" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Inventory">Receive goods</MudButton>
+        </AuthorizeView>
+    }
+    @if (_po.Status == "PartiallyReceived")
+    {
+        <AuthorizeView Roles="@Buyers">
+            <MudButton OnClick="@(() => Act("close", "Closed: the rest won't come."))" Variant="Variant.Outlined">Close short</MudButton>
+        </AuthorizeView>
+    }
+    @if (_po.Status is "Draft" or "Approved" or "Sent")
+    {
+        <AuthorizeView Roles="@Buyers">
+            <MudButton OnClick="@(() => Act("cancel", "Cancelled."))" Variant="Variant.Text" Color="Color.Error">Cancel</MudButton>
+        </AuthorizeView>
+    }
+</MudStack>
+
+<MudGrid>
+    <MudItem xs="12" md="8">
+        <MudPaper Class="pa-4" Outlined="true">
+            <MudText Typo="Typo.h6" GutterBottom="true">@_po.SupplierName</MudText>
+            <MudSimpleTable Dense="true">
+                <thead><tr><th>Item</th><th class="money">Ordered</th><th class="money">Received</th><th class="money">To come</th><th class="money">Unit cost</th><th class="money">Amount</th></tr></thead>
+                <tbody>
+                    @foreach (var l in _po.Lines)
+                    {
+                        <tr>
+                            <td>@l.Sku · @l.ItemName</td>
+                            <td class="money">@Format.Qty(l.Quantity) @l.Unit</td>
+                            <td class="money">@Format.Qty(l.ReceivedQuantity)</td>
+                            <td class="money">@Format.Qty(l.Outstanding)</td>
+                            <td class="money">@Format.Peso(l.UnitCost)</td>
+                            <td class="money">@Format.Peso(l.LineTotal)</td>
+                        </tr>
+                    }
+                    <tr><td colspan="5"><b>Total</b></td><td class="money"><b>@Format.Peso(_po.Total)</b></td></tr>
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="4">
+        <MudPaper Class="pa-4" Outlined="true">
+            <MudText Typo="Typo.h6" GutterBottom="true">Details</MudText>
+            <MudText Typo="Typo.body2">Created by @_createdBy, @Format.Date(_po.CreatedUtc)</MudText>
+            @if (_po.ApprovedUtc is not null) { <MudText Typo="Typo.body2">Approved by @_approvedBy, @Format.Date(_po.ApprovedUtc)</MudText> }
+            @if (_po.SentUtc is not null) { <MudText Typo="Typo.body2">Sent @Format.Date(_po.SentUtc)</MudText> }
+            @if (_po.ExpectedDate is { } d) { <MudText Typo="Typo.body2">Expected @Format.Date(d)</MudText> }
+            @if (_po.Notes is not null) { <MudText Typo="Typo.body2" Class="mt-2">@_po.Notes</MudText> }
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private static readonly string Buyers = $"{Roles.Purchaser},{Roles.Admin}";
+    private static readonly string Receivers = $"{Roles.InventoryClerk},{Roles.Purchaser},{Roles.Admin}";
+    private PurchaseOrderDetail? _po;
+    private string? _createdBy, _approvedBy;
+
+    protected override Task OnParametersSetAsync() => Load();
+
+    private async Task Load()
+    {
+        _po = await Api.Get<PurchaseOrderDetail>($"api/purchase-orders/{Id}");
+        if (_po is null) { Nav.NavigateTo("purchase-orders"); return; }
+        _createdBy = await Users.NameOf(_po.CreatedBy);
+        _approvedBy = await Users.NameOf(_po.ApprovedBy);
+    }
+
+    private async Task Act(string action, string message)
+    {
+        if (await Api.Post($"api/purchase-orders/{Id}/{action}", success: message)) await Load();
+    }
+
+    private async Task Receive()
+    {
+        var dialog = await Dialogs.ShowAsync<ReceiveDialog>($"Receive goods for {_po!.Number}",
+            new DialogParameters<ReceiveDialog> { { d => d.Order, _po } }, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if ((await dialog.Result) is { Canceled: false }) await Load();
+    }
+}
