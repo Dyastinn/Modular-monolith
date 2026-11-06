@@ -52,7 +52,7 @@
                     @foreach (var l in _invoice.Lines)
                     {
                         <tr>
-                            <td>@l.Description @(l.TaxType == "Vatable" ? "" : $"({Format.Words(l.TaxType).ToLower()})")</td>
+                            <td>@(l.SpecialDiscountEligible && _invoice.SpecialDiscount is not null ? "* " : "")@l.Description @(l.TaxType == "Vatable" ? "" : $"({Format.Words(l.TaxType).ToLower()})")</td>
                             <td class="money">@Format.Qty(l.Quantity) @l.Unit</td>
                             <td class="money">@Format.Peso(l.UnitPrice)</td>
                             <td class="money">@Format.Peso(l.LineTotal)</td>
@@ -67,8 +67,16 @@
                     }
                     else if (_invoice.TaxRegime == "PercentageTax")
                     {
-                        <tr><td colspan="3">Sales subject to percentage tax</td><td class="money">@Format.Peso(_invoice.Total - _invoice.VatExemptSales)</td></tr>
+                        <tr><td colspan="3">Sales subject to percentage tax</td><td class="money">@Format.Peso(_invoice.GrossSales - _invoice.VatExemptSales)</td></tr>
                         <tr><td colspan="3">Exempt sales</td><td class="money">@Format.Peso(_invoice.VatExemptSales)</td></tr>
+                    }
+                    @if (_invoice.SpecialDiscount is { } d)
+                    {
+                        @if (d.VatExemption > 0)
+                        {
+                            <tr><td colspan="3">Less: VAT exemption (* items)</td><td class="money">@Format.Peso(d.VatExemption)</td></tr>
+                        }
+                        <tr><td colspan="3">Less: @Format.Percent(d.Rate) @d.Program.ToLower() discount · @d.HolderName, @d.IdLabel @d.IdNumber</td><td class="money">@Format.Peso(d.Discount)</td></tr>
                     }
                     <tr><td colspan="3"><b>Total</b></td><td class="money"><b>@Format.Peso(_invoice.Total)</b></td></tr>
                     <tr><td colspan="3">Paid</td><td class="money">@Format.Peso(_invoice.AmountPaid)</td></tr>
@@ -90,6 +98,7 @@
                     <div>
                         <MudText Typo="Typo.body2" Style="@(p.VoidedUtc is null ? "" : "text-decoration:line-through")">
                             @Format.Peso(p.Amount) · @Format.Words(p.Method) · @Format.Date(p.PaidOn)
+                            @(p.TaxWithheld > 0 ? $" + {Format.Peso(p.TaxWithheld)} withheld (2307)" : "")
                         </MudText>
                         <MudText Typo="Typo.caption">@p.Reference @(p.VoidReason is null ? "" : $"(void: {p.VoidReason})")</MudText>
                     </div>
@@ -129,7 +138,7 @@
 
     private async Task VoidPayment(Payment payment)
     {
-        if (await ReasonDialog.Ask(Dialogs, "Void payment", $"Void the {Format.Peso(payment.Amount)} payment? The customer owes it again.", "Void")
+        if (await ReasonDialog.Ask(Dialogs, "Void payment", $"Void the {Format.Peso(payment.Amount + payment.TaxWithheld)} payment? The customer owes it again.", "Void")
                 is { } reason
             && await Api.Post($"api/invoices/{Id}/payments/{payment.Id}/void", new { reason }, "Payment voided."))
             await Load();

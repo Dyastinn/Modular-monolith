@@ -1,10 +1,10 @@
 # Erp — a Modular Monolith you build, then run
 
 A course that ends in a working ERP for a small business: sales orders with credit checks and approvals, a
-warehouse with an audited item catalog and stock, purchasing, invoicing with gap-free numbers and PDFs,
-payments and receivables aging, and staff accounts, all with their screens. It's built as a **modular
-monolith** with **vertical slices** on .NET 10 and PostgreSQL. The reference build *is* the product: it
-installs with Docker Compose (or on IIS) and runs.
+warehouse with an audited item catalog and stock, purchasing, invoicing with gap-free numbers and PDFs laid
+out to the BIR's RR 7-2024, payments and receivables aging, and staff accounts, all with their screens. It's
+built as a **modular monolith** with **vertical slices** on .NET 10 and PostgreSQL. The reference build *is*
+the product: it installs with Docker Compose and runs.
 
 | | |
 |---|---|
@@ -14,7 +14,8 @@ installs with Docker Compose (or on IIS) and runs.
 | Screens | Blazor WebAssembly + MudBlazor, served by the API itself; the API lives under `/api` |
 | Sign-in | ASP.NET Core Identity: cookies for the browser, bearer and refresh tokens for programs, lockout, six roles, admin-managed staff accounts |
 | Production | Transactional outbox, OpenTelemetry, health checks, rate limits, HTTPS/HSTS, a Content-Security-Policy, certificate-encrypted sign-in keys, least-privilege database roles |
-| Deployment | Docker Compose with Caddy (HTTPS) and nightly backups; IIS as the alternative |
+| Invoicing and tax | The company's registered details, tax regime, VAT rate and BIR permit kept on a screen; VATable, zero-rated and VAT-exempt items; senior citizen and PWD discounts; tax withheld and BIR Form 2307 tracking; the BIR's required fields, REPRINT marking and permit footer on every PDF |
+| Deployment | Docker Compose with Caddy (HTTPS) and nightly backups, on any Linux server |
 | Tests | xUnit + AwesomeAssertions: domain unit tests, integration tests against PostgreSQL, architecture tests, Playwright browser tests |
 | Licenses | Permissive open source only; see [THIRD-PARTY-NOTICES.md](course-validation/business/THIRD-PARTY-NOTICES.md) |
 
@@ -117,18 +118,18 @@ dotnet run --project src/Erp.AppHost
 And the tests, which use their own `erp_test` database:
 
 ```bash
-dotnet test     # 45 unit + 7 architecture + 35 integration; the 3 browser tests skip without ERP_UI_URL
+dotnet test     # 59 unit + 7 architecture + 37 integration; the 3 browser tests skip without ERP_UI_URL
 ERP_UI_URL=http://localhost:5264 dotnet test tests/Erp.Web.UiTests     # with the app running
 ```
 
 The reference build is there to check your work, not to replace it. Build it yourself first, by following
-the lessons. To install it on a server, follow [lesson 22](plan-business-tutorial/22-docker.md) (Docker) or
-[lesson 23](plan-business-tutorial/23-deploy-iis.md) (IIS), then the first-day steps in
-[lesson 24](plan-business-tutorial/24-production-checklist.md).
+the lessons. To install it on a server, follow [lesson 23](plan-business-tutorial/23-docker.md), then the
+first-day steps in [lesson 24](plan-business-tutorial/24-production-checklist.md).
 
 ## Status
 
-All five modules and their screens are built and tested (ROADMAP M1–M7). Two install paths are written but
-haven't been executed end to end on this machine: the Docker install (Docker wasn't available) and IIS on a
-real Windows Server. Before issuing official invoices, a business must confirm the BIR's requirements with a
-tax adviser. [Lesson 24](plan-business-tutorial/24-production-checklist.md) lists what isn't built yet.
+All five modules and their screens are built and tested (ROADMAP M1–M7). The Docker install is written but
+hasn't been executed end to end on this machine (Docker wasn't available). The invoice follows RR 7-2024's
+list, but a business must register the system with the BIR (CAS) and have a tax adviser review the printed
+invoice before issuing real ones. [Lesson 24](plan-business-tutorial/24-production-checklist.md) lists what
+isn't built yet.

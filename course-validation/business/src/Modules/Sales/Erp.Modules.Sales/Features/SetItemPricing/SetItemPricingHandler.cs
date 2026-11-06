@@ -6,7 +6,8 @@ using Mediator;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed record SetItemPricingCommand(long ItemId, decimal UnitPrice, long CategoryId, bool IsForSale, TaxType TaxType) : ICommand;
+internal sealed record SetItemPricingCommand(long ItemId, decimal UnitPrice, long CategoryId, bool IsForSale, TaxType TaxType,
+    bool SpecialDiscountEligible) : ICommand;
 
 internal sealed class SetItemPricingValidator : AbstractValidator<SetItemPricingCommand>
 {
@@ -28,7 +29,7 @@ internal sealed class SetItemPricingHandler(SalesDbContext db) : ICommandHandler
         var category = await db.ItemCategories.FindAsync([new CategoryId(cmd.CategoryId)], ct)
             ?? throw new NotFoundException($"Category {cmd.CategoryId} not found.");
 
-        item.SetPricing(new Money(cmd.UnitPrice), category, cmd.IsForSale, cmd.TaxType);
+        item.SetPricing(new Money(cmd.UnitPrice), category, cmd.IsForSale, cmd.TaxType, cmd.SpecialDiscountEligible);
         await db.SaveChangesAsync(ct);
         return Unit.Value;
     }

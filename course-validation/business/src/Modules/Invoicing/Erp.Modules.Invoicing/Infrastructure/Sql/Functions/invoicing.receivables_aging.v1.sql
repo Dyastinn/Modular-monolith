@@ -7,7 +7,7 @@ LANGUAGE sql STABLE
 AS $$
     WITH open_invoice AS (
         SELECT i.customer_id, i.customer_name, i.due_date,
-               i.total - COALESCE((SELECT SUM(p.amount) FROM invoicing.payment p
+               i.total - COALESCE((SELECT SUM(p.amount + p.tax_withheld) FROM invoicing.payment p
                                    WHERE p.invoice_id = i.id AND p.voided_utc IS NULL AND p.paid_on <= p_as_of), 0) AS open_amount
         FROM invoicing.invoice i
         WHERE i.status <> 3 AND i.issue_date <= p_as_of

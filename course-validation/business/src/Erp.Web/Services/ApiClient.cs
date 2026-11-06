@@ -30,6 +30,7 @@ public sealed class ApiClient(HttpClient http, ISnackbar snackbar, CookieAuthent
 
     public Task<bool> Post(string url, object? body = null, string? success = null) => Send(HttpMethod.Post, url, body, success);
     public Task<bool> Put(string url, object body, string? success = null) => Send(HttpMethod.Put, url, body, success);
+    public Task<bool> Delete(string url, string? success = null) => Send(HttpMethod.Delete, url, null, success);
 
     // For "create" calls: the API answers 201 with { id }.
     public async Task<long?> Create(string url, object body, string? success = null)

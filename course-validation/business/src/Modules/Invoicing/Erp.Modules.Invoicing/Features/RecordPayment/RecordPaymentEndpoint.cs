@@ -7,7 +7,8 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Invoicing.Features;
 
-internal sealed record RecordPaymentRequest(decimal Amount, DateOnly PaidOn, PaymentMethod Method, string? Reference);
+internal sealed record RecordPaymentRequest(decimal Amount, DateOnly PaidOn, PaymentMethod Method, string? Reference,
+    decimal TaxWithheld = 0);
 internal sealed record VoidRequest(string Reason);
 
 internal sealed class RecordPaymentEndpoint : ICarterModule
@@ -16,7 +17,8 @@ internal sealed class RecordPaymentEndpoint : ICarterModule
     {
         app.MapPost("/invoices/{id:long}/payments", async (long id, RecordPaymentRequest body, ISender sender, CancellationToken ct) =>
             {
-                var paymentId = await sender.Send(new RecordPaymentCommand(id, body.Amount, body.PaidOn, body.Method, body.Reference), ct);
+                var paymentId = await sender.Send(new RecordPaymentCommand(id, body.Amount, body.TaxWithheld, body.PaidOn, body.Method,
+                    body.Reference), ct);
                 return Results.Created($"/api/invoices/{id}", new { id = paymentId });
             })
             .RequireAuthorization(p => p.RequireRole(InvoicingRoles.Accountants));

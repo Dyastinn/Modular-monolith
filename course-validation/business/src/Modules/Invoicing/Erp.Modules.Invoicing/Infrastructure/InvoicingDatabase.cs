@@ -17,6 +17,7 @@ internal sealed class InvoicingDatabase : IModuleDatabase
         await db.Database.MigrateAsync(ct);
     }
 
-    // Invoices only ever come from shipments, so there is nothing to seed.
-    public Task SeedDevelopmentDataAsync(DbConnection ownerConnection, CancellationToken ct) => Task.CompletedTask;
+    // Invoices only ever come from shipments; the seed fills in a demo company so they can be issued.
+    public Task SeedDevelopmentDataAsync(DbConnection ownerConnection, CancellationToken ct) =>
+        EmbeddedSql.ExecuteAsync(ownerConnection, EmbeddedSql.Read(typeof(InvoicingDatabase).Assembly, "DevSeed.sql"), ct);
 }

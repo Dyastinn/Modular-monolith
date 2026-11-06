@@ -155,7 +155,7 @@ Here's what each choice buys:
 | Bearer tokens, not cookies | A test is a program, not a browser; lesson 05 gave programs tokens |
 
 `DropDatabase` is public and takes the connection string, because one test (in
-[lesson 22](22-docker.md)) needs a second, empty database of its own.
+[lesson 23](23-docker.md)) needs a second, empty database of its own.
 
 All the tests share one database, so they must not run at the same time. A **collection** makes xUnit start
 the app once and run the classes one after another:

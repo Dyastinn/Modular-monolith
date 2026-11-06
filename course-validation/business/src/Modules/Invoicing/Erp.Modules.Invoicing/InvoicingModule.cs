@@ -1,4 +1,5 @@
 using Carter;
+using Erp.Modules.Invoicing.Contracts;
 using Erp.Modules.Invoicing.Infrastructure;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
@@ -22,8 +23,8 @@ public static class InvoicingModule
             InvoicingDbContext.Configure(o, sp.GetRequiredService<ISharedConnection>().Connection)
                 .AddInterceptors(sp.GetServices<IInterceptor>()));
         services.AddScoped<IModuleDatabase, InvoicingDatabase>();
-        services.AddSingleton(InvoicingSettings.From(config));
         services.AddScoped<InvoiceIssuer>();
+        services.AddScoped<IInvoicingSetup, InvoicingSetupService>();
 
         // PDFsharp's font resolver is process-wide and may be set only once.
         lock (FontLock)

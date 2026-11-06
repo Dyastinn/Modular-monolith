@@ -4,7 +4,9 @@
     <DialogContent>
         <MudStack Spacing="2" Style="min-width:380px">
             <MudText>Balance due: <b>@Format.Peso(Invoice.BalanceDue)</b></MudText>
-            <MudNumericField @bind-Value="_amount" Label="Amount (₱)" Min="0" Max="Invoice.BalanceDue" Format="N2" />
+            <MudNumericField @bind-Value="_amount" Label="Amount received (₱)" Min="0" Max="Invoice.BalanceDue" Format="N2" />
+            <MudNumericField @bind-Value="_withheld" Label="Tax withheld (₱)" Min="0" Format="N2"
+                             HelperText="Creditable withholding tax the customer deducted; they certify it on BIR Form 2307" />
             <MudDatePicker @bind-Date="_paidOn" Label="Paid on" MaxDate="DateTime.Today" />
             <MudSelect T="string" @bind-Value="_method" Label="Method">
                 <MudSelectItem Value="@("Cash")">Cash</MudSelectItem>
@@ -17,7 +19,7 @@
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
-        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Success" Disabled="_amount <= 0 || _paidOn is null">Record</MudButton>
+        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Success" Disabled="_amount + _withheld <= 0 || _paidOn is null">Record</MudButton>
     </DialogActions>
 </MudDialog>
 
@@ -26,6 +28,7 @@
     [Parameter] public InvoiceDetail Invoice { get; set; } = default!;
 
     private decimal _amount;
+    private decimal _withheld;
     private DateTime? _paidOn = DateTime.Today;
     private string _method = "Cash";
     private string? _reference;
@@ -34,7 +37,7 @@
 
     private async Task Save()
     {
-        var body = new { amount = _amount, paidOn = DateOnly.FromDateTime(_paidOn!.Value), method = _method, reference = _reference };
+        var body = new { amount = _amount, taxWithheld = _withheld, paidOn = DateOnly.FromDateTime(_paidOn!.Value), method = _method, reference = _reference };
         if (await Api.Create($"api/invoices/{Invoice.Id}/payments", body, "Payment recorded.") is not null)
             Dialog.Close(DialogResult.Ok(true));
     }

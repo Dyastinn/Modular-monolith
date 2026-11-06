@@ -330,7 +330,7 @@ of browser code.
 
 Blazor replaces whatever is inside `<div id="app">` once it has started, so "Loading…" shows for the second
 or two that takes. `blazor-error-ui` is the bar Blazor shows if the app crashes. And notice there's no
-`<script>` with code inside it. [Lesson 21](21-security-hardening.md) adds a Content-Security-Policy that
+`<script>` with code inside it. [Lesson 22](22-security-hardening.md) adds a Content-Security-Policy that
 forbids inline scripts, the classic way an attacker's script gets onto a page, so we never write one.
 
 ```css
@@ -491,12 +491,15 @@ dotnet add src/Erp.Api package Microsoft.AspNetCore.Components.WebAssembly.Serve
 And a reference to the app project, in `Erp.Api.csproj`:
 
 ```xml
-<!-- The browser app's files, served by this host from the same address as the API. Its code is not referenced. -->
-<ProjectReference Include="..\Erp.Web\Erp.Web.csproj" ReferenceOutputAssembly="false" />
+<!-- The browser app, served by this host from the same address as the API. -->
+<ProjectReference Include="..\Erp.Web\Erp.Web.csproj" />
 ```
 
-`ReferenceOutputAssembly="false"` means "build it and copy its files, but don't let me use its classes". The
-host never calls the app's code; it only hands its files to the browser.
+The host never calls the app's code; it only hands its files to the browser. Still, it's a normal reference, and
+that matters: the app's packages bring files of their own (MudBlazor's stylesheet and script, under
+`_content/MudBlazor/`), and the host only learns about a package's files through a normal reference. Tempted to
+add `ReferenceOutputAssembly="false"`, "build it, but don't give me its classes"? Don't: the app would open,
+unstyled, with MudBlazor's files answering 404.
 
 Now `Program.cs` again. Before:
 

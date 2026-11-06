@@ -19,6 +19,11 @@ internal sealed class InvoicingDbContext(DbContextOptions<InvoicingDbContext> op
     public const string Schema = "invoicing";
 
     public DbSet<Invoice> Invoices => Set<Invoice>();
+    public DbSet<WithholdingCertificate> WithholdingCertificates => Set<WithholdingCertificate>();
+    public DbSet<CompanyProfile> CompanyProfiles => Set<CompanyProfile>();
+
+    public Task<CompanyProfile> CompanyProfileAsync(CancellationToken ct) =>
+        CompanyProfiles.SingleAsync(p => p.Id == CompanyProfile.SingletonId, ct);
 
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder o, DbConnection connection) =>
         o.UseNpgsql(connection, npg => npg.MigrationsHistoryTable("__EFMigrationsHistory", Schema))
@@ -49,6 +54,7 @@ internal sealed class InvoicingDbContext(DbContextOptions<InvoicingDbContext> op
         c.Properties<InvoiceId>().HaveConversion<InvoiceIdConverter>();
         c.Properties<PaymentId>().HaveConversion<PaymentIdConverter>();
         c.Properties<UserId>().HaveConversion<UserIdConverter>();
+        c.Properties<WithholdingCertificateId>().HaveConversion<WithholdingCertificateIdConverter>();
         c.Properties<Money>().HaveConversion<MoneyConverter>().HavePrecision(18, 2);
         c.Properties<Quantity>().HaveConversion<QuantityConverter>().HavePrecision(18, 3);
     }
@@ -94,6 +100,27 @@ internal sealed class InvoicingDbContext(DbContextOptions<InvoicingDbContext> op
             e.Property(x => x.CustomerAddress).HasMaxLength(500);
             e.Property(x => x.VoidReason).HasMaxLength(500);
             e.Property(x => x.VatRate).HasPrecision(5, 4);
+            e.OwnsOne(x => x.Seller, s =>
+            {
+                s.Property(x => x.Name).HasMaxLength(200);
+                s.Property(x => x.TradeName).HasMaxLength(200);
+                s.Property(x => x.Tin).HasMaxLength(20);
+                s.Property(x => x.Address).HasMaxLength(500);
+                s.Property(x => x.InvoiceTitle).HasMaxLength(50);
+                s.Property(x => x.PermitNumber).HasMaxLength(100);
+                s.Property(x => x.SeriesRange).HasMaxLength(100);
+                s.Property(x => x.PermitDateIssued).HasMaxLength(10);
+            });
+            e.Navigation(x => x.Seller).IsRequired();
+            e.OwnsOne(x => x.SpecialDiscount, d =>
+            {
+                d.Property(x => x.Program).HasMaxLength(50);
+                d.Property(x => x.IdLabel).HasMaxLength(50);
+                d.Property(x => x.HolderName).HasMaxLength(200);
+                d.Property(x => x.IdNumber).HasMaxLength(50);
+                d.Property(x => x.Rate).HasPrecision(5, 4);
+                d.Property(x => x.VatRateRemoved).HasPrecision(5, 4);
+            });
             e.HasIndex(x => new { x.CustomerId, x.Status });
             e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");
             e.Ignore(x => x.BalanceDue);
@@ -114,15 +141,56 @@ internal sealed class InvoicingDbContext(DbContextOptions<InvoicingDbContext> op
 
             e.OwnsMany(x => x.Payments, p =>
             {
-                p.ToTable("payment", t => t.HasCheckConstraint("ck_payment_amount", "amount > 0"));
+                p.ToTable("payment", t => t.HasCheckConstraint("ck_payment_amount", "amount >= 0 AND tax_withheld >= 0 AND amount + tax_withheld > 0"));
                 p.WithOwner().HasForeignKey("InvoiceId");
                 p.HasKey(x => x.Id);
                 p.Property(x => x.Id).ValueGeneratedNever();
                 p.Property(x => x.Reference).HasMaxLength(100);
+                p.Ignore(x => x.Settled);
                 p.Property(x => x.VoidReason).HasMaxLength(500);
                 p.Ignore(x => x.IsVoid);
             });
             e.Navigation(x => x.Payments).HasField("_payments").UsePropertyAccessMode(PropertyAccessMode.Field);
+        });
+
+        b.Entity<CompanyProfile>(e =>
+        {
+            e.ToTable("company_profile", t => t.HasCheckConstraint("ck_company_profile_single_row", "id = 1"));
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.RegisteredName).HasMaxLength(200);
+            e.Property(x => x.TradeName).HasMaxLength(200);
+            e.Property(x => x.Tin).HasMaxLength(20);
+            e.Property(x => x.RegisteredAddress).HasMaxLength(500);
+            e.Property(x => x.VatRate).HasPrecision(5, 4);
+            e.Property(x => x.InvoiceTitle).HasMaxLength(50);
+            e.Property(x => x.PermitNumber).HasMaxLength(100);
+            e.Property(x => x.SeriesRange).HasMaxLength(100);
+            e.Property(x => x.PermitDateIssued).HasMaxLength(10);
+            e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");
+            e.Ignore(x => x.Tax);
+            e.Ignore(x => x.IsComplete);
+            // Every database starts with the one row, blank; the business fills it in on its first day.
+            e.HasData(new
+            {
+                Id = CompanyProfile.SingletonId, RegisteredName = "", Tin = "", RegisteredAddress = "",
+                TaxRegime = TaxRegime.Vat, VatRate = 0.12m, InvoiceTitle = "SALES INVOICE"
+            });
+        });
+
+        b.Entity<WithholdingCertificate>(e =>
+        {
+            e.ToTable("withholding_certificate", t =>
+            {
+                t.HasCheckConstraint("ck_withholding_certificate_quarter", "quarter BETWEEN 1 AND 4");
+                t.HasCheckConstraint("ck_withholding_certificate_amount", "amount > 0");
+            });
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.CustomerName).HasMaxLength(200);
+            e.Property(x => x.Reference).HasMaxLength(100);
+            e.Property(x => x.VoidReason).HasMaxLength(500);
+            e.HasIndex(x => new { x.Year, x.Quarter, x.CustomerId });
         });
     }
 
@@ -139,6 +207,8 @@ internal sealed class InvoicingDbContext(DbContextOptions<InvoicingDbContext> op
 
 internal sealed class InvoiceIdConverter() : ValueConverter<InvoiceId, long>(v => v.Value, v => new InvoiceId(v));
 internal sealed class PaymentIdConverter() : ValueConverter<PaymentId, long>(v => v.Value, v => new PaymentId(v));
+internal sealed class WithholdingCertificateIdConverter()
+    : ValueConverter<WithholdingCertificateId, long>(v => v.Value, v => new WithholdingCertificateId(v));
 internal sealed class UserIdConverter() : ValueConverter<UserId, long>(v => v.Value, v => new UserId(v));
 internal sealed class MoneyConverter() : ValueConverter<Money, decimal>(v => v.Amount, v => new Money(v));
 internal sealed class QuantityConverter() : ValueConverter<Quantity, decimal>(v => v.Value, v => new Quantity(v));

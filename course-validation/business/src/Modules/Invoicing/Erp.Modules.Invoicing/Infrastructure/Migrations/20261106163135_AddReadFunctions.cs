@@ -12,12 +12,17 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
 
         protected override void Up(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql(Sql("invoicing.get_company_profile.v1.sql"));
             migrationBuilder.Sql(Sql("invoicing.receivables_aging.v1.sql"));
             migrationBuilder.Sql(Sql("invoicing.search_invoices.v1.sql"));
+            migrationBuilder.Sql(Sql("invoicing.withholding_summary.v1.sql"));
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql("DROP FUNCTION IF EXISTS invoicing.get_company_profile();");
+            migrationBuilder.Sql("DROP FUNCTION IF EXISTS invoicing.list_withholding_certificates(integer);");
+            migrationBuilder.Sql("DROP FUNCTION IF EXISTS invoicing.withholding_summary(integer);");
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS invoicing.get_invoice_payments(bigint);");
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS invoicing.get_invoice_lines(bigint);");
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS invoicing.get_invoice(bigint);");

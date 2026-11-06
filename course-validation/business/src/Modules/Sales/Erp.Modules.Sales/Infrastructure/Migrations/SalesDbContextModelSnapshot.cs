@@ -177,6 +177,10 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("is_for_sale");
 
+                    b.Property<bool>("IsSpecialDiscountEligible")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_special_discount_eligible");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -274,6 +278,16 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("shipped_utc");
 
+                    b.Property<decimal>("SpecialDiscountAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("special_discount_amount");
+
+                    b.Property<decimal>("SpecialDiscountVatExemption")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("special_discount_vat_exemption");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer")
                         .HasColumnName("status");
@@ -298,6 +312,67 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                     b.ToTable("sales_order", "sales", t =>
                         {
                             t.HasCheckConstraint("ck_sales_order_status", "status BETWEEN 0 AND 5");
+                        });
+                });
+
+            modelBuilder.Entity("Erp.Modules.Sales.Domain.SpecialDiscountProgram", b =>
+                {
+                    b.Property<string>("Code")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("code");
+
+                    b.Property<string>("IdLabel")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("id_label");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("name");
+
+                    b.Property<decimal>("Rate")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("numeric(5,4)")
+                        .HasColumnName("rate");
+
+                    b.Property<bool>("VatExempt")
+                        .HasColumnType("boolean")
+                        .HasColumnName("vat_exempt");
+
+                    b.HasKey("Code")
+                        .HasName("pk_special_discount_program");
+
+                    b.ToTable("special_discount_program", "sales", t =>
+                        {
+                            t.HasCheckConstraint("ck_special_discount_program_rate", "rate > 0 AND rate < 1");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Code = "SC",
+                            IdLabel = "OSCA ID No.",
+                            IsActive = true,
+                            Name = "Senior citizen",
+                            Rate = 0.20m,
+                            VatExempt = true
+                        },
+                        new
+                        {
+                            Code = "PWD",
+                            IdLabel = "PWD ID No.",
+                            IsActive = true,
+                            Name = "Person with disability",
+                            Rate = 0.20m,
+                            VatExempt = true
                         });
                 });
 
@@ -393,6 +468,10 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                                 .HasColumnType("bigint")
                                 .HasColumnName("sales_order_id");
 
+                            b1.Property<bool>("SpecialDiscountEligible")
+                                .HasColumnType("boolean")
+                                .HasColumnName("special_discount_eligible");
+
                             b1.Property<int>("TaxType")
                                 .HasColumnType("integer")
                                 .HasColumnName("tax_type");
@@ -426,7 +505,58 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                                 .HasConstraintName("fk_sales_order_line_sales_order_sales_order_id");
                         });
 
+                    b.OwnsOne("Erp.Shared.BuildingBlocks.SpecialDiscount", "SpecialDiscount", b1 =>
+                        {
+                            b1.Property<long>("SalesOrderId")
+                                .HasColumnType("bigint")
+                                .HasColumnName("id");
+
+                            b1.Property<string>("HolderName")
+                                .IsRequired()
+                                .HasMaxLength(200)
+                                .HasColumnType("character varying(200)")
+                                .HasColumnName("special_discount_holder_name");
+
+                            b1.Property<string>("IdLabel")
+                                .IsRequired()
+                                .HasMaxLength(50)
+                                .HasColumnType("character varying(50)")
+                                .HasColumnName("special_discount_id_label");
+
+                            b1.Property<string>("IdNumber")
+                                .IsRequired()
+                                .HasMaxLength(50)
+                                .HasColumnType("character varying(50)")
+                                .HasColumnName("special_discount_id_number");
+
+                            b1.Property<string>("Program")
+                                .IsRequired()
+                                .HasMaxLength(50)
+                                .HasColumnType("character varying(50)")
+                                .HasColumnName("special_discount_program");
+
+                            b1.Property<decimal>("Rate")
+                                .HasPrecision(5, 4)
+                                .HasColumnType("numeric(5,4)")
+                                .HasColumnName("special_discount_rate");
+
+                            b1.Property<decimal>("VatRateRemoved")
+                                .HasPrecision(5, 4)
+                                .HasColumnType("numeric(5,4)")
+                                .HasColumnName("special_discount_vat_rate_removed");
+
+                            b1.HasKey("SalesOrderId");
+
+                            b1.ToTable("sales_order", "sales");
+
+                            b1.WithOwner()
+                                .HasForeignKey("SalesOrderId")
+                                .HasConstraintName("fk_sales_order_sales_order_id");
+                        });
+
                     b.Navigation("Lines");
+
+                    b.Navigation("SpecialDiscount");
                 });
 #pragma warning restore 612, 618
         }

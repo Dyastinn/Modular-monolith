@@ -77,7 +77,7 @@ You don't need to understand this table yet. Each tool is explained in the lesso
 | Seeing what the app is doing | **OpenTelemetry**, with the **Aspire** dashboard while developing |
 | Invoice PDFs and email | **PDFsharp/MigraDoc** and **MailKit** |
 | Tests | **xUnit**, **AwesomeAssertions** and **Playwright** |
-| Hosting | **Docker Compose** with **Caddy** for HTTPS; **IIS** as the alternative |
+| Hosting | **Docker Compose** with **Caddy** for HTTPS, on any Linux server |
 
 Every one of these is free and openly licensed (MIT, Apache-2.0, BSD or the PostgreSQL license). That
 matters: it means you can build this and sell it, and your buyer owes nobody a license fee. The reference
@@ -116,14 +116,14 @@ Each lesson builds on the one before, and each one ends with something you run a
 | 16 | [Item catalog and stock](16-item-catalog.md) | Inventory's catalog, audited adjustments, Sales' copy kept in step by events |
 | 17 | [Shipping](17-shipping.md) | Two modules calling each other through their contracts |
 | 18 | [Purchasing](18-purchasing.md) | Suppliers, purchase orders, receiving goods |
-| 19 | [Invoicing](19-invoicing.md) | Invoices from shipments, gap-free numbers, void and reissue, PDFs |
-| 20 | [Payments and receivables](20-payments.md) | Payments, the customer's balance kept exactly once, aging |
-| 21 | [Security hardening](21-security-hardening.md) | Rate limits, HTTPS, a Content-Security-Policy, encrypted sign-in keys, least privilege |
-| 22 | [Docker](22-docker.md) | The whole ERP on one server: Compose, Caddy, migrations, backups |
-| 23 | [Deploy to IIS](23-deploy-iis.md) | The Windows Server alternative |
+| 19 | [Invoicing](19-invoicing.md) | Invoices from shipments laid out to the BIR's rules, gap-free numbers, void and reissue, the company profile, PDFs |
+| 20 | [Payments and receivables](20-payments.md) | Payments, tax withheld and BIR Forms 2307, the customer's balance kept exactly once, aging |
+| 21 | [Special discounts](21-special-discounts.md) | Senior citizen and PWD discounts, on the order and the invoice alike |
+| 22 | [Security hardening](22-security-hardening.md) | Rate limits, HTTPS, a Content-Security-Policy, encrypted sign-in keys, least privilege |
+| 23 | [Docker](23-docker.md) | The whole ERP on one server: Compose, Caddy, migrations, backups |
 | 24 | [Production checklist](24-production-checklist.md) | What "done" means, a new install's first day, and what's not built yet |
 
-All together, it's about 50 to 60 hours of focused work. Lessons 03, 05, 07, 08 and 16 are the heaviest, so
+All together, it's about 55 to 65 hours of focused work. Lessons 03, 05, 07, 08 and 16 are the heaviest, so
 start those when you're fresh. If C# itself is new to you, read [00a-FOUNDATIONS.md](00a-FOUNDATIONS.md)
 first, and give yourself half again as much time.
 
@@ -164,7 +164,7 @@ Every lesson walks the same path, so you always know where you are:
 | **An editor** | Visual Studio 2022 or 2026, VS Code with C# Dev Kit, or Rider |
 | **Git Bash and `jq`** | `jq --version` (Git Bash comes with Git for Windows) |
 | **A browser** | Edge or Chrome; the browser tests in lesson 12 use the one you have |
-| **Docker** (for lesson 22 only) | `docker --version`. Docker Desktop, or Docker Engine in WSL 2 |
+| **Docker** (for lesson 23 only) | `docker --version`. Docker Desktop, or Docker Engine in WSL 2 |
 
 And that's the whole plan. Next, we set up the solution, put up the walls between the modules, and open
 the app in the browser for the first time. Good luck, developer!

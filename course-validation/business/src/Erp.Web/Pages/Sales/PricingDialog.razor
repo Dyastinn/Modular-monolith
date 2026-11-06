@@ -16,6 +16,7 @@
                 <MudSelectItem Value="@("ZeroRated")">Zero-rated</MudSelectItem>
                 <MudSelectItem Value="@("VatExempt")">VAT-exempt</MudSelectItem>
             </MudSelect>
+            <MudSwitch @bind-Value="_discountEligible" Label="Qualifies for special discounts (senior citizen, PWD...)" Color="Color.Primary" />
             <MudSwitch @bind-Value="_forSale" Label="For sale" Color="Color.Primary" />
         </MudStack>
     </DialogContent>
@@ -34,16 +35,18 @@
     private long? _categoryId;
     private bool _forSale;
     private string _taxType = "Vatable";
+    private bool _discountEligible;
 
     protected override async Task OnInitializedAsync()
     {
-        (_price, _categoryId, _forSale, _taxType) = (Item.UnitPrice, Item.CategoryId, Item.IsForSale, Item.TaxType);
+        (_price, _categoryId, _forSale, _taxType, _discountEligible) =
+            (Item.UnitPrice, Item.CategoryId, Item.IsForSale, Item.TaxType, Item.IsSpecialDiscountEligible);
         _categories = await Api.Get<List<ItemCategory>>("api/item-categories") ?? [];
     }
 
     private async Task Save()
     {
-        if (await Api.Put($"api/price-list/{Item.Id}", new { unitPrice = _price, categoryId = _categoryId, isForSale = _forSale, taxType = _taxType }, "Price saved."))
+        if (await Api.Put($"api/price-list/{Item.Id}", new { unitPrice = _price, categoryId = _categoryId, isForSale = _forSale, taxType = _taxType, specialDiscountEligible = _discountEligible }, "Price saved."))
             Dialog.Close(DialogResult.Ok(true));
     }
 }

@@ -16,6 +16,7 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
     public DbSet<SalesItem> SalesItems => Set<SalesItem>();
     public DbSet<ItemCategory> ItemCategories => Set<ItemCategory>();
     public DbSet<AppliedPayment> AppliedPayments => Set<AppliedPayment>();
+    public DbSet<SpecialDiscountProgram> SpecialDiscountPrograms => Set<SpecialDiscountProgram>();
 
     // Shared by the app and `dotnet ef`, so the two can't drift apart.
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder o, DbConnection connection) =>
@@ -133,6 +134,20 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
             e.HasOne(x => x.Category).WithMany().HasForeignKey(x => x.CategoryId).OnDelete(DeleteBehavior.Restrict);
         });
 
+        b.Entity<SpecialDiscountProgram>(e =>
+        {
+            e.ToTable("special_discount_program", t => t.HasCheckConstraint("ck_special_discount_program_rate", "rate > 0 AND rate < 1"));
+            e.HasKey(x => x.Code);
+            e.Property(x => x.Code).HasMaxLength(20);
+            e.Property(x => x.Name).HasMaxLength(50);
+            e.Property(x => x.IdLabel).HasMaxLength(50);
+            e.Property(x => x.Rate).HasPrecision(5, 4);
+            // The two every Philippine business must honor (RA 9994, RA 10754): 20% off, and no VAT, on what qualifies.
+            e.HasData(
+                new { Code = "SC", Name = "Senior citizen", IdLabel = "OSCA ID No.", Rate = 0.20m, VatExempt = true, IsActive = true },
+                new { Code = "PWD", Name = "Person with disability", IdLabel = "PWD ID No.", Rate = 0.20m, VatExempt = true, IsActive = true });
+        });
+
         b.Entity<AppliedPayment>(e =>
         {
             e.ToTable("applied_payment");
@@ -153,6 +168,16 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
             e.HasOne<Customer>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
             e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");
             e.Ignore(x => x.Total);
+            e.Ignore(x => x.GrossTotal);
+            e.OwnsOne(x => x.SpecialDiscount, d =>
+            {
+                d.Property(x => x.Program).HasMaxLength(50);
+                d.Property(x => x.IdLabel).HasMaxLength(50);
+                d.Property(x => x.HolderName).HasMaxLength(200);
+                d.Property(x => x.IdNumber).HasMaxLength(50);
+                d.Property(x => x.Rate).HasPrecision(5, 4);
+                d.Property(x => x.VatRateRemoved).HasPrecision(5, 4);
+            });
             e.Ignore(x => x.RequiresApproval);
             e.Ignore(x => x.HoldsStock);
             e.Ignore(x => x.DomainEvents);

@@ -21,10 +21,11 @@ internal static class Make
         return customer;
     }
 
-    public static SalesItem Item(long id, decimal price, ItemCategory? category = null, bool fractions = false, string unit = "pc")
+    public static SalesItem Item(long id, decimal price, ItemCategory? category = null, bool fractions = false, string unit = "pc",
+        bool discountEligible = false)
     {
         var item = SalesItem.FromCatalog(new ItemId(id), $"SKU-{id}", $"Item {id}", unit, fractions, isActive: true);
-        item.SetPricing(new Money(price), category ?? General, isForSale: true, TaxType.Vatable);
+        item.SetPricing(new Money(price), category ?? General, isForSale: true, TaxType.Vatable, discountEligible);
         return item;
     }
 
@@ -120,7 +121,7 @@ public class OrderLineTests
     [Fact]
     public void An_item_cannot_go_on_sale_without_a_price() =>
         SalesItem.FromCatalog(new ItemId(9), "NEW-1", "New", "pc", false, isActive: true)
-            .Invoking(i => i.SetPricing(Money.Zero, Make.General, isForSale: true, TaxType.Vatable))
+            .Invoking(i => i.SetPricing(Money.Zero, Make.General, isForSale: true, TaxType.Vatable, specialDiscountEligible: false))
             .Should().Throw<DomainException>().WithMessage("*price*");
 
     [Fact]
@@ -277,5 +278,83 @@ public class OutboxSerializationTests
         var restored = OutboxMessage.Deserialize(message.Type, message.Payload);
 
         restored.Should().Be(original);
+    }
+}
+
+public class SpecialDiscountTests
+{
+    private static readonly TaxPolicy Vat12 = new(TaxRegime.Vat, 0.12m);
+
+    private static SpecialDiscount Senior(TaxPolicy? tax = null, string idNumber = "OSCA-0001") =>
+        SpecialDiscount.Grant("Senior citizen", "OSCA ID No.", 0.20m, vatExempt: true, "Lola Basyang", idNumber, tax ?? Vat12);
+
+    private static SalesOrder Draft(Customer customer, params (SalesItem Item, decimal Qty)[] lines)
+    {
+        var order = SalesOrder.Create("SO-1", customer.Id, Make.Rep, Make.Now);
+        order.SetLines(lines.Select(l => (l.Item, new Quantity(l.Qty))).ToList(), Roles.SalesRep);
+        return order;
+    }
+
+    [Fact]
+    public void A_senior_pays_no_VAT_and_then_20_percent_less_on_eligible_items_only()
+    {
+        var order = Draft(Make.Customer(), (Make.Item(1, 1120, discountEligible: true), 1), (Make.Item(2, 112), 1));
+
+        order.ApplySpecialDiscount(Senior());
+
+        order.SpecialDiscountVatExemption.Should().Be(new Money(120));
+        order.SpecialDiscountAmount.Should().Be(new Money(200));
+        order.Total.Should().Be(new Money(912));   // ₱1,120 → ₱1,000 → ₱800, plus the ₱112 item at full price
+    }
+
+    [Fact]
+    public void A_non_VAT_seller_gives_the_discount_without_a_VAT_exemption()
+    {
+        var order = Draft(Make.Customer(), (Make.Item(1, 1120, discountEligible: true), 1));
+
+        order.ApplySpecialDiscount(Senior(new TaxPolicy(TaxRegime.PercentageTax, 0.12m)));
+
+        order.SpecialDiscountVatExemption.Should().Be(Money.Zero);
+        order.Total.Should().Be(new Money(896));
+    }
+
+    [Fact]
+    public void Changing_the_lines_recalculates_the_discount_and_removing_it_restores_the_total()
+    {
+        var medicine = Make.Item(1, 1120, discountEligible: true);
+        var order = Draft(Make.Customer(), (medicine, 1));
+        order.ApplySpecialDiscount(Senior());
+
+        order.SetLines([(medicine, new Quantity(2))], Roles.SalesRep);
+        order.Total.Should().Be(new Money(1600));
+
+        order.RemoveSpecialDiscount();
+        order.Total.Should().Be(new Money(2240));
+    }
+
+    [Fact]
+    public void A_discount_needs_an_ID_an_eligible_item_and_a_draft_order()
+    {
+        FluentActions.Invoking(() => Senior(idNumber: " ")).Should().Throw<DomainException>().WithMessage("*OSCA ID No.*");
+
+        Draft(Make.Customer(), (Make.Item(2, 112), 1))
+            .Invoking(o => o.ApplySpecialDiscount(Senior())).Should().Throw<DomainException>().WithMessage("*qualifies*");
+
+        var customer = Make.Customer();
+        var submitted = Draft(customer, (Make.Item(1, 1120, discountEligible: true), 1));
+        submitted.Submit(customer, Money.Zero, Make.Now);
+        submitted.Invoking(o => o.ApplySpecialDiscount(Senior())).Should().Throw<DomainException>().WithMessage("*draft*");
+    }
+
+    [Fact]
+    public void A_program_rate_is_a_fraction_and_a_withdrawn_program_grants_nothing()
+    {
+        FluentActions.Invoking(() => SpecialDiscountProgram.Define("SP", "Solo parent", "Solo Parent ID No.", 10m, vatExempt: true))
+            .Should().Throw<DomainException>().WithMessage("*fraction*");
+
+        var program = SpecialDiscountProgram.Define("sp", "Solo parent", "Solo Parent ID No.", 0.10m, vatExempt: true);
+        program.Code.Should().Be("SP");
+        program.Update(program.Name, program.IdLabel, program.Rate, program.VatExempt, isActive: false);
+        program.Invoking(p => p.Grant("Juana", "SP-1", Vat12)).Should().Throw<DomainException>().WithMessage("*no longer offered*");
     }
 }

@@ -13,6 +13,7 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.Sql(Sql("sales.get_sales_order.v1.sql"));
+            migrationBuilder.Sql(Sql("sales.list_special_discount_programs.v1.sql"));
             migrationBuilder.Sql(Sql("sales.search_customers.v1.sql"));
             migrationBuilder.Sql(Sql("sales.search_price_list.v1.sql"));
             migrationBuilder.Sql(Sql("sales.search_sales_orders.v1.sql"));
@@ -20,6 +21,7 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
 
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql("DROP FUNCTION IF EXISTS sales.list_special_discount_programs(boolean);");
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS sales.count_sales_orders(bigint, integer, bigint, text);");
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS sales.search_sales_orders(bigint, integer, bigint, text, integer, integer);");
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS sales.list_item_categories();");

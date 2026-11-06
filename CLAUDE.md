@@ -23,7 +23,6 @@
 | `plan-business-tutorial/` | **The course.** The only course. Phases run in order; each ends in something runnable. Plus `00a-FOUNDATIONS.md`, `GLOSSARY.md`, `LEARNING-RESOURCES.md`, `ANSWER-KEY.md`. |
 | `course-validation/business/` | **The reference build = the product.** The complete, runnable app the course ends in. Every lesson's code must match it. `FINDINGS.md` is the validation log. |
 | `ROADMAP.md` | The conversion plan: milestones, decisions, status. Update it as work lands. |
-| `runbooks/` | Operational runbooks (deployment to specific environments). |
 | `README.md` | The front door. Keep it in sync with any structural change. |
 
 **There is one reference build, and its job is to prove the tutorial works.** `course-validation/business-phase15/`
@@ -99,8 +98,9 @@ refresh tokens for other clients, lockout, password policy, role-based authoriza
 PostgreSQL · **Blazor WebAssembly + MudBlazor**, hosted by `Erp.Api`, built along the way (every feature lesson
 adds its screen) · the API lives under **`/api`** · **OpenTelemetry** (traces, metrics, logs, OTLP export) +
 health checks; **Aspire AppHost** as the dev-only dashboard · **transactional outbox** · **xUnit +
-AwesomeAssertions** · **PdfSharp/MigraDoc** for invoices · **MailKit** for email · deployment: **Docker**
-(Linux containers, Docker Compose, Caddy for HTTPS) as the main path, **IIS** as the documented alternative.
+AwesomeAssertions** · **PdfSharp/MigraDoc 6.2.4** for invoices · **MailKit** for email · deployment: **Docker
+only** (Linux containers, Docker Compose, Caddy for HTTPS). IIS was dropped on 2026-11-06 (user decision); don't
+reintroduce an IIS path, `web.config` or Windows-hosting lesson.
 
 > **Direction update (2026-11-06, user decision).** The product runs on Docker; the interface is built in the
 > course alongside the logic: lesson 01 creates the Blazor app, lesson 05 signs in through it, and every
@@ -237,6 +237,22 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
   via `ConnectionStrings:ErpDbMigrations` (see `deploy/postgres/create-roles.sql`).
 - **Money is Philippine Pesos (₱)**, `numeric(18,2)`. Quantities are whole numbers today; they become
   `numeric(18,3)` when items gain units of measure (ROADMAP M3).
+- **Business values live in tables, edited on screens; `appsettings` describes the installation** (user
+  decision, 2026-11-07). The company's registered details, tax regime, VAT rate, invoice title and BIR permit
+  are Invoicing's `company_profile` (Accountant/Admin, **Company and tax** page, validated by the domain); the
+  special-discount programs are Sales' `special_discount_program` table (seeded SC/PWD). Only connection
+  strings, certificates, SMTP, fonts, the time zone, telemetry and the first admin stay in configuration. Never
+  put a rate, a TIN or a permit number in `appsettings.json` or `.env`.
+- **Tax is data, never a constant.** Each item has a `TaxType` (VATable, zero-rated, VAT-exempt) and a
+  special-discount flag, copied onto order and invoice lines; each invoice **stores** its regime, rate,
+  breakdown, discount and a copy of the seller's details, and is never recalculated. Sales gets the tax policy
+  through `IInvoicingSetup` (Invoicing.Contracts). Special discounts are computed once, by
+  `SpecialDiscount.Apply` in BuildingBlocks, on the order **and** at issue, so the invoice total always equals
+  the order total charged to the customer's balance. The printed invoice follows BIR RR 7-2024 Sec. 6(B),
+  including (B.18); a change to its layout must keep every field on that list.
+- **The host references `Erp.Web` normally, with `Aliases="ErpWeb" PrivateAssets="all"`.** Never
+  `ReferenceOutputAssembly="false"`: the host would stop serving the app's package files (MudBlazor's CSS and
+  JS), and the app would run unstyled.
 - **Every dependency is permissively licensed and free** (see §3) and listed in the third-party notices file.
 - **Code comments are minimal.** None on self-explanatory code. Where one is needed, one short line with the
   important, non-obvious *why* (a trap, a constraint). The lessons carry the explanations, not the code.
@@ -255,8 +271,7 @@ The finished product has **no deliberate shortcuts**. In particular the old tuto
 - Rate limiting, HTTPS/HSTS, security headers, and a CSP for the Blazor app are on.
 - Observability: structured logs, traces and metrics via OpenTelemetry; `/health/live` and
   `/health/ready`; correlation ids in every log line.
-- The app installs from the docs alone: Docker Compose (or the IIS alternative), migration bundles, first-run
-  admin, backups.
+- The app installs from the docs alone: Docker Compose, migration bundles, first-run admin, backups.
 - Sign-in keys (data protection) are encrypted at rest with a certificate in Production.
 
 A lesson may still *start* from a simpler version for teaching — rule 2.7 — as long as a later phase

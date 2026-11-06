@@ -120,7 +120,7 @@ public class BusinessFlowUiTests : IAsyncLifetime
         string[] pages =
         [
             "/sales-orders", "/sales-orders/new", "/customers", "/price-list", "/items", "/shipments",
-            "/suppliers", "/purchase-orders", "/purchase-orders/new", "/invoices", "/receivables-aging",
+            "/suppliers", "/purchase-orders", "/purchase-orders/new", "/invoices", "/receivables-aging", "/withholding-tax", "/company",
             "/users", "/sign-in-log", "/change-password"
         ];
 

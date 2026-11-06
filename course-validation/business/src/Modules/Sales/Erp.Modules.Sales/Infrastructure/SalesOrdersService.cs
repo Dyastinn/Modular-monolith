@@ -40,7 +40,9 @@ internal sealed class SalesOrdersService(SalesDbContext db) : ISalesOrders
 
         return new OrderForInvoice(order.Id.Value, order.OrderNumber, customer.Id.Value, customer.Name, customer.Tin,
             customer.Address, customer.PaymentTermsDays,
-            order.Lines.Select(l => new InvoiceableLine(l.ItemId.Value, l.ItemName, l.Unit, l.Quantity.Value, l.UnitPrice.Amount, l.TaxType)).ToList());
+            order.Lines.Select(l => new InvoiceableLine(l.ItemId.Value, l.ItemName, l.Unit, l.Quantity.Value, l.UnitPrice.Amount,
+                l.TaxType, l.SpecialDiscountEligible)).ToList(),
+            order.SpecialDiscount);
     }
 
     // Join the caller's transaction for one operation, then let go: the caller owns the commit.

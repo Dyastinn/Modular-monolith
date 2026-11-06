@@ -1,5 +1,6 @@
 using Erp.Modules.Inventory.Domain;
 using Erp.Modules.Inventory.Infrastructure;
+using Erp.Modules.Invoicing.Contracts;
 using Erp.Modules.Sales.Contracts;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
@@ -17,11 +18,15 @@ internal sealed class ShipSalesOrderValidator : AbstractValidator<ShipSalesOrder
 }
 
 // Stock leaves, the reservation is used up, and the order becomes Shipped: one transaction across two modules.
-internal sealed class ShipSalesOrderHandler(InventoryDbContext db, ISalesOrders orders, ICurrentUser user, IClock clock)
+internal sealed class ShipSalesOrderHandler(InventoryDbContext db, ISalesOrders orders, IInvoicingSetup invoicing, ICurrentUser user,
+    IClock clock)
     : ICommandHandler<ShipSalesOrderCommand, long>
 {
     public async ValueTask<long> Handle(ShipSalesOrderCommand cmd, CancellationToken ct)
     {
+        // The BIR expects the invoice with the goods; refuse now rather than ship something that can't be billed.
+        await invoicing.EnsureReadyToInvoiceAsync(ct);
+
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var order = await orders.GetForShipmentAsync(cmd.SalesOrderId, tx.GetDbTransaction(), ct);
 

@@ -8,7 +8,8 @@ LANGUAGE sql STABLE
 AS $$
     SELECT o.id, o.order_number::text, o.customer_id, c.name::text, o.status,
            COALESCE((SELECT SUM(ROUND(l.quantity * l.unit_price, 2))
-                     FROM sales.sales_order_line l WHERE l.sales_order_id = o.id), 0),
+                     FROM sales.sales_order_line l WHERE l.sales_order_id = o.id), 0)
+             - o.special_discount_vat_exemption - o.special_discount_amount,
            o.created_by, o.created_utc
     FROM sales.sales_order o
     JOIN sales.customer c ON c.id = o.customer_id

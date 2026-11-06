@@ -55,7 +55,7 @@ PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localho
 ```
 
 One thing to watch out for: `erp_dev_only` is a password for *your machine*, for development only. In
-production, the app gets its own account with far fewer rights; [lesson 21](21-security-hardening.md) sets
+production, the app gets its own account with far fewer rights; [lesson 22](22-security-hardening.md) sets
 that up.
 
 ## 2. What the host needs from a module's database

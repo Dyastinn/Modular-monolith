@@ -4,6 +4,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
+#pragma warning disable CA1814 // Prefer jagged arrays over multidimensional
+
 namespace Erp.Modules.Sales.Infrastructure.Migrations
 {
     /// <inheritdoc />
@@ -94,6 +96,24 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "special_discount_program",
+                schema: "sales",
+                columns: table => new
+                {
+                    code = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    name = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    id_label = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    rate = table.Column<decimal>(type: "numeric(5,4)", precision: 5, scale: 4, nullable: false),
+                    vat_exempt = table.Column<bool>(type: "boolean", nullable: false),
+                    is_active = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_special_discount_program", x => x.code);
+                    table.CheckConstraint("ck_special_discount_program_rate", "rate > 0 AND rate < 1");
+                });
+
+            migrationBuilder.CreateTable(
                 name: "sales_order",
                 schema: "sales",
                 columns: table => new
@@ -112,6 +132,14 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                     rejected_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     rejection_reason = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     shipped_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    special_discount_program = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    special_discount_id_label = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    special_discount_holder_name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
+                    special_discount_id_number = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: true),
+                    special_discount_rate = table.Column<decimal>(type: "numeric(5,4)", precision: 5, scale: 4, nullable: true),
+                    special_discount_vat_rate_removed = table.Column<decimal>(type: "numeric(5,4)", precision: 5, scale: 4, nullable: true),
+                    special_discount_vat_exemption = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    special_discount_amount = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
                     xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
                 },
                 constraints: table =>
@@ -141,7 +169,8 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                     unit_price = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
                     category_id = table.Column<long>(type: "bigint", nullable: true),
                     is_for_sale = table.Column<bool>(type: "boolean", nullable: false),
-                    tax_type = table.Column<int>(type: "integer", nullable: false)
+                    tax_type = table.Column<int>(type: "integer", nullable: false),
+                    is_special_discount_eligible = table.Column<bool>(type: "boolean", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -169,6 +198,7 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                     quantity = table.Column<decimal>(type: "numeric(18,3)", precision: 18, scale: 3, nullable: false),
                     unit_price = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
                     tax_type = table.Column<int>(type: "integer", nullable: false),
+                    special_discount_eligible = table.Column<bool>(type: "boolean", nullable: false),
                     sales_order_id = table.Column<long>(type: "bigint", nullable: false)
                 },
                 constraints: table =>
@@ -183,6 +213,16 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                         principalTable: "sales_order",
                         principalColumn: "id",
                         onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.InsertData(
+                schema: "sales",
+                table: "special_discount_program",
+                columns: new[] { "code", "id_label", "is_active", "name", "rate", "vat_exempt" },
+                values: new object[,]
+                {
+                    { "PWD", "PWD ID No.", true, "Person with disability", 0.20m, true },
+                    { "SC", "OSCA ID No.", true, "Senior citizen", 0.20m, true }
                 });
 
             migrationBuilder.CreateIndex(
@@ -254,6 +294,10 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "sales_order_line",
+                schema: "sales");
+
+            migrationBuilder.DropTable(
+                name: "special_discount_program",
                 schema: "sales");
 
             migrationBuilder.DropTable(

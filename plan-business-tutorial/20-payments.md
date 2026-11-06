@@ -3,9 +3,10 @@
 Good day, developer! Invoices go out; today the money comes back. The accountant records each payment
 against its invoice (cash, check, bank transfer, part or whole) and the invoice knows what's still owed. Then
 something quietly important happens: the customer's balance in Sales drops, so their next order has room
-again, even though Sales never saw the payment. And at the end of the month, one report answers the
-accountant's real question: who owes us money, and how late is it? About two hours. Are you ready? Let's
-begin!
+again, even though Sales never saw the payment. Big customers pay a little less than the invoice and send a
+tax certificate for the rest, so we track that too, down to the certificates still missing. And at the end of
+the month, one report answers the accountant's real question: who owes us money, and how late is it? About
+two and a half hours. Are you ready? Let's begin!
 
 ## What we'll build
 
@@ -15,9 +16,11 @@ begin!
 | `POST /api/invoices/{id}/payments/{paymentId}/void` | Accountant, Admin | Undo a payment recorded by mistake, or a bounced check |
 | `GET /api/invoices?overdueOnly=true` | Invoicing readers | Invoices past due and not fully paid |
 | `GET /api/reports/receivables-aging?asOf=` | Invoicing readers | What each customer owes, by how late |
+| `GET /api/withholding-tax?year=` | Accountant, Admin | Tax withheld by each customer per quarter, the BIR Forms 2307 received, and what's missing |
+| `POST /api/withholding-certificates`, `.../{id}/void` | Accountant, Admin | Record a Form 2307 as it arrives, or void a wrong one |
 
 Plus the `PaymentRecorded` and `PaymentVoided` events, an **applied payments** table that makes Sales apply
-each payment exactly once, and the payment dialog and aging screens.
+each payment exactly once, and the payment dialog, aging and withholding tax screens.
 
 ## Why we build it this way
 
@@ -53,6 +56,22 @@ applied payment records what was **actually** deducted, ₱300. If that payment 
 back exactly ₱300, not ₱500. The overpayment itself is the accountant's to sort out with the customer, outside
 the system.
 
+### Tax the customer keeps: BIR Form 2307
+
+Large companies, and anyone the BIR names a withholding agent, don't pay an invoice in full. They keep a small
+part (usually 1% of the price before VAT for goods, 2% for services), pay it to the BIR on our behalf, and give
+us a **BIR Form 2307**, the Certificate of Creditable Tax Withheld at Source. It arrives later, often once a
+quarter. The business then claims it as a credit against its own income tax.
+
+So for the invoice, the money withheld counts as paid: a ₱900 invoice settled with ₱891.11 by bank transfer and
+₱8.89 withheld is **paid**. And for the accountant, every peso withheld needs a certificate, because a missing
+one is a credit the business can't claim. Each payment records the two amounts separately, and a report shows,
+per customer and quarter, what was withheld, what's certified, and what's still missing.
+
+Now, let's be honest about the cost: the app can't check that 1% is the right rate. Rates depend on the payer
+and on what was sold, and a customer may simply be wrong. What it can refuse is the obvious typo: withholding
+more than the sale before VAT.
+
 ### Aging
 
 "Receivables aging" is the report every accountant knows: each customer's open amount, split into buckets by
@@ -82,7 +101,9 @@ A payment is a child of its invoice, never deleted, only voided:
 internal sealed class Payment
 {
     public PaymentId Id { get; private set; }
-    public Money Amount { get; private set; }
+    public Money Amount { get; private set; }         // what came in: cash, check, transfer
+    public Money TaxWithheld { get; private set; }    // what the customer kept and will certify on BIR Form 2307
+    public Money Settled => Amount + TaxWithheld;
     public DateOnly PaidOn { get; private set; }
     public PaymentMethod Method { get; private set; }
     public string? Reference { get; private set; }   // check number, bank reference
@@ -94,8 +115,12 @@ internal sealed class Payment
 
     private Payment() { }
 
-    public Payment(PaymentId id, Money amount, DateOnly paidOn, PaymentMethod method, string? reference, UserId by, DateTime nowUtc)
-    { Id = id; Amount = amount; PaidOn = paidOn; Method = method; Reference = reference; RecordedBy = by; RecordedUtc = nowUtc; }
+    public Payment(PaymentId id, Money amount, Money taxWithheld, DateOnly paidOn, PaymentMethod method, string? reference, UserId by,
+        DateTime nowUtc)
+    {
+        Id = id; Amount = amount; TaxWithheld = taxWithheld; PaidOn = paidOn; Method = method; Reference = reference;
+        RecordedBy = by; RecordedUtc = nowUtc;
+    }
 
     public void Void(string reason, DateTime nowUtc) { VoidedUtc = nowUtc; VoidReason = reason; }
 }
@@ -109,24 +134,30 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
 {
     private readonly List<Payment> _payments = new();
     public IReadOnlyList<Payment> Payments => _payments;
-    public Money AmountPaid { get; private set; }
+    public Money AmountPaid { get; private set; }   // everything settled: money received plus tax withheld
     public Money BalanceDue => Total - AmountPaid;
     // ... everything from lesson 19; Issue sets AmountPaid = Money.Zero ...
 
-    public void RecordPayment(PaymentId id, Money amount, DateOnly paidOn, PaymentMethod method, string? reference,
+    // taxWithheld: the creditable withholding tax the customer deducted (BIR Form 2307). It settles the invoice like money does.
+    public void RecordPayment(PaymentId id, Money amount, Money taxWithheld, DateOnly paidOn, PaymentMethod method, string? reference,
         UserId by, DateOnly today, DateTime nowUtc)
     {
         EnsureNotVoid();
-        if (amount == Money.Zero) throw new DomainException("A payment must be more than zero.");
-        if (amount > BalanceDue)
-            throw new DomainException($"{Number} has {BalanceDue} left to pay; {amount} is more than that.");
+        var settled = amount + taxWithheld;
+        if (settled == Money.Zero) throw new DomainException("A payment must be more than zero.");
+        if (settled > BalanceDue)
+            throw new DomainException($"{Number} has {BalanceDue} left to pay; {settled} is more than that.");
+        // Withholding is a few percent of the sale before VAT, so anything near the VAT-inclusive total is a typing mistake.
+        if (taxWithheld > Total - VatAmount)
+            throw new DomainException($"Tax withheld can't be more than {Number}'s sales before VAT ({Total - VatAmount}).");
         if (paidOn < IssueDate) throw new DomainException("A payment can't be dated before the invoice.");
         if (paidOn > today) throw new DomainException("A payment can't be dated in the future.");
 
-        _payments.Add(new Payment(id, amount, paidOn, method, string.IsNullOrWhiteSpace(reference) ? null : reference.Trim(), by, nowUtc));
-        AmountPaid += amount;
+        _payments.Add(new Payment(id, amount, taxWithheld, paidOn, method,
+            string.IsNullOrWhiteSpace(reference) ? null : reference.Trim(), by, nowUtc));
+        AmountPaid += settled;
         RefreshStatus();
-        Raise(new PaymentRecorded(id.Value, CustomerId, amount.Amount));
+        Raise(new PaymentRecorded(id.Value, CustomerId, settled.Amount));
     }
 
     // A payment recorded by mistake, or a check that bounced.
@@ -138,9 +169,9 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
         if (payment.IsVoid) throw new DomainException("That payment is already void.");
 
         payment.Void(reason.Trim(), nowUtc);
-        AmountPaid -= payment.Amount;
+        AmountPaid -= payment.Settled;
         RefreshStatus();
-        Raise(new PaymentVoided(id.Value, CustomerId, payment.Amount.Amount));
+        Raise(new PaymentVoided(id.Value, CustomerId, payment.Settled.Amount));
     }
 
     private void RefreshStatus() =>
@@ -158,7 +189,8 @@ if (AmountPaid > Money.Zero) throw new DomainException($"{Number} has payments. 
 
 What each rule protects:
 
-- **No payment over the balance.** Money in can never make an invoice "more than paid".
+- **No payment over the balance.** Money in, plus tax withheld, can never make an invoice "more than paid".
+- **Sales hears the settled amount.** For the customer's balance, ₱8.89 withheld is as good as ₱8.89 paid.
 - **No payment dated before the invoice, or in the future.** Both are typing mistakes that would wreck the
   aging report. "Future" means after *today in the business's time zone*, lesson 19's `clock.Today`, passed
   in as `today` so the rule stays testable.
@@ -169,14 +201,9 @@ What each rule protects:
 
 ## 2. The events, in Invoicing's window
 
-Invoicing gets a Contracts project, because Sales must handle its events:
+Invoicing's Contracts project (lesson 19) gets two events, because Sales must handle them:
 
 ```bash
-dotnet new classlib -n Erp.Modules.Invoicing.Contracts -o src/Modules/Invoicing/Erp.Modules.Invoicing.Contracts
-rm src/Modules/Invoicing/Erp.Modules.Invoicing.Contracts/Class1.cs
-dotnet sln add src/Modules/Invoicing/Erp.Modules.Invoicing.Contracts
-dotnet add src/Modules/Invoicing/Erp.Modules.Invoicing.Contracts reference src/Shared/Erp.Shared.BuildingBlocks
-dotnet add src/Modules/Invoicing/Erp.Modules.Invoicing reference src/Modules/Invoicing/Erp.Modules.Invoicing.Contracts
 dotnet add src/Modules/Sales/Erp.Modules.Sales reference src/Modules/Invoicing/Erp.Modules.Invoicing.Contracts
 ```
 
@@ -192,8 +219,8 @@ public sealed record PaymentRecorded(long PaymentId, long CustomerId, decimal Am
 public sealed record PaymentVoided(long PaymentId, long CustomerId, decimal Amount) : IDomainEvent;
 ```
 
-And lesson 16's trap, avoided this time on purpose: the new Contracts assembly goes into `options.Assemblies`
-in `Program.cs`, and into the architecture tests' `ContractsAssemblies`.
+And lesson 16's trap, avoided this time on purpose: now that it holds events, the Contracts assembly goes into
+`options.Assemblies` in `Program.cs`.
 
 ```csharp
 options.Assemblies =
@@ -224,13 +251,14 @@ e.Ignore(x => x.BalanceDue);
 e.Ignore(x => x.DomainEvents);
 e.OwnsMany(x => x.Payments, p =>
 {
-    p.ToTable("payment", t => t.HasCheckConstraint("ck_payment_amount", "amount > 0"));
+    p.ToTable("payment", t => t.HasCheckConstraint("ck_payment_amount", "amount >= 0 AND tax_withheld >= 0 AND amount + tax_withheld > 0"));
     p.WithOwner().HasForeignKey("InvoiceId");
     p.HasKey(x => x.Id);
     p.Property(x => x.Id).ValueGeneratedNever();
     p.Property(x => x.Reference).HasMaxLength(100);
     p.Property(x => x.VoidReason).HasMaxLength(500);
     p.Ignore(x => x.IsVoid);
+    p.Ignore(x => x.Settled);
 });
 e.Navigation(x => x.Payments).HasField("_payments").UsePropertyAccessMode(PropertyAccessMode.Field);
 ```
@@ -258,14 +286,16 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Erp.Modules.Invoicing.Features;
 
-internal sealed record RecordPaymentCommand(long InvoiceId, decimal Amount, DateOnly PaidOn, PaymentMethod Method, string? Reference)
-    : ICommand<long>;
+internal sealed record RecordPaymentCommand(long InvoiceId, decimal Amount, decimal TaxWithheld, DateOnly PaidOn, PaymentMethod Method,
+    string? Reference) : ICommand<long>;
 
 internal sealed class RecordPaymentValidator : AbstractValidator<RecordPaymentCommand>
 {
     public RecordPaymentValidator()
     {
-        RuleFor(x => x.Amount).GreaterThan(0).Must(a => decimal.Round(a, 2) == a).WithMessage("Amounts are in pesos and centavos.");
+        RuleFor(x => x.Amount).GreaterThanOrEqualTo(0).Must(a => decimal.Round(a, 2) == a).WithMessage("Amounts are in pesos and centavos.");
+        RuleFor(x => x.TaxWithheld).GreaterThanOrEqualTo(0).Must(a => decimal.Round(a, 2) == a).WithMessage("Amounts are in pesos and centavos.");
+        RuleFor(x => x.Amount + x.TaxWithheld).GreaterThan(0).WithName("Amount").WithMessage("Enter the amount received, the tax withheld, or both.");
         RuleFor(x => x.Method).IsInEnum();
         RuleFor(x => x.Reference).MaximumLength(100);
     }
@@ -281,8 +311,8 @@ internal sealed class RecordPaymentHandler(InvoicingDbContext db, ICurrentUser u
             ?? throw new NotFoundException($"Invoice {cmd.InvoiceId} not found.");
 
         var paymentId = await db.NextPaymentIdAsync(ct);
-        invoice.RecordPayment(paymentId, new Money(cmd.Amount), cmd.PaidOn, cmd.Method, cmd.Reference, new UserId(user.UserId),
-            clock.Today, clock.UtcNow);
+        invoice.RecordPayment(paymentId, new Money(cmd.Amount), new Money(cmd.TaxWithheld), cmd.PaidOn, cmd.Method, cmd.Reference,
+            new UserId(user.UserId), clock.Today, clock.UtcNow);
         await db.SaveChangesAsync(ct);
         return paymentId.Value;
     }
@@ -313,20 +343,10 @@ One `SaveChangesAsync` writes the payment, the invoice's new totals, and the eve
 rest.
 
 The endpoints, in `RecordPaymentEndpoint.cs`, take a `RecordPaymentRequest(decimal Amount, DateOnly PaidOn,
-PaymentMethod Method, string? Reference)` and a `VoidRequest(string Reason)`, both for
+PaymentMethod Method, string? Reference, decimal TaxWithheld = 0)` and a `VoidRequest(string Reason)`, both for
 `InvoicingRoles.Accountants`. (Move `VoidRequest` here from lesson 19's void endpoint: both voids share it.)
 
-The method arrives as `"BankTransfer"` from the app, but System.Text.Json reads an enum only as a number by
-default, so the request fails with a 400. Teach the whole API, once, to read and write enums by name. In
-`Program.cs`, with the other services:
-
-```csharp
-// Enums travel as their names ("Cash"), not numbers, in both directions.
-builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
-```
-
-(add `using System.Text.Json.Serialization;`). Names are also safer than numbers on the wire: a client that
-sends `3` meaning "Check" from an older version would silently record a bank transfer.
+The method arrives as `"BankTransfer"` from the app, and the enum converter from lesson 19 reads it by name.
 
 ## 5. Sales applies each payment once
 
@@ -458,8 +478,8 @@ creates:
 - `count_invoices` with the same four filters.
 - `get_invoice(p_id)`, with `amount_paid` after `total`.
 - `get_invoice_lines(p_id)`, unchanged.
-- `get_invoice_payments(p_id)`: each payment's id, amount, date, method (as a number), reference, who
-  recorded it and when, and its void details.
+- `get_invoice_payments(p_id)`: each payment's id, amount, tax withheld, date, method (as a number),
+  reference, who recorded it and when, and its void details.
 
 The file is exactly the reference build's
 [search_invoices file](../course-validation/business/src/Modules/Invoicing/Erp.Modules.Invoicing/Infrastructure/Sql/Functions/invoicing.search_invoices.v1.sql)
@@ -481,7 +501,7 @@ LANGUAGE sql STABLE
 AS $$
     WITH open_invoice AS (
         SELECT i.customer_id, i.customer_name, i.due_date,
-               i.total - COALESCE((SELECT SUM(p.amount) FROM invoicing.payment p
+               i.total - COALESCE((SELECT SUM(p.amount + p.tax_withheld) FROM invoicing.payment p
                                    WHERE p.invoice_id = i.id AND p.voided_utc IS NULL AND p.paid_on <= p_as_of), 0) AS open_amount
         FROM invoicing.invoice i
         WHERE i.status <> 3 AND i.issue_date <= p_as_of
@@ -501,7 +521,8 @@ $$;
 ```
 
 Read the `WITH` part first: a **common table expression**, a named step inside the query. It works out each
-invoice's open amount *as of that day*: its total, minus the live payments made on or before it. Then the
+invoice's open amount *as of that day*: its total, minus the live payments (money and tax withheld) made on or
+before it. Then the
 main query sorts those amounts into buckets with `CASE`. In PostgreSQL, subtracting one `date` from another
 gives a number of days, which is what makes `p_as_of - o.due_date BETWEEN 1 AND 30` read so plainly.
 
@@ -557,14 +578,124 @@ if (m.AmountPaid > 0)
 }
 ```
 
-## 7. The screens
+## 7. Withholding certificates
+
+A certificate is its own small aggregate in Invoicing, because it isn't one payment's: a customer usually
+sends one Form 2307 per quarter, covering every payment in it.
+
+```csharp
+// src/Modules/Invoicing/Erp.Modules.Invoicing/Domain/WithholdingCertificate.cs
+using Erp.Shared.BuildingBlocks;
+
+namespace Erp.Modules.Invoicing.Domain;
+
+internal readonly record struct WithholdingCertificateId(long Value);
+
+// A BIR Form 2307 received from a customer: their proof of the tax they withheld from what they paid us in one quarter.
+// The business claims it as a credit against its income tax, so a missing one is money lost.
+internal sealed class WithholdingCertificate : Entity<WithholdingCertificateId>
+{
+    public long CustomerId { get; private set; }   // owned by Sales
+    public string CustomerName { get; private set; } = default!;
+    public int Year { get; private set; }
+    public int Quarter { get; private set; }
+    public Money Amount { get; private set; }
+    public string? Reference { get; private set; }
+    public DateOnly ReceivedOn { get; private set; }
+    public UserId RecordedBy { get; private set; }
+    public DateTime RecordedUtc { get; private set; }
+    public DateTime? VoidedUtc { get; private set; }
+    public string? VoidReason { get; private set; }
+
+    private WithholdingCertificate() { }
+
+    public static WithholdingCertificate Record(long customerId, string customerName, int year, int quarter, Money amount,
+        string? reference, DateOnly receivedOn, UserId by, DateOnly today, DateTime nowUtc)
+    {
+        if (quarter is < 1 or > 4) throw new DomainException("A quarter is 1, 2, 3 or 4.");
+        if (year < 2000 || year > today.Year) throw new DomainException($"{year} is not a year a certificate can cover.");
+        if (amount == Money.Zero) throw new DomainException("A certificate must show some tax withheld.");
+        if (receivedOn > today) throw new DomainException("A certificate can't be received in the future.");
+        return new WithholdingCertificate
+        {
+            CustomerId = customerId, CustomerName = customerName, Year = year, Quarter = quarter, Amount = amount,
+            Reference = string.IsNullOrWhiteSpace(reference) ? null : reference.Trim(), ReceivedOn = receivedOn,
+            RecordedBy = by, RecordedUtc = nowUtc
+        };
+    }
+
+    public void Void(string reason, DateTime nowUtc)
+    {
+        if (VoidedUtc is not null) throw new DomainException("That certificate is already void.");
+        if (string.IsNullOrWhiteSpace(reason)) throw new DomainException("Voiding a certificate needs a reason.");
+        VoidedUtc = nowUtc;
+        VoidReason = reason.Trim();
+    }
+}
+```
+
+It maps to `invoicing.withholding_certificate` (identity id, checks `quarter BETWEEN 1 AND 4` and
+`amount > 0`, an index on year, quarter and customer), in the same `AddPayments` migration.
+
+The handler that records one copies the customer's name from their latest invoice, which also proves we've
+billed them at all:
+
+```csharp
+var customerName = await db.Invoices.Where(i => i.CustomerId == cmd.CustomerId)
+        .OrderByDescending(i => i.Id).Select(i => i.CustomerName).FirstOrDefaultAsync(ct)
+    ?? throw new NotFoundException($"No invoices for customer {cmd.CustomerId}.");
+```
+
+The report is one more read function, `invoicing.withholding_summary.v1.sql`, shipped in `AddPaymentReads`:
+
+```sql
+-- Per customer and quarter: the tax they withheld from their payments, what their BIR Forms 2307 certify, and the gap.
+CREATE OR REPLACE FUNCTION invoicing.withholding_summary(p_year integer)
+RETURNS TABLE (customer_id bigint, customer_name text, quarter integer, withheld numeric, certified numeric, missing numeric)
+LANGUAGE sql STABLE
+AS $$
+    WITH withheld AS (
+        SELECT i.customer_id, MAX(i.customer_name) AS customer_name, EXTRACT(QUARTER FROM p.paid_on)::integer AS quarter,
+               SUM(p.tax_withheld) AS amount
+        FROM invoicing.payment p
+        JOIN invoicing.invoice i ON i.id = p.invoice_id
+        WHERE p.voided_utc IS NULL AND p.tax_withheld > 0 AND EXTRACT(YEAR FROM p.paid_on) = p_year
+        GROUP BY i.customer_id, EXTRACT(QUARTER FROM p.paid_on)
+    ),
+    certified AS (
+        SELECT c.customer_id, MAX(c.customer_name) AS customer_name, c.quarter, SUM(c.amount) AS amount
+        FROM invoicing.withholding_certificate c
+        WHERE c.voided_utc IS NULL AND c.year = p_year
+        GROUP BY c.customer_id, c.quarter
+    )
+    SELECT COALESCE(w.customer_id, c.customer_id), COALESCE(w.customer_name, c.customer_name)::text,
+           COALESCE(w.quarter, c.quarter), COALESCE(w.amount, 0), COALESCE(c.amount, 0),
+           GREATEST(COALESCE(w.amount, 0) - COALESCE(c.amount, 0), 0)
+    FROM withheld w
+    FULL JOIN certified c ON c.customer_id = w.customer_id AND c.quarter = w.quarter
+    ORDER BY 2, 3;
+$$;
+```
+
+Two CTEs again, one per side, and a **`FULL JOIN`** to bring them together: a row appears when there's
+withholding with no certificate yet, *and* when a certificate arrived for a quarter with no withholding (a
+customer's mistake worth a phone call). The same file holds `list_withholding_certificates(p_year)`, one row
+per certificate.
+
+Three slices in `Features/WithholdingTax/`, all for `InvoicingRoles.Accountants`: `GET /withholding-tax?year=`
+returns both lists in one `WithholdingReportDto`; `POST /withholding-certificates` records one;
+`POST /withholding-certificates/{id}/void` takes the shared `VoidRequest`. Copy them from
+[WithholdingTaxHandler.cs](../course-validation/business/src/Modules/Invoicing/Erp.Modules.Invoicing/Features/WithholdingTax/WithholdingTaxHandler.cs):
+they're the patterns you've written all course.
+
+## 8. The screens
 
 `Models.cs`: `InvoiceSummary` gains `AmountPaid` and `BalanceDue`; `InvoiceDetail` gains `AmountPaid`,
 `BalanceDue` and `List<Payment> Payments`; and three new shapes:
 
 ```csharp
-public sealed record Payment(long Id, decimal Amount, DateOnly PaidOn, string Method, string? Reference, long RecordedBy,
-    DateTime RecordedUtc, DateTime? VoidedUtc, string? VoidReason);
+public sealed record Payment(long Id, decimal Amount, decimal TaxWithheld, DateOnly PaidOn, string Method, string? Reference,
+    long RecordedBy, DateTime RecordedUtc, DateTime? VoidedUtc, string? VoidReason);
 
 public sealed record AgingRow(long CustomerId, string CustomerName, decimal NotYetDue, decimal Days1To30, decimal Days31To60,
     decimal Days61To90, decimal Over90, decimal Total);
@@ -578,13 +709,15 @@ public sealed record AgingReport(DateOnly AsOf, List<AgingRow> Customers, AgingR
 |---|---|
 | **Invoices** | A **Balance due** column, and an "Overdue only" switch that adds `overdueOnly=true` (and reads it from the address, for the tile below) |
 | **One invoice** | Paid and balance rows under the total; a **Payments** table with each payment's date, method, reference, amount and who recorded it (lesson 15's user directory), void ones struck through with their reason; a **Record payment** button while there's a balance; a **Void** link on each live payment (`ReasonDialog` again) |
-| **Payment dialog** | Amount (starting at the balance due), date (`MudDatePicker`, starting today), method (`MudSelect` over the four names), reference |
+| **Payment dialog** | Amount received (starting at the balance due), **tax withheld** (with a hint: "certified on BIR Form 2307"), date (`MudDatePicker`, starting today), method (`MudSelect` over the four names), reference |
 | **Receivables aging** (`/receivables-aging`) | An as-of date picker and a `MudSimpleTable` of the report, with the totals row in bold |
+| **Withholding tax** (`/withholding-tax`, accountants and admins) | A year field; per customer and quarter, withheld, certified and missing (in red), with **Record 2307** on rows still missing; under it, the certificates received, each with a **Void** button |
 
 Type them, then compare with the reference build's
 [Invoicing pages](../course-validation/business/src/Erp.Web/Pages/Invoicing/).
 
-The menu's Invoicing group gets **Receivables aging**, and the accountant's home page gets two tiles:
+The menu's Invoicing group gets **Receivables aging** and, for accountants and admins, **Withholding tax
+(2307)**, and the accountant's home page gets two tiles:
 
 ```razor
 <AuthorizeView Roles="@AccountantRoles">
@@ -599,11 +732,13 @@ The menu's Invoicing group gets **Receivables aging**, and the accountant's home
 
 with `private static readonly string AccountantRoles = $"{Roles.Accountant},{Roles.Admin}";`.
 
-## 8. Tests
+## 9. Tests
 
-The Invoicing unit tests reach seven: add `Payments_move_it_to_partly_paid_then_paid_and_tell_Sales`,
-`A_payment_can_never_exceed_the_balance_or_be_dated_oddly`, `Voiding_a_payment_reopens_the_balance_and_tells_Sales`
-and `An_invoice_with_payments_cannot_be_voided` from
+The Invoicing unit tests reach fifteen: add `Payments_move_it_to_partly_paid_then_paid_and_tell_Sales`,
+`A_payment_can_never_exceed_the_balance_or_be_dated_oddly`, `Voiding_a_payment_reopens_the_balance_and_tells_Sales`,
+`An_invoice_with_payments_cannot_be_voided`, `Tax_withheld_settles_the_invoice_like_money_and_comes_back_if_the_payment_is_voided`,
+`Tax_withheld_cannot_be_more_than_the_sales_before_VAT` and
+`A_withholding_certificate_covers_one_real_quarter_and_is_voided_once` from
 [InvoiceTests.cs](../course-validation/business/tests/Erp.Modules.Invoicing.UnitTests/InvoiceTests.cs), and the
 last line of `Only_a_void_invoice_can_be_reissued`. The first shows the events Sales will receive:
 
@@ -621,6 +756,26 @@ public void Payments_move_it_to_partly_paid_then_paid_and_tell_Sales()
     invoice.DomainEvents.Should().Equal(new PaymentRecorded(1, 7, 500), new PaymentRecorded(2, 7, 480.75m));
 }
 ```
+
+And the one accountants will check first:
+
+```csharp
+[Fact]
+public void Tax_withheld_settles_the_invoice_like_money_and_comes_back_if_the_payment_is_voided()
+{
+    var invoice = Invoice();   // ₱980.75, of which ₱875.67 before VAT
+
+    Pay(invoice, 1, 972.00m, withheld: 8.75m);   // 1% of the sales before VAT, certified later on a Form 2307
+
+    invoice.Status.Should().Be(InvoiceStatus.Paid);
+    invoice.DomainEvents.OfType<PaymentRecorded>().Single().Amount.Should().Be(980.75m);
+
+    invoice.VoidPayment(new PaymentId(1), "Wrong invoice", Now);
+    invoice.BalanceDue.Should().Be(new Money(980.75m));
+}
+```
+
+The `Pay` helper gains an optional `decimal withheld = 0`.
 
 The integration test `Shipping_issues_an_invoice_and_a_payment_lowers_the_customer_balance` gets its second
 half: record a payment through the API (with `"method": "BankTransfer"`, which also proves the enum
@@ -649,7 +804,8 @@ await Shot(accountant, "accountant-paid");
 ```
 
 It needs the order's number, read right after the rep submits: `var orderNumber = await rep.Locator("h4").First.InnerTextAsync();`.
-Rename the test `From_order_to_paid_invoice_through_the_screens`, and add `"/receivables-aging"` to `pages`.
+Rename the test `From_order_to_paid_invoice_through_the_screens`, and add `"/receivables-aging"` and
+`"/withholding-tax"` to `pages`.
 
 ## How a request flows
 
@@ -677,7 +833,8 @@ sequenceDiagram
 - Deleting a payment. Void it, with a reason; the history stays.
 - Voiding an invoice that has payments. Void the payments first, so Sales hears about the money.
 - An aging report built from today's balances. Use the as-of date for issue dates and payment dates alike.
-- Enums as numbers on the wire. Names can't be silently misread.
+- Recording tax withheld as a discount or a bad debt. It's a payment, made to the BIR for us, and a credit we
+  can claim once its certificate arrives.
 
 ## Let's run it!
 
@@ -693,6 +850,10 @@ Restart the app. Then:
    again, and Beta's balance goes back up to ₱4,750.
 6. **Receivables aging**: Beta's ₱250 sits under "Not yet due". Change the as-of date to two months from now:
    it moves to "31–60 days". That's the report an accountant runs every month-end.
+7. **Record payment** on Beta's invoice again, this time ₱247.77 received and ₱2.23 tax withheld (1% of the
+   ₱223.21 before VAT). The invoice is Paid, and Beta's balance drops by the full ₱250.
+8. **Withholding tax (2307)**: Beta, this quarter, ₱2.23 withheld, ₱0.00 certified, ₱2.23 missing in red.
+   Click **Record 2307**, accept the amount, save: missing is ₱0.00.
 
 And replay the event on purpose, as in lesson 19:
 
@@ -715,13 +876,14 @@ business, from a rep's draft to a paid invoice, through five people's screens.
    voided?
 4. Why can't an invoice with payments be voided directly?
 5. What does the aging report's as-of date change, and which two dates does it compare?
-6. Why do enums travel as names?
+6. A customer paid ₱891.11 on a ₱900 invoice and withheld ₱8.89. Is the invoice paid? What does the business
+   still need, and where does the app show it?
 
 And that's where this lesson ends. The whole business now runs through the ERP: sell, approve, reserve,
 ship, invoice, get paid, and buy more, with every module keeping its own facts and every reaction delivered
-reliably. What's left is making it ready for the outside world. Next time: security hardening. Good luck,
+reliably. Next time, the buyers the law gives a discount: senior citizens and persons with disability. Good luck,
 developer!
 
 ---
 
-← [Lesson 19 — Invoicing](19-invoicing.md) · Next: [Lesson 21 — Security hardening](21-security-hardening.md) →
+← [Lesson 19 — Invoicing](19-invoicing.md) · Next: [Lesson 21 — Special discounts](21-special-discounts.md) →

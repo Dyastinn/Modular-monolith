@@ -43,12 +43,17 @@ internal sealed class SalesOrderLine
     public Quantity Quantity { get; private set; }
     public Money UnitPrice { get; private set; }
     public TaxType TaxType { get; private set; }
+    public bool SpecialDiscountEligible { get; private set; }
     public Money LineTotal => UnitPrice * Quantity;
 
     private SalesOrderLine() { }
 
-    public SalesOrderLine(ItemId itemId, string itemName, string unit, Quantity quantity, Money unitPrice, TaxType taxType)
-    { ItemId = itemId; ItemName = itemName; Unit = unit; Quantity = quantity; UnitPrice = unitPrice; TaxType = taxType; }
+    public SalesOrderLine(ItemId itemId, string itemName, string unit, Quantity quantity, Money unitPrice, TaxType taxType,
+        bool specialDiscountEligible)
+    {
+        ItemId = itemId; ItemName = itemName; Unit = unit; Quantity = quantity; UnitPrice = unitPrice; TaxType = taxType;
+        SpecialDiscountEligible = specialDiscountEligible;
+    }
 
     public void IncreaseQuantity(Quantity extra) => Quantity += extra;
 }
@@ -70,8 +75,13 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
     public DateTime? RejectedUtc { get; private set; }
     public string? RejectionReason { get; private set; }
     public DateTime? ShippedUtc { get; private set; }
+    public SpecialDiscount? SpecialDiscount { get; private set; }
+    // Stored, so the read side can show the total without repeating the calculation in SQL.
+    public Money SpecialDiscountVatExemption { get; private set; }
+    public Money SpecialDiscountAmount { get; private set; }
 
-    public Money Total => _lines.Aggregate(Money.Zero, (sum, l) => sum + l.LineTotal);
+    public Money GrossTotal => _lines.Aggregate(Money.Zero, (sum, l) => sum + l.LineTotal);
+    public Money Total => GrossTotal - SpecialDiscountVatExemption - SpecialDiscountAmount;
     public bool RequiresApproval => Total > ApprovalPolicy.Threshold;
     public bool HoldsStock => Status is SalesOrderStatus.PendingApproval or SalesOrderStatus.Approved;
 
@@ -109,8 +119,27 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
 
             var existing = _lines.FirstOrDefault(l => l.ItemId == item.Id);
             if (existing is not null) existing.IncreaseQuantity(quantity);
-            else _lines.Add(new SalesOrderLine(item.Id, item.Name, item.Unit, quantity, item.UnitPrice, item.TaxType));
+            else _lines.Add(new SalesOrderLine(item.Id, item.Name, item.Unit, quantity, item.UnitPrice, item.TaxType,
+                item.IsSpecialDiscountEligible));
         }
+        RecalculateSpecialDiscount();
+    }
+
+    // One per order: a buyer who is both a senior citizen and a PWD still gets one discount.
+    public void ApplySpecialDiscount(SpecialDiscount discount)
+    {
+        EnsureDiscountChangeable();
+        if (!_lines.Any(l => l.SpecialDiscountEligible))
+            throw new DomainException($"No item on {OrderNumber} qualifies for the {discount.Program} discount.");
+        SpecialDiscount = discount;
+        RecalculateSpecialDiscount();
+    }
+
+    public void RemoveSpecialDiscount()
+    {
+        EnsureDiscountChangeable();
+        SpecialDiscount = null;
+        RecalculateSpecialDiscount();
     }
 
     // otherPendingTotal: the customer's other submitted-but-unapproved orders, which already count against credit.
@@ -183,6 +212,19 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
         ApprovedUtc = nowUtc;
         customer.AddToBalance(Total);
         Raise(new SalesOrderApproved(Id, CustomerId, Total, approver));
+    }
+
+    private void RecalculateSpecialDiscount()
+    {
+        var amounts = SpecialDiscount?.Apply(_lines.Select(l => (l.LineTotal, l.TaxType, l.SpecialDiscountEligible)))
+            ?? SpecialDiscountAmounts.None;
+        (SpecialDiscountVatExemption, SpecialDiscountAmount) = (amounts.VatExemption, amounts.Discount);
+    }
+
+    private void EnsureDiscountChangeable()
+    {
+        if (Status != SalesOrderStatus.Draft)
+            throw new DomainException("A special discount can only be changed on a draft order.");
     }
 
     private void EnsureDraft()

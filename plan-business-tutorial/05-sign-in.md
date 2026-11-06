@@ -332,7 +332,7 @@ Here's what each part decides:
 | The `/auth/register` filter | `MapIdentityApi` always maps it; this filter turns it into a 404. It checks the *end* of the path, because the group will sit under `/api` |
 
 The tokens and cookies are encrypted with keys that ASP.NET Core keeps in your user profile. On your machine,
-that's fine. On a real server it's a problem, and [lesson 21](21-security-hardening.md) moves the keys into
+that's fine. On a real server it's a problem, and [lesson 22](22-security-hardening.md) moves the keys into
 the database.
 
 And one honest gap: `/auth/forgotPassword` needs a way to send email, and we haven't given it one yet. For

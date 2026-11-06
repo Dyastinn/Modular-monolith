@@ -1,0 +1,39 @@
+@inject ApiClient Api
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="2" Style="min-width:380px">
+            <MudText>Q@(Row.Quarter) @Year · still missing <b>@Format.Peso(Row.Missing)</b></MudText>
+            <MudNumericField @bind-Value="_amount" Label="Tax withheld on the certificate (₱)" Min="0" Format="N2" />
+            <MudTextField @bind-Value="_reference" Label="Reference" MaxLength="100" />
+            <MudDatePicker @bind-Date="_receivedOn" Label="Received on" MaxDate="DateTime.Today" />
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
+        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Success" Disabled="_amount <= 0 || _receivedOn is null">Record</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public WithholdingRow Row { get; set; } = default!;
+    [Parameter] public int Year { get; set; }
+
+    private decimal _amount;
+    private string? _reference;
+    private DateTime? _receivedOn = DateTime.Today;
+
+    protected override void OnInitialized() => _amount = Row.Missing;
+
+    private async Task Save()
+    {
+        var body = new
+        {
+            customerId = Row.CustomerId, year = Year, quarter = Row.Quarter, amount = _amount, reference = _reference,
+            receivedOn = DateOnly.FromDateTime(_receivedOn!.Value)
+        };
+        if (await Api.Create("api/withholding-certificates", body, "Certificate recorded.") is not null)
+            Dialog.Close(DialogResult.Ok(true));
+    }
+}

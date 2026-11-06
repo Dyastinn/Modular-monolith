@@ -1,0 +1,96 @@
+@page "/withholding-tax"
+@attribute [Authorize(Roles = $"{Roles.Accountant},{Roles.Admin}")]
+@inject ApiClient Api
+@inject IDialogService Dialogs
+
+<PageTitle>Withholding tax · ERP</PageTitle>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
+    <MudText Typo="Typo.h4">Withholding tax (BIR Form 2307)</MudText>
+    <MudSpacer />
+    <MudNumericField T="int" Value="_year" ValueChanged="OnYear" Label="Year" Style="max-width:120px" />
+</MudStack>
+<MudText Typo="Typo.body2" Class="mb-4">
+    Tax customers withheld from their payments, and the certificates they've sent for it. Each 2307 is a credit against
+    the business's income tax, so chase the missing ones.
+</MudText>
+
+@if (_report is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <MudSimpleTable Dense="true" Hover="true" Class="mb-6">
+        <thead>
+            <tr><th>Customer</th><th>Quarter</th><th class="money">Withheld</th><th class="money">Certified</th><th class="money">Missing</th><th></th></tr>
+        </thead>
+        <tbody>
+            @foreach (var r in _report.Summary)
+            {
+                <tr>
+                    <td>@r.CustomerName</td>
+                    <td>Q@(r.Quarter)</td>
+                    <td class="money">@Format.Peso(r.Withheld)</td>
+                    <td class="money">@Format.Peso(r.Certified)</td>
+                    <td class="money" style="@(r.Missing > 0 ? "color:#c62828" : "")">@Format.Peso(r.Missing)</td>
+                    <td>
+                        @if (r.Missing > 0)
+                        {
+                            <MudButton Size="Size.Small" OnClick="() => Record(r)">Record 2307</MudButton>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+    @if (_report.Summary.Count == 0) { <MudText Class="mb-6">No tax withheld in @_year.</MudText> }
+
+    <MudText Typo="Typo.h6" GutterBottom="true">Certificates received</MudText>
+    <MudSimpleTable Dense="true" Hover="true">
+        <thead><tr><th>Customer</th><th>Quarter</th><th class="money">Amount</th><th>Reference</th><th>Received</th><th></th></tr></thead>
+        <tbody>
+            @foreach (var c in _report.Certificates)
+            {
+                <tr style="@(c.VoidedUtc is null ? "" : "text-decoration:line-through")">
+                    <td>@c.CustomerName</td>
+                    <td>Q@(c.Quarter)</td>
+                    <td class="money">@Format.Peso(c.Amount)</td>
+                    <td>@c.Reference @(c.VoidReason is null ? "" : $"(void: {c.VoidReason})")</td>
+                    <td>@Format.Date(c.ReceivedOn)</td>
+                    <td>
+                        @if (c.VoidedUtc is null)
+                        {
+                            <MudIconButton Icon="@Icons.Material.Filled.Undo" Size="Size.Small" OnClick="() => Void(c)" aria-label="Void certificate" />
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </MudSimpleTable>
+}
+
+@code {
+    private int _year = DateTime.Today.Year;
+    private WithholdingReport? _report;
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task OnYear(int year) { _year = year; await Load(); }
+
+    private async Task Load() => _report = await Api.Get<WithholdingReport>($"api/withholding-tax?year={_year}");
+
+    private async Task Record(WithholdingRow row)
+    {
+        var parameters = new DialogParameters<CertificateDialog> { { x => x.Row, row }, { x => x.Year, _year } };
+        var dialog = await Dialogs.ShowAsync<CertificateDialog>($"BIR Form 2307 from {row.CustomerName}", parameters);
+        if (await dialog.Result is { Canceled: false }) await Load();
+    }
+
+    private async Task Void(WithholdingCertificate certificate)
+    {
+        if (await ReasonDialog.Ask(Dialogs, "Void certificate", $"Void the {Format.Peso(certificate.Amount)} certificate?", "Void") is { } reason
+            && await Api.Post($"api/withholding-certificates/{certificate.Id}/void", new { reason }, "Certificate voided."))
+            await Load();
+    }
+}

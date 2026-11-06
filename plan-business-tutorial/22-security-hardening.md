@@ -1,4 +1,4 @@
-# Lesson 21 — Security Hardening: Ready for the Outside World
+# Lesson 22 — Security Hardening: Ready for the Outside World
 
 Good day, developer! Our ERP runs the whole business, and we can see what it's doing. But so far it has
 only ever met friendly callers on your own machine. Out on a real network, it will meet password guessers, browsers that can be
@@ -254,7 +254,7 @@ rather than writing key checks by hand. Security code is library code.
 ## 6. Sign-in keys that survive a restart
 
 Identity encrypts its tokens and cookies with keys that, by default, live in your user profile. On a server,
-that breaks two ways: an IIS app pool may not have a profile, so the keys vanish on every restart and
+that breaks two ways: a container has no lasting profile, so the keys vanish with every new container and
 everyone is signed out; and two servers behind a load balancer would each have their own keys, so a token
 from one is garbage to the other. The fix is to keep the keys in the database, where every instance can find
 them.
@@ -342,8 +342,7 @@ rm dp.key
 (In Git Bash, put `MSYS_NO_PATHCONV=1` in front of the first command, or it rewrites `/CN=...` into a
 Windows path.) Keep the `.pfx` and its password together with the database backups' *instructions*, but
 never with the backups themselves. Lose the certificate, and everyone simply signs in again: the keys are
-only for sessions, not for data. [Lesson 22](22-docker.md) and [lesson 23](23-deploy-iis.md) show where the
-file goes on each kind of server.
+only for sessions, not for data. [Lesson 23](23-docker.md) shows where the file goes on the server.
 
 ## 7. A database account that can't drop your tables
 
@@ -607,4 +606,4 @@ time, we put it on a real server, in containers, with HTTPS and nightly backups.
 
 ---
 
-← [Lesson 20 — Payments and receivables](20-payments.md) · Next: [Lesson 22 — Docker](22-docker.md) →
+← [Lesson 20 — Payments and receivables](20-payments.md) · Next: [Lesson 23 — Docker](23-docker.md) →

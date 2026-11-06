@@ -551,10 +551,26 @@ file. In `Erp.Web.csproj`:
 </ItemGroup>
 ```
 
-and `@using Erp.Shared.BuildingBlocks` in `_Imports.razor`. The names still live in exactly one place. That's
-also why lesson 01 set `ReferenceOutputAssembly="false"` on the host's reference to the app: otherwise
-`Roles` would reach `Erp.Api` twice, once from BuildingBlocks and once from `Erp.Web`, and the compiler would
-refuse with `CS0433`.
+and `@using Erp.Shared.BuildingBlocks` in `_Imports.razor`. The names still live in exactly one place.
+
+Build now, and the compiler refuses with `CS0433`: `Roles` reaches `Erp.Api` twice, once from BuildingBlocks
+and once from `Erp.Web`. The host's reference to the app needs two attributes. Before:
+
+```xml
+<ProjectReference Include="..\Erp.Web\Erp.Web.csproj" />
+```
+
+After:
+
+```xml
+<!-- The alias keeps the app's classes (and its copy of Roles) out of this project's code; PrivateAssets stops the
+     app from flowing on to projects that reference the host, like the tests. -->
+<ProjectReference Include="..\Erp.Web\Erp.Web.csproj" Aliases="ErpWeb" PrivateAssets="all" />
+```
+
+An alias puts a referenced assembly's classes behind a name (`extern alias ErpWeb;`) that nobody in the host
+writes, so `Roles` means BuildingBlocks' one again. The reference stays a normal one, so MudBlazor's files are
+still served.
 
 Is the browser app allowed to hide things by role? Yes, as a courtesy. A hidden button isn't security: the
 API checks every call on its own, and a rep who builds the URL by hand still gets a 403.

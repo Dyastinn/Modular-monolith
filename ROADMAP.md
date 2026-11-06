@@ -23,7 +23,8 @@ course drifted.
 | Module boundaries | Everything `internal`; **one `.Contracts` project per module** is the only public surface | Contract in `Shared` (base) / `Contracts/` folder in module (Phase 15) |
 | Reference builds | **One** build | `business` + `business-phase15` |
 | Front end | **Blazor WebAssembly + MudBlazor**, hosted by `Erp.Api`; cookie auth for the browser; built along the course | None (Swagger only) |
-| Deployment | **Docker Compose** (Caddy for HTTPS) as the main path; **IIS** as the alternative; no API keys | IIS only, API keys |
+| Deployment | **Docker Compose** (Caddy for HTTPS) only; IIS dropped 2026-11-06 (user decision); no API keys | IIS only, API keys |
+| Tax | Regime (`Vat`/`PercentageTax`/`Exempt`), VAT rate, company details and BIR permit are **business data** in `invoicing.company_profile`, edited on a screen; special-discount programs in a Sales table; per-item VAT treatment and discount eligibility; each invoice stores its rate, breakdown, discount and seller; layout follows BIR RR 7-2024 Sec. 6(B) | 12% constant, `VatRegistered` flag; then (briefly) appsettings |
 | Observability | **OpenTelemetry** logs/traces/metrics, health checks, OTLP export; local dashboard via .NET Aspire | None |
 | Cross-module events | **Transactional outbox** + background dispatcher | Best-effort after-commit dispatch |
 | Licensing | Permissive OSS only (MIT/Apache/BSD/PostgreSQL); FluentAssertions 8 → **AwesomeAssertions**; see [THIRD-PARTY-NOTICES.md](course-validation/business/THIRD-PARTY-NOTICES.md) | Mixed |
@@ -168,27 +169,36 @@ Goal: the current Sales/Inventory features behave exactly as before, on the new 
 - [x] Suppliers; purchase orders (draft → admin approval, never the buyer → sent → partial/complete receipt →
       closed short or cancelled); receiving through `IStockReceiving`; `IItemCatalog` for item details
 
-### M6 — Invoicing ✅ code · ✅ lessons 19–20 (BIR check still with a tax adviser)
+### M6 — Invoicing ✅ code · ✅ lessons 19–21 (BIR registration is the business's step)
 - [x] Invoice issued from `ShipmentRecorded` (idempotent issuer), gap-free numbers (counter row in the
-      transaction), void with reason + reissue, VAT split, PDF (PDFsharp-MigraDoc **6.2.4**, the last MIT
-      release; 6.5+ is AGPL — pinned)
+      transaction), void with reason + reissue, PDF (PDFsharp-MigraDoc **6.2.4**, the last MIT release; 6.5+
+      is AGPL — pinned; kept by user decision 2026-11-06)
+- [x] BIR RR 7-2024 alignment (2026-11-06): tax regime and rate, company details and BIR permit in the
+      `company_profile` table with a Company and tax page (2026-11-07, user decision: business data, not
+      configuration); each invoice keeps a copy of the seller; shipping refused until the profile is complete; VATable / zero-rated /
+      VAT-exempt per item, snapshotted on order and invoice lines; stored breakdown; TIN statement with branch
+      code; title must contain "Invoice"; REPRINT from an atomic print counter; PTU/ACCN, series range and date
+      issued in the footer
 - [x] Payments and payment voids; `PaymentRecorded`/`PaymentVoided` applied by Sales exactly once
       (`applied_payment` inbox); receivables aging by as-of date; overdue filter
-- [ ] ⚠️ BIR registration (CAS) and approved invoice format: business decision with a tax adviser (lesson 24)
+- [ ] ⚠️ BIR registration (CAS) and a tax adviser's review of the printed invoice: the business's step (lesson 24)
+- [x] Senior citizen / PWD discounts (Sec. 6(B.18)), 2026-11-07: programs table (SC/PWD seeded), per-item
+      eligibility, VAT exemption then 20% on the order, one shared calculation so the invoice equals the order,
+      ID and signature block on the PDF (lesson 21)
+- [x] Creditable withholding tax and BIR Form 2307, 2026-11-07: tax withheld on payments settles the invoice;
+      certificates recorded per customer and quarter; withheld / certified / missing report (lesson 20)
+- [ ] The seniors' 5% basic-necessities discount (weekly cap, purchase booklet): not built; listed in lesson 24
 
-### M7 — Packaging & install ✅ code · ✅ lessons (21–24) · ⚠️ Docker and IIS not run here
+### M7 — Packaging & install ✅ code · ✅ lessons (22–24) · ⚠️ Docker not run here
 - [x] Data-protection keys encrypted with a certificate; app refuses to start in Production without one
       (verified with an OpenSSL `.pfx`: stored keys show `encryptedSecret`)
 - [x] Docker (main path): multi-stage `Dockerfile` (`app` + `migrate` targets), Compose (db with initdb roles,
       migrate, api, Caddy for HTTPS, nightly `pg_dump` backup), `.env.example`, secrets folder. ⚠️ **Not run:
       Docker isn't installed on this machine** — shell scripts pass `sh -n`, the Linux bundle cross-builds
-- [x] IIS (alternative): lesson 23 updated for five modules, certificate, company/SMTP settings. ⚠️ Not run on
-      a real Windows Server 2019+
 - [x] First-run admin; migration bundles; backup and restore drill; production checklist with "not built yet"
-- [ ] The 2012 R2 dev server can't run .NET 10; see [runbooks/14b-deploy-ws2012r2.md](runbooks/14b-deploy-ws2012r2.md)
 
 ### L — Lessons ✅ (all milestones)
-Rewritten 2026-11-06 into one start-to-finish course of 24 lessons. The interface is built along the way
+Rewritten 2026-11-06 into one start-to-finish course, now 24 lessons (IIS lesson removed; special discounts added). The interface is built along the way
 (user decision): lesson 01 creates the Blazor app, lesson 05 signs in through it, and every feature lesson
 adds its screen.
 
@@ -212,12 +222,12 @@ adds its screen.
 | 16 | Item catalog and stock | Inventory `Item` aggregate, `StockMovement`, `ItemCatalogChanged`, Sales upsert handler, price list + categories slices, 23505 → 409; items/price list pages | Inventory `Item` (stock only) → catalog; reservation guard gains `IsActive`; Mediator assemblies gain Contracts |
 | 17 | Shipping | Sales.Contracts `ISalesOrders`, `Shipment`, ship slice, `LockOrderAsync`, Shipped status; Ship button, Shipments page | `get_sales_order` v2 |
 | 18 | Purchasing | Purchasing module, `IItemCatalog`, `IStockReceiving`, `DateOnlyTypeHandler`; purchasing pages | `StockService` registered once, mapped to three interfaces |
-| 19 | Invoicing | `IClock.Today`, `ShipmentRecorded`, `GetForInvoiceAsync`, Invoice, counter, issuer, void/reissue, PDF (6.2.4), invoice pages | — |
-| 20 | Payments and receivables | Invoicing.Contracts, payments, `AppliedPayment` inbox, aging, `JsonStringEnumConverter`; payment dialog, aging page | Invoice → AggregateRoot; `search_invoices` v2 |
-| 21 | Security hardening | rate limits (`/api` only), HSTS, headers + two CSPs, CORS, data-protection keys in DB + certificate, least privilege, `ErpDbMigrations` | `IModuleDatabase` takes the owner connection; test factory gains `ERP_TEST_DB_OWNER` |
-| 22 | Docker | `InitialAdmin` + `FirstRunTests`, Dockerfile, Compose, Caddy, initdb, backup, `.env` | — |
-| 23 | Deploy to IIS | bundles, IIS, app pool, certificate on Windows | — |
-| 24 | Production checklist | done list, first-day setup, IIS backups, restore drill, not-built list | — |
+| 19 | Invoicing | `IClock.Today`, `ShipmentRecorded`, `TaxType`, `JsonStringEnumConverter`, `GetForInvoiceAsync`, Invoice, `TaxPolicy`/`TaxBreakdown`, `CompanyProfile` + `SellerDetails` + Company and tax page, Invoicing.Contracts `IInvoicingSetup` (shipping refused until the profile is complete), counter, issuer, void/reissue, print counter + REPRINT, BIR PDF (6.2.4), invoice pages | `SetPricing` + order line gain `TaxType`; `search_price_list` v2 |
+| 20 | Payments and receivables | payments with tax withheld, `AppliedPayment` inbox, aging, `WithholdingCertificate` + 2307 report; payment dialog, aging and withholding pages | Invoice → AggregateRoot; `search_invoices` v2 |
+| 21 | Special discounts | `SpecialDiscount` (BuildingBlocks), `SpecialDiscountProgram` table + tab, apply/remove on draft orders, B.18 block on the PDF | `SetPricing` + line gain eligibility; order `Total` subtracts stored amounts; `get_sales_order` v3, `search_sales_orders` v2, `search_customers` v3, `search_price_list` v3, `search_invoices` v3 |
+| 22 | Security hardening | rate limits (`/api` only), HSTS, headers + two CSPs, CORS, data-protection keys in DB + certificate, least privilege, `ErpDbMigrations` | `IModuleDatabase` takes the owner connection; test factory gains `ERP_TEST_DB_OWNER` |
+| 23 | Docker | `InitialAdmin` + `FirstRunTests`, Dockerfile, Compose, Caddy, initdb, backup, `.env` | — |
+| 24 | Production checklist | done list (incl. tax and invoices), first-day setup, restore drill, not-built list | — |
 
 ⚠️ A reader's migrations and SQL files are more numerous than the reference build's (e.g. `AddCustomerDetails`,
 `search_customers.v2`); the reference squashes each module to `InitialCreate` + `AddReadFunctions` with each
@@ -232,10 +242,9 @@ function at its final shape as `v1`. The resulting schema is identical.
 - ~~**EF tooling with internal DbContexts**~~ Retired 2026-11-05: internal design-time factories work.
 - ~~**Sharing one transaction across module DbContexts**~~ Retired 2026-11-05: `ISharedConnection` +
   `UseTransaction`; `A_reservation_rolls_back_with_the_callers_transaction` proves it.
-- **Course length.** Done: 24 lessons, about 50–60 hours. Later lessons show new ideas in full and point to
+- **Course length.** Done: 24 lessons, about 55–65 hours. Later lessons show new ideas in full and point to
   the reference build for screens built from patterns already taught.
-- **Docker and IIS paths not executed here.** Run lesson 22 on a machine with Docker, and lesson 23 on a real
-  Windows Server 2019+, before the first sale.
+- **Docker path not executed here.** Run lesson 23 on a machine with Docker before the first sale.
 - **Selling source vs. a public course.** If the course is published openly and ends in the full product,
   the product's source is effectively free. Decide how the course is distributed before M4.
 
@@ -263,3 +272,16 @@ function at its final shape as `v1`. The resulting schema is identical.
 - **2026-11-06** — Lessons rewritten as one 24-lesson course with the interface built from lesson 01 (user
   decision: the interface is built along with the logic). Support docs, glossary and answer key rebuilt.
   Docker and IIS paths written but not executed on this machine (see FINDINGS).
+- **2026-11-06** — IIS removed (user decision: Docker only): lesson 23 (IIS) and the Windows Server 2012 R2
+  runbook deleted; the checklist is now lesson 23, Docker-only. Invoicing aligned with BIR RR 7-2024 and made
+  tax-configurable (see M6); PDFsharp 6.2.4 kept (user decision; 6.5+ is AGPL). Verified: the rendered PDF
+  shows every Sec. 6(B) field and REPRINT on the second print. **47 unit + 7 architecture + 35 integration
+  tests pass.** Sales and Invoicing migrations regenerated (pre-release squash): existing dev databases must
+  be recreated.
+- **2026-11-07** — Business values moved out of configuration (user decision): company profile (registered
+  details, tax regime and rate, invoice title, BIR permit) in Invoicing with a Company and tax page; special
+  discount programs in Sales. Added senior citizen / PWD discounts (new lesson 21; security, Docker and the
+  checklist are now 22–24) and creditable withholding tax with BIR Form 2307 tracking (lesson 20). Fixed a bug
+  dating from lesson 01: `ReferenceOutputAssembly="false"` stopped the host serving MudBlazor's CSS and JS; the
+  reference is now normal with `Aliases` and `PrivateAssets`. **59 unit + 7 architecture + 37 integration + 3 UI
+  tests pass.** Sales and Invoicing migrations regenerated again: dev databases must be recreated.

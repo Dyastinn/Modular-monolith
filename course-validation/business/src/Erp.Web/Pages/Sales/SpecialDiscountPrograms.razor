@@ -1,0 +1,74 @@
+@inject ApiClient Api
+
+@* The discounts the business grants by law. Senior citizen and PWD come ready; others are the business's call. *@
+<MudSimpleTable Dense="true" Hover="true" Class="ma-4">
+    <thead><tr><th>Code</th><th>Name</th><th>ID asked for</th><th class="money">Rate</th><th>VAT-exempt</th><th>Offered</th><th></th></tr></thead>
+    <tbody>
+        @foreach (var p in _programs)
+        {
+            <tr>
+                <td>@p.Code</td>
+                <td>@p.Name</td>
+                <td>@p.IdLabel</td>
+                <td class="money">@Format.Percent(p.Rate)</td>
+                <td>@(p.VatExempt ? "Yes" : "No")</td>
+                <td>@(p.IsActive ? "Yes" : "No")</td>
+                <td>
+                    <AuthorizeView Roles="@Managers" Context="auth">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => Start(p)" aria-label="Edit" />
+                    </AuthorizeView>
+                </td>
+            </tr>
+        }
+    </tbody>
+</MudSimpleTable>
+
+<AuthorizeView Roles="@Managers">
+    <MudPaper Class="pa-4 ma-4" Outlined="true">
+        <MudText Typo="Typo.subtitle1" GutterBottom="true">@(_editing is null ? "New program" : $"Edit {_editing.Name}")</MudText>
+        <MudStack Row="true" Spacing="3" AlignItems="AlignItems.End" Wrap="Wrap.Wrap">
+            <MudTextField @bind-Value="_code" Label="Code" MaxLength="20" Disabled="_editing is not null" Style="max-width:100px" />
+            <MudTextField @bind-Value="_name" Label="Name" MaxLength="50" />
+            <MudTextField @bind-Value="_idLabel" Label="ID asked for" MaxLength="50" />
+            <MudNumericField @bind-Value="_percent" Label="Rate (%)" Min="0.01m" Max="99.99m" Style="max-width:110px" />
+            <MudSwitch @bind-Value="_vatExempt" Label="VAT-exempt" Color="Color.Primary" />
+            <MudSwitch @bind-Value="_active" Label="Offered" Color="Color.Primary" />
+            <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary"
+                       Disabled="@(string.IsNullOrWhiteSpace(_code) || string.IsNullOrWhiteSpace(_name) || string.IsNullOrWhiteSpace(_idLabel))">Save</MudButton>
+            @if (_editing is not null) { <MudButton OnClick="() => Start(null)">Cancel</MudButton> }
+        </MudStack>
+        <MudText Typo="Typo.caption" Class="mt-2">
+            A change applies to orders discounted from now on. Confirm rates and VAT treatment with the business's tax adviser.
+        </MudText>
+    </MudPaper>
+</AuthorizeView>
+
+@code {
+    private static readonly string Managers = $"{Roles.SalesManager},{Roles.Admin}";
+    private List<SpecialDiscountProgram> _programs = [];
+    private SpecialDiscountProgram? _editing;
+    private string _code = "", _name = "", _idLabel = "";
+    private decimal _percent = 20;
+    private bool _vatExempt = true, _active = true;
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load() =>
+        _programs = await Api.Get<List<SpecialDiscountProgram>>("api/special-discount-programs?includeInactive=true") ?? [];
+
+    private void Start(SpecialDiscountProgram? p)
+    {
+        _editing = p;
+        (_code, _name, _idLabel, _percent, _vatExempt, _active) = p is null
+            ? ("", "", "", 20m, true, true)
+            : (p.Code, p.Name, p.IdLabel, p.Rate * 100, p.VatExempt, p.IsActive);
+    }
+
+    private async Task Save()
+    {
+        var body = new { name = _name, idLabel = _idLabel, rate = _percent / 100, vatExempt = _vatExempt, isActive = _active };
+        if (!await Api.Put($"api/special-discount-programs/{Uri.EscapeDataString(_code)}", body, "Program saved.")) return;
+        Start(null);
+        await Load();
+    }
+}

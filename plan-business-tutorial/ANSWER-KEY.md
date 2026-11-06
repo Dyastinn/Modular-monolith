@@ -13,9 +13,8 @@ understanding without the understanding.
 [10](#lesson-10--update-an-order) · [11](#lesson-11--events-and-the-outbox) · [12](#lesson-12--testing) ·
 [13](#lesson-13--observability) · [14](#lesson-14--customers) · [15](#lesson-15--users-and-email) ·
 [16](#lesson-16--item-catalog-and-stock) · [17](#lesson-17--shipping) · [18](#lesson-18--purchasing) ·
-[19](#lesson-19--invoicing) · [20](#lesson-20--payments-and-receivables) ·
-[21](#lesson-21--security-hardening) · [22](#lesson-22--docker) · [23](#lesson-23--deploy-to-iis) ·
-[24](#lesson-24--production-checklist)
+[19](#lesson-19--invoicing) · [20](#lesson-20--payments-and-receivables) · [21](#lesson-21--special-discounts) ·
+[22](#lesson-22--security-hardening) · [23](#lesson-23--docker) · [24](#lesson-24--production-checklist)
 
 ---
 
@@ -497,6 +496,19 @@ at runtime.
 **6. At 7 a.m. in Manila, what date?**
 Today's local date, from `IClock.Today` in `Company:TimeZone`. In UTC it's still yesterday.
 
+**7. The VAT rate changes. Who changes it, where, and what happens to old invoices?**
+The accountant, on **Invoicing → Company and tax**: no developer, no restart, and the change records who made
+it. Invoices issued before keep the rate, breakdown and seller details they stored at issue; only new invoices
+use the new rate.
+
+**8. Why does the order line copy the VAT treatment, and why is `TaxType` in BuildingBlocks?**
+The invoice bills what was ordered, so a later change in the price list can't change an order already
+placed. And it crosses Sales' service window in `InvoiceableLine`; a Contracts project references only
+BuildingBlocks, so that's where a type both sides share must live.
+
+**9. Why do enums travel as names?**
+Names can't be misread silently; a number from an older client could mean a different VAT treatment.
+
 ## Lesson 20 — Payments and receivables
 
 **1. Why does Sales lower the balance itself?**
@@ -517,10 +529,37 @@ The money must go back first. Voiding the payments tells Sales, then the invoice
 It decides which invoices (issued by then) and payments (made by then) count, and each invoice's lateness is
 as-of date minus due date.
 
-**6. Why enums as names?**
-Names can't be misread silently; a number from an older client could mean a different method.
+**6. ₱891.11 paid and ₱8.89 withheld on a ₱900 invoice: paid? What's still needed?**
+Yes, paid: tax withheld settles the invoice like money, and Sales lowers the balance by ₱900. The business still
+needs the customer's BIR Form 2307 for ₱8.89, to claim it against its income tax. **Withholding tax (2307)**
+shows it as missing until the certificate is recorded.
 
-## Lesson 21 — Security hardening
+## Lesson 21 — Special discounts
+
+**1. Why does the order compute the discount, not the invoice?**
+The customer's balance is charged with the order's total at approval, and payments settle the invoice. If only
+the invoice were discounted, the two would never meet. One shared calculation gives both the same total.
+
+**2. A senior buys a ₱560 VAT-inclusive medicine.**
+Take out the VAT: ₱560 ÷ 1.12 = ₱500. Take 20% of that: ₱100. The senior pays ₱400.
+
+**3. Why store the VAT rate the discount removed?**
+So the invoice, issued later, works out exactly the same amounts as the order, even if the company's VAT
+setup changed in between.
+
+**4. Why store the two amounts on the order?**
+Three SQL functions add up order totals, and SQL can't call the C# calculation. Stored amounts let them
+subtract instead of recalculating.
+
+**5. What must the invoice show for a special discount?**
+The holder's ID number, the discount broken down into the VAT exemption and the discount itself, and a space
+for the holder's signature (RR 7-2024 Sec. 6(B.18)).
+
+**6. Who decides which items qualify, and where is it recorded?**
+The business, with its tax adviser, since the law decides what's covered. A sales manager records it per item
+in the price list, and the order line copies it.
+
+## Lesson 22 — Security hardening
 
 **1. Lockout vs rate limiting.**
 Lockout protects one account from many guesses. A per-IP rate limit stops one password tried on many
@@ -548,7 +587,7 @@ automatically.
 Blazor can't run WebAssembly without the first; MudBlazor sets styles on elements. Inline styles can't run
 code; inline scripts, the classic attack, stay forbidden.
 
-## Lesson 22 — Docker
+## Lesson 23 — Docker
 
 **1. What does an image contain, and what does the server need?**
 The app with everything it needs to run: runtime, compiled code, fonts. The server needs only Docker Engine.
@@ -571,29 +610,6 @@ So a forgotten setting can't recreate a deleted account a year later.
 Nightly into the host's `backups` folder; also copied off the server daily. To restore a working system you
 also need the data-protection certificate and its password (or everyone just signs in again).
 
-## Lesson 23 — Deploy to IIS
-
-**1. Why migrate as a deploy step?**
-A bad migration shouldn't crash every restart, and the running app shouldn't have rights to change tables.
-
-**2. Bundles run as `postgres`?**
-Every object belongs to `postgres`, and `erp_app` gets `permission denied`: the default privileges were set
-for `erp_owner`.
-
-**3. Why settings in the app pool?**
-`web.config` is rewritten on every publish, and it would put secrets in the deploy folder.
-
-**4. Idle timeout and the outbox?**
-IIS stops an idle app, and the dispatcher with it. Events wait safely in the outbox, but only until the next
-request starts the app.
-
-**5. Why no forwarded headers setting on IIS?**
-ANCM passes IIS's client address and scheme to the app itself.
-
-**6. 500.30: where first, and the usual causes?**
-The Event Log. Usually a wrong connection string, an unreachable database, a missing or unreadable
-data-protection certificate, or an initial admin password under 12 characters.
-
 ## Lesson 24 — Production checklist
 
 **1. Why is an untested backup only a hope?**
@@ -606,13 +622,14 @@ Together they're the keys again: the backup holds the encrypted sign-in keys, th
 Sales' price list is filled from the catalog's events, and an item must be priced and on sale before it can
 be ordered.
 
-**4. What to confirm with a tax adviser?**
-What the BIR requires to use the system's invoices officially, typically registering it as a Computerized
-Accounting System and getting the invoice format approved.
+**4. What to do with the BIR first, and where do the results go?**
+Register the system as a Computerized Accounting System, with a tax adviser, before the first invoice. The
+BIR's permit number (or acknowledgement certificate number), the approved series range and the date issued go
+into **Invoicing → Company and tax**, and every invoice issued after that prints them at the bottom.
 
 **5. Where do logs go without an OTLP endpoint?**
-Docker: `docker compose logs api` keeps recent ones. IIS: warnings and errors go to the Event Log; the rest is
-lost.
+`docker compose logs api` keeps recent ones, and nothing more. For search, history and alerts, set
+`OTEL_EXPORTER_OTLP_ENDPOINT`.
 
 **6. One left-out tool, its pain, and what stays.**
 For example, a message broker: when another *system* must receive our events. The outbox stays; its

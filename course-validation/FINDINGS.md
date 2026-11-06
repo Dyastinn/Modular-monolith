@@ -11,6 +11,101 @@ exist.
 
 ---
 
+## Business data out of configuration, special discounts, Form 2307 — 2026-11-07
+
+Environment: .NET SDK 10.0.403, PostgreSQL 18.6 (local), Windows 11, Edge (for Playwright).
+
+**Test suite:** 59 unit (Sales 28, Inventory 5, Purchasing 6, Invoicing 16, Identity 4) + 7 architecture + 37
+integration, all passing; 0 build warnings. 3 Playwright UI tests pass against a running app; screenshots of
+the invoice, Company and tax, and withholding pages reviewed.
+
+### 🔴 Fixed — the app ran without MudBlazor's CSS and JS (since lesson 01)
+`Erp.Api` referenced `Erp.Web` with `ReferenceOutputAssembly="false"`, which keeps the web app's packages from
+flowing to the host, so `_content/MudBlazor/MudBlazor.min.css` and `.js` answered 404: no styles, and every
+MudBlazor JS call failed (`mudElementRef.select` undefined in the browser test). The HEAD build had the same
+manifest, so it predates this round. Now a normal reference with `Aliases="ErpWeb"` (keeps the web app's copy
+of `Roles` out of the host's code) and `PrivateAssets="all"` (keeps `Erp.Web` from flowing to the test
+projects). Lesson 01 uses a plain reference; lesson 06 refactors it when `Roles.cs` is linked in.
+
+### 🟠 Changed — business values were in configuration (user decision)
+The tax regime and rate, the company's registered details, the invoice title and the BIR permit had moved into
+`appsettings.json` / `.env` the day before. They're business data: an accountant changes them, and the change
+should be recorded. Now `invoicing.company_profile` (one row, seeded blank by the migration, demo values by the
+Invoicing dev seed), a Company and tax page for Accountant/Admin, domain validation on save (TIN branch code,
+"Invoice" in the title, rate as a fraction, permit date mm/dd/yyyy), and `updated_by`/`updated_utc`. Each
+invoice now stores a copy of the seller's details (`SellerDetails`, owned), so a reprint matches the original.
+Shipping is refused until the profile is complete (`IInvoicingSetup.EnsureReadyToInvoiceAsync`, Inventory →
+Invoicing.Contracts): otherwise the issuer would fail ten times in the outbox and park the event.
+`TaxSettings` (Shared.Infrastructure) and `InvoicingSettings` were deleted.
+
+### 🟠 Added — senior citizen and PWD discounts (RR 7-2024 Sec. 6(B.18))
+VAT out first, then 20% (₱1,120 → ₱1,000 → ₱800, the BIR's own example). Computed on the order, because the
+customer's balance is charged with the order total at approval; computed again at issue by the same
+`SpecialDiscount.Apply` (BuildingBlocks) with the VAT rate stored on the discount, so the invoice equals the
+order. Verified end to end: order ₱1,220 gross → ₱900; invoice ₱900; payment with ₱8.89 withheld → balance 0.
+The PDF shows the starred lines, VAT-exempt sales ₱1,000, both deductions, the ID and a signature line.
+Not built: the 5% basic-necessities discount with its weekly cap.
+
+### 🟠 Added — creditable withholding tax and BIR Form 2307
+Payments record money received and tax withheld separately; both settle the invoice and reach Sales as one
+amount. Certificates are recorded per customer and quarter; `invoicing.withholding_summary` shows withheld,
+certified and missing (`FULL JOIN`). The rate itself isn't checked (it depends on the payer); withholding more
+than the sales before VAT is refused as a typo.
+
+### ⚠️ Dev databases must be recreated
+Sales and Invoicing migrations were regenerated again (pre-release squash).
+
+---
+
+## Docker only, and invoices aligned with BIR RR 7-2024 — 2026-11-06
+
+Environment: .NET SDK 10.0.403, PostgreSQL 18.6 (local), Windows 11.
+
+**Test suite:** 47 unit (Sales 23, Inventory 5, Purchasing 6, Invoicing 9, Identity 4) + 7 architecture + 35
+integration, all passing.
+
+### 🟠 Fixed — the invoice didn't show everything the BIR asks for, and 12% was hard-coded
+Checked against RR 7-2024 Sec. 6(B) as amended by RR 11-2024, and the BIR's RMC 77-2024 digest. Missing
+before: the "VAT/Non-VAT Reg TIN" statement, the TIN branch code, zero-rated and VAT-exempt totals, "EXEMPT"
+and percentage-tax wording for non-VAT sellers, "REPRINT" on copies, and the CAS footer (PTU/ACCN, series
+range, date issued). And `VatBreakdown.Rate = 0.12m` was a constant, recomputed on every read. Now:
+- `Tax:Regime` and `Tax:VatRate` are settings, validated at startup by `InvoicingSettings` (a bad regime, a
+  rate of 1.2, a TIN without its branch code or a title without "Invoice" stop the start with a message).
+- Each item has a `TaxType`, copied onto order lines and invoice lines; each invoice stores its regime, rate
+  and four totals. `TaxBreakdown` takes VAT out of the VATable total once, so the split adds back to the
+  centavo.
+- An atomic `print_count` marks every copy after the first REPRINT; `GET /invoices/{id}/pdf` sends
+  `PrintInvoiceCommand`. A GET with a side effect, chosen so a plain link with the cookie still works; the
+  worst case (a prefetch) marks a first copy REPRINT.
+- Verified by rendering a real invoice (VATable, zero-rated and exempt lines) and reading the page: every
+  field is present, VATable 89.29 + VAT 10.71 + zero-rated 930.75 + exempt 80.00 = 1,110.75, the first
+  print has no REPRINT and the second does.
+
+`JsonStringEnumConverter` moved from lesson 20 to lesson 19, where an enum (`TaxType`) first arrives in a
+request body.
+
+### 🟡 PDFsharp kept at 6.2.4 (user decision)
+A replacement was considered because 6.2.4 won't get updates under its MIT license (6.5+ is AGPL-3.0). The
+user chose to keep it: 6.2.4 is MIT, works, and the layout code is one file if a switch is ever needed.
+
+### 🟡 IIS removed (user decision: Docker only)
+Lesson 23 (IIS) and `runbooks/14b-deploy-ws2012r2.md` deleted; the production checklist is now lesson 23,
+with the restore drill on Docker only. IIS references removed from the lessons, support docs, README,
+ROADMAP and CLAUDE.md.
+
+### ⚠️ Dev databases must be recreated
+Sales and Invoicing migrations were regenerated (pre-release squash, new columns). A database created before
+this change has a migration history that no longer matches: drop and recreate it (`erp`), and the app
+migrates and seeds again.
+
+### Not verified
+- **Docker** (lesson 22): still not installed here.
+- **BIR acceptance.** The layout follows the regulation's list; registering the system (CAS) and a tax
+  adviser's review of the printed invoice are the business's steps. Senior citizen / PWD discount fields
+  (Sec. 6(B.18)) are not built; lesson 23 lists them.
+
+---
+
 ## M3–M7 and the 24-lesson course — 2026-11-06
 
 Environment: .NET SDK 10.0.403, PostgreSQL 18.6 (local), Windows 11, Edge (for Playwright). Docker not
@@ -71,7 +166,7 @@ New lessons: customers, users and email, item catalog, shipping, purchasing, inv
 ### ⚠️ Lesson ↔ reference build: deliberate differences
 - The reference build squashes migrations to `InitialCreate` + `AddReadFunctions` per module and ships each SQL
   function at its final shape as `v1`. Readers create more migrations and `.v2.sql` files (lessons 14, 17,
-  20) as the rule "never edit a released script" requires. The resulting schema is identical.
+  19, 20) as the rule "never edit a released script" requires. The resulting schema is identical.
 - `sales.list_item_categories` sits inside `sales.search_price_list.v1.sql` in the reference; lesson 16 gives
   it its own file.
 - Later lessons show new ideas in full and point to the reference build for screens built from patterns

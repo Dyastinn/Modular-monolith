@@ -1082,7 +1082,9 @@ price and "for sale", and a **Set price** button for managers) and a **Categorie
 built from pieces you've used several times now; type them out, and compare with
 [PriceList.razor](../course-validation/business/src/Erp.Web/Pages/Sales/PriceList.razor),
 [PricingDialog.razor](../course-validation/business/src/Erp.Web/Pages/Sales/PricingDialog.razor) and
-[Categories.razor](../course-validation/business/src/Erp.Web/Pages/Sales/Categories.razor) when you're done.
+[Categories.razor](../course-validation/business/src/Erp.Web/Pages/Sales/Categories.razor) when you're done,
+skipping their VAT and SC/PWD columns, the "VAT treatment" select, the special-discount switch and the
+Special discounts tab: those arrive in lessons 19 and 21.
 
 One line deserves a sentence. At the top of the price list:
 

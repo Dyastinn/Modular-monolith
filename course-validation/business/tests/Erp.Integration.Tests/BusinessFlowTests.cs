@@ -82,6 +82,86 @@ public class BusinessFlowTests(CustomWebAppFactory factory)
         customer.AvailableCredit.Should().Be(100_000);
     }
 
+    private sealed record OrderTotals(decimal Total, decimal GrossTotal);
+    private sealed record WithholdingRow(long CustomerId, int Quarter, decimal Withheld, decimal Certified, decimal Missing);
+    private sealed record WithholdingReport(List<WithholdingRow> Summary);
+
+    [Fact]
+    public async Task A_senior_citizen_discount_is_billed_as_ordered_and_withheld_tax_is_tracked_to_its_2307()
+    {
+        var manager = await factory.ClientFor("manager@erp.local");
+        var rep = await factory.ClientFor("rep@erp.local");
+        var clerk = await factory.ClientFor("clerk@erp.local");
+        var accountant = await factory.ClientFor("accountant@erp.local");
+
+        (await manager.PutAsJsonAsync("/api/price-list/2",
+                new { unitPrice = 40m, categoryId = 1, isForSale = true, specialDiscountEligible = true }))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var customerId = await Create(manager, "/api/customers",
+            new { name = $"Senior {Guid.NewGuid():N}", tin = "", address = "Pasig", creditLimit = 100_000, paymentTermsDays = 30 });
+        var orderId = await Create(rep, "/api/sales-orders",
+            new { customerId, lines = new object[] { new { itemId = 2, quantity = 28 }, new { itemId = 1, quantity = 4 } } });
+
+        (await rep.PutAsJsonAsync($"/api/sales-orders/{orderId}/special-discount",
+                new { programCode = "SC", holderName = "Lola Basyang", idNumber = "OSCA-0001" }))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+        var order = await rep.GetFromJsonAsync<OrderTotals>($"/api/sales-orders/{orderId}");
+        order.Should().Be(new OrderTotals(900m, 1220m), "₱1,120 of Gadgets → ₱1,000 without VAT → ₱800, plus ₱100 of Widgets");
+
+        (await rep.PostAsync($"/api/sales-orders/{orderId}/submit", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await clerk.PostAsJsonAsync("/api/shipments", new { salesOrderId = orderId })).StatusCode.Should().Be(HttpStatusCode.Created);
+        var invoice = (await Eventually(
+            () => accountant.GetFromJsonAsync<Page<InvoiceRow>>($"/api/invoices?customerId={customerId}")!,
+            p => p!.TotalCount == 1))!.Items.Single();
+        invoice.Total.Should().Be(900m, "the invoice bills exactly what the order charged");
+        (await accountant.GetAsync($"/api/invoices/{invoice.Id}/pdf")).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        // 1% of the sales before VAT (₱889.29) is withheld; the rest is paid by transfer.
+        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeBySystemTimeZoneId(DateTime.UtcNow, "Asia/Manila"));
+        (await accountant.PostAsJsonAsync($"/api/invoices/{invoice.Id}/payments",
+                new { amount = 891.11m, taxWithheld = 8.89m, paidOn = today, method = "BankTransfer", reference = "BDO-456" }))
+            .StatusCode.Should().Be(HttpStatusCode.Created);
+        (await Eventually(
+                () => manager.GetFromJsonAsync<CustomerRow>($"/api/customers/{customerId}")!,
+                c => c!.OutstandingBalance == 0))!
+            .OutstandingBalance.Should().Be(0, "withheld tax settles the balance like money does");
+
+        var quarter = (today.Month - 1) / 3 + 1;
+        var row = (await accountant.GetFromJsonAsync<WithholdingReport>($"/api/withholding-tax?year={today.Year}"))!
+            .Summary.Single(r => r.CustomerId == customerId);
+        row.Should().Be(new WithholdingRow(customerId, quarter, 8.89m, 0m, 8.89m));
+
+        await Create(accountant, "/api/withholding-certificates",
+            new { customerId, year = today.Year, quarter, amount = 8.89m, reference = "2307", receivedOn = today });
+        (await accountant.GetFromJsonAsync<WithholdingReport>($"/api/withholding-tax?year={today.Year}"))!
+            .Summary.Single(r => r.CustomerId == customerId).Missing.Should().Be(0);
+    }
+
+    private sealed record ProfileRow(string RegisteredName, string Tin, string TaxRegime, decimal VatRate, bool IsComplete);
+
+    [Fact]
+    public async Task The_company_profile_is_kept_on_a_screen_and_checked_like_the_BIR_would()
+    {
+        var accountant = await factory.ClientFor("accountant@erp.local");
+        var rep = await factory.ClientFor("rep@erp.local");
+        var profile = (await accountant.GetFromJsonAsync<ProfileRow>("/api/company-profile"))!;
+        profile.IsComplete.Should().BeTrue("the development seed fills in a demo company");
+
+        object Body(string tin, decimal rate) => new
+        {
+            registeredName = profile.RegisteredName, tradeName = "Demo Hardware", tin, registeredAddress = "Ortigas Center, Pasig City",
+            taxRegime = "Vat", vatRate = rate, invoiceTitle = "SALES INVOICE", permitNumber = (string?)null, seriesRange = (string?)null,
+            permitDateIssued = (string?)null
+        };
+
+        (await accountant.PutAsJsonAsync("/api/company-profile", Body("000-111-222", 0.12m))).StatusCode
+            .Should().Be(HttpStatusCode.UnprocessableEntity, "a TIN without its branch code can't go on an invoice");
+        (await accountant.PutAsJsonAsync("/api/company-profile", Body(profile.Tin, 1.2m))).StatusCode
+            .Should().Be(HttpStatusCode.UnprocessableEntity, "120% VAT is a typing mistake");
+        (await rep.PutAsJsonAsync("/api/company-profile", Body(profile.Tin, 0.12m))).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await accountant.PutAsJsonAsync("/api/company-profile", Body(profile.Tin, 0.12m))).StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
     [Fact]
     public async Task Invoice_numbers_have_no_gaps()
     {

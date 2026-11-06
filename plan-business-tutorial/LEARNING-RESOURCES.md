@@ -84,7 +84,7 @@ solves, saving and announcing in one step, is exactly ours.
 Search *".NET observability with OpenTelemetry"* on Microsoft Learn, and read *"Observability primer"* on
 opentelemetry.io for what logs, traces and metrics each answer.
 
-**Web security** ([lesson 21](21-security-hardening.md))
+**Web security** ([lesson 22](22-security-hardening.md))
 The OWASP *"Cheat Sheet Series"* has a short page for each topic: *"HTTP Strict Transport Security"*,
 *"Content Security Policy"*, *"Authentication"*. For ASP.NET Core's limiter, search *"Rate limiting middleware
 in ASP.NET Core"*.
@@ -97,14 +97,20 @@ browser tests, the Playwright for .NET docs at playwright.dev, *"Writing tests"*
 Search *"idempotent consumer pattern microservices.io"*. Like the outbox page, it's written for microservices
 and fits our modules exactly.
 
-**Docker and Compose** ([lesson 22](22-docker.md))
+**Philippine invoicing rules** ([lesson 19](19-invoicing.md))
+The BIR's [RMC 77-2024 digest](https://bir-cdn.bir.gov.ph/BIR/pdf/RMC%20No.%2077-2024%20Digest.pdf) answers
+the common questions in a few pages. For the list itself, Section 6 of
+[RR 7-2024](https://www.offshore-management.com.ph/blog/wordpress/wp-content/uploads/2024/05/RR-7-2024_Full.pdf)
+(a copy; the official one is on bir.gov.ph). A plain-language walk-through:
+[How to comply with the BIR's invoicing requirements](https://mtfcounsel.com/2025/05/08/how-to-comply-with-the-birs-invoicing-requirements/).
+None of these replaces a tax adviser, who should see the printed invoice before the first real one.
+
+**Docker and Compose** ([lesson 23](23-docker.md))
 Docker's own docs: *"Get started"*, then *"Multi-stage builds"* and the *"Compose file reference"*. For HTTPS,
 Caddy's docs, *"Automatic HTTPS"*. For backups, the PostgreSQL docs' *"Backup and Restore"* chapter.
 
-**IIS and backups** ([lesson 23](23-deploy-iis.md), [lesson 24](24-production-checklist.md))
-Search Microsoft Learn for *"Host ASP.NET Core on Windows with IIS"* and *"Troubleshoot ASP.NET Core on
-Azure App Service and IIS"*: the second has every 500.xx code. For backups, the PostgreSQL documentation's
-*"Backup and Restore"* chapter.
+**Backups and the restore drill** ([lesson 24](24-production-checklist.md))
+The PostgreSQL documentation's *"Backup and Restore"* chapter, especially `pg_dump` and `pg_restore`.
 
 ## The big architecture ideas
 

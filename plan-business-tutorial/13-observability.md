@@ -278,7 +278,7 @@ In `Program.cs`, call `builder.AddObservability();` right after `CreateBuilder`,
 
 ## 3. Health checks
 
-A load balancer, IIS, or a monitoring tool needs to ask two different questions:
+A load balancer, Docker, or a monitoring tool needs to ask two different questions:
 
 - **"Are you alive?"** Is the process running at all? If not, restart it.
 - **"Are you ready?"** Can it do real work right now? If not, stop sending it traffic for a while.

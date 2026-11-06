@@ -1037,7 +1037,7 @@ if (!response.IsSuccessStatusCode)
 }
 ```
 
-The "too many attempts" line is ready for [lesson 21](21-security-hardening.md)'s rate limit on sign-in.
+The "too many attempts" line is ready for [lesson 22](22-security-hardening.md)'s rate limit on sign-in.
 
 ### A temporary password must be replaced first
 

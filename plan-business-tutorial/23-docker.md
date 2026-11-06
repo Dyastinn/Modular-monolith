@@ -1,4 +1,4 @@
-# Lesson 22 — Docker: The Whole ERP on One Server
+# Lesson 23 — Docker: The Whole ERP on One Server
 
 Good day, developer! Everything works on your machine. Today it goes to work for real: on a server, with
 HTTPS, its own database, migrations that run before the app starts, and a backup every night. We'll package
@@ -50,7 +50,7 @@ Desktop or Docker Engine inside WSL 2 both work.)
 
 In development, the app migrates its own database when it starts (lesson 04). In production that's the
 wrong place: a migration that fails would crash the app on a routine restart, and the app would need rights
-to change tables, which lesson 21 took away. So migrations run as their own container, as `erp_owner`,
+to change tables, which lesson 22 took away. So migrations run as their own container, as `erp_owner`,
 *before* the app starts, and the app starts only if they succeeded.
 
 ## 1. The first admin
@@ -370,10 +370,6 @@ services:
       DataProtection__CertificatePassword: ${DATAPROTECTION_CERTIFICATE_PASSWORD:?Set DATAPROTECTION_CERTIFICATE_PASSWORD in .env}
       InitialAdmin__Email: ${INITIAL_ADMIN_EMAIL:-}
       InitialAdmin__Password: ${INITIAL_ADMIN_PASSWORD:-}
-      Company__Name: ${COMPANY_NAME:?Set COMPANY_NAME in .env}
-      Company__Tin: ${COMPANY_TIN:-}
-      Company__Address: ${COMPANY_ADDRESS:-}
-      Company__VatRegistered: ${COMPANY_VAT_REGISTERED:-true}
       Smtp__Host: ${SMTP_HOST:-}
       Smtp__Port: ${SMTP_PORT:-587}
       Smtp__Username: ${SMTP_USERNAME:-}
@@ -432,7 +428,7 @@ nothing outside the Docker network can reach it, not even someone on the same of
 `healthcheck` lets the others wait until it's really accepting connections.
 
 The first time the volume is empty, the image runs every script in `/docker-entrypoint-initdb.d`. Ours runs
-lesson 21's `create-roles.sql`, the same script any other install uses:
+lesson 22's `create-roles.sql`, the same script any other install uses:
 
 ```sh
 #!/bin/sh
@@ -472,7 +468,7 @@ rest of what we ship.
 
 There's one setting that makes the app behave behind Caddy: `ASPNETCORE_FORWARDEDHEADERS_ENABLED`. The app
 sees every request coming from Caddy, over plain HTTP. Without help, it would think every user has Caddy's
-IP address (so lesson 21's per-IP sign-in limit would lock out the whole office at once) and that the
+IP address (so lesson 22's per-IP sign-in limit would lock out the whole office at once) and that the
 request wasn't HTTPS. Caddy adds `X-Forwarded-For` and `X-Forwarded-Proto` headers with the real values, and
 this setting tells ASP.NET Core to trust them. It's safe here only because Caddy is the one way in: the app
 has no open port of its own.
@@ -506,7 +502,7 @@ done
 dump is written as `.partial` and renamed only when it's complete, so a half-written file never looks like a
 good backup. Old ones are deleted after `KEEP_DAYS`.
 
-**`secrets`** is how the data-protection certificate from lesson 21 reaches the app: Docker mounts the file
+**`secrets`** is how the data-protection certificate from lesson 22 reaches the app: Docker mounts the file
 inside the container at `/run/secrets/dataprotection.pfx`, readable by the app and kept out of the image and
 its environment variables.
 
@@ -538,11 +534,8 @@ DATAPROTECTION_CERTIFICATE_PASSWORD=
 INITIAL_ADMIN_EMAIL=
 INITIAL_ADMIN_PASSWORD=
 
-# Printed on every invoice.
-COMPANY_NAME=
-COMPANY_TIN=
-COMPANY_ADDRESS=
-COMPANY_VAT_REGISTERED=true
+# The company's registered details, tax setup and BIR permit are not set here: they're business data, entered by
+# an accountant or admin in the app (Invoicing -> Company and tax). Nothing ships until they're filled in.
 
 # For "forgot password" emails. Without a host, those emails go to the app's log instead.
 SMTP_HOST=
@@ -578,9 +571,9 @@ the solution folder to the server (or `git clone` it), and:
 ```bash
 cd erp/deploy/docker
 cp .env.example .env && chmod 600 .env
-nano .env        # fill in every password (openssl rand -hex 24), the domain, the company, the first admin
+nano .env        # fill in every password (openssl rand -hex 24), the domain, the first admin
 
-# The data-protection certificate, from lesson 21:
+# The data-protection certificate, from lesson 22:
 openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes -subj "/CN=Erp data protection" \
   -keyout dp.key -out dp.crt
 openssl pkcs12 -export -inkey dp.key -in dp.crt -out secrets/dataprotection.pfx \
@@ -638,7 +631,7 @@ docker compose exec backup pg_restore --host db --username erp_owner --dbname er
 docker compose start api
 ```
 
-The fresh install already made the database, its two accounts and their default privileges (lesson 21), and
+The fresh install already made the database, its two accounts and their default privileges (lesson 22), and
 `migrate` built empty schemas. `--clean --if-exists` drops each object before restoring it, and running as
 `erp_owner` with `--no-owner` makes every restored table belong to the owner again, so `erp_app` gets its
 rights exactly as on day one. The `backup` container is used because it already has `pg_restore`, the owner's
@@ -674,7 +667,7 @@ flowchart LR
 ## Let's run it!
 
 You can try the whole stack on your own machine, with Docker Desktop or Docker Engine in WSL 2. In `.env`,
-set `ERP_DOMAIN=localhost`, fill in the passwords and a company name, and set
+set `ERP_DOMAIN=localhost`, fill in the passwords, and set
 `INITIAL_ADMIN_EMAIL=admin@localhost.test` with a 12-character-or-longer password. Make the certificate as in
 step 5, then:
 
@@ -685,7 +678,8 @@ docker compose ps
 ```
 
 Open **https://localhost**. Caddy uses its own local certificate for `localhost`, so the browser warns once;
-accept it for this test. Sign in as the initial admin, change the password, and create a sales rep. Then:
+accept it for this test. Sign in as the initial admin, change the password, create a sales rep, and fill in a
+test company on **Invoicing → Company and tax** (nothing ships until you do). Then:
 
 ```bash
 curl -sk https://localhost/health/ready                     # Healthy
@@ -709,9 +703,9 @@ or `docker compose down -v` (deletes the volumes too, so the next `up` is a fres
 6. Where do backups go, where should they also go, and what else do you need to restore a working system?
 
 And that's where this lesson ends. The ERP runs on a real server, behind real HTTPS, with backups every
-night and one command for every upgrade. Next time, the alternative for companies that run Windows servers:
-IIS. Good luck, developer!
+night and one command for every upgrade. Next time, the last lesson: the production checklist, line by
+line, and the drill that proves the backups work. Good luck, developer!
 
 ---
 
-← [Lesson 21 — Security hardening](21-security-hardening.md) · Next: [Lesson 23 — Deploy to IIS](23-deploy-iis.md) →
+← [Lesson 22 — Security hardening](22-security-hardening.md) · Next: [Lesson 24 — Production checklist](24-production-checklist.md) →

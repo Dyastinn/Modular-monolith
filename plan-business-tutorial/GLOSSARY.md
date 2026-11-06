@@ -203,7 +203,7 @@ Tells EF Core how to store a type it doesn't know: `CustomerId` as a `bigint`, `
 **Migration** (04)
 A C# file describing one change to the schema. EF Core records which ones each database has had.
 
-**Migration bundle** (22)
+**Migration bundle** (23)
 One `.exe` containing a module's migrations. Run it with a connection string and it applies whatever is
 missing.
 
@@ -228,8 +228,42 @@ back.
 **Filtered unique index** (19)
 Unique only among some rows: one *live* invoice per shipment, however many void ones.
 
+**VATable / zero-rated / VAT-exempt** (19)
+How a sale is treated for VAT. VATable: the price includes VAT (12% today). Zero-rated: VAT applies at 0%, as
+for exports. VAT-exempt: no VAT at all, as for some farm products. The invoice shows each total separately.
+
+**Tax regime** (19)
+How the seller is registered: VAT, non-VAT under percentage tax, or exempt from both. It decides what the
+invoice prints.
+
+**RR 7-2024** (19)
+The BIR's revenue regulation, under the Ease of Paying Taxes Act, that lists what an invoice must show.
+
+**Company profile** (19)
+The one row that holds the seller's registered name, TIN, address, tax regime, VAT rate and BIR permit. Business
+data, kept by the accountant on a screen, not in `appsettings.json`.
+
+**Shadow property** (19)
+A column EF Core maps without a C# property on the entity, like an invoice's print count.
+
 **Type handler** (18)
 Teaches Dapper one type once, for every query: `date` columns become `DateOnly`.
+
+**BIR Form 2307** (20)
+The certificate a customer gives for the tax they withheld from a payment to us. The business claims it
+against its own income tax, so a missing one is money lost.
+
+**Creditable withholding tax** (20)
+The small part of a payment (often 1% for goods, 2% for services, before VAT) a customer pays to the BIR on our
+behalf. It settles the invoice like money does.
+
+**`FULL JOIN`** (20)
+Keeps rows from both sides, matched where they can be: withholding with no certificate yet, and a certificate
+with no withholding.
+
+**Special discount** (21)
+A discount the law gives a person: senior citizens and PWDs pay no VAT on what qualifies, then 20% less.
+Worked out once, in BuildingBlocks, so the order and the invoice always agree.
 
 **Common table expression (CTE)** (20)
 A named step inside a query, written with `WITH`. The aging report uses one.
@@ -259,11 +293,11 @@ A small library that runs SQL and maps the rows to C# objects. Here it does ever
 A named query stored in the database, called like `SELECT * FROM sales.search_sales_orders(...)`. We use
 functions because PostgreSQL procedures can't return rows.
 
-**Least privilege** (21)
+**Least privilege** (22)
 Give each account only the rights it needs. The app connects as `erp_app` (read and write rows); only
 deployments use `erp_owner` (change tables).
 
-**Default privileges** (21)
+**Default privileges** (22)
 `ALTER DEFAULT PRIVILEGES`: rights given automatically on everything a role creates from now on.
 
 ## Events and the outbox
@@ -336,27 +370,27 @@ The small interface handlers use to ask who's calling.
 `SalesRep`, `SalesManager`, `Admin`, and from lesson 15 `InventoryClerk`, `Purchaser`, `Accountant`. Each
 person has exactly one.
 
-**Rate limiting** (21)
+**Rate limiting** (22)
 A budget of requests per caller per minute. Over it, the API answers 429.
 
-**HTTPS / HSTS** (21)
+**HTTPS / HSTS** (22)
 HTTPS encrypts the connection. HSTS tells the browser to never use plain HTTP for this site again.
 
-**Security headers** (21)
+**Security headers** (22)
 Response headers that tell the browser to be careful: no framing, no guessing content types.
 
-**CSP (Content Security Policy)** (21)
+**CSP (Content Security Policy)** (22)
 A header listing what a page may load. For our JSON responses: nothing at all. For the app's pages: only
 files from our own site, and never an inline script.
 
-**CORS** (21)
+**CORS** (22)
 The browser rule that stops a web page on one site calling an API on another, unless the API allows it.
 
 **API key** (05)
 A secret per client *program*. We use none: a key shipped in a browser app is public. Every call is protected
 by who's signed in.
 
-**Data protection keys** (21)
+**Data protection keys** (22)
 The keys Identity uses to protect cookies and tokens. Stored in the database so restarts sign nobody out,
 and encrypted with a certificate so a stolen backup can't forge a sign-in.
 
@@ -409,42 +443,24 @@ Drives a real browser from a test: open a page, type, click, wait for text.
 
 ## Deployment
 
-**Container / image** (22)
+**Container / image** (23)
 An image is the app with everything it needs to run, frozen into one file. A container is a running copy of
 it, isolated from the others.
 
-**Docker Compose** (22)
+**Docker Compose** (23)
 Runs several containers together on one machine from one file, in the right order.
 
-**Volume** (22)
+**Volume** (23)
 Storage that outlives a container, so replacing the database container never touches the data.
 
-**Caddy / reverse proxy** (22)
+**Caddy / reverse proxy** (23)
 A web server in front of the app that takes care of HTTPS and passes requests on.
 
-**Forwarded headers** (22)
+**Forwarded headers** (23)
 `X-Forwarded-For` and `X-Forwarded-Proto`: how a proxy tells the app the real client address and scheme.
 
-**IIS** (23)
-Windows' web server.
-
-**Hosting Bundle** (23)
-The installer that puts .NET and the ASP.NET Core Module on a Windows server.
-
-**ASP.NET Core Module (ANCM)** (23)
-The IIS module that starts our app and hands it every request.
-
-**In-process hosting** (23)
-The app runs inside IIS's own worker process, `w3wp.exe`.
-
-**App pool** (23)
-The Windows process an IIS site runs in, with its own identity and settings.
-
-**`app_offline.htm`** (23)
-Drop this file into the site and ANCM stops the app and shows the page. Remove it and the app starts again.
-
-**Framework-dependent publish** (22)
+**Framework-dependent publish** (23)
 A published app that uses the .NET runtime installed on the server, rather than carrying its own.
 
-**`pg_dump` / `pg_restore`** (22)
+**`pg_dump` / `pg_restore`** (23)
 PostgreSQL's tools to back up a database to one file, and to restore it.

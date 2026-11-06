@@ -18,8 +18,9 @@ FROM (VALUES ('General',    1000, NULL),
 WHERE NOT EXISTS (SELECT 1 FROM sales.item_category);
 
 -- Same ids as the Inventory dev seed. In real use these rows arrive through ItemCatalogChanged.
-INSERT INTO sales.item (id, sku, name, unit, allows_fractions, is_active, category_id, unit_price, is_for_sale, tax_type)
-SELECT v.id, v.sku, v.name, v.unit, v.allows_fractions, TRUE, v.category_id, v.unit_price, TRUE, 0
+INSERT INTO sales.item (id, sku, name, unit, allows_fractions, is_active, category_id, unit_price, is_for_sale, tax_type,
+                        is_special_discount_eligible)
+SELECT v.id, v.sku, v.name, v.unit, v.allows_fractions, TRUE, v.category_id, v.unit_price, TRUE, 0, FALSE
 FROM (VALUES (1, 'GEN-001', 'Widget',         'pc', FALSE, 1,    25.00),
              (2, 'GEN-002', 'Gadget',         'pc', FALSE, 1,    40.00),
              (3, 'CTL-001', 'Restricted Kit', 'pc', FALSE, 2,   500.00),

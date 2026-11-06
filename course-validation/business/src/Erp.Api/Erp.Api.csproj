@@ -7,8 +7,9 @@
     <ProjectReference Include="..\Modules\Purchasing\Erp.Modules.Purchasing\Erp.Modules.Purchasing.csproj" />
     <ProjectReference Include="..\Modules\Invoicing\Erp.Modules.Invoicing\Erp.Modules.Invoicing.csproj" />
     <ProjectReference Include="..\Shared\Erp.Shared.Infrastructure\Erp.Shared.Infrastructure.csproj" />
-    <!-- The browser app's files, served by this host from the same address as the API. Its code is not referenced. -->
-    <ProjectReference Include="..\Erp.Web\Erp.Web.csproj" ReferenceOutputAssembly="false" />
+    <!-- The browser app, served by this host from the same address as the API. A normal reference, so its packages'
+         files (MudBlazor's CSS and JS) are served too; the alias keeps its classes out of this project's code. -->
+    <ProjectReference Include="..\Erp.Web\Erp.Web.csproj" Aliases="ErpWeb" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>

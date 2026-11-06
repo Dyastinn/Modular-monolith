@@ -1,0 +1,48 @@
+@inject ApiClient Api
+
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="2" Style="min-width:380px">
+            <MudText Typo="Typo.body2">
+                Ask to see the ID. The discount applies to the items marked for it; the invoice prints the ID number and a line
+                for the holder's signature.
+            </MudText>
+            <MudSelect T="SpecialDiscountProgram" @bind-Value="_program" Label="Program" ToStringFunc="@(p => p?.Name)">
+                @foreach (var p in _programs)
+                {
+                    <MudSelectItem Value="p">@p.Name (@Format.Percent(p.Rate)@(p.VatExempt ? ", VAT-exempt" : ""))</MudSelectItem>
+                }
+            </MudSelect>
+            <MudTextField @bind-Value="_holderName" Label="Holder's name, as on the ID" MaxLength="200" />
+            <MudTextField @bind-Value="_idNumber" Label="@(_program?.IdLabel ?? "ID No.")" MaxLength="50" />
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
+        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary"
+                   Disabled="@(_program is null || string.IsNullOrWhiteSpace(_holderName) || string.IsNullOrWhiteSpace(_idNumber))">Apply</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public long OrderId { get; set; }
+
+    private List<SpecialDiscountProgram> _programs = [];
+    private SpecialDiscountProgram? _program;
+    private string? _holderName;
+    private string? _idNumber;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _programs = await Api.Get<List<SpecialDiscountProgram>>("api/special-discount-programs") ?? [];
+        _program = _programs.FirstOrDefault();
+    }
+
+    private async Task Save()
+    {
+        var body = new { programCode = _program!.Code, holderName = _holderName, idNumber = _idNumber };
+        if (await Api.Put($"api/sales-orders/{OrderId}/special-discount", body, "Discount applied."))
+            Dialog.Close(DialogResult.Ok(true));
+    }
+}

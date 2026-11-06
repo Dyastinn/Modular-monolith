@@ -245,7 +245,7 @@ Show (Invoke-Api '/api/shipments' -Method Post -Token $clerk -Body @{ salesOrder
 & $Psql -h localhost -U postgres -d erp -c "SELECT number, status FROM invoicing.invoice ORDER BY id;" -c "SELECT * FROM sales.applied_payment;"
 ```
 
-## Lesson 21 — security hardening
+## Lesson 22 — security hardening
 
 ```powershell
 $rep = Get-Token 'rep@erp.local'
@@ -282,10 +282,9 @@ $env:PGPASSWORD = 'app_dev_only'
 $env:PGPASSWORD = 'erp_dev_only'
 ```
 
-## Lessons 22 to 24
+## Lessons 23 and 24
 
-Lesson 22's `docker compose` commands are the same in PowerShell. Lessons 23 and 24 are already written in
-PowerShell, because they run on a Windows server.
+Their `docker compose` commands are the same in PowerShell.
 
 ## The translation table
 

@@ -6,9 +6,11 @@ RETURNS TABLE (id bigint, name text, tin text, address text, payment_terms_days 
 LANGUAGE sql STABLE
 AS $$
     WITH pending AS (
-        SELECT o.customer_id, SUM(ROUND(l.quantity * l.unit_price, 2)) AS total
+        SELECT o.customer_id,
+               SUM(COALESCE((SELECT SUM(ROUND(l.quantity * l.unit_price, 2))
+                             FROM sales.sales_order_line l WHERE l.sales_order_id = o.id), 0)
+                   - o.special_discount_vat_exemption - o.special_discount_amount) AS total
         FROM sales.sales_order o
-        JOIN sales.sales_order_line l ON l.sales_order_id = o.id
         WHERE o.status = 1
         GROUP BY o.customer_id
     )

@@ -29,6 +29,10 @@
         <MudNavGroup Title="Invoicing" Icon="@Icons.Material.Filled.ReceiptLong" Expanded="true">
             <MudNavLink Href="invoices">Invoices</MudNavLink>
             <MudNavLink Href="receivables-aging">Receivables aging</MudNavLink>
+            <AuthorizeView Roles="@Accounting" Context="accounting">
+                <MudNavLink Href="withholding-tax">Withholding tax (2307)</MudNavLink>
+                <MudNavLink Href="company">Company and tax</MudNavLink>
+            </AuthorizeView>
         </MudNavGroup>
     </AuthorizeView>
 
@@ -45,6 +49,7 @@
     private static readonly string Stock = Join(Roles.InventoryClerk, Roles.Admin, Roles.Purchaser, Roles.SalesManager, Roles.SalesRep);
     private static readonly string Buying = Join(Roles.Purchaser, Roles.Admin, Roles.InventoryClerk, Roles.Accountant);
     private static readonly string Billing = Join(Roles.Accountant, Roles.Admin, Roles.SalesManager);
+    private static readonly string Accounting = Join(Roles.Accountant, Roles.Admin);
 
     private static string Join(params string[] roles) => string.Join(",", roles);
 }

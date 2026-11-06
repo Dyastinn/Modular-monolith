@@ -22,6 +22,14 @@
     {
         <AuthorizeView Roles="@Sellers">
             <MudButton Href="@($"sales-orders/{Id}/edit")" Variant="Variant.Outlined">Edit</MudButton>
+            @if (_order.SpecialDiscount is null && _order.Lines.Any(l => l.SpecialDiscountEligible))
+            {
+                <MudButton OnClick="ApplyDiscount" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Elderly">Special discount</MudButton>
+            }
+            else if (_order.SpecialDiscount is not null)
+            {
+                <MudButton OnClick="RemoveDiscount" Variant="Variant.Text">Remove discount</MudButton>
+            }
             <MudButton OnClick="Submit" Variant="Variant.Filled" Color="Color.Primary">Submit</MudButton>
         </AuthorizeView>
     }
@@ -62,11 +70,20 @@
                     @foreach (var line in _order.Lines)
                     {
                         <tr>
-                            <td>@line.ItemName</td>
+                            <td>@line.ItemName @(line.SpecialDiscountEligible && _order.SpecialDiscount is not null ? "*" : "")</td>
                             <td class="money">@Format.Qty(line.Quantity) @line.Unit</td>
                             <td class="money">@Format.Peso(line.UnitPrice)</td>
                             <td class="money">@Format.Peso(line.LineTotal)</td>
                         </tr>
+                    }
+                    @if (_order.SpecialDiscount is { } d)
+                    {
+                        <tr><td colspan="3">Gross</td><td class="money">@Format.Peso(_order.GrossTotal)</td></tr>
+                        @if (d.VatExemption > 0)
+                        {
+                            <tr><td colspan="3">Less: VAT exemption (* items)</td><td class="money">@Format.Peso(d.VatExemption)</td></tr>
+                        }
+                        <tr><td colspan="3">Less: @Format.Percent(d.Rate) @d.Program.ToLower() discount (* items)</td><td class="money">@Format.Peso(d.Discount)</td></tr>
                     }
                     <tr><td colspan="3"><b>Total</b></td><td class="money"><b>@Format.Peso(_order.Total)</b></td></tr>
                 </tbody>
@@ -88,6 +105,14 @@
             }
             @if (_order.ShippedUtc is not null) { <MudText Typo="Typo.body2">Shipped @Format.Date(_order.ShippedUtc)</MudText> }
         </MudPaper>
+        @if (_order.SpecialDiscount is { } discount)
+        {
+            <MudPaper Class="pa-4 mt-4" Outlined="true">
+                <MudText Typo="Typo.h6" GutterBottom="true">@discount.Program discount</MudText>
+                <MudText Typo="Typo.body2">@discount.HolderName</MudText>
+                <MudText Typo="Typo.body2">@discount.IdLabel @discount.IdNumber</MudText>
+            </MudPaper>
+        }
     </MudItem>
 </MudGrid>
 
@@ -119,6 +144,17 @@
     }
 
     private Task Submit() => Act("submit", "Submitted. Stock is reserved.");
+
+    private async Task ApplyDiscount()
+    {
+        var dialog = await Dialogs.ShowAsync<SpecialDiscountDialog>("Special discount", new DialogParameters<SpecialDiscountDialog> { { x => x.OrderId, Id } });
+        if (await dialog.Result is { Canceled: false }) await Load();
+    }
+
+    private async Task RemoveDiscount()
+    {
+        if (await Api.Delete($"api/sales-orders/{Id}/special-discount", "Discount removed.")) await Load();
+    }
     private Task Approve() => Act("approve", "Approved.");
 
     private async Task Reject()

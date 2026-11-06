@@ -7,14 +7,17 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Erp.Modules.Invoicing.Features;
 
-internal sealed record RecordPaymentCommand(long InvoiceId, decimal Amount, DateOnly PaidOn, PaymentMethod Method, string? Reference)
+internal sealed record RecordPaymentCommand(long InvoiceId, decimal Amount, decimal TaxWithheld, DateOnly PaidOn, PaymentMethod Method,
+    string? Reference)
     : ICommand<long>;
 
 internal sealed class RecordPaymentValidator : AbstractValidator<RecordPaymentCommand>
 {
     public RecordPaymentValidator()
     {
-        RuleFor(x => x.Amount).GreaterThan(0).Must(a => decimal.Round(a, 2) == a).WithMessage("Amounts are in pesos and centavos.");
+        RuleFor(x => x.Amount).GreaterThanOrEqualTo(0).Must(a => decimal.Round(a, 2) == a).WithMessage("Amounts are in pesos and centavos.");
+        RuleFor(x => x.TaxWithheld).GreaterThanOrEqualTo(0).Must(a => decimal.Round(a, 2) == a).WithMessage("Amounts are in pesos and centavos.");
+        RuleFor(x => x.Amount + x.TaxWithheld).GreaterThan(0).WithName("Amount").WithMessage("Enter the amount received, the tax withheld, or both.");
         RuleFor(x => x.Method).IsInEnum();
         RuleFor(x => x.Reference).MaximumLength(100);
     }
@@ -30,7 +33,7 @@ internal sealed class RecordPaymentHandler(InvoicingDbContext db, ICurrentUser u
             ?? throw new NotFoundException($"Invoice {cmd.InvoiceId} not found.");
 
         var paymentId = await db.NextPaymentIdAsync(ct);
-        invoice.RecordPayment(paymentId, new Money(cmd.Amount), cmd.PaidOn, cmd.Method, cmd.Reference, new UserId(user.UserId),
+        invoice.RecordPayment(paymentId, new Money(cmd.Amount), new Money(cmd.TaxWithheld), cmd.PaidOn, cmd.Method, cmd.Reference, new UserId(user.UserId),
             clock.Today, clock.UtcNow);
         await db.SaveChangesAsync(ct);
         return paymentId.Value;

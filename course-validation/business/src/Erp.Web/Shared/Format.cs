@@ -8,6 +8,7 @@ public static class Format
 
     public static string Peso(decimal amount) => "₱" + amount.ToString("N2", Ph);
     public static string Qty(decimal quantity) => quantity.ToString("0.###", Ph);
+    public static string Percent(decimal rate) => (rate * 100).ToString("0.##", Ph) + "%";
     public static string Date(DateOnly date) => date.ToString("MMM d, yyyy", Ph);
     public static string Date(DateTime? utc) => utc is { } d ? d.ToLocalTime().ToString("MMM d, yyyy h:mm tt", Ph) : "";
 

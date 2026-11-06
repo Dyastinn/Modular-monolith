@@ -1,0 +1,89 @@
+@page "/company"
+@attribute [Authorize(Roles = $"{Roles.Accountant},{Roles.Admin}")]
+@inject ApiClient Api
+
+<PageTitle>Company and tax · ERP</PageTitle>
+
+<MudText Typo="Typo.h4" Class="mb-2">Company and tax</MudText>
+<MudText Typo="Typo.body2" Class="mb-4">
+    Printed on every invoice, exactly as on the BIR Certificate of Registration. A change applies to invoices issued from
+    now on; issued invoices keep what they were issued with.
+</MudText>
+
+@if (_profile is null)
+{
+    <MudProgressLinear Indeterminate="true" />
+    return;
+}
+
+@if (!_profile.IsComplete)
+{
+    <MudAlert Severity="Severity.Warning" Class="mb-4">Nothing can be shipped until the registered name, TIN and address are filled in.</MudAlert>
+}
+
+<MudGrid>
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4" Outlined="true">
+            <MudText Typo="Typo.h6" GutterBottom="true">Seller</MudText>
+            <MudTextField @bind-Value="_name" Label="Registered name" MaxLength="200" />
+            <MudTextField @bind-Value="_tradeName" Label="Trade name (optional)" MaxLength="200" />
+            <MudTextField @bind-Value="_tin" Label="TIN with branch code" Placeholder="123-456-789-00000" MaxLength="20" />
+            <MudTextField @bind-Value="_address" Label="Registered address" MaxLength="500" Lines="2" />
+            <MudTextField @bind-Value="_title" Label="Invoice title" HelperText="Must contain the word &quot;Invoice&quot;" MaxLength="50" />
+        </MudPaper>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <MudPaper Class="pa-4 mb-4" Outlined="true">
+            <MudText Typo="Typo.h6" GutterBottom="true">Tax</MudText>
+            <MudSelect T="string" @bind-Value="_regime" Label="Registered as">
+                <MudSelectItem Value="@("Vat")">VAT-registered</MudSelectItem>
+                <MudSelectItem Value="@("PercentageTax")">Non-VAT, subject to percentage tax</MudSelectItem>
+                <MudSelectItem Value="@("Exempt")">Non-VAT, exempt from both</MudSelectItem>
+            </MudSelect>
+            <MudNumericField @bind-Value="_vatPercent" Label="VAT rate (%)" Min="0" Max="99.99m" Format="0.##" Disabled="@(_regime != "Vat")" />
+        </MudPaper>
+        <MudPaper Class="pa-4" Outlined="true">
+            <MudText Typo="Typo.h6" GutterBottom="true">BIR permit (after the system is registered)</MudText>
+            <MudTextField @bind-Value="_permit" Label="PTU or Acknowledgement Certificate Control No." MaxLength="100" />
+            <MudTextField @bind-Value="_series" Label="Approved series range" MaxLength="100" />
+            <MudTextField @bind-Value="_dateIssued" Label="Date issued (mm/dd/yyyy)" MaxLength="10" />
+        </MudPaper>
+    </MudItem>
+</MudGrid>
+
+<MudStack Row="true" Class="mt-4" AlignItems="AlignItems.Center">
+    <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary">Save</MudButton>
+    @if (_profile.UpdatedUtc is not null)
+    {
+        <MudText Typo="Typo.caption">Last changed @Format.Date(_profile.UpdatedUtc)</MudText>
+    }
+</MudStack>
+
+@code {
+    private CompanyProfileModel? _profile;
+    private string _name = "", _tin = "", _address = "", _title = "SALES INVOICE", _regime = "Vat";
+    private string? _tradeName, _permit, _series, _dateIssued;
+    private decimal _vatPercent = 12;
+
+    protected override Task OnInitializedAsync() => Load();
+
+    private async Task Load()
+    {
+        _profile = await Api.Get<CompanyProfileModel>("api/company-profile");
+        if (_profile is null) return;
+        (_name, _tradeName, _tin, _address, _title) =
+            (_profile.RegisteredName, _profile.TradeName, _profile.Tin, _profile.RegisteredAddress, _profile.InvoiceTitle);
+        (_regime, _vatPercent) = (_profile.TaxRegime, _profile.TaxRegime == "Vat" ? _profile.VatRate * 100 : 12);
+        (_permit, _series, _dateIssued) = (_profile.PermitNumber, _profile.SeriesRange, _profile.PermitDateIssued);
+    }
+
+    private async Task Save()
+    {
+        var body = new
+        {
+            registeredName = _name, tradeName = _tradeName, tin = _tin, registeredAddress = _address, taxRegime = _regime,
+            vatRate = _vatPercent / 100, invoiceTitle = _title, permitNumber = _permit, seriesRange = _series, permitDateIssued = _dateIssued
+        };
+        if (await Api.Put("api/company-profile", body, "Saved.")) await Load();
+    }
+}

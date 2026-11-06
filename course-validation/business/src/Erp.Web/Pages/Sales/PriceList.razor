@@ -19,7 +19,7 @@
         <MudTable T="PriceListItem" @ref="_table" ServerData="Load" Hover="true" Dense="true">
             <HeaderContent>
                 <MudTh>SKU</MudTh><MudTh>Name</MudTh><MudTh>Unit</MudTh><MudTh>Category</MudTh>
-                <MudTh Class="money">Price</MudTh><MudTh>VAT</MudTh><MudTh>For sale</MudTh><MudTh></MudTh>
+                <MudTh Class="money">Price</MudTh><MudTh>VAT</MudTh><MudTh>SC/PWD</MudTh><MudTh>For sale</MudTh><MudTh></MudTh>
             </HeaderContent>
             <RowTemplate>
                 <MudTd>@context.Sku</MudTd>
@@ -28,6 +28,7 @@
                 <MudTd>@context.CategoryName</MudTd>
                 <MudTd Class="money">@Format.Peso(context.UnitPrice)</MudTd>
                 <MudTd>@Format.Words(context.TaxType)</MudTd>
+                <MudTd>@(context.IsSpecialDiscountEligible ? "Yes" : "")</MudTd>
                 <MudTd>@(context.IsForSale ? "Yes" : "No")</MudTd>
                 <MudTd>
                     <AuthorizeView Roles="@Managers" Context="auth">
@@ -41,6 +42,9 @@
     </MudTabPanel>
     <MudTabPanel Text="Categories">
         <Categories />
+    </MudTabPanel>
+    <MudTabPanel Text="Special discounts">
+        <SpecialDiscountPrograms />
     </MudTabPanel>
 </MudTabs>
 
