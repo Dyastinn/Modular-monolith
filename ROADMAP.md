@@ -22,7 +22,8 @@ course drifted.
 | Mediator | **`martinothamar/Mediator`** (MIT, source-generated) | Hand-rolled mediator |
 | Module boundaries | Everything `internal`; **one `.Contracts` project per module** is the only public surface | Contract in `Shared` (base) / `Contracts/` folder in module (Phase 15) |
 | Reference builds | **One** build | `business` + `business-phase15` |
-| Front end | **Blazor WebAssembly + MudBlazor**, hosted by `Erp.Api`; cookie auth for the browser | None (Swagger only) |
+| Front end | **Blazor WebAssembly + MudBlazor**, hosted by `Erp.Api`; cookie auth for the browser; built along the course | None (Swagger only) |
+| Deployment | **Docker Compose** (Caddy for HTTPS) as the main path; **IIS** as the alternative; no API keys | IIS only, API keys |
 | Observability | **OpenTelemetry** logs/traces/metrics, health checks, OTLP export; local dashboard via .NET Aspire | None |
 | Cross-module events | **Transactional outbox** + background dispatcher | Best-effort after-commit dispatch |
 | Licensing | Permissive OSS only (MIT/Apache/BSD/PostgreSQL); FluentAssertions 8 → **AwesomeAssertions**; see [THIRD-PARTY-NOTICES.md](course-validation/business/THIRD-PARTY-NOTICES.md) | Mixed |
@@ -139,88 +140,88 @@ Goal: the current Sales/Inventory features behave exactly as before, on the new 
 - [x] Found and fixed: `Money` deserialised as ₱0 from the outbox (`[JsonConstructor]`), caught by a new test
 - [x] Code comments trimmed to the non-obvious *why* (user request)
 
-### M3 — Complete Sales, Inventory, Identity ⬜
-- [ ] User management (Identity module already extracted in M1): admin creates/disables users, resets passwords
-- [ ] Real `IEmailSender<AppUser>` (SMTP via MailKit, MIT) so `/auth/forgotPassword` actually sends mail —
-      today it silently sends nothing
-- [ ] Quantities become `numeric(18,3)` when items gain units of measure
-- [ ] Customers CRUD; items/categories CRUD; warehouses
-- [ ] Stock receipts, adjustments, shipments, movement history
-- [ ] Sign-in audit: who signed in when, and failed attempts (in the product scope; promised in lesson 16)
-- [ ] Decide with the first customer: may a SalesRep see/change every order, or only their own? Today: every
-      order. If "own only", it's a handler rule via `ICurrentUser`
+### M3 — Complete Sales, Inventory, Identity ✅ code · ✅ lessons (14–17)
+- [x] User management: admin creates (temporary password, must change), edits role, disables, resets
+      password; `StaffAccountRules` (no self-disable, no self-role-change, keep the last admin); six roles
+- [x] `ErpSignInManager`: disabled users can't sign in; every password attempt in `identity.sign_in_attempt`
+- [x] MailKit `IEmailSender<AppUser>`; with no `Smtp:Host` the mail is logged (development)
+- [x] Quantities `numeric(18,3)` with units of measure (`Quantity` value object, `AllowsFractions` per item)
+- [x] Customers maintenance (TIN, address, terms, block); item catalog owned by Inventory, Sales keeps a copy
+      via `ItemCatalogChanged`; price list and categories; audited stock adjustments and movement history
+- [x] Shipping: Inventory ships, Sales marks shipped through `ISalesOrders` (Sales.Contracts), one transaction
+- [x] Who sees which orders: **decided** — a SalesRep sees only their own; everyone else sees all; another's
+      order is a 404 (`SalesOrder.CreatorFilterFor` / `IsVisibleTo`, `p_created_by` in the SQL functions)
+- [ ] Warehouses: out of scope for this release (one warehouse); listed in lesson 24
 
-### M4 — Blazor front end ⬜
-- [ ] `Erp.Web` (WASM + MudBlazor) hosted by `Erp.Api`; cookie auth; role-aware navigation
-- [ ] Screens for M3 features: orders (with line editing), customers, items, stock, users
-- [ ] CSP and security headers for the hosted app
-- [ ] Two-factor sign-in (Identity's authenticator-app support) switched on, with its setup screen
+### M4 — Blazor front end ✅ code · ✅ lessons (built along the way, from lesson 01)
+- [x] `Erp.Web` (WASM + MudBlazor 9.12) hosted by `Erp.Api` (`MapStaticAssets` + `MapFallbackToFile`); API
+      under `/api`; cookie sign-in via `CookieAuthenticationStateProvider`; role-aware navigation
+- [x] Screens for every feature: orders (create/edit/submit/approve/reject/cancel/ship), customers, price
+      list and categories, items and stock, shipments, suppliers, purchase orders and receiving, invoices,
+      payments, aging, users, sign-in log, change/forgot password
+- [x] Two CSPs (strict for `/api`, Blazor-compatible for pages, no inline scripts); API keys removed (a key in
+      a browser app is public)
+- [x] Playwright UI tests (3) against a running app
+- [ ] Two-factor sign-in: not built; listed in lesson 24
 
-### M5 — Purchasing ⬜
-### M6 — Invoicing ⬜ (BIR check first)
-### M7 — Packaging & install 🟨
-- [x] Migration bundles per module, run as `erp_owner` (verified 2026-11-06) — lesson 15
-- [x] First-run admin from `InitialAdmin` settings (brought forward: a production install had no way to sign
-      in) — lesson 15, `FirstRunTests`
-- [x] IIS guide — lesson 15. ⚠️ Written from Microsoft's docs; **run it once on a real Windows Server 2019+**
-- [x] Backup (nightly `pg_dump`) and restore drill (verified 2026-11-06) — lesson 16
-- [ ] **Encrypt data-protection keys at rest** (certificate; the app warns `No XML encryptor configured`).
-      Before the first sale
-- [ ] Release checklist
-- [ ] Buyer monitoring guide: "quick live view" (standalone Aspire dashboard — in-memory, no alerts) vs
-      "real monitoring" (free OTLP backend with retention + alerts, e.g. SigNoz or Grafana stack); just
-      `OTEL_EXPORTER_OTLP_ENDPOINT` either way. The Aspire AppHost stays dev-only.
-- [ ] The 2012 R2 dev server is out of support (ESU ended 2026-10-13) and can't run lesson 15 as written; see
-      [runbooks/14b-deploy-ws2012r2.md](runbooks/14b-deploy-ws2012r2.md). Upgrade, or ask for a 2012 R2 variant
+### M5 — Purchasing ✅ code · ✅ lesson 18
+- [x] Suppliers; purchase orders (draft → admin approval, never the buyer → sent → partial/complete receipt →
+      closed short or cancelled); receiving through `IStockReceiving`; `IItemCatalog` for item details
 
-### L — Lessons ✅ (M1 + M2)
-Rewritten against the M1 + M2 build (2026-11-06); the old phase files are deleted. Lessons for M3+ are written when that code lands.
+### M6 — Invoicing ✅ code · ✅ lessons 19–20 (BIR check still with a tax adviser)
+- [x] Invoice issued from `ShipmentRecorded` (idempotent issuer), gap-free numbers (counter row in the
+      transaction), void with reason + reissue, VAT split, PDF (PDFsharp-MigraDoc **6.2.4**, the last MIT
+      release; 6.5+ is AGPL — pinned)
+- [x] Payments and payment voids; `PaymentRecorded`/`PaymentVoided` applied by Sales exactly once
+      (`applied_payment` inbox); receivables aging by as-of date; overdue filter
+- [ ] ⚠️ BIR registration (CAS) and approved invoice format: business decision with a tax adviser (lesson 24)
 
-Domain before database: with EF Core the schema follows the model, and the rules get unit tests from day one.
+### M7 — Packaging & install ✅ code · ✅ lessons (21–24) · ⚠️ Docker and IIS not run here
+- [x] Data-protection keys encrypted with a certificate; app refuses to start in Production without one
+      (verified with an OpenSSL `.pfx`: stored keys show `encryptedSecret`)
+- [x] Docker (main path): multi-stage `Dockerfile` (`app` + `migrate` targets), Compose (db with initdb roles,
+      migrate, api, Caddy for HTTPS, nightly `pg_dump` backup), `.env.example`, secrets folder. ⚠️ **Not run:
+      Docker isn't installed on this machine** — shell scripts pass `sh -n`, the Linux bundle cross-builds
+- [x] IIS (alternative): lesson 23 updated for five modules, certificate, company/SMTP settings. ⚠️ Not run on
+      a real Windows Server 2019+
+- [x] First-run admin; migration bundles; backup and restore drill; production checklist with "not built yet"
+- [ ] The 2012 R2 dev server can't run .NET 10; see [runbooks/14b-deploy-ws2012r2.md](runbooks/14b-deploy-ws2012r2.md)
 
-| # | Lesson | Replaces |
-|---|---|---|
-| 00 / 00a / 00b | Start here · Foundations · PowerShell | same files, updated |
-| 01 | Solution setup — modules, `internal`, central packages, base types | 01 + 15 + 15b |
-| 02 | Mediator — the pain, then `martinothamar/Mediator` + behaviors | 02 |
-| 03 | Domain model + its unit tests | 05 |
-| 04 | Database — PostgreSQL, EF Core per module, shared connection, migrations, seed | 03 + 03b |
-| 05 | Sign-in — ASP.NET Core Identity | 04, 04a–04e |
-| 06 | Create an order (+ error responses) | 06 |
-| 07 | Submit — Inventory module, contract, one transaction, credit lock | 07 |
-| 08 | Approve, reject, cancel | 08 |
-| 09 | Update an order — lost updates and `xmin` | 09 |
-| 10 | Reads — Dapper + SQL functions | 10 + 03a |
-| 11 | Events and the outbox | 11 |
-| 12 | Observability — OpenTelemetry, health, Aspire | **new** |
-| 13 | Security hardening — rate limits, HTTPS, headers, least privilege | parts of 13 |
-| 14 | Testing — integration and architecture tests | 12 |
-| 15 | Deploy to IIS | 14b |
-| 16 | Production checklist & going further | 13 + 14 |
+### L — Lessons ✅ (all milestones)
+Rewritten 2026-11-06 into one start-to-finish course of 24 lessons. The interface is built along the way
+(user decision): lesson 01 creates the Blazor app, lesson 05 signs in through it, and every feature lesson
+adds its screen.
 
-⚠️ A reader's migration history is longer than the reference build's (e.g. `AddOutbox` in lesson 11); the
-reference squashed each module into one `InitialCreate` before release. The resulting schema is identical.
+| # | Lesson | Introduces | Refactors (before → after) |
+|---|---|---|---|
+| 01 | Solution setup | slnx, CPM, 4 projects; `Erp.Web` (WASM, MudBlazor), host serves it (`MapStaticAssets`, fallbacks), `/api` group | — |
+| 02 | Mediator | Mediator, FluentValidation, Carter, behaviors, IVT Erp.Api; Ping slice + Ping page | — |
+| 03 | Domain model | Entity/AggregateRoot/DomainException, Roles (3), Money (rounding), Quantity (decimal), Customer (+Block), ItemCategory, SalesItem, SalesOrder (`SetLines`), 18 unit tests | — |
+| 04 | Database | PostgreSQL, EF Core per module, `IModuleDatabase`, seed (items with explicit ids) | — |
+| 05 | Sign-in | Identity, `ICurrentUser`, `/api/auth/me`, sign out everywhere; Components.Authorization, `CookieAuthenticationStateProvider`, `[Authorize]` everywhere, Login, account menu | App.razor `RouteView` → `AuthorizeRouteView` |
+| 06 | Create an order | `IClock`, `NotFoundException`, `DocumentNumber`, `ResolveLinesAsync`, `ValidQuantity`, `SalesRoles.Sellers`, problem details (+`BadHttpRequestException`), Swagger; `ApiClient`, snackbar, Roles link into Erp.Web, id-based order form | delete Ping |
+| 07 | Find orders | Dapper, `IDbConnectionFactory`, `PagedResult`, paging rules, SQL functions (orders, customers, price list), visibility (`CreatorFilterFor`); Models, Format, Url, StatusChip, list/detail pages, `Tile` | order form: ids → autocompletes |
+| 08 | Submit | Inventory module + Contracts, `IStockReservation`, `StockService`, `GetVisibleOrderAsync`, `LockCustomerAsync`; Submit button | `NpgsqlDataSource` → `ISharedConnection` |
+| 09 | Approve, reject, cancel | `SalesRoles.Managers`, `xmin`, 409; `ReasonDialog`, dialog provider, buttons, approval tile | — |
+| 10 | Update an order | update slice; edit mode of the form | `SaveChangesAsync` root touch |
+| 11 | Events and the outbox | outbox, interceptor, dispatcher, `SalesOrderApproved` | `Money`/`Quantity` gain `[JsonConstructor]` |
+| 12 | Testing | integration, architecture (+ `Every_event_has_a_handler`), Playwright UI tests | — |
+| 13 | Observability | OpenTelemetry, health checks, Aspire | `LoggingBehavior` → `TelemetryBehavior` |
+| 14 | Customers | customer slices, Customers page + dialog | `Customer.Create` → `Create` calls `Update` (+TIN/address/terms); `search_customers` v2 |
+| 15 | Users and email | 6 roles, AppUser fields, `StaffAccountRules`, `ErpSignInManager`, sign-in log, user slices, MailKit, user directory; admin pages, change/forgot password; `SalesRoles.Readers` | `/me` gains FullName + MustChangePassword |
+| 16 | Item catalog and stock | Inventory `Item` aggregate, `StockMovement`, `ItemCatalogChanged`, Sales upsert handler, price list + categories slices, 23505 → 409; items/price list pages | Inventory `Item` (stock only) → catalog; reservation guard gains `IsActive`; Mediator assemblies gain Contracts |
+| 17 | Shipping | Sales.Contracts `ISalesOrders`, `Shipment`, ship slice, `LockOrderAsync`, Shipped status; Ship button, Shipments page | `get_sales_order` v2 |
+| 18 | Purchasing | Purchasing module, `IItemCatalog`, `IStockReceiving`, `DateOnlyTypeHandler`; purchasing pages | `StockService` registered once, mapped to three interfaces |
+| 19 | Invoicing | `IClock.Today`, `ShipmentRecorded`, `GetForInvoiceAsync`, Invoice, counter, issuer, void/reissue, PDF (6.2.4), invoice pages | — |
+| 20 | Payments and receivables | Invoicing.Contracts, payments, `AppliedPayment` inbox, aging, `JsonStringEnumConverter`; payment dialog, aging page | Invoice → AggregateRoot; `search_invoices` v2 |
+| 21 | Security hardening | rate limits (`/api` only), HSTS, headers + two CSPs, CORS, data-protection keys in DB + certificate, least privilege, `ErpDbMigrations` | `IModuleDatabase` takes the owner connection; test factory gains `ERP_TEST_DB_OWNER` |
+| 22 | Docker | `InitialAdmin` + `FirstRunTests`, Dockerfile, Compose, Caddy, initdb, backup, `.env` | — |
+| 23 | Deploy to IIS | bundles, IIS, app pool, certificate on Windows | — |
+| 24 | Production checklist | done list, first-day setup, IIS backups, restore drill, not-built list | — |
 
-**What each lesson introduces / refactors** (the "only when needed" rule — keep this in sync):
-
-| # | Introduces | Refactors (before → after) |
-|---|---|---|
-| 01 | slnx, Directory.Build.props, empty Directory.Packages.props (CPM), 4 projects, `SalesModule.AddSalesModule()` | — |
-| 02 | Mediator.Abstractions, FluentValidation (+DI ext), Logging.Abstractions, Carter, Mediator.SourceGenerator; `LoggingBehavior`, `ValidationBehavior`; IVT Erp.Api; Ping slice | — |
-| 03 | `Entity`, `AggregateRoot` (empty), `DomainException`, `Roles`; Money/Quantity/ids, Customer, ItemCategory, SalesOrder (+status rules, ApprovalPolicy, OrderNumbering); unit test project (xunit, runner, Test.Sdk, AwesomeAssertions) | — |
-| 04 | PostgreSQL install; Npgsql; Npgsql EF, NamingConventions, EF Design; transitive pinning + EF Relational pin; `IModuleDatabase` (Module, MigrateAsync(ct), Seed(ct)), `EmbeddedSql`; `NpgsqlDataSource`; `PostgresDatabase.EnsureExistsAsync`; `Item` + private EF ctors; SalesDbContext `Configure(o, NpgsqlDataSource)` (no xmin, no sequence); dotnet-ef manifest; DevSeed; DatabaseStartup | — |
-| 05 | Identity (AddIdentityApiEndpoints, MapIdentityApi, /register blocked, roles seeded via HasData, dev users via UserManager), `ICurrentUser`+`CurrentUser`, `/auth/me`, sign-out-everywhere | — |
-| 06 | `IClock`/`SystemClock`, `NotFoundException`, `GlobalExceptionHandler` (problem+json: 400/404/422/500), Swagger (Swashbuckle), order-number sequence (`HasSequence` + `NextOrderNumberAsync`), create slice, `PendingTotalAsync`; delete Ping | — |
-| 07 | Inventory module + Contracts project, `IStockReservation`, atomic `ExecuteUpdate`, `LockCustomerAsync` (FOR UPDATE) | `NpgsqlDataSource` per context → `ISharedConnection` + `Configure(o, DbConnection)` (one transaction across modules) |
-| 08 | Approve/reject/cancel slices; `xmin` row version on Customer + SalesOrder (two approvals race on a customer balance) | GlobalExceptionHandler gains `DbUpdateConcurrencyException` → 409 |
-| 09 | Update slice | `SaveChangesAsync` override: touch root on line-only edits |
-| 10 | Dapper, `IDbConnectionFactory`, SQL functions + `AddReadFunctions` migration, `MatchNamesWithUnderscores`, get + search slices | — |
-| 11 | `IDomainEvent`, events on `AggregateRoot`, `IAggregateRoot`, `OutboxMessage`, `OutboxInterceptor`, `OutboxDispatcher`, `IModuleDatabase.Schema`, `SalesOrderApproved` + audit handler, `[JsonConstructor]` (round-trip test shows the bug) | — |
-| 12 | OpenTelemetry packages, `ErpTelemetry` + `Observability.cs` (Infrastructure/host), `X-Trace-Id`, health checks, `DatabaseHealthCheck`, Aspire AppHost | `LoggingBehavior` (BuildingBlocks) → `TelemetryBehavior` (Infrastructure) |
-| 13 | `RateLimitPolicies`, rate limiting, HSTS/HTTPS, `SecurityHeadersMiddleware`, CORS from config, `ApiKeyMiddleware`, no Server header, create-roles.sql, DataProtection.EntityFrameworkCore (keys in DB) | `IModuleDatabase.MigrateAsync(ct)` → `MigrateAsync(ownerConnection, ct)` + `ErpDbMigrations` |
-| 14 | `public partial class Program`, integration tests (Mvc.Testing, Npgsql, Dapper), architecture tests | — |
-| 15 | `InitialAdmin` (`IHostedService`) + `InitialAdmin` settings, `FirstRunTests` + `OwnDatabaseFact`; migration bundles; IIS + Hosting Bundle, app pool (No Managed Code, AlwaysRunning, no idle timeout/recycle) with settings as app pool environment variables, preload, HTTPS binding, `removeServerHeader`/`X-Powered-By`, `app_offline.htm` redeploy | `CustomWebAppFactory.DropTestDatabase()` → `DropDatabase(connectionString)` |
-| 16 | Nightly `pg_dump` (scheduled task, password file), restore drill; done / missing checklist; when to add left-out tools | — |
+⚠️ A reader's migrations and SQL files are more numerous than the reference build's (e.g. `AddCustomerDetails`,
+`search_customers.v2`); the reference squashes each module to `InitialCreate` + `AddReadFunctions` with each
+function at its final shape as `v1`. The resulting schema is identical.
 
 ---
 
@@ -231,8 +232,10 @@ reference squashed each module into one `InitialCreate` before release. The resu
 - ~~**EF tooling with internal DbContexts**~~ Retired 2026-11-05: internal design-time factories work.
 - ~~**Sharing one transaction across module DbContexts**~~ Retired 2026-11-05: `ISharedConnection` +
   `UseTransaction`; `A_reservation_rolls_back_with_the_callers_transaction` proves it.
-- **Course length.** Adding four modules and a UI roughly doubles the course. Lessons for the new modules
-  should lean on patterns already taught and only teach what's new.
+- **Course length.** Done: 24 lessons, about 50–60 hours. Later lessons show new ideas in full and point to
+  the reference build for screens built from patterns already taught.
+- **Docker and IIS paths not executed here.** Run lesson 22 on a machine with Docker, and lesson 23 on a real
+  Windows Server 2019+, before the first sale.
 - **Selling source vs. a public course.** If the course is published openly and ends in the full product,
   the product's source is effectively free. Decide how the course is distributed before M4.
 
@@ -253,3 +256,10 @@ reference squashed each module into one `InitialCreate` before release. The resu
   live: migration bundles, the published app in Production as `erp_app`, backup → restore onto fresh roles,
   and the PowerShell companion on PS 5.1. **22 unit + 6 architecture + 25 integration tests pass.** IIS itself
   not yet run (see [course-validation/FINDINGS.md](course-validation/FINDINGS.md)).
+- **2026-11-06** — M3–M7 code complete: Identity user management + sign-in log + MailKit; Inventory catalog,
+  adjustments, shipments; Purchasing; Invoicing with payments and aging; Blazor app with every screen;
+  data-protection certificate; Docker deployment. API keys removed; reps see only their own orders.
+  **45 unit + 7 architecture + 35 integration + 3 UI tests pass.** PDFsharp pinned to 6.2.4 (6.5 is AGPL).
+- **2026-11-06** — Lessons rewritten as one 24-lesson course with the interface built from lesson 01 (user
+  decision: the interface is built along with the logic). Support docs, glossary and answer key rebuilt.
+  Docker and IIS paths written but not executed on this machine (see FINDINGS).

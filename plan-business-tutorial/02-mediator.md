@@ -12,8 +12,8 @@ automatically, without a single endpoint asking for it. It takes about an hour. 
   the delivery code at compile time.
 - Two **pipeline behaviors** that wrap every handler: one logs, one validates.
 - Carter endpoints that do just one thing: turn an HTTP request into a message and send it.
-- A throwaway `GET /ping` feature to prove it all works. We'll delete it in
-  [lesson 07](07-create-order.md).
+- A throwaway `GET /api/ping` feature, and a page in the app that calls it, to prove it all works. We'll
+  delete both in [lesson 06](06-create-order.md).
 
 ## Why we build it this way
 
@@ -276,14 +276,20 @@ builder.Services.AddCarter();
 
 var app = builder.Build();
 
-app.MapGet("/", () => "Erp API");
-app.MapCarter();
+// The browser app is served from the same host, so the API gets a prefix of its own.
+var api = app.MapGroup("/api");
+api.MapCarter();
+api.MapFallback(() => Results.NotFound());   // an unknown API address is a 404, never the app's page
+
+app.MapStaticAssets();
+app.MapFallbackToFile("index.html");          // any other address is a page of the app: let it route
 
 app.Run();
 ```
 
-`AddCarter()` registers Carter's own services, and `MapCarter()` asks every registered `ICarterModule` to add
-its routes. The `ServiceLifetime.Scoped` line means each HTTP request gets its own handlers. That's the
+`AddCarter()` registers Carter's own services, and `api.MapCarter()` asks every registered `ICarterModule` to
+add its routes, inside the `/api` group from lesson 01. So `PingEndpoint` maps `/ping`, and it answers at
+`/api/ping`, without the endpoint knowing about the prefix. The `ServiceLifetime.Scoped` line means each HTTP request gets its own handlers. That's the
 default you want for anything that will talk to a database.
 
 Now build it. You'll get this:
@@ -305,7 +311,59 @@ internals. In `Erp.Modules.Sales.csproj`:
 
 Does this weaken the module wall? No. The host already references every module; wiring them together is
 its job. What must never happen is a *module* seeing another module's internals, and
-[lesson 13](13-testing.md) adds a test that fails if one ever does. Not so hard, right?
+[lesson 12](12-testing.md) adds a test that fails if one ever does. Not so hard, right?
+
+## 6. Call it from a screen
+
+A small page in the app: type a message, press the button, see the answer.
+
+```razor
+@* src/Erp.Web/Pages/Ping.razor *@
+@page "/ping"
+@inject HttpClient Http
+
+<PageTitle>Ping · ERP</PageTitle>
+
+<MudText Typo="Typo.h4" GutterBottom="true">Ping</MudText>
+
+<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mb-4">
+    <MudTextField @bind-Value="_message" Label="Message" Immediate="true" />
+    <MudButton OnClick="Send" Variant="Variant.Filled" Color="Color.Primary">Send</MudButton>
+</MudStack>
+
+@if (_answer is not null)
+{
+    <MudAlert Severity="@(_ok ? Severity.Success : Severity.Error)">@_answer</MudAlert>
+}
+
+@code {
+    private string _message = "hello";
+    private string? _answer;
+    private bool _ok;
+
+    private async Task Send()
+    {
+        var response = await Http.GetAsync($"api/ping?message={Uri.EscapeDataString(_message)}");
+        _ok = response.IsSuccessStatusCode;
+        _answer = _ok
+            ? await response.Content.ReadFromJsonAsync<string>()
+            : $"The server answered {(int)response.StatusCode}.";
+    }
+}
+```
+
+- **`@inject HttpClient Http`** asks dependency injection for the `HttpClient` lesson 01 registered, the one
+  whose base address is the server that served the app. So `api/ping` goes to `/api/ping` on our host.
+- **`@bind-Value` with `Immediate="true"`** updates `_message` on every keystroke, not only when you leave
+  the box.
+- **`@if (_answer is not null)`** shows the answer only once there is one. Blazor redraws the page by itself
+  after `Send` finishes.
+
+Then a way to get there, in `NavMenu.razor`, under Home:
+
+```razor
+<MudNavLink Href="ping" Icon="@Icons.Material.Filled.NetworkCheck">Ping</MudNavLink>
+```
 
 ## How a request flows
 
@@ -317,7 +375,7 @@ sequenceDiagram
   participant L as LoggingBehavior
   participant V as ValidationBehavior
   participant H as PingHandler
-  C->>E: GET /ping?message=hi
+  C->>E: GET /api/ping?message=hi
   E->>M: Send(PingQuery("hi"))
   M->>L: Handle
   L->>V: next()
@@ -345,16 +403,23 @@ validation.
 dotnet run --project src/Erp.Api
 ```
 
+Open the app, click **Ping**, and press **Send**. The green box says `pong: hello`. That's a full trip: the
+browser called the API, the endpoint sent a message, the mediator ran both behaviors and the handler, and the
+answer came back to the screen.
+
+Now clear the box and press **Send** again. The red box says "The server answered 500." The same from the
+terminal shows why:
+
 ```bash
-curl "http://localhost:5264/ping?message=hello"
+curl "http://localhost:5264/api/ping?message=hello"
 # "pong: hello"
 
-curl -i "http://localhost:5264/ping?message="
+curl -i "http://localhost:5264/api/ping?message="
 # HTTP/1.1 500 ... FluentValidation.ValidationException: Validation failed: 'Message' must not be empty.
 ```
 
 That 500 is good news for now: it proves the validator ran *before* the handler. It should really be a
-`400 Bad Request` with a tidy body, and [lesson 07](07-create-order.md) will make it one. In the API's
+`400 Bad Request` with a tidy body, and [lesson 06](06-create-order.md) will make it one. In the API's
 console you'll see the logging behavior's lines: `PingQuery handled in 0 ms`, then
 `PingQuery failed after 2 ms`.
 
@@ -362,7 +427,7 @@ console you'll see the logging behavior's lines: `PingQuery handled in 0 ms`, th
 
 1. Why does the generator need `InternalsVisibleTo("Erp.Api")`? Why is granting it to the host safe, but
    granting it to another module not?
-2. You forget `includeInternalTypes: true`. What happens when you call `GET /ping?message=`?
+2. You forget `includeInternalTypes: true`. What happens when you send an empty message from the Ping page?
 3. Why is `LoggingBehavior` registered before `ValidationBehavior`?
 4. What's the difference between a command and a query, and why bother telling them apart?
 5. Name one real cost of the mediator pattern.

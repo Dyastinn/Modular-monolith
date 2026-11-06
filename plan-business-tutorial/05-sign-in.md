@@ -9,15 +9,16 @@ password guessers. Give yourself about an hour and a half. Are you ready? Let's 
 
 | Endpoint | What it does |
 |---|---|
-| `POST /auth/login` | Check the email and password; answer with an access token and a refresh token |
-| `POST /auth/refresh` | Trade a refresh token for a new access token |
-| `POST /auth/manage/info` | Change your password |
-| `GET /auth/me` | Who am I, and what's my role |
-| `POST /auth/logout` | Sign out of this browser |
-| `POST /auth/logout-everywhere` | End every session you have, on every device |
+| `POST /api/auth/login` | Check the email and password; answer with an access token and a refresh token |
+| `POST /api/auth/refresh` | Trade a refresh token for a new access token |
+| `POST /api/auth/manage/info` | Change your password |
+| `GET /api/auth/me` | Who am I, and what's my role |
+| `POST /api/auth/logout` | Sign out of this browser |
+| `POST /api/auth/logout-everywhere` | End every session you have, on every device |
 
-Plus three dev users to sign in with, one per role, and a way for any handler to ask "who's calling?"
-without touching HTTP.
+Plus three dev users to sign in with, one per role, a way for any handler to ask "who's calling?" without
+touching HTTP, and the screens: a **sign-in page**, an account menu with "sign out" and "sign out
+everywhere", and a rule that every page needs a signed-in user.
 
 ## Why we build it this way
 
@@ -63,12 +64,20 @@ Now, let's be honest about the costs:
 
 | Who | How they stay signed in |
 |---|---|
-| A browser (our future web app) | A **cookie** the browser sends automatically. JavaScript can't read it, so a script injected into the page can't steal it |
+| A browser (our app) | A **cookie** the browser sends automatically. JavaScript can't read it, so a script injected into the page can't steal it |
 | Anything else (a mobile app, an integration, `curl`) | A **bearer token** in the `Authorization` header, plus a **refresh token** to get a new one when it expires |
 
 Identity does both. If a request carries an `Authorization: Bearer ...` header, it checks the token;
 otherwise, it looks for the cookie. To remember it easily: a browser shows its wristband (the cookie), and
 everyone else shows their ticket (the bearer token).
+
+Our app and API share one address (lesson 01), so the browser sends the cookie with every API call on its
+own. There's no token for the app to store, refresh or leak. And `SameSite=Strict` (step 4) means another
+website can't make the browser send it.
+
+You might wonder about API keys, a common way to "protect" an API. A key that ships inside a browser app is
+public: anyone can open the browser's developer tools and copy it. So we use none. Every call is protected
+by who's signed in. To remember it easily: in a browser, the user is the key.
 
 ## 1. The Identity module
 
@@ -301,7 +310,7 @@ public static class IdentityModule
             .MapIdentityApi<AppUser>()
             .AddEndpointFilter(async (ctx, next) =>
                 // Staff accounts are created by an administrator, never by self sign-up.
-                ctx.HttpContext.Request.Path.StartsWithSegments("/auth/register")
+                ctx.HttpContext.Request.Path.Value?.EndsWith("/auth/register", StringComparison.OrdinalIgnoreCase) == true
                     ? Results.NotFound()
                     : await next(ctx));
         return app;
@@ -320,14 +329,15 @@ Here's what each part decides:
 | `RefreshTokenExpiration` 7 days | How long you stay signed in without typing your password |
 | Cookie `SameSite = Strict` | The browser won't send the cookie on requests started by another site, which blocks cross-site request forgery |
 | `OnRedirectToLogin` → 401 | Without it, an unauthenticated call gets redirected to a login *page*, which an API doesn't have |
-| The `/auth/register` filter | `MapIdentityApi` always maps it; this filter turns it into a 404 |
+| The `/auth/register` filter | `MapIdentityApi` always maps it; this filter turns it into a 404. It checks the *end* of the path, because the group will sit under `/api` |
 
 The tokens and cookies are encrypted with keys that ASP.NET Core keeps in your user profile. On your machine,
-that's fine. On a real server it's a problem, and [lesson 22](22-security-hardening.md) moves the keys into
+that's fine. On a real server it's a problem, and [lesson 21](21-security-hardening.md) moves the keys into
 the database.
 
 And one honest gap: `/auth/forgotPassword` needs a way to send email, and we haven't given it one yet. For
-now it quietly sends nothing. Admins can still reset a password for a user.
+now it quietly sends nothing; [lesson 15](15-users-email.md) gives it real email, and gives admins a screen
+to reset a password.
 
 ## 5. Who's calling?
 
@@ -513,11 +523,12 @@ builder.Services.AddAuthorization();
 app.UseAuthentication();   // who are you?
 app.UseAuthorization();    // are you allowed?
 
-app.MapIdentityModule();
-app.MapCarter();
+var api = app.MapGroup("/api");
+api.MapIdentityModule();   // /api/auth/...
+api.MapCarter();
 ```
 
-Order matters for the last four lines: a request must be identified before anyone can check what it's
+Order matters for the middleware lines: a request must be identified before anyone can check what it's
 allowed to do, and both must happen before it reaches an endpoint.
 
 Add the `Auth` settings to `appsettings.json`:
@@ -535,21 +546,318 @@ dotnet ef migrations add InitialCreate \
   --output-dir Infrastructure/Migrations
 ```
 
+## 8. Sign in through the app
+
+Time for the screens. The app needs to know who's signed in, and `<AuthorizeView>` and `[Authorize]` for
+pages. One more package:
+
+```bash
+dotnet add src/Erp.Web package Microsoft.AspNetCore.Components.Authorization --version 10.0.14
+```
+
+### Who's signed in, according to the API
+
+The browser can't read the cookie (it's `HttpOnly`), so how does the app know who's signed in? It asks:
+`GET /api/auth/me`. A 200 means signed in, and says as whom; a 401 means not. Blazor wants that answer from
+an **`AuthenticationStateProvider`**, the one class every `<AuthorizeView>` and `[Authorize]` consults:
+
+```csharp
+// src/Erp.Web/Services/CookieAuthenticationStateProvider.cs
+using System.Net.Http.Json;
+using System.Security.Claims;
+using Microsoft.AspNetCore.Components.Authorization;
+
+namespace Erp.Web.Services;
+
+public sealed record CurrentUser(long Id, string Username, string Role);
+
+// Who is signed in, according to the API. The cookie itself is HttpOnly: the browser app never sees it, it only
+// asks /api/auth/me. Signing in and out go through Identity's own endpoints.
+public sealed class CookieAuthenticationStateProvider(HttpClient http) : AuthenticationStateProvider
+{
+    private static readonly AuthenticationState SignedOut = new(new ClaimsPrincipal(new ClaimsIdentity()));
+    private CurrentUser? _user;
+    private bool _loaded;
+
+    public CurrentUser? User => _user;
+
+    public override async Task<AuthenticationState> GetAuthenticationStateAsync()
+    {
+        if (!_loaded)
+        {
+            var response = await http.GetAsync("api/auth/me");
+            _user = response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<CurrentUser>() : null;
+            _loaded = true;
+        }
+        return _user is null ? SignedOut : new AuthenticationState(Principal(_user));
+    }
+
+    // null = signed in; otherwise the reason, in words a person can act on.
+    public async Task<string?> SignInAsync(string email, string password)
+    {
+        var response = await http.PostAsJsonAsync("api/auth/login?useCookies=true", new { email, password });
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            return body.Contains("LockedOut")
+                ? "This account is locked for 15 minutes after too many wrong passwords."
+                : "Wrong email or password.";
+        }
+        Refresh();
+        return null;
+    }
+
+    public async Task SignOutAsync(bool everywhere = false)
+    {
+        await http.PostAsync(everywhere ? "api/auth/logout-everywhere" : "api/auth/logout", null);
+        Refresh();
+    }
+
+    // Forget what we knew and ask the API again (after sign-in, sign-out, or a 401).
+    public void Refresh()
+    {
+        _loaded = false;
+        NotifyAuthenticationStateChanged(GetAuthenticationStateAsync());
+    }
+
+    private static ClaimsPrincipal Principal(CurrentUser user) => new(new ClaimsIdentity(
+    [
+        new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+        new Claim(ClaimTypes.Name, user.Username),
+        new Claim(ClaimTypes.Role, user.Role),
+    ], authenticationType: "cookie", ClaimTypes.Name, ClaimTypes.Role));
+}
+```
+
+- **`?useCookies=true`** tells Identity's login endpoint to answer with a cookie instead of tokens.
+- **It asks once**, then remembers (`_loaded`). `Refresh()` forgets and asks again, and
+  `NotifyAuthenticationStateChanged` tells every `<AuthorizeView>` on screen to redraw.
+- **The claims** turn the API's answer into the same shape the server uses, so `<AuthorizeView
+  Roles="...">` works.
+- **Wrong password and unknown email get the same message.** Saying "no such user" would tell an attacker
+  which emails are real.
+
+Register it in `Erp.Web/Program.cs`, before `AddMudServices`:
+
+```csharp
+builder.Services.AddAuthorizationCore();
+builder.Services.AddCascadingAuthenticationState();
+builder.Services.AddScoped<CookieAuthenticationStateProvider>();
+builder.Services.AddScoped<AuthenticationStateProvider>(sp => sp.GetRequiredService<CookieAuthenticationStateProvider>());
+```
+
+(add `using Erp.Web.Services;` and `using Microsoft.AspNetCore.Components.Authorization;`). The provider is
+registered twice on purpose: once as itself, so the sign-in page can call `SignInAsync`, and once as the
+`AuthenticationStateProvider` Blazor looks for. Both hand out the same object.
+
+### Every page needs a signed-in user
+
+Add these lines to `_Imports.razor`:
+
+```razor
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Erp.Web.Services
+@using Erp.Web.Shared
+@attribute [Authorize]
+```
+
+The last line is the important one: **every page requires a signed-in user** unless it says otherwise with
+`[AllowAnonymous]`. Forgetting to protect a page is impossible; forgetting to *unprotect* the sign-in page is
+a mistake you'll notice in seconds.
+
+The router learns to check it. In `App.razor`, `RouteView` becomes `AuthorizeRouteView`:
+
+```razor
+@* src/Erp.Web/App.razor *@
+@* Every page needs a signed-in user (the [Authorize] in _Imports), unless it says [AllowAnonymous]. *@
+<Router AppAssembly="typeof(App).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)">
+            <NotAuthorized>
+                @if (context.User.Identity?.IsAuthenticated == true)
+                {
+                    <MudAlert Severity="Severity.Warning" Class="ma-6">You don't have access to this page.</MudAlert>
+                }
+                else
+                {
+                    <RedirectToLogin />
+                }
+            </NotAuthorized>
+            <Authorizing>
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            </Authorizing>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>
+```
+
+Not signed in? Off to the sign-in page. Signed in but the wrong role? A polite "no access" message.
+
+```razor
+@* src/Erp.Web/Shared/RedirectToLogin.razor *@
+@attribute [AllowAnonymous]
+@inject NavigationManager Nav
+
+@code {
+    protected override void OnInitialized()
+    {
+        var back = Nav.ToBaseRelativePath(Nav.Uri);
+        Nav.NavigateTo(string.IsNullOrEmpty(back) ? "login" : $"login?returnUrl={Uri.EscapeDataString(back)}");
+    }
+}
+```
+
+It remembers where you were going, so after signing in you land there instead of on the home page. The
+"not found" page should work for everyone, so add `@attribute [AllowAnonymous]` to `NotFound.razor`.
+
+### The sign-in page
+
+```razor
+@* src/Erp.Web/Pages/Login.razor *@
+@page "/login"
+@attribute [AllowAnonymous]
+@inject CookieAuthenticationStateProvider Auth
+@inject NavigationManager Nav
+
+<PageTitle>Sign in · ERP</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraSmall" Class="mt-16">
+    <MudPaper Class="pa-8" Elevation="2">
+        <MudText Typo="Typo.h5" GutterBottom="true">Sign in</MudText>
+        <EditForm Model="this" OnSubmit="SignIn">
+            <MudStack Spacing="3">
+                <MudTextField @bind-Value="_email" Label="Email" InputType="InputType.Email" AutoFocus="true" Required="true" />
+                <MudTextField @bind-Value="_password" Label="Password" InputType="InputType.Password" Required="true" />
+                @if (_error is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true">@_error</MudAlert>
+                }
+                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy">Sign in</MudButton>
+            </MudStack>
+        </EditForm>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
+
+    private string _email = "", _password = "";
+    private string? _error;
+    private bool _busy;
+
+    private async Task SignIn()
+    {
+        _busy = true;
+        _error = await Auth.SignInAsync(_email.Trim(), _password);
+        _busy = false;
+        // Only ever go back inside this app: an outside returnUrl would make this page an open redirect.
+        if (_error is null)
+            Nav.NavigateTo(ReturnUrl is { } back && !back.Contains("//") && !back.Contains(':') ? back : "");
+    }
+}
+```
+
+`EditForm` with a submit button means pressing Enter signs in. And look at the last line. Without that
+check, an attacker could send someone a link to `/login?returnUrl=https://evil.example`, and after a real
+sign-in on our real site, the user would land on the attacker's look-alike page. That trick is called an
+**open redirect**. We only follow paths inside our own app.
+
+### The account menu
+
+`MainLayout.razor` wraps everything in `<AuthorizeView>`: the menu and top bar for a signed-in user, and the
+bare page (the sign-in form) for everyone else. The top bar gets an account menu:
+
+```razor
+@* src/Erp.Web/Layout/MainLayout.razor *@
+@inherits LayoutComponentBase
+@inject CookieAuthenticationStateProvider Auth
+@inject NavigationManager Nav
+
+<MudThemeProvider Theme="Theme" />
+<MudPopoverProvider />
+
+<AuthorizeView>
+    <Authorized>
+        <MudLayout>
+            <MudAppBar Elevation="1" Dense="true">
+                <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
+                               OnClick="() => _drawerOpen = !_drawerOpen" aria-label="Menu" />
+                <MudText Typo="Typo.h6" Class="ml-2">ERP</MudText>
+                <MudSpacer />
+                <MudMenu Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Inherit" AnchorOrigin="Origin.BottomRight"
+                         aria-label="Account">
+                    <MudText Typo="Typo.body2" Class="px-4 pt-2">@context.User.Identity?.Name</MudText>
+                    <MudText Typo="Typo.caption" Class="px-4 pb-2">@RoleOf(context)</MudText>
+                    <MudDivider />
+                    <MudMenuItem OnClick="() => SignOut(false)">Sign out</MudMenuItem>
+                    <MudMenuItem OnClick="() => SignOut(true)">Sign out everywhere</MudMenuItem>
+                </MudMenu>
+            </MudAppBar>
+            <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="1">
+                <NavMenu />
+            </MudDrawer>
+            <MudMainContent>
+                <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-6">
+                    @Body
+                </MudContainer>
+            </MudMainContent>
+        </MudLayout>
+    </Authorized>
+    <NotAuthorized>
+        @Body
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    private bool _drawerOpen = true;
+
+    private static readonly MudTheme Theme = new()
+    {
+        PaletteLight = new PaletteLight { Primary = "#1e5aa8", AppbarBackground = "#1e5aa8" }
+    };
+
+    private static string RoleOf(AuthenticationState state) =>
+        state.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
+
+    private async Task SignOut(bool everywhere)
+    {
+        await Auth.SignOutAsync(everywhere);
+        Nav.NavigateTo("login");
+    }
+}
+```
+
+Inside `<AuthorizeView>`, `context` is the signed-in user. **`MudPopoverProvider`** is where MudBlazor draws
+anything that pops up, like the account menu; it appears once, here. And **Sign out everywhere** is the
+endpoint from step 6, one click away.
+
+Last, the home page greets the person by name. In `Home.razor`:
+
+```razor
+<AuthorizeView Context="auth">
+    <MudText Typo="Typo.h4" GutterBottom="true">Good day, @auth.User.Identity?.Name</MudText>
+    <MudText Class="mb-6 mud-text-secondary">Here's where your work starts.</MudText>
+</AuthorizeView>
+```
+
 ## How a request flows
 
 ```mermaid
 sequenceDiagram
-  participant C as Client
-  participant I as Identity /auth/login
-  participant A as UseAuthentication
-  participant E as /auth/me
-  C->>I: email + password
-  I->>I: check hash, count failures, maybe lock out
-  I-->>C: accessToken + refreshToken
-  C->>A: GET /auth/me (Authorization: Bearer ...)
-  A->>A: decrypt token → claims (id, name, role)
-  A->>E: request with User set
-  E-->>C: { id, username, role }
+  participant B as Browser
+  participant H as Erp.Api
+  B->>H: GET /ping (a page of the app)
+  H-->>B: index.html; the app starts
+  B->>H: GET /api/auth/me
+  H-->>B: 401
+  Note over B: RedirectToLogin → /login?returnUrl=ping
+  B->>H: POST /api/auth/login?useCookies=true
+  H->>H: check hash, count failures, maybe lock out
+  H-->>B: 200 + Set-Cookie (HttpOnly, SameSite=Strict)
+  B->>H: GET /api/auth/me (cookie sent automatically)
+  H-->>B: 200 { id, username, role }
 ```
 
 ## Mistakes to avoid
@@ -560,6 +868,9 @@ sequenceDiagram
   exist.
 - Calling `UseAuthorization` before `UseAuthentication`. Nobody is identified yet, so everybody is denied.
 - Reading `HttpContext` in a handler. Use `ICurrentUser`.
+- An API key in the browser app. Anything shipped to a browser is public.
+- Treating a hidden button as security. The API must check every call; hiding is for convenience.
+- Trusting `returnUrl`. Only follow paths inside your own app.
 
 ## Let's run it!
 
@@ -567,28 +878,35 @@ sequenceDiagram
 dotnet run --project src/Erp.Api
 ```
 
+Open **http://localhost:5264/ping**. You land on the sign-in page instead: the address bar says
+`login?returnUrl=ping`. Sign in as `rep@erp.local` with `Password123!`, and you're back on the Ping page.
+Open the account menu at the top right: `rep@erp.local`, `SalesRep`. Click **Sign out**, and you're at the
+sign-in page again. Try a wrong password: "Wrong email or password."
+
+The same from the terminal, the way a program would do it:
+
 Sign in as the manager and keep the token:
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:5264/auth/login -H "Content-Type: application/json" \
+TOKEN=$(curl -s -X POST http://localhost:5264/api/auth/login -H "Content-Type: application/json" \
   -d '{"email":"manager@erp.local","password":"Password123!"}' | jq -r .accessToken)
 
-curl -s http://localhost:5264/auth/me -H "Authorization: Bearer $TOKEN"
+curl -s http://localhost:5264/api/auth/me -H "Authorization: Bearer $TOKEN"
 # {"id":2,"username":"manager@erp.local","role":"SalesManager"}
 ```
 
 Now the doors that should stay shut:
 
 ```bash
-curl -i http://localhost:5264/auth/me                       # 401: no token
-curl -i -X POST http://localhost:5264/auth/register -H "Content-Type: application/json" \
+curl -i http://localhost:5264/api/auth/me                       # 401: no token
+curl -i -X POST http://localhost:5264/api/auth/register -H "Content-Type: application/json" \
   -d '{"email":"intruder@example.com","password":"LongEnoughPassword1"}'   # 404: sign-up is blocked
-curl -i -X POST http://localhost:5264/auth/login -H "Content-Type: application/json" \
+curl -i -X POST http://localhost:5264/api/auth/login -H "Content-Type: application/json" \
   -d '{"email":"rep@erp.local","password":"wrong"}'          # 401: wrong password
 ```
 
 Five wrong passwords in a row would lock `rep@erp.local` for 15 minutes, so don't try that on a user you
-still need. [Lesson 13](13-testing.md) proves lockout with a throwaway user instead.
+still need. [Lesson 12](12-testing.md) proves lockout with a throwaway user instead.
 
 ## Let's check!
 
@@ -598,11 +916,13 @@ still need. [Lesson 13](13-testing.md) proves lockout with a throwaway user inst
 4. Why a 12-character minimum with no "must contain a digit" rule?
 5. What does "sign out everywhere" change, and why does that end every session?
 6. Why does `CurrentUser` live in Infrastructure, while `ICurrentUser` lives in BuildingBlocks?
+7. The browser app can't read the sign-in cookie. How does it know who's signed in?
+8. What is an open redirect, and which line on the sign-in page prevents it?
 
 And that's where this lesson ends. People can now sign in, and the app knows who they are and what role
-they have. Next time, we give them somewhere to sign in: the browser app that every later lesson adds a
-screen to. Good luck, developer!
+they have, in the app and through the API. Next time, we build our first real feature from end to end, from
+the handler to its screen: creating a sales order. Good luck, developer!
 
 ---
 
-← [Lesson 04 — Database](04-database.md) · Next: [Lesson 06 — The interface](06-interface.md) →
+← [Lesson 04 — Database](04-database.md) · Next: [Lesson 06 — Create an order](06-create-order.md) →

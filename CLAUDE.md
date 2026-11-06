@@ -103,7 +103,8 @@ AwesomeAssertions** · **PdfSharp/MigraDoc** for invoices · **MailKit** for ema
 (Linux containers, Docker Compose, Caddy for HTTPS) as the main path, **IIS** as the documented alternative.
 
 > **Direction update (2026-11-06, user decision).** The product runs on Docker; the interface is built in the
-> course, lesson by lesson, so there is no separate test console. The browser app signs in with Identity's
+> course alongside the logic: lesson 01 creates the Blazor app, lesson 05 signs in through it, and every
+> feature lesson adds its screen. There is no separate test console and no separate "interface" lesson. The browser app signs in with Identity's
 > cookie; there are **no API keys** (a key shipped in a browser app is public). Add machine-client keys only
 > when a non-person client exists.
 
@@ -186,8 +187,9 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
 ## 5. Conventions to preserve
 
 - **Two files per feature:** `XxxHandler.cs` (Command/Query + Result/DTOs + Validator + Handler) and
-  `XxxEndpoint.cs` (Request/Response + Carter module). **Never** technical-layer folders (`Commands/`,
-  `Handlers/`, `Validators/`, `Endpoints/`).
+  `XxxEndpoint.cs` (Request/Response + Carter module). Closely related actions on one thing may share a
+  feature folder (`UpdateCustomer` also holds block/unblock; `ItemCategories` holds list and save). **Never**
+  technical-layer folders (`Commands/`, `Handlers/`, `Validators/`, `Endpoints/`).
 - **Mediator:** `martinothamar/Mediator` — `ICommand<T>`/`ICommandHandler<,>`, `IQuery<T>`/`IQueryHandler<,>`;
   pipeline = `TelemetryBehavior` (span + duration metric + log, outermost) then `ValidationBehavior`.
   Handlers return `ValueTask`. Handlers never publish events themselves — the outbox does.
@@ -216,12 +218,15 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
   `IDesignTimeDbContextFactory`, so `dotnet ef` and the running app can never disagree. Table names are
   explicit and singular (`ToTable("sales_order")`).
 - **Reads:** query handlers call SQL functions with Dapper (`SELECT * FROM sales.search_sales_orders(@...)`).
-  Functions are **schema-qualified in their definition and every C# call**, live as one `.sql` file each in
-  the module's `Infrastructure/Sql/Functions/` named `schema.function.vN.sql`, and are applied by a migration
+  Functions are **schema-qualified in their definition and every C# call**, live as one `.sql` file per read in
+  the module's `Infrastructure/Sql/Functions/` named `schema.function.vN.sql` (with its companions: the
+  `count_` for a search, the `_lines` for a get), and are applied by a migration
   via `migrationBuilder.Sql`. **A shipped migration or script is never edited** — a changed function gets a
   `.v2` file and a new migration. Dapper maps snake_case columns to PascalCase records
   (`MatchNamesWithUnderscores`, set once in `AddSharedInfrastructure`).
-- **Domain events:** raise an event only in the same change that adds its first handler. The Mediator
+- **Domain events:** raise an event only in the same change that adds its first handler. Integration
+  events live in a module's `.Contracts` project, and **every Contracts assembly that holds events must be
+  listed in the Mediator's `options.Assemblies`**, or publishing reaches no handler, silently. The Mediator
   generator's MSG0005 ("no handler") stays ON — never suppress it globally.
 - **Dev seed data** lives in each module's `Infrastructure/Sql/DevSeed.sql`, runs only when
   `Database:SeedDevelopmentData` is true (Development/tests), and is idempotent.

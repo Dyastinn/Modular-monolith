@@ -1,4 +1,4 @@
-# Lesson 12 — Observability: Seeing What the App Is Doing
+# Lesson 13 — Observability: Seeing What the App Is Doing
 
 Good day, developer! Picture a Monday morning. A manager calls: "approving orders was slow on Friday, and one
 failed." Where do you even start? Right now, you'd scroll through console output and guess. Today we fix that.
@@ -320,8 +320,8 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = c => c
 ```
 
 (add `using Microsoft.AspNetCore.Diagnostics.HealthChecks;`). `/health/live` runs no checks at all: if it
-answers, the process is alive. `/health/ready` runs every check tagged `ready`. Remove the old `"/"` endpoint
-from lesson 01; the health checks do its job better now.
+answers, the process is alive. `/health/ready` runs every check tagged `ready`. They sit outside `/api` on
+purpose: they're for machines watching the server, not for the app, and they need no sign-in.
 
 ## 4. The Aspire dashboard
 
@@ -406,7 +406,7 @@ flowchart LR
   A --> T[TelemetryBehavior span: SubmitSalesOrderCommand]
   T --> Q1[Npgsql span: SELECT order]
   T --> Q2[Npgsql span: SELECT ... FOR UPDATE]
-  T --> Q3[Npgsql span: UPDATE stock_item]
+  T --> Q3[Npgsql span: UPDATE inventory.item]
   T --> Q4[Npgsql span: UPDATE sales_order + INSERT outbox_message]
   A -. same trace id .-> L[every log line of this request]
 ```
@@ -427,11 +427,12 @@ dotnet run --project src/Erp.AppHost
 ```
 
 The console prints a login link, like `http://localhost:15180/login?t=...`. Open it. You'll see `erp-api`
-running. Then, from another terminal, do a few things: sign in, create an order, submit it, approve one.
+running. Then open the app at `http://localhost:5264` and do a few things: sign in, create an order,
+submit it, approve one.
 
 In the dashboard:
 
-- **Traces**: open the `POST /sales-orders/{id}/submit` trace. You'll see the `SubmitSalesOrderCommand` span,
+- **Traces**: open the `POST /api/sales-orders/{id}/submit` trace. You'll see the `SubmitSalesOrderCommand` span,
   and inside it each database command, with its SQL and its duration.
 - **Structured logs**: find the audit line "approved by ... for ₱...". Click its trace id, and you land on the
   `outbox deliver` span that wrote it.
@@ -443,7 +444,7 @@ And the health checks:
 curl -s http://localhost:5264/health/live    # Healthy
 curl -s http://localhost:5264/health/ready   # Healthy  (stop PostgreSQL and it says Unhealthy)
 curl -si http://localhost:5264/health/live | grep -i x-trace-id   # (none: health isn't traced)
-curl -si http://localhost:5264/sales-orders -H "Authorization: Bearer $TOKEN" | grep -i x-trace-id
+curl -si http://localhost:5264/api/sales-orders -H "Authorization: Bearer $TOKEN" | grep -i x-trace-id
 ```
 
 ## Let's check!
@@ -456,9 +457,9 @@ curl -si http://localhost:5264/sales-orders -H "Authorization: Bearer $TOKEN" | 
 6. How does a user's error report help you find the right trace?
 
 And that's where this lesson ends. When something goes wrong now, you can see exactly what happened, and
-where. Next time, we harden the app for the outside world: rate limits, HTTPS, security headers, and a
-database account that can't drop your tables. Good luck, developer!
+where. The sales core is complete. Next time, we start building out the rest of the business, beginning
+with the customers themselves. Good luck, developer!
 
 ---
 
-← [Lesson 12 — Events and the outbox](12-events-outbox.md) · Next: [Lesson 22 — Security hardening](22-security-hardening.md) →
+← [Lesson 12 — Testing](12-testing.md) · Next: [Lesson 14 — Customers](14-customers.md) →

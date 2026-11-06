@@ -1,21 +1,24 @@
-# Lesson 15 — Deploy to IIS: The App Goes to Work
+# Lesson 23 — Deploy to IIS: The Windows Server Alternative
 
-Good day, developer! Until now, our ERP has lived on your machine, started by `dotnet run` and fed by a
-database full of test users. Today it moves to a real Windows server, behind IIS, where a business can
-use it every day. We'll build a release, prepare the server, migrate the database the safe way, and meet
-our first real user. About three hours, most of it waiting for installers. Are you ready? Let's begin!
+Good day, developer! Last lesson, the ERP went to work on a Linux server in Docker, and that's the main path
+for this course. But many Philippine businesses already run Windows Server, with an IT person who knows IIS
+and nothing else. For them, here's the same ERP on IIS: same app, same database rules, same safety, just a
+different host. We'll build a release, prepare the server, migrate the database the safe way, and meet the
+first real user. About three hours, most of it waiting for installers. Are you ready? Let's begin!
 
 ## What we'll build
 
 | Piece | Where it lives |
 |---|---|
-| A first admin, created from configuration on a fresh install | The Identity module |
 | A release: the published app, plus one migration bundle per module | `release/` on your machine, then `C:\deploy\erp` on the server |
 | IIS and the .NET Hosting Bundle | The server |
-| The `erp` database with its two accounts from [lesson 22](22-security-hardening.md) | PostgreSQL, on the server |
+| The `erp` database with its two accounts from [lesson 21](21-security-hardening.md) | PostgreSQL, on the server |
 | An app pool that never falls asleep, holding the app's settings | IIS |
 | A site with HTTPS | IIS, serving `C:\inetpub\erp` |
 | A routine for deploying again | Five PowerShell lines |
+
+The first admin comes from the `InitialAdmin` settings you met in [lesson 22](22-docker.md); nothing new is
+needed for it here.
 
 ## Why we build it this way
 
@@ -25,7 +28,7 @@ The obvious way to deploy is to copy your `bin` folder to the server, turn `Migr
 The app migrates on every start, so a routine restart at 3 a.m. can run a migration nobody is watching, and
 the running app needs a database account that can drop tables. Every `dotnet publish` writes a fresh
 `web.config`, so your settings vanish on the next deploy. And IIS, left on its defaults, stops an idle app
-after twenty minutes, taking the outbox dispatcher from [lesson 12](12-events-outbox.md) with it.
+after twenty minutes, taking the outbox dispatcher from [lesson 11](11-events-outbox.md) with it.
 
 So we split the work by who does it, and when:
 
@@ -43,186 +46,15 @@ inside IIS's own worker process, `w3wp.exe`, and hands it every request. That's 
 hosting**. IIS owns the address, the certificate and the process; from the middleware pipeline down,
 everything is the app you already know.
 
-## 1. The first admin
+## 1. What you need before you start
 
-Here's a problem we haven't met yet. On your machine, the development seed creates three users. A real
-install has no seed, and in [lesson 05](05-sign-in.md) we blocked `/auth/register` on purpose. So a fresh
-install has no users, and no way to make one.
-
-The fix is a setting that's read once. If `InitialAdmin:Email` and `InitialAdmin:Password` are set, and
-the database has no users at all, the app creates that user as an Admin when it starts:
-
-```csharp
-// src/Modules/Identity/Erp.Modules.Identity/Infrastructure/InitialAdmin.cs
-using Erp.Shared.BuildingBlocks;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-
-namespace Erp.Modules.Identity.Infrastructure;
-
-// A fresh install has no users and self sign-up is blocked, so the first admin comes from configuration.
-// It only acts while there are no users at all, so a forgotten setting can't recreate an account later.
-internal sealed class InitialAdmin(IServiceScopeFactory scopes, IConfiguration config, ILogger<InitialAdmin> log)
-    : IHostedService
-{
-    public async Task StartAsync(CancellationToken ct)
-    {
-        var email = config["InitialAdmin:Email"];
-        var password = config["InitialAdmin:Password"];
-        if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password)) return;
-
-        await using var scope = scopes.CreateAsyncScope();
-        var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
-        if (await users.Users.AnyAsync(ct))
-        {
-            log.LogWarning("InitialAdmin is set, but users already exist, so it was ignored. Remove the setting.");
-            return;
-        }
-
-        var admin = new AppUser { UserName = email, Email = email, EmailConfirmed = true };
-        var result = await users.CreateAsync(admin, password);
-        if (result.Succeeded)
-            result = await users.AddToRoleAsync(admin, Roles.Admin);
-        if (!result.Succeeded)
-            throw new InvalidOperationException(
-                "The initial admin was not created: " + string.Join("; ", result.Errors.Select(e => e.Description)));
-
-        log.LogInformation("Initial admin {Email} created. Remove the InitialAdmin settings.", email);
-    }
-
-    public Task StopAsync(CancellationToken ct) => Task.CompletedTask;
-}
-```
-
-An `IHostedService` is the simpler parent of the `BackgroundService` from lesson 11: ASP.NET Core calls
-`StartAsync` once as the app starts, and `StopAsync` once as it stops. Three choices here are deliberate:
-
-| Choice | Why |
+| You need | Why |
 |---|---|
-| Through `UserManager`, never SQL | Identity hashes the password and applies the password policy, exactly as for every other user |
-| Only when there are **no users at all** | Someone forgets to remove the setting, and a year later deletes that account. It must not come back with a password sitting in a config file |
-| A bad password stops the app from starting | A password shorter than 12 characters fails the policy. Better a loud failure on install day than an install nobody can sign in to |
-
-Register it at the end of `AddIdentityModule`, after `AddDataProtection()`:
-
-```csharp
-services.AddHostedService<InitialAdmin>();
-```
-
-And list the setting, empty, in `appsettings.json`, so whoever installs the app can see it exists:
-
-```json
-"InitialAdmin": { "Email": "", "Password": "" }
-```
-
-Now a test that installs the app the way a customer will: its own empty database, no seed, only the two
-settings. The test factory from [lesson 13](13-testing.md) already knows how to drop a database; let's
-let it drop any database, not just its own.
-
-Before, in `CustomWebAppFactory`:
-
-```csharp
-private static void DropTestDatabase()
-{
-    var target = new NpgsqlConnectionStringBuilder(TestConnectionString);
-    var admin = new NpgsqlConnectionStringBuilder(TestConnectionString) { Database = "postgres", Pooling = false };
-```
-
-After:
-
-```csharp
-public static void DropDatabase(string connectionString)
-{
-    var target = new NpgsqlConnectionStringBuilder(connectionString);
-    var admin = new NpgsqlConnectionStringBuilder(connectionString) { Database = "postgres", Pooling = false };
-```
-
-and the constructor calls `DropDatabase(TestConnectionString)`. Then the new test file:
-
-```csharp
-// tests/Erp.Integration.Tests/FirstRunTests.cs
-using System.Net;
-using System.Net.Http.Json;
-using AwesomeAssertions;
-using Erp.Shared.BuildingBlocks;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Npgsql;
-
-namespace Erp.Integration.Tests;
-
-// A production install: its own empty database, no development users, only the InitialAdmin settings.
-public sealed class FirstRunFactory : WebApplicationFactory<Program>
-{
-    public const string AdminEmail = "owner@company.test";
-    public const string AdminPassword = "a long first-run password";
-
-    private static readonly string ConnectionString =
-        new NpgsqlConnectionStringBuilder(CustomWebAppFactory.TestConnectionString) { Database = "erp_test_first_run" }
-            .ConnectionString;
-
-    public FirstRunFactory() => CustomWebAppFactory.DropDatabase(ConnectionString);
-
-    protected override void ConfigureWebHost(IWebHostBuilder builder)
-    {
-        builder.UseEnvironment("Development");
-        builder.UseSetting("ConnectionStrings:ErpDb", ConnectionString);
-        builder.UseSetting("Database:SeedDevelopmentData", "false");
-        builder.UseSetting("InitialAdmin:Email", AdminEmail);
-        builder.UseSetting("InitialAdmin:Password", AdminPassword);
-        builder.UseSetting("ApiKeys:tests", CustomWebAppFactory.TestApiKey);
-    }
-
-    protected override void ConfigureClient(HttpClient client)
-    {
-        client.DefaultRequestHeaders.Add("X-Api-Key", CustomWebAppFactory.TestApiKey);
-        base.ConfigureClient(client);
-    }
-}
-
-// The least-privilege roles can't create a database, so this one only runs against the default superuser.
-public sealed class OwnDatabaseFactAttribute : FactAttribute
-{
-    public OwnDatabaseFactAttribute()
-    {
-        if (Environment.GetEnvironmentVariable("ERP_TEST_DB_OWNER") is not null)
-            Skip = "Needs to create its own database.";
-    }
-}
-
-public class FirstRunTests(FirstRunFactory factory) : IClassFixture<FirstRunFactory>
-{
-    private sealed record Tokens(string AccessToken);
-    private sealed record Me(long Id, string Username, string Role);
-
-    [OwnDatabaseFact]
-    public async Task A_fresh_install_gets_its_first_admin_from_configuration()
-    {
-        var client = factory.CreateClient();
-
-        var login = await client.PostAsJsonAsync("/auth/login",
-            new { email = FirstRunFactory.AdminEmail, password = FirstRunFactory.AdminPassword });
-        login.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var token = (await login.Content.ReadFromJsonAsync<Tokens>())!.AccessToken;
-        client.DefaultRequestHeaders.Authorization = new("Bearer", token);
-        var me = await client.GetFromJsonAsync<Me>("/auth/me");
-        me!.Role.Should().Be(Roles.Admin);
-    }
-}
-```
-
-It still uses the Development environment, because that's what turns on migrating at startup for tests;
-`SeedDevelopmentData` is switched off, so the only user who can exist is the one from `InitialAdmin`. The
-class sits outside the `Integration` collection because it has a database of its own, so it can run
-alongside the others. And when the suite runs as the least-privilege accounts from lesson 14, this one test
-is reported as skipped, because `erp_owner` isn't allowed to create databases.
-
-Run `dotnet test`: now 25 integration tests pass.
+| Windows Server 2019 or later, with administrator access | Older versions can't run .NET 10's Hosting Bundle |
+| A DNS name pointing at the server, say `erp.yourcompany.ph` | The HTTPS certificate is for a name, not an address |
+| An HTTPS certificate for that name, as a `.pfx` | Step 8. Free from Let's Encrypt through win-acme, or from your company's certificate authority |
+| A data-protection certificate, `dataprotection.pfx`, with its password | Lesson 21. Made with OpenSSL on any machine |
+| A password manager | Three passwords are made in step 4, and you'll want them again at every deploy |
 
 ## 2. Build the release
 
@@ -234,7 +66,7 @@ On your machine, from the solution folder:
 ```bash
 dotnet publish src/Erp.Api -c Release -o release/app
 
-for m in Identity Sales Inventory; do
+for m in Identity Sales Inventory Purchasing Invoicing; do
   dotnet ef migrations bundle --configuration Release \
     --project src/Modules/$m/Erp.Modules.$m --startup-project src/Modules/$m/Erp.Modules.$m \
     --output release/migrations/migrate-$m.exe --force
@@ -253,8 +85,9 @@ the app, with no rebuild.
 A **migration bundle** is new. It's a single `.exe` that contains one module's migrations, built by the same
 `dotnet ef` tool you've used since [lesson 04](04-database.md). On the server, you run it with a connection
 string, and it applies whatever migrations that database hasn't had yet, then stops. Run it twice and the
-second run does nothing, so it's safe on every deploy. We get three, because each module has its own
-DbContext and its own migration history. They don't depend on each other: no foreign key crosses a schema.
+second run does nothing, so it's safe on every deploy. We get five, because each module has its own
+DbContext and its own migration history. (Lesson 22 built the same bundles inside the Docker image, for
+Linux; these are Windows `.exe`s.) They don't depend on each other: no foreign key crosses a schema.
 
 Look inside `release/app`, and you'll find a `web.config` you never wrote:
 
@@ -330,7 +163,7 @@ Install PostgreSQL 16 or later on the server, with the Windows installer from
 wizard. Choose a strong password for the `postgres` superuser and keep it somewhere safe; after today, you'll
 rarely need it.
 
-Now the two accounts from lesson 13. They need real passwords this time, so let's generate them:
+Now the two accounts from lesson 21. They need real passwords this time, so let's generate them:
 
 ```powershell
 function New-Secret {
@@ -367,7 +200,7 @@ On the server:
 
 ```powershell
 $owner = "Host=localhost;Database=erp;Username=erp_owner;Password=$ownerPassword"
-foreach ($m in 'Identity', 'Sales', 'Inventory') {
+foreach ($m in 'Identity', 'Sales', 'Inventory', 'Purchasing', 'Invoicing') {
     & "C:\deploy\erp\migrations\migrate-$m.exe" --connection $owner
     if ($LASTEXITCODE -ne 0) { throw "migrate-$m failed" }
 }
@@ -386,7 +219,7 @@ On a brand-new database, each one also logs a `Failed executing DbCommand` for
 it. It's harmless.
 
 The schemas, tables and SQL functions are now owned by `erp_owner`, and thanks to the default privileges
-from lesson 13, `erp_app` can read and write their rows. That only works because the bundles ran as
+from lesson 21, `erp_app` can read and write their rows. That only works because the bundles ran as
 `erp_owner`. Run them as `postgres`, and every object belongs to `postgres`, and `erp_app` gets
 `permission denied` on its first query.
 
@@ -438,23 +271,41 @@ function Set-PoolVariable($name, $value) {
 }
 ```
 
+The data-protection certificate from lesson 21 goes in a folder only the pool can read:
+
+```powershell
+New-Item -ItemType Directory C:\ProgramData\Erp -Force | Out-Null
+Copy-Item C:\deploy\dataprotection.pfx C:\ProgramData\Erp\
+icacls C:\ProgramData\Erp /inheritance:r /grant 'Administrators:(OI)(CI)F' 'IIS AppPool\ErpApi:(OI)(CI)R' | Out-Null
+$certPassword = Read-Host 'Certificate password'
+```
+
+(Make the `.pfx` on any machine with OpenSSL, exactly as in lesson 21, and copy it over with the release.)
+
 And the settings themselves:
 
 ```powershell
-$webKey = New-Secret
-$webKey                              # into the password manager, next to the other two
-
-Set-PoolVariable 'ConnectionStrings__ErpDb' "Host=localhost;Database=erp;Username=erp_app;Password=$appPassword"
-Set-PoolVariable 'ApiKeys__web'             $webKey
-Set-PoolVariable 'InitialAdmin__Email'      'you@yourcompany.ph'
-Set-PoolVariable 'InitialAdmin__Password'   'a long password you will change in a minute'
+Set-PoolVariable 'ConnectionStrings__ErpDb'              "Host=localhost;Database=erp;Username=erp_app;Password=$appPassword"
+Set-PoolVariable 'DataProtection__CertificatePath'       'C:\ProgramData\Erp\dataprotection.pfx'
+Set-PoolVariable 'DataProtection__CertificatePassword'   $certPassword
+Set-PoolVariable 'Company__Name'                         'Your Company Inc.'
+Set-PoolVariable 'Company__Tin'                          '123-456-789-000'
+Set-PoolVariable 'Company__Address'                      'Your business address'
+Set-PoolVariable 'Smtp__Host'                            'smtp.yourprovider.ph'
+Set-PoolVariable 'Smtp__Username'                        'erp@yourcompany.ph'
+Set-PoolVariable 'Smtp__Password'                        (Read-Host 'SMTP password')
+Set-PoolVariable 'Smtp__From'                            'erp@yourcompany.ph'
+Set-PoolVariable 'InitialAdmin__Email'                   'you@yourcompany.ph'
+Set-PoolVariable 'InitialAdmin__Password'                'a long password you will change in a minute'
 ```
 
 | Setting | What it's for |
 |---|---|
 | `ConnectionStrings__ErpDb` | The app connects as `erp_app`: rows only |
-| `ApiKeys__web` | The key a client app sends as `X-Api-Key` (lesson 13) |
-| `InitialAdmin__Email`, `InitialAdmin__Password` | The first admin. Removed again as soon as you've signed in |
+| `DataProtection__CertificatePath`, `__CertificatePassword` | Encrypts the sign-in keys at rest (lesson 21). Without them, the app refuses to start |
+| `Company__*` | Printed on every invoice (lesson 19). `Company__TimeZone` defaults to `Asia/Manila` |
+| `Smtp__*` | Password-reset email (lesson 15). Without a host, the email goes to the log instead |
+| `InitialAdmin__Email`, `InitialAdmin__Password` | The first admin (lesson 22). Removed again as soon as you've signed in |
 
 And just as important, what's *not* here:
 
@@ -464,12 +315,13 @@ And just as important, what's *not* here:
 | `ConnectionStrings__ErpDbMigrations` | The app never migrates in production. The owner's password only ever appears in step 5 |
 | `Database__MigrateOnStartup` | Off in `appsettings.json` since lesson 04, and it stays off |
 | `Cors__AllowedOrigins__0` | Only needed if a browser app on *another* address calls the API |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | Where to send logs, traces and metrics. Lesson 16 picks a destination |
+| `ASPNETCORE_FORWARDEDHEADERS_ENABLED` | Needed behind Caddy (lesson 22), not here: ANCM passes IIS's client address and scheme to the app by itself |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Where to send logs, traces and metrics. [Lesson 24](24-production-checklist.md) picks a destination |
 
 Now, let's be honest about where these live. A password in `applicationHost.config` is still a password in
 a file on the server. Only administrators can read that file, and it's never part of a deploy or of Git,
-which is a real step up from `web.config`. A dedicated secret store is stronger still, and lesson 16
-points to one.
+which is a real step up from `web.config`. A dedicated secret store is stronger still, and
+[lesson 24](24-production-checklist.md) points to one.
 
 ## 7. The site
 
@@ -510,11 +362,11 @@ New-WebBinding -Name ErpApi -Protocol https -Port 443 -HostHeader erp.yourcompan
 ```
 
 `SslFlags 1` is SNI, which lets several HTTPS sites share port 443. Keep the port 80 binding: a visitor who
-types `http://` reaches the app, `UseHttpsRedirection` from lesson 13 sends them to `https://`, and HSTS
+types `http://` reaches the app, `UseHttpsRedirection` from lesson 21 sends them to `https://`, and HSTS
 makes their browser go straight to HTTPS from then on. IIS now does the encryption, so the app never sees
 the certificate at all.
 
-In lesson 13 we stopped Kestrel announcing itself in a `Server` header. Under IIS, Kestrel isn't the server;
+In lesson 21 we stopped Kestrel announcing itself in a `Server` header. Under IIS, Kestrel isn't the server;
 IIS is, and it adds `Server: Microsoft-IIS/10.0` and `X-Powered-By: ASP.NET` to every response. Both are
 server-wide settings, made once:
 
@@ -532,10 +384,10 @@ IIS failures look mysterious, but each status code is a diagnosis. Don't guess; 
 | You see | It means | Do this |
 |---|---|---|
 | **500.19** | IIS can't understand `web.config`: ANCM isn't installed | Install or repair the Hosting Bundle (step 3) |
-| **500.30** | The app threw while starting. This one is ours | Read the Event Log, below. Usually a wrong connection string, an unreachable database, or an `InitialAdmin` password under 12 characters |
+| **500.30** | The app threw while starting. This one is ours | Read the Event Log, below. Usually a wrong connection string, an unreachable database, a missing data-protection certificate (or one the pool can't read), or an `InitialAdmin` password under 12 characters |
 | **500.31** | The .NET runtime the app needs isn't on the server | Install the .NET 10 Hosting Bundle |
 | **503** for everything | The app crashed five times in five minutes, so IIS stopped the pool | Fix the 500.30 cause, then `Start-WebAppPool ErpApi` |
-| **401** on every call | No `X-Api-Key`, or the wrong one | Check `ApiKeys__web` |
+| Invoice PDF fails | No font found | Arial ships with Windows Server; if it's been removed, set `Invoicing__FontPath` and `Invoicing__BoldFontPath` |
 | `/health/ready` says **Unhealthy** | The app is up, the database isn't reachable | Connection string, PostgreSQL service, `pg_hba.conf`, firewall |
 | **500** with `permission denied` in the log | The migrations ran as someone other than `erp_owner` | On a fresh install, drop the database and repeat steps 4 and 5 |
 
@@ -565,7 +417,7 @@ $ownerPassword = Read-Host 'erp_owner password'
 $owner = "Host=localhost;Database=erp;Username=erp_owner;Password=$ownerPassword"
 
 Set-Content C:\inetpub\erp\app_offline.htm '<h1>The ERP is being updated. Back in a minute.</h1>'
-foreach ($m in 'Identity', 'Sales', 'Inventory') {
+foreach ($m in 'Identity', 'Sales', 'Inventory', 'Purchasing', 'Invoicing') {
     & "C:\deploy\erp\migrations\migrate-$m.exe" --connection $owner
     if ($LASTEXITCODE -ne 0) { throw "migrate-$m failed; the site stays offline" }
 }
@@ -589,22 +441,21 @@ and go out now.
 flowchart LR
   C[Browser or client app] -->|HTTPS, port 443| I[IIS: binding and certificate]
   I --> A[ANCM]
-  A --> W["Erp.Api inside w3wp.exe<br/>the pipeline from lesson 13"]
+  A --> W["Erp.Api inside w3wp.exe<br/>the pipeline from lesson 21"]
   W -->|erp_app: rows only| P[(PostgreSQL)]
   O[OutboxDispatcher, same process] -->|erp_app| P
   D[You, at deploy time] -->|migration bundles as erp_owner| P
 ```
 
 Everything to the right of ANCM is the app you've been building since lesson 01, unchanged. IIS decided
-where it runs, not how it works. The only code we wrote today was the first admin, and that's a product
-feature, not a hosting one.
+where it runs, not how it works. We wrote no code at all today.
 
 ## Mistakes to avoid
 
 - Running the migration bundles as `postgres`. Everything they create belongs to `postgres`, and `erp_app`
   can't touch it.
 - Setting `ASPNETCORE_ENVIRONMENT` to `Development` on a server. It turns on migrating and seeding, and the
-  seed creates three users whose password is printed in this course.
+  seed creates six users whose password is printed in this course.
 - Typing settings into the published `web.config`. The next publish erases them.
 - Leaving the idle timeout at 20 minutes. Events wait for a visitor instead of going out.
 - Leaving `InitialAdmin__Password` in the app pool after you've signed in.
@@ -614,68 +465,34 @@ feature, not a hosting one.
 
 ## Let's run it!
 
-From your own machine, in PowerShell (the server works too, if the name resolves there):
+From your own machine, open **https://erp.yourcompany.ph** in a browser. Sign in as your first admin. The
+account menu says *Administrator*, Admin. Then, before anything else:
+
+1. **Change password**, in the account menu.
+2. On the server, remove the two settings and restart the pool:
+
+   ```powershell
+   Remove-PoolVariable 'InitialAdmin__Email'
+   Remove-PoolVariable 'InitialAdmin__Password'
+   Restart-WebAppPool ErpApi
+   ```
+
+3. Back in the browser, click around: you're still signed in. That's lesson 21's sign-in keys at work: they
+   live in the database, encrypted with the certificate, so a restart doesn't sign anyone out.
+4. **Administration → Users**: create the real staff accounts.
+
+Now the protections, from PowerShell:
 
 ```powershell
 $base = 'https://erp.yourcompany.ph'
-$key  = @{ 'X-Api-Key' = '<your ApiKeys__web value>' }
-
-Invoke-RestMethod "$base/health/ready"                          # Healthy
-try { Invoke-RestMethod "$base/sales-orders" } catch { $_.Exception.Response.StatusCode }   # Unauthorized
-```
-
-Sign in as your first admin:
-
-```powershell
-$body  = @{ email = 'you@yourcompany.ph'; password = 'a long password you will change in a minute' } | ConvertTo-Json
-$login = Invoke-RestMethod "$base/auth/login" -Method Post -Headers $key -ContentType 'application/json' -Body $body
-$auth  = $key + @{ Authorization = "Bearer $($login.accessToken)" }
-
-Invoke-RestMethod "$base/auth/me" -Headers $auth
-```
-
-```
-id username           role
--- --------           ----
- 1 you@yourcompany.ph Admin
-```
-
-Change that password right away, through Identity's own endpoint from lesson 05:
-
-```powershell
-$change = @{ oldPassword = 'a long password you will change in a minute'; newPassword = '<your real password>' } | ConvertTo-Json
-Invoke-RestMethod "$base/auth/manage/info" -Method Post -Headers $auth -ContentType 'application/json' -Body $change
-```
-
-Then, on the server, remove the two settings and restart the pool:
-
-```powershell
-Remove-PoolVariable 'InitialAdmin__Email'
-Remove-PoolVariable 'InitialAdmin__Password'
-Restart-WebAppPool ErpApi
-```
-
-Back on your machine, the token you got *before* the restart still works:
-
-```powershell
-Invoke-RestMethod "$base/auth/me" -Headers $auth
-```
-
-That's lesson 13's sign-in keys at work: they live in the database, so a restart doesn't sign anyone out.
-While you're there, the Event Log shows one warning from the first start, *No XML encryptor configured*.
-It's telling the truth: those keys are stored in the database without extra encryption. Lesson 16 has it on
-the checklist.
-
-Now the protections:
-
-```powershell
+Invoke-RestMethod "$base/health/ready"                                          # Healthy
 (Invoke-WebRequest "$base/health/live" -UseBasicParsing).Headers
+try { Invoke-RestMethod "$base/api/sales-orders" } catch { $_.Exception.Response.StatusCode }   # Unauthorized
 ```
 
 You'll find `Strict-Transport-Security`, `X-Frame-Options: DENY` and an `X-Trace-Id`, and no `Server` or
-`X-Powered-By`. Finally, `Invoke-RestMethod "$base/sales-orders" -Headers $auth` returns an empty page:
-`totalCount` is 0. A real install starts with no customers and no items. The screens to add them are the
-next part of the product.
+`X-Powered-By`. A real install starts with no customers, items or suppliers; the screens to add them are all
+there, and [lesson 24](24-production-checklist.md) lists the first-day setup in order.
 
 ## Let's check!
 
@@ -684,14 +501,14 @@ next part of the product.
 3. Why do the settings live in the app pool and not in `web.config`?
 4. What does IIS's idle timeout do to the outbox, and what happens to events raised while the app is
    stopped?
-5. Why does `InitialAdmin` only act when there are no users at all?
+5. Why doesn't this install set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`, when the Docker one does?
 6. A server answers 500.30. Where do you look first, and what are the usual causes?
 
-And that's where this lesson ends. Your ERP is running on a real server, over HTTPS, as an account that
-can't drop a table, with a real admin who chose their own password. Next time, in the last lesson, we walk
-the production checklist: what's done, what's left, and what you'd add as the business grows. Good luck,
-developer!
+And that's where this lesson ends. Your ERP runs on Windows too, over HTTPS, as an account that can't drop a
+table, with a real admin who chose their own password. Next time, in the last lesson, we walk the
+production checklist: what's done, the first day of a new install, and what you'd add as the business
+grows. Good luck, developer!
 
 ---
 
-← [Lesson 13 — Testing](13-testing.md) · Next: [Lesson 25 — Production checklist](25-production-checklist.md) →
+← [Lesson 22 — Docker](22-docker.md) · Next: [Lesson 24 — Production checklist](24-production-checklist.md) →

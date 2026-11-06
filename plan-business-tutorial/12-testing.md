@@ -1,10 +1,11 @@
-# Lesson 14 — Testing: Proving It All Works, Automatically
+# Lesson 12 — Testing: Proving It All Works, Automatically
 
 Good day, developer! We've had unit tests since [lesson 03](03-domain-model.md), and they prove the business
 rules. But some bugs can't live in a unit test: two requests racing for the last units of stock, a transaction
 that doesn't really span two modules, a validator that silently stopped running. Today we'll catch those, by
-running the whole API against a real PostgreSQL database. And we'll write tests for the architecture itself,
-so nobody can quietly knock down a module wall. About two hours. Are you ready? Let's begin!
+running the whole API against a real PostgreSQL database. We'll write tests for the architecture itself, so
+nobody can quietly knock down a module wall. And we'll drive a real browser through the real screens. About
+two and a half hours. Are you ready? Let's begin!
 
 ## What we'll build
 
@@ -12,7 +13,8 @@ so nobody can quietly knock down a module wall. About two hours. Are you ready? 
 |---|---|---|
 | `Erp.Modules.Sales.UnitTests` (from lesson 03) | Every business rule | Milliseconds, no database |
 | `Erp.Integration.Tests` | Real requests through the real API and a real database: auth, workflow, races, outbox | Seconds |
-| `Erp.Architecture.Tests` | The module rules: who may reference whom, what may be public | Milliseconds |
+| `Erp.Architecture.Tests` | The module rules: who may reference whom, what may be public, that every event is handled | Milliseconds |
+| `Erp.Web.UiTests` | A real browser clicking through the real screens | Seconds, against a running app |
 
 ## Why we build it this way
 
@@ -31,6 +33,12 @@ flake, and a failure points at exactly one rule. That's why lesson 03 came first
 
 For those, we start the **whole API in memory**, against a **real PostgreSQL database** made just for the
 tests, and send it real HTTP requests.
+
+### And the screens, once
+
+A test that drives a browser is slow and needs a running app, so we keep just a few: one walk through the
+main business flow, and one that opens every page and checks nothing crashed. They catch what no API test
+can, like a page that still expects a field the API renamed.
 
 ### And the architecture can be tested too
 
@@ -95,42 +103,22 @@ public sealed class CustomWebAppFactory : WebApplicationFactory<Program>
         Environment.GetEnvironmentVariable("ERP_TEST_DB")
         ?? "Host=localhost;Port=5432;Database=erp_test;Username=postgres;Password=erp_dev_only";
 
-    // Set to run the suite as the least-privilege erp_app (ERP_TEST_DB) against a database prepared by
-    // deploy/postgres/create-roles.sql, with migrations run as erp_owner. That database is not dropped.
-    private static readonly string? OwnerConnectionString = Environment.GetEnvironmentVariable("ERP_TEST_DB_OWNER");
-
-    public const string TestApiKey = "test-suite-key";
     public const string Password = "Password123!";
 
-    public CustomWebAppFactory()
-    {
-        if (OwnerConnectionString is null)
-            DropTestDatabase();
-    }
+    public CustomWebAppFactory() => DropDatabase(TestConnectionString);
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Development");
         builder.UseSetting("ConnectionStrings:ErpDb", TestConnectionString);
-        if (OwnerConnectionString is not null)
-            builder.UseSetting("ConnectionStrings:ErpDbMigrations", OwnerConnectionString);
-        builder.UseSetting("ApiKeys:tests", TestApiKey);
-        builder.UseSetting("RateLimiting:RequestsPerMinute", "100000");
-        builder.UseSetting("RateLimiting:AuthRequestsPerMinute", "100000");
         builder.UseSetting("Outbox:PollIntervalMs", "200");
-    }
-
-    protected override void ConfigureClient(HttpClient client)
-    {
-        client.DefaultRequestHeaders.Add("X-Api-Key", TestApiKey);
-        base.ConfigureClient(client);
     }
 
     public sealed record Tokens(string AccessToken, string RefreshToken);
 
     public async Task<Tokens> LoginAsync(HttpClient client, string email, string password = Password)
     {
-        var response = await client.PostAsJsonAsync("/auth/login", new { email, password });
+        var response = await client.PostAsJsonAsync("/api/auth/login", new { email, password });
         response.EnsureSuccessStatusCode();
         return (await response.Content.ReadFromJsonAsync<Tokens>())!;
     }
@@ -143,10 +131,10 @@ public sealed class CustomWebAppFactory : WebApplicationFactory<Program>
         return client;
     }
 
-    private static void DropTestDatabase()
+    public static void DropDatabase(string connectionString)
     {
-        var target = new NpgsqlConnectionStringBuilder(TestConnectionString);
-        var admin = new NpgsqlConnectionStringBuilder(TestConnectionString) { Database = "postgres", Pooling = false };
+        var target = new NpgsqlConnectionStringBuilder(connectionString);
+        var admin = new NpgsqlConnectionStringBuilder(connectionString) { Database = "postgres", Pooling = false };
         using var conn = new NpgsqlConnection(admin.ConnectionString);
         conn.Open();
         using var drop = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{target.Database}\" WITH (FORCE)", conn);
@@ -162,10 +150,12 @@ Here's what each choice buys:
 | Its own database, `erp_test` | Tests never touch your development data |
 | Dropped at the start of every run | Every run starts from the migrations and the seed, so yesterday's leftovers can't change today's results |
 | `Development` environment | Migrations and dev seed run on startup, just like on your machine |
-| Its own API key | Tests are a client app like any other, so they go through the real API-key check |
-| Huge rate limits | The suite signs in dozens of times a minute |
 | A fast outbox (200 ms) | The outbox test doesn't wait two seconds per check |
-| `ERP_TEST_DB` / `ERP_TEST_DB_OWNER` | Point the whole suite at the least-privilege accounts from lesson 13, to prove they're enough |
+| `ERP_TEST_DB` | Point the suite at another server without touching the code |
+| Bearer tokens, not cookies | A test is a program, not a browser; lesson 05 gave programs tokens |
+
+`DropDatabase` is public and takes the connection string, because one test (in
+[lesson 22](22-docker.md)) needs a second, empty database of its own.
 
 All the tests share one database, so they must not run at the same time. A **collection** makes xUnit start
 the app once and run the classes one after another:
@@ -232,7 +222,7 @@ public class InventoryReservationTests(CustomWebAppFactory factory)
         (await GetReserved(RestrictedKitId)).Should().Be(0);   // Inventory really joined the caller's transaction
     }
 
-    private async Task<bool> ReserveInOwnCommittedTransaction(long itemId, int qty)
+    private async Task<bool> ReserveInOwnCommittedTransaction(long itemId, decimal qty)
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var conn = scope.ServiceProvider.GetRequiredService<ISharedConnection>().Connection;
@@ -245,18 +235,18 @@ public class InventoryReservationTests(CustomWebAppFactory factory)
         return reserved;
     }
 
-    private static async Task<int> GetReserved(long itemId)
+    private static async Task<decimal> GetReserved(long itemId)
     {
         await using var conn = new NpgsqlConnection(CustomWebAppFactory.TestConnectionString);
-        return await conn.ExecuteScalarAsync<int>(
-            "SELECT reserved FROM inventory.stock_item WHERE item_id = @itemId", new { itemId });
+        return await conn.ExecuteScalarAsync<decimal>(
+            "SELECT reserved FROM inventory.item WHERE id = @itemId", new { itemId });
     }
 
-    private static async Task SetReserved(long itemId, int reserved)
+    private static async Task SetReserved(long itemId, decimal reserved)
     {
         await using var conn = new NpgsqlConnection(CustomWebAppFactory.TestConnectionString);
         await conn.ExecuteAsync(
-            "UPDATE inventory.stock_item SET reserved = @reserved WHERE item_id = @itemId", new { itemId, reserved });
+            "UPDATE inventory.item SET reserved = @reserved WHERE id = @itemId", new { itemId, reserved });
     }
 }
 ```
@@ -273,6 +263,7 @@ modules: dispose it without committing, and Inventory's change disappears too.
 using AwesomeAssertions;
 using Erp.Modules.Sales.Domain;
 using Erp.Modules.Sales.Infrastructure;
+using Erp.Shared.BuildingBlocks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -294,10 +285,8 @@ public class ConcurrencyTests(CustomWebAppFactory factory)
         var aliceOrder = await aliceDb.SalesOrders.SingleAsync(o => o.Id == orderId);
         var bobOrder = await bobDb.SalesOrders.SingleAsync(o => o.Id == orderId);
 
-        aliceOrder.ClearLines();
-        aliceOrder.AddLine(new ItemId(1), new Quantity(3), new Money(25));
-        bobOrder.ClearLines();
-        bobOrder.AddLine(new ItemId(2), new Quantity(1), new Money(40));
+        aliceOrder.SetLines(await aliceDb.ResolveLinesAsync([(1, 3)], default), Roles.SalesRep);
+        bobOrder.SetLines(await bobDb.ResolveLinesAsync([(2, 1)], default), Roles.SalesRep);
 
         await aliceDb.SaveChangesAsync();
         var bobSaves = () => bobDb.SaveChangesAsync();
@@ -310,7 +299,7 @@ public class ConcurrencyTests(CustomWebAppFactory factory)
         var db = scope.ServiceProvider.GetRequiredService<SalesDbContext>();
         var now = DateTime.UtcNow;
         var order = SalesOrder.Create(await db.NextOrderNumberAsync(now, default), new CustomerId(1), new UserId(1), now);
-        order.AddLine(new ItemId(1), new Quantity(1), new Money(25));
+        order.SetLines(await db.ResolveLinesAsync([(1, 1)], default), Roles.SalesRep);
         db.SalesOrders.Add(order);
         await db.SaveChangesAsync();
         return order.Id;
@@ -318,7 +307,7 @@ public class ConcurrencyTests(CustomWebAppFactory factory)
 }
 ```
 
-Delete the `SaveChangesAsync` override from [lesson 11](11-update-order.md) and run this test: it fails,
+Delete the `SaveChangesAsync` override from [lesson 10](10-update-order.md) and run this test: it fails,
 because Bob's save goes through. Put the override back: it passes. That's how you know a test really guards
 the thing it's named after.
 
@@ -333,23 +322,28 @@ public async Task High_value_order_waits_for_a_manager_who_did_not_create_it()
     var rep = await factory.ClientFor(Rep);
     var manager = await factory.ClientFor(Manager);
     var id = await CreateOrder(rep, customerId: 5, itemId: 4, quantity: 1);
-    await rep.PostAsync($"/sales-orders/{id}/submit", null);
+    await rep.PostAsync($"/api/sales-orders/{id}/submit", null);
     (await StatusOf(rep, id)).Should().Be("PendingApproval");
 
-    (await manager.PostAsync($"/sales-orders/{id}/approve", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+    (await manager.PostAsync($"/api/sales-orders/{id}/approve", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
 
     (await StatusOf(rep, id)).Should().Be("Approved");
 }
 ```
 
-`ClientFor(...)` signs in through the real `/auth/login` and returns an `HttpClient` carrying the token. The
+`ClientFor(...)` signs in through the real `/api/auth/login` and returns an `HttpClient` carrying the token. The
 full set lives in the reference build; write yours in the same style:
 
 | File | Its tests prove |
 |---|---|
 | [SalesOrderWorkflowTests.cs](../course-validation/business/tests/Erp.Integration.Tests/SalesOrderWorkflowTests.cs) | Auto-approval; manager approval; no self-approval; reps can't approve (403); reject releases stock; pending orders count against credit; blocked and over-limit customers (422); bare search works; a page past the end keeps the real total; **an order with no lines is rejected (the guard for `includeInternalTypes`)** |
-| [AuthTests.cs](../course-validation/business/tests/Erp.Integration.Tests/AuthTests.cs) | Wrong password is 401; `/auth/me` returns the role; refresh works; `/auth/register` is 404; **five wrong passwords lock an account**; sign-out-everywhere kills refresh tokens |
-| [PlatformTests.cs](../course-validation/business/tests/Erp.Integration.Tests/PlatformTests.cs) | Health endpoints; security headers and `X-Trace-Id`; **an approval event is delivered through the outbox** |
+| [AuthTests.cs](../course-validation/business/tests/Erp.Integration.Tests/AuthTests.cs) | Wrong password is 401; `/api/auth/me` returns the role; refresh works; `/api/auth/register` is 404; **five wrong passwords lock an account**; sign-out-everywhere kills refresh tokens |
+| [PlatformTests.cs](../course-validation/business/tests/Erp.Integration.Tests/PlatformTests.cs) | **An approval event is delivered through the outbox**; `/sales-orders` serves the app; an unknown `/api/...` is a 404, not the app's page |
+| [BusinessFlowTests.cs](../course-validation/business/tests/Erp.Integration.Tests/BusinessFlowTests.cs) | **A rep sees only their own orders**, and gets a 404 for anyone else's |
+
+The reference build's files hold more tests than you can write today: the health checks, security headers,
+shipping, invoicing and the rest arrive with their lessons, and each of those lessons adds its tests to
+these files.
 
 Two of those deserve a closer look. The lockout test creates a throwaway user through `UserManager`, so
 locking it doesn't lock a dev user the other tests need. And the outbox test polls the `outbox_message` table
@@ -381,6 +375,8 @@ using Erp.Modules.Identity;
 using Erp.Modules.Inventory;
 using Erp.Modules.Inventory.Contracts;
 using Erp.Modules.Sales;
+using Erp.Shared.BuildingBlocks;
+using Mediator;
 
 namespace Erp.Architecture.Tests;
 
@@ -473,12 +469,177 @@ public class ModuleBoundaryTests
             }
         }
     }
+
+    // Raise an event only with its first handler. An event nobody handles is a feature that silently does nothing.
+    [Fact]
+    public void Every_event_has_a_handler()
+    {
+        var events = Modules.Concat(ContractsAssemblies)
+            .SelectMany(a => a.GetTypes())
+            .Where(t => t is { IsAbstract: false, IsInterface: false } && typeof(IDomainEvent).IsAssignableFrom(t));
+
+        var handled = Modules.SelectMany(a => a.GetTypes())
+            .SelectMany(t => t.GetInterfaces())
+            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(INotificationHandler<>))
+            .Select(i => i.GetGenericArguments()[0])
+            .ToHashSet();
+
+        events.Where(e => !handled.Contains(e)).Select(e => e.FullName).Should().BeEmpty("every event needs at least one handler");
+    }
 }
 ```
+
+The last test turns lesson 11's rule ("raise an event only in the change that adds its first handler") into
+something the build checks. The Mediator generator's MSG0005 warning catches the same mistake, but a
+warning can scroll past; a red test can't.
 
 Each test is one rule from the course, and each failure message says which rule broke and where. Try it: add
 a project reference from Sales to the Inventory *module*, and the first test fails with "Erp.Modules.Sales may
 reference another module's .Contracts only".
+
+## 8. A real browser
+
+**Playwright** (Microsoft, MIT) drives a real browser from C#: open a page, type, click, wait for text.
+
+```bash
+dotnet new classlib -n Erp.Web.UiTests -o tests/Erp.Web.UiTests
+rm tests/Erp.Web.UiTests/Class1.cs
+dotnet sln add tests/Erp.Web.UiTests
+dotnet add tests/Erp.Web.UiTests package Microsoft.NET.Test.Sdk --version 17.14.1
+dotnet add tests/Erp.Web.UiTests package xunit --version 2.9.3
+dotnet add tests/Erp.Web.UiTests package xunit.runner.visualstudio --version 3.1.4
+dotnet add tests/Erp.Web.UiTests package AwesomeAssertions --version 9.6.0
+dotnet add tests/Erp.Web.UiTests package Microsoft.Playwright --version 1.64.1
+```
+
+As before, delete the `<PropertyGroup>`, then add `<IsPackable>false</IsPackable>` and
+`<Using Include="Xunit" />`. Notice it references no project at all: it only knows the app's address.
+
+These tests need a running app, so they're skipped unless you say where it is:
+
+```csharp
+// tests/Erp.Web.UiTests/BusinessFlowUiTests.cs
+using System.Text.RegularExpressions;
+using AwesomeAssertions;
+using Microsoft.Playwright;
+
+namespace Erp.Web.UiTests;
+
+// Runs only against a running app with the development seed: set ERP_UI_URL (e.g. http://localhost:5264).
+// ERP_UI_SCREENSHOTS, if set, is a folder that receives a screenshot of every step.
+public sealed class UiFactAttribute : FactAttribute
+{
+    public UiFactAttribute()
+    {
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ERP_UI_URL")))
+            Skip = "Set ERP_UI_URL to a running ERP to run browser tests.";
+    }
+}
+
+public class BusinessFlowUiTests : IAsyncLifetime
+{
+    private static readonly string BaseUrl = Environment.GetEnvironmentVariable("ERP_UI_URL")?.TrimEnd('/') ?? "";
+    private static readonly string? Screenshots = Environment.GetEnvironmentVariable("ERP_UI_SCREENSHOTS");
+    private IPlaywright _playwright = default!;
+    private IBrowser _browser = default!;
+    private int _shot;
+
+    public async Task InitializeAsync()
+    {
+        if (BaseUrl.Length == 0) return;
+        _playwright = await Playwright.CreateAsync();
+        // The Edge (or Chrome) already on the machine: nothing to download.
+        _browser = await _playwright.Chromium.LaunchAsync(new() { Channel = OperatingSystem.IsWindows() ? "msedge" : "chrome" });
+    }
+
+    public async Task DisposeAsync()
+    {
+        if (BaseUrl.Length == 0) return;
+        await _browser.DisposeAsync();
+        _playwright.Dispose();
+    }
+
+    // Each person gets their own browser context: their own cookie, like their own computer.
+    private async Task<IPage> SignIn(string email)
+    {
+        var context = await _browser.NewContextAsync(new() { BaseURL = BaseUrl, ViewportSize = new() { Width = 1366, Height = 820 } });
+        var page = await context.NewPageAsync();
+        await page.GotoAsync("/login");
+        await page.GetByLabel("Email").FillAsync(email);
+        await page.GetByLabel("Password").FillAsync("Password123!");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
+        await page.GetByText("Good day,").WaitForAsync();
+        return page;
+    }
+
+    private async Task Shot(IPage page, string name)
+    {
+        if (Screenshots is null) return;
+        Directory.CreateDirectory(Screenshots);
+        await page.ScreenshotAsync(new() { Path = Path.Combine(Screenshots, $"{++_shot:00}-{name}.png"), FullPage = true });
+    }
+
+    private static async Task Pick(IPage page, string label, string search, string option)
+    {
+        await page.GetByLabel(label).First.FillAsync(search);
+        await page.GetByText(option).First.ClickAsync();
+    }
+
+    [UiFact]
+    public async Task From_order_to_approval_through_the_screens()
+    {
+        // A rep writes an order over ₱50,000 for Epsilon Retail and submits it.
+        var rep = await SignIn("rep@erp.local");
+        await Shot(rep, "rep-home");
+        await rep.GotoAsync("/sales-orders/new");
+        await Pick(rep, "Customer", "Epsilon", "Epsilon Retail");
+        await Pick(rep, "Item", "Rack", "GEN-003 · Server Rack");
+        await rep.GetByRole(AriaRole.Button, new() { Name = "Save draft" }).ClickAsync();
+        await rep.WaitForURLAsync(new Regex(@"/sales-orders/\d+$"));
+        var orderUrl = new Uri(rep.Url).AbsolutePath;
+        await rep.GetByRole(AriaRole.Button, new() { Name = "Submit" }).ClickAsync();
+        await rep.Locator(".mud-chip").Filter(new() { HasText = "Pending approval" }).WaitForAsync();
+        await Shot(rep, "rep-submitted");
+
+        // The manager approves it.
+        var manager = await SignIn("manager@erp.local");
+        await manager.GotoAsync(orderUrl);
+        await manager.GetByRole(AriaRole.Button, new() { Name = "Approve" }).ClickAsync();
+        await manager.Locator(".mud-chip").Filter(new() { HasText = "Approved" }).WaitForAsync();
+        await Shot(manager, "manager-approved");
+    }
+
+    [UiFact]
+    public async Task Every_page_opens_without_an_error()
+    {
+        var admin = await SignIn("admin@erp.local");
+        string[] pages = ["/sales-orders", "/sales-orders/new"];
+
+        foreach (var path in pages)
+        {
+            await admin.GotoAsync(path);
+            await admin.Locator("h4, h5").First.WaitForAsync();
+            await admin.WaitForLoadStateAsync(LoadState.NetworkIdle);
+            await Shot(admin, path.Trim('/').Replace('/', '-'));
+
+            (await admin.Locator("#blazor-error-ui").IsVisibleAsync()).Should().BeFalse($"{path} crashed the app");
+            (await admin.Locator(".mud-alert-filled-error, .mud-snackbar.mud-alert-filled-error").CountAsync())
+                .Should().Be(0, $"{path} showed an error");
+        }
+    }
+}
+```
+
+- **It finds things the way a person does**: by label ("Customer"), by button name ("Submit"), by text on
+  screen. So it breaks when the screen breaks, not when a CSS class changes.
+- **Each person gets their own browser context**: their own cookies, so the rep and the manager are really
+  two different sign-ins.
+- **It uses the browser you already have** (`Channel = "msedge"` on Windows), so there's nothing to
+  download. On Linux, install Chrome, or run `pwsh bin/Debug/net10.0/playwright.ps1 install chromium` once.
+- **`#blazor-error-ui`** is the bar from lesson 01's `index.html`. If it's visible, a page threw.
+
+Every later lesson that adds a screen adds its address to `pages`, and the lessons that ship and bill an
+order add their steps to the flow test, until it walks from a new order to a paid invoice.
 
 ## Mistakes to avoid
 
@@ -487,6 +648,7 @@ reference another module's .Contracts only".
 - Letting integration tests run in parallel against one database.
 - Testing races with `Thread.Sleep` and hope. Start both at once with `Task.WhenAll`.
 - A test that has never failed. Break the code it guards, once, and watch it go red.
+- Dozens of browser tests. They're slow and fragile; keep a few that walk the main flows.
 
 ## Let's run it!
 
@@ -495,25 +657,24 @@ dotnet test
 ```
 
 ```
-Passed!  - Failed: 0, Passed: 22, ... Erp.Modules.Sales.UnitTests.dll
-Passed!  - Failed: 0, Passed:  6, ... Erp.Architecture.Tests.dll
-Passed!  - Failed: 0, Passed: 24, ... Erp.Integration.Tests.dll
+Passed!  - Failed: 0, Passed: 20, ... Erp.Modules.Sales.UnitTests.dll
+Passed!  - Failed: 0, Passed:  7, ... Erp.Architecture.Tests.dll
+Passed!  - Failed: 0, Passed: .., ... Erp.Integration.Tests.dll
+Skipped! - Failed: 0, Skipped: 2, ... Erp.Web.UiTests.dll
 ```
 
-Then prove the least-privilege accounts from lesson 13 are enough for everything the app does. Create the
-roles against a fresh database, and run the suite as `erp_app`:
+The integration count is however many workflow and auth tests you wrote. The UI tests skip, because no app
+is running for them. So start one, and point them at it:
 
 ```bash
-PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localhost -U postgres \
-  -v db=erp_roles_check -v owner_password=owner_dev_only -v app_password=app_dev_only \
-  -f deploy/postgres/create-roles.sql
-
-ERP_TEST_DB="Host=localhost;Database=erp_roles_check;Username=erp_app;Password=app_dev_only" \
-ERP_TEST_DB_OWNER="Host=localhost;Database=erp_roles_check;Username=erp_owner;Password=owner_dev_only" \
-dotnet test tests/Erp.Integration.Tests
+dotnet run --project src/Erp.Api &
+ERP_UI_URL=http://localhost:5264 ERP_UI_SCREENSHOTS=./screens dotnet test tests/Erp.Web.UiTests
 ```
 
-All 24 pass, with the app never holding more than row-level rights.
+An Edge window you never see (it runs *headless*) signs in as the rep, creates and submits an order, then
+signs in as the manager and approves it. Open the `screens` folder afterwards: every step is a picture.
+The UI tests use your development database, so they add a few orders to it each run. That's what the dev
+seed is for.
 
 ## Let's check!
 
@@ -523,11 +684,13 @@ All 24 pass, with the app never holding more than row-level rights.
 4. How would you know the lost-update test actually protects anything?
 5. Why does the lockout test use a throwaway user?
 6. Name two architecture rules the tests enforce, and what each one protects.
+7. Why are there only a few browser tests, and how do they find a button?
 
-And that's where this lesson ends. Every rule, every race and every wall is now proven automatically, every
-time you run `dotnet test`. Next time, we put the app on a real Windows server, behind IIS. Good luck,
+And that's where this lesson ends. Every rule, every race, every wall and the main screens are now proven
+automatically, every time you run `dotnet test`. Next time, we make the running app visible: traces,
+metrics, logs and health checks, so you can see what it's doing when something goes wrong. Good luck,
 developer!
 
 ---
 
-← [Lesson 22 — Security hardening](22-security-hardening.md) · Next: [Lesson 24 — Deploy to IIS](24-deploy-iis.md) →
+← [Lesson 11 — Events and the outbox](11-events-outbox.md) · Next: [Lesson 13 — Observability](13-observability.md) →

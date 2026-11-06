@@ -1,7 +1,7 @@
-# Lesson 13 — Security Hardening: Ready for the Outside World
+# Lesson 21 — Security Hardening: Ready for the Outside World
 
-Good day, developer! Our app works, and we can see what it's doing. But so far it has only ever met friendly
-callers on your own machine. Out on a real network, it will meet password guessers, browsers that can be
+Good day, developer! Our ERP runs the whole business, and we can see what it's doing. But so far it has
+only ever met friendly callers on your own machine. Out on a real network, it will meet password guessers, browsers that can be
 tricked, and, one day maybe, a bug that lets someone run a query they shouldn't. Today we add the locks.
 Each one is small; together they're what separates a demo from a product. About two hours. Are you ready?
 Let's begin!
@@ -12,10 +12,9 @@ Let's begin!
 |---|---|
 | **Rate limiting** | One caller flooding the API, and password guessing across many accounts |
 | **HTTPS redirection and HSTS** | Passwords and tokens travelling in plain text |
-| **Security headers** | Browsers being tricked into framing or sniffing our responses |
+| **Security headers**, and a **Content-Security-Policy** for the app | Browsers being tricked into framing our pages, sniffing our responses, or running a script someone slipped in |
 | **CORS from configuration** | Other websites calling the API from a user's browser |
-| **An API key per client app** | Unknown programs calling the API at all |
-| **Sign-in keys in the database** | Everyone being signed out whenever the server restarts |
+| **Sign-in keys in the database, encrypted with a certificate** | Everyone being signed out whenever the server restarts; a stolen backup being used to forge a sign-in |
 | **A least-privilege database account** | A compromised app dropping or changing your tables |
 
 ## Why we build it this way
@@ -75,10 +74,11 @@ internal static class RateLimiting
                 return ValueTask.CompletedTask;
             };
 
+            // Only the API is budgeted. The app's own files (dozens on first load) and health checks are not.
             o.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(ctx =>
-                ctx.Request.Path.StartsWithSegments("/health")
-                    ? RateLimitPartition.GetNoLimiter("health")
-                    : RateLimitPartition.GetFixedWindowLimiter(ClientKey(ctx), _ => PerMinute(perClient)));
+                ctx.Request.Path.StartsWithSegments("/api")
+                    ? RateLimitPartition.GetFixedWindowLimiter(ClientKey(ctx), _ => PerMinute(perClient))
+                    : RateLimitPartition.GetNoLimiter("not-api"));
 
             // Sign-in endpoints: per IP and strict, to slow password guessing (lockout covers a single account).
             o.AddPolicy(RateLimitPolicies.Auth, ctx =>
@@ -102,7 +102,7 @@ Let's read it slowly:
 |---|---|
 | **Partition** | A separate budget per caller. Signed-in callers are counted per *user*; anonymous ones per IP address |
 | **Fixed window** | Each minute, the budget starts over: 300 requests by default |
-| Health checks | Never limited. A load balancer asking "are you up?" every few seconds shouldn't use up anyone's budget |
+| Only `/api` | The app's first load fetches dozens of files, and a load balancer asks `/health` every few seconds. Neither should use up anyone's budget |
 | The `auth` policy | 10 per minute per IP, for sign-in. Generous for a person, painful for a script |
 | 429 and `Retry-After` | "Too many requests; try again in N seconds", so a polite client knows when to come back |
 
@@ -121,6 +121,15 @@ And the defaults in `appsettings.json`:
 
 ```json
 "RateLimiting": { "RequestsPerMinute": 300, "AuthRequestsPerMinute": 10 }
+```
+
+The sign-in page already handles the 429: lesson 15 taught it to say "Too many attempts. Wait a minute and
+try again." The test suite signs in dozens of times a minute, so `CustomWebAppFactory` lifts both limits
+for its own runs:
+
+```csharp
+builder.UseSetting("RateLimiting:RequestsPerMinute", "100000");
+builder.UseSetting("RateLimiting:AuthRequestsPerMinute", "100000");
 ```
 
 ## 2. HTTPS everywhere
@@ -162,9 +171,15 @@ internal sealed class SecurityHeadersMiddleware(RequestDelegate next)
         headers["Referrer-Policy"] = "no-referrer";
         headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
 
-        // JSON responses never need scripts, styles or frames. Swagger UI (development only) does.
-        if (!ctx.Request.Path.StartsWithSegments("/swagger"))
+        // JSON never needs scripts, styles or frames. The Blazor app needs its own files, WebAssembly (which
+        // browsers class as eval) and MudBlazor's inline styles; nothing from any other site. Swagger is dev-only.
+        if (ctx.Request.Path.StartsWithSegments("/api"))
             headers.ContentSecurityPolicy = "default-src 'none'; frame-ancestors 'none'";
+        else if (!ctx.Request.Path.StartsWithSegments("/swagger"))
+            headers.ContentSecurityPolicy =
+                "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
+                "img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; " +
+                "form-action 'self'; frame-ancestors 'none'";
 
         return next(ctx);
     }
@@ -177,7 +192,18 @@ internal sealed class SecurityHeadersMiddleware(RequestDelegate next)
 | `X-Frame-Options: DENY` | Never show this inside another site's frame (stops "clickjacking") |
 | `Referrer-Policy: no-referrer` | Don't tell other sites which of our URLs a link came from |
 | `Permissions-Policy` | This app never needs the camera, microphone or location |
-| `Content-Security-Policy` | This response may load nothing at all: no scripts, no styles, no frames |
+| `Content-Security-Policy` on `/api` | This response may load nothing at all: no scripts, no styles, no frames |
+| `Content-Security-Policy` on the app's pages | Load scripts, styles, images and fonts only from this site; call only this site's API; never run inline scripts |
+
+The **Content-Security-Policy** (CSP) is the big one for a browser app. Say an attacker manages to get some
+text onto a page, a customer named `<script>steal()</script>`. Blazor already writes text as text, not HTML,
+so that's harmless; but if one day a bug lets it through, the browser itself refuses to run any script that
+didn't come from our own files. That's why lesson 01 said "no inline scripts anywhere".
+
+Now, let's be honest about the two loosenings in the app's policy. `'wasm-unsafe-eval'` lets the browser
+compile WebAssembly; Blazor can't run without it, and it doesn't allow JavaScript `eval`. `'unsafe-inline'`
+for *styles* lets MudBlazor set styles on elements, which it does everywhere. Inline *styles* can't run code;
+inline *scripts*, the dangerous kind, stay forbidden.
 
 Register it right after `UseHttpsRedirection()`: `app.UseMiddleware<SecurityHeadersMiddleware>();`. And one
 more header to *remove*: by default, the web server announces itself with `Server: Kestrel`. That helps an
@@ -202,121 +228,28 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
     else
         p.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
 }));
-// pipeline, before the API key and authentication:
+// pipeline, before authentication:
 app.UseCors();
 ```
 
-`appsettings.json` allows nobody by default; `appsettings.Development.json` allows anything, because the test
-console opens straight from your disk and has no real origin:
+Our own app is served from the API's own address (lesson 01), so it needs no CORS at all. `appsettings.json`
+allows nobody, in development too:
 
 ```json
 "Cors": { "AllowAnyOrigin": false, "AllowedOrigins": [] }
 ```
 
-```json
-"Cors": { "AllowAnyOrigin": true }
-```
+The setting is there for the day a buyer adds a second web front end on another address: they list it in
+`AllowedOrigins`, and nothing else changes.
 
-## 5. An API key per client app
+## 5. Why there's no API key
 
-A token says which *user* is calling. An **API key** says which *program* is calling: the web app, the mobile
-app, an integration. With one key per program, you can tell them apart in your logs, and if one program's key
-leaks, you replace that one key without disturbing the others.
-
-```csharp
-// src/Erp.Api/Security/ApiKeyMiddleware.cs
-using System.Security.Cryptography;
-using System.Text;
-
-namespace Erp.Api.Security;
-
-// Identifies the client APP (not the user) on every request, so one app's key can be revoked on its own.
-internal sealed class ApiKeyMiddleware(RequestDelegate next, IConfiguration config)
-{
-    private const string HeaderName = "X-Api-Key";
-
-    private readonly (string Client, byte[] Key)[] _keys =
-        config.GetSection("ApiKeys").Get<Dictionary<string, string>>()
-            ?.Where(kv => !string.IsNullOrEmpty(kv.Value))
-             .Select(kv => (kv.Key, Encoding.UTF8.GetBytes(kv.Value)))
-             .ToArray()
-        ?? [];
-
-    public async Task InvokeAsync(HttpContext context)
-    {
-        // Browsers never send custom headers on a CORS preflight, so OPTIONS must pass.
-        if (HttpMethods.IsOptions(context.Request.Method) || IsExempt(context.Request.Path))
-        {
-            await next(context);
-            return;
-        }
-
-        context.Request.Headers.TryGetValue(HeaderName, out var provided);
-        var client = Match(provided!);
-        if (client is null)
-        {
-            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-            await context.Response.WriteAsJsonAsync(new { error = "Missing or invalid API key." });
-            return;
-        }
-
-        context.Items["ClientId"] = client;
-        await next(context);
-    }
-
-    private static bool IsExempt(PathString path) =>
-        path.StartsWithSegments("/health") || path.StartsWithSegments("/swagger");
-
-    private string? Match(string provided)
-    {
-        if (string.IsNullOrEmpty(provided)) return null;
-        var bytes = Encoding.UTF8.GetBytes(provided);
-        foreach (var (client, key) in _keys)
-            if (CryptographicOperations.FixedTimeEquals(bytes, key))   // constant time: no timing leak
-                return client;
-        return null;
-    }
-}
-```
-
-Two details matter here. **`FixedTimeEquals`** compares the keys in the same amount of time whether they
-match on the first character or the last, so an attacker can't guess a key one character at a time by timing
-the answers. And **health checks are exempt**, because the thing asking "are you up?" is a load balancer, not
-a client app.
-
-Register it after `UseCors()` and before `UseAuthentication()`: `app.UseMiddleware<ApiKeyMiddleware>();`.
-Add the keys to configuration: empty in `appsettings.json` (each installation sets its own), and two
-development keys in `appsettings.Development.json`:
-
-```json
-"ApiKeys": { "web": "", "mobile": "" }
-```
-
-```json
-"ApiKeys": {
-  "web": "SIUgiguVpxcKJ4Ohk5l00kYJXEDPe8rFO8Do59AEloY=",
-  "mobile": "EHI6HUaAKe05b8l5dZaT7Geof9vhZnH31id5zL9SjCU="
-}
-```
-
-Generate real keys with `openssl rand -base64 32`, one per app.
-
-Swagger needs to send the key too. In `AddSwaggerGen`, after the bearer definition:
-
-```csharp
-options.AddSecurityDefinition("ApiKey", new OpenApiSecurityScheme
-{
-    Name = "X-Api-Key", Type = SecuritySchemeType.ApiKey, In = ParameterLocation.Header
-});
-options.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
-{
-    { new OpenApiSecuritySchemeReference("ApiKey", doc, null), new List<string>() }
-});
-```
-
-Now, let's be honest about a limit here. An API key inside a browser app isn't secret: anyone can open the
-browser's developer tools and read it. It still lets you tell apps apart and switch one off, but it isn't a
-password. The *user's* sign-in is still what protects the data.
+Many tutorials put an "API key" on every request at this point. We don't, and lesson 05 said why: a key
+that ships inside a browser app is public, so it protects nothing, and it gives a false sense of a lock. Every
+call is protected by who's signed in. If a non-person client ever needs the API (a partner's server, a
+scheduled import), give it what Identity already provides: its own account and bearer tokens. And if you
+need machine-to-machine sign-in with client secrets, add a library built for it, OpenIddict (Apache-2.0),
+rather than writing key checks by hand. Security code is library code.
 
 ## 6. Sign-in keys that survive a restart
 
@@ -356,6 +289,61 @@ services.AddDataProtection()
 (with `using Microsoft.AspNetCore.DataProtection;` and `using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;`).
 `SetApplicationName` makes every instance agree they're the same app. Then
 `dotnet ef migrations add AddDataProtectionKeys` for the Identity module.
+
+That fixes restarts, and opens a new hole. The keys now sit in a table, and the table is in every backup.
+Anyone who gets a copy of a backup, or a stolen database dump, holds the keys that sign every cookie, and
+could forge a sign-in as the admin. So in production the keys are **encrypted with a certificate**, kept as
+a file on the server and never in the database. A backup alone is useless without it.
+
+```csharp
+var dataProtection = services.AddDataProtection()
+    .SetApplicationName("Erp")
+    .PersistKeysToDbContext<ErpIdentityDbContext>();
+
+// The keys live in a table the app can read. Encrypted with a certificate, a copy of that table alone
+// (a backup, a stolen dump) can't be used to forge a sign-in.
+var certificatePath = config["DataProtection:CertificatePath"];
+if (!string.IsNullOrWhiteSpace(certificatePath))
+    dataProtection.ProtectKeysWithCertificate(
+        X509CertificateLoader.LoadPkcs12FromFile(certificatePath, config["DataProtection:CertificatePassword"]));
+else if (config.GetValue("DataProtection:RequireCertificate", true))
+    throw new InvalidOperationException(
+        "Set DataProtection:CertificatePath and DataProtection:CertificatePassword: sign-in keys must be encrypted at rest.");
+```
+
+(add `using System.Security.Cryptography.X509Certificates;`). **`X509CertificateLoader`** is .NET's current
+way to read a certificate file; the older `new X509Certificate2(path, password)` is obsolete in .NET 10. A
+`.pfx` (also called PKCS#12) file holds the certificate and its private key, protected by a password.
+
+The interesting line is the `throw`. **Without a certificate, the app refuses to start**, unless a setting
+explicitly says that's fine. Production can't run with unencrypted keys by accident: forgetting the
+certificate is a loud error on the first start, not a quiet weakness found in an audit. In
+`appsettings.json`:
+
+```json
+"DataProtection": { "CertificatePath": "", "CertificatePassword": "", "RequireCertificate": true }
+```
+
+and in `appsettings.Development.json`, where there's nothing worth stealing:
+
+```json
+"DataProtection": { "RequireCertificate": false }
+```
+
+To make a certificate (a self-signed one is right here: nobody but the app ever checks it):
+
+```bash
+openssl req -x509 -newkey rsa:4096 -sha256 -days 3650 -nodes -subj "/CN=Erp data protection" \
+  -keyout dp.key -out dp.crt
+openssl pkcs12 -export -inkey dp.key -in dp.crt -out dataprotection.pfx -passout pass:'choose-a-long-password'
+rm dp.key
+```
+
+(In Git Bash, put `MSYS_NO_PATHCONV=1` in front of the first command, or it rewrites `/CN=...` into a
+Windows path.) Keep the `.pfx` and its password together with the database backups' *instructions*, but
+never with the backups themselves. Lose the certificate, and everyone simply signs in again: the keys are
+only for sessions, not for data. [Lesson 22](22-docker.md) and [lesson 23](23-deploy-iis.md) show where the
+file goes on each kind of server.
 
 ## 7. A database account that can't drop your tables
 
@@ -458,7 +446,7 @@ internal sealed class IdentityDatabase(UserManager<AppUser> users) : IModuleData
 
     public async Task SeedDevelopmentDataAsync(DbConnection ownerConnection, CancellationToken ct)
     {
-        // ... unchanged: create the three dev users through UserManager ...
+        // ... unchanged: create the six dev users through UserManager ...
     }
 }
 ```
@@ -484,6 +472,37 @@ there. Add it, empty, to `appsettings.json`:
 "ConnectionStrings": { "ErpDb": "", "ErpDbMigrations": "" }
 ```
 
+Every module does this, all five of them, so the dispatcher, the migrations and the seeds all follow one rule.
+
+The test suite can now prove the accounts are enough. `CustomWebAppFactory` gets an optional owner
+connection: when `ERP_TEST_DB_OWNER` is set, the suite runs as `erp_app` against a database prepared by the
+script, migrates as `erp_owner`, and doesn't drop that database. Before:
+
+```csharp
+public CustomWebAppFactory() => DropDatabase(TestConnectionString);
+```
+
+After:
+
+```csharp
+// Set to run the suite as the least-privilege erp_app (ERP_TEST_DB) against a database prepared by
+// deploy/postgres/create-roles.sql, with migrations run as erp_owner. That database is not dropped.
+private static readonly string? OwnerConnectionString = Environment.GetEnvironmentVariable("ERP_TEST_DB_OWNER");
+
+public CustomWebAppFactory()
+{
+    if (OwnerConnectionString is null)
+        DropDatabase(TestConnectionString);
+}
+```
+
+and in `ConfigureWebHost`:
+
+```csharp
+if (OwnerConnectionString is not null)
+    builder.UseSetting("ConnectionStrings:ErpDbMigrations", OwnerConnectionString);
+```
+
 ## The pipeline, in order
 
 Order matters in the middleware pipeline, because each step can only see what came before it:
@@ -494,8 +513,7 @@ flowchart TD
   B --> C[SecurityHeadersMiddleware]
   C --> D[UseTraceIdHeader]
   D --> E[UseCors]
-  E --> F[ApiKeyMiddleware]
-  F --> G[UseAuthentication]
+  E --> G[UseAuthentication]
   G --> H[UseRateLimiter]
   H --> I[UseAuthorization]
   I --> J[endpoints]
@@ -507,38 +525,71 @@ flowchart TD
 - Putting the rate limiter before authentication. Every user behind one office IP would share one budget.
 - Sending HSTS in development. Your browser remembers it for `localhost`.
 - `AllowAnyOrigin` in production CORS.
-- Treating an API key in a browser app as a secret.
+- Loosening the app's CSP to allow inline scripts "just for one thing". Put the script in a file.
+- Keeping the data-protection certificate next to the database backups. Together, they're the keys again.
 - Running the app as the database superuser "because it's easier".
 
 ## Let's run it!
 
-Every request now needs the API key, so keep it in a variable:
+Restart the app, sign in as the rep, and look at the headers:
 
 ```bash
-KEY="SIUgiguVpxcKJ4Ohk5l00kYJXEDPe8rFO8Do59AEloY="
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5264/sales-orders                                   # 401: no API key
-curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5264/health/ready                                   # 200: health is exempt
-TOKEN=$(curl -s -X POST http://localhost:5264/auth/login -H "X-Api-Key: $KEY" -H "Content-Type: application/json" \
+REP=$(curl -s -X POST http://localhost:5264/api/auth/login -H "Content-Type: application/json" \
   -d '{"email":"rep@erp.local","password":"Password123!"}' | jq -r .accessToken)
-curl -si http://localhost:5264/sales-orders -H "X-Api-Key: $KEY" -H "Authorization: Bearer $TOKEN" | grep -i "x-frame\|content-security\|server:"
+curl -si http://localhost:5264/api/sales-orders -H "Authorization: Bearer $REP" | grep -i "x-frame\|content-security\|server:"
+curl -si http://localhost:5264/ | grep -i "content-security"
 ```
 
-The headers are there, and there's no `Server:` line. Now trip the sign-in limit: keep calling `/auth/login`.
-Ten sign-ins a minute are allowed, counting the one above, so the eleventh answers **429** with a
-`Retry-After` header.
+The API's policy is `default-src 'none'`; the page's allows only `'self'`. There's no `Server:` line. Open
+the app in the browser with the developer tools' console showing: no CSP errors, and everything works.
 
-The test console works from now on: open
-[`test-console/index.html`](../course-validation/business/test-console/index.html), paste the `web` key,
-and sign in.
+Now trip the sign-in limit: on the sign-in page, type a wrong password eleven times in a minute. The
+eleventh says "Too many attempts. Wait a minute and try again."
 
-To try the least-privilege accounts, run the role script against a new database, point `ErpDbMigrations` at
-`erp_owner` and `ErpDb` at `erp_app`, and start the app. It migrates as the owner and runs as the app. Then
-try, as `erp_app`:
+Then production mode, without a certificate:
 
 ```bash
-PGPASSWORD=... "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localhost -U erp_app -d erp -c "DROP TABLE sales.customer;"
+ASPNETCORE_ENVIRONMENT=Production ConnectionStrings__ErpDb="Host=localhost;Database=erp;Username=postgres;Password=erp_dev_only" \
+  dotnet run --project src/Erp.Api --no-launch-profile
+# Unhandled exception. System.InvalidOperationException: Set DataProtection:CertificatePath and
+# DataProtection:CertificatePassword: sign-in keys must be encrypted at rest.
+```
+
+It refuses to start. Make a certificate as in step 6, add `DataProtection__CertificatePath` and
+`DataProtection__CertificatePassword` to the command, and it starts. Sign in once (with a tool like `curl`),
+then look at the stored key:
+
+```bash
+PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localhost -U postgres -d erp \
+  -c "SELECT left(xml, 200) FROM identity.data_protection_keys ORDER BY id DESC LIMIT 1;"
+```
+
+The XML says `encryptedSecret`, with the certificate's thumbprint: the key itself is unreadable.
+
+And the least-privilege accounts. Create them against a fresh database, and run the whole suite as
+`erp_app`:
+
+```bash
+PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localhost -U postgres \
+  -v db=erp_roles_check -v owner_password=owner_dev_only -v app_password=app_dev_only \
+  -f deploy/postgres/create-roles.sql
+
+ERP_TEST_DB="Host=localhost;Database=erp_roles_check;Username=erp_app;Password=app_dev_only" \
+ERP_TEST_DB_OWNER="Host=localhost;Database=erp_roles_check;Username=erp_owner;Password=owner_dev_only" \
+dotnet test tests/Erp.Integration.Tests
+```
+
+Every test passes, with the app never holding more than row-level rights. And as `erp_app`:
+
+```bash
+PGPASSWORD=app_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localhost -U erp_app -d erp_roles_check \
+  -c "DROP TABLE sales.customer;"
 # ERROR:  must be owner of table customer
 ```
+
+The integration tests gain two checks in `PlatformTests.cs`: `Responses_carry_security_headers_and_a_trace_id`,
+and `Pages_and_api_get_different_content_security_policies`, which asks for `/` and `/api/auth/me` and
+compares the two policies.
 
 ## Let's check!
 
@@ -546,14 +597,14 @@ PGPASSWORD=... "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localhost -U erp
    doesn't?
 2. Why must the rate limiter come after authentication in the pipeline?
 3. What does HSTS add on top of redirecting to HTTPS?
-4. What's the difference between an API key and a bearer token?
-5. Why do sign-in keys have to move into the database before you run on a real server?
+4. Why doesn't the app use an API key, and what would you use for a non-person client?
+5. Why do sign-in keys move into the database, and why must they then be encrypted with a certificate?
 6. What does `ALTER DEFAULT PRIVILEGES` save you from doing after every migration?
+7. The app's CSP allows `'wasm-unsafe-eval'` and inline styles. Why each, and why not inline scripts?
 
 And that's where this lesson ends. The app is ready for the outside world, with a lock on every door. Next
-time, we prove the whole thing works, automatically: integration tests against a real database, and
-architecture tests that keep the module walls standing. Good luck, developer!
+time, we put it on a real server, in containers, with HTTPS and nightly backups. Good luck, developer!
 
 ---
 
-← [Lesson 14 — Observability](14-observability.md) · Next: [Lesson 13 — Testing](13-testing.md) →
+← [Lesson 20 — Payments and receivables](20-payments.md) · Next: [Lesson 22 — Docker](22-docker.md) →

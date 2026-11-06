@@ -11,6 +11,85 @@ exist.
 
 ---
 
+## M3–M7 and the 24-lesson course — 2026-11-06
+
+Environment: .NET SDK 10.0.403, PostgreSQL 18.6 (local), Windows 11, Edge (for Playwright). Docker not
+installed.
+
+**Test suite:** 45 unit (Sales 23, Inventory 5, Purchasing 6, Invoicing 7, Identity 4) + 7 architecture +
+35 integration, all passing; 0 build warnings. 3 Playwright UI tests pass against a running app
+(`ERP_UI_URL`), screenshots reviewed.
+
+### 🔴 Fixed — integration events published to nobody, silently
+`ItemCatalogChanged` lives in `Erp.Modules.Inventory.Contracts`. The Mediator source generator only knows
+messages in `options.Assemblies`; without the Contracts assembly listed, the outbox marked the message
+processed and no handler ran. Fixed by listing each Contracts assembly that holds events. Caught by the
+integration test `A_new_catalog_item_reaches_the_price_list_unpriced_and_can_be_priced`; taught as a trap in
+lesson 16. (`Every_event_has_a_handler` catches a *missing* handler, not this.)
+
+### 🔴 Fixed — invoice PDFs threw `PdfSharpLicenseException`
+PDFsharp 6.5 moved to AGPL-3.0 with a runtime license check. Pinned **PDFsharp-MigraDoc 6.2.4**, the last MIT
+release (license read from the 6.2.4 nuspec), with a "never upgrade" comment in `Directory.Packages.props`,
+THIRD-PARTY-NOTICES and CLAUDE.md's banned list.
+
+### 🟠 Fixed — enums sent as names were rejected; malformed JSON was a 500
+`JsonStringEnumConverter` for the whole API (lesson 20); `BadHttpRequestException` → 400 in the exception
+handler (lesson 06).
+
+### 🟠 Fixed — `Item.Adjust` changed the count before checking the reason
+A refused adjustment left `OnHand` changed in memory. Caught by `An_adjustment_needs_a_reason_and_records_a_movement`.
+
+### 🟠 Fixed — `UseBlazorFrameworkFiles` with `MapStaticAssets` broke `/_framework` (500)
+.NET 10 serves the app with `MapStaticAssets` alone. The `Erp.Web` reference from `Erp.Api` uses
+`ReferenceOutputAssembly="false"`, or the linked `Roles.cs` exists twice (`CS0433`).
+
+### 🟠 Decided — items 2 and 3 from the previous round
+- **Sign-in keys unencrypted** (was 🟡 Open): now encrypted with a certificate
+  (`ProtectKeysWithCertificate`, `X509CertificateLoader`); outside Development the app refuses to start
+  without one. Verified: stored keys show `encryptedSecret` with the certificate thumbprint.
+- **Who sees which orders**: a SalesRep sees only their own; managers, admins, clerks and accountants see all;
+  someone else's order is a 404. In the domain (`CreatorFilterFor`, `IsVisibleTo`), passed to the SQL
+  functions as `p_created_by`. Proven by `A_rep_sees_only_their_own_orders`.
+
+### 🟠 Removed — API keys
+A key shipped in a browser app is public; the browser app signs in with Identity's cookie. `ApiKeyMiddleware`
+deleted; CLAUDE.md records it as a user decision.
+
+### 🟡 Fixed — smaller items
+- `Pkcs` 8.0.1 vulnerability warnings (NU1902/1903) via PDFsharp: pinned System.Security.Cryptography.Pkcs 10.0.14.
+- A self-contained Linux bundle was 135 MB; the bundles are framework-dependent on the aspnet base image.
+- Empty query parameters (`status=`) were 400s from the app: `Url.With` skips empty values.
+- An unused `Microsoft.AspNetCore.Components.WebAssembly.DevServer` version was removed from
+  `Directory.Packages.props`.
+
+### 🟡 Course restructure (user decision)
+The interface is built along with the logic: lesson 01 creates the Blazor app and serves it under the API's
+`/api` prefix; lesson 02 calls the ping endpoint from a page; lesson 05 signs in through the app; every
+feature lesson adds its screen. The separate interface lesson was removed, and the course is 24 lessons.
+New lessons: customers, users and email, item catalog, shipping, purchasing, invoicing, payments, Docker.
+
+### ⚠️ Lesson ↔ reference build: deliberate differences
+- The reference build squashes migrations to `InitialCreate` + `AddReadFunctions` per module and ships each SQL
+  function at its final shape as `v1`. Readers create more migrations and `.v2.sql` files (lessons 14, 17,
+  20) as the rule "never edit a released script" requires. The resulting schema is identical.
+- `sales.list_item_categories` sits inside `sales.search_price_list.v1.sql` in the reference; lesson 16 gives
+  it its own file.
+- Later lessons show new ideas in full and point to the reference build for screens built from patterns
+  already taught (price list, purchasing pages, invoice pages); those files are the reference's.
+
+### Not verified
+- **Docker** (lesson 22): not installed here. Verified only that the shell scripts pass `sh -n`, the
+  migration bundles cross-build for `linux-x64`, and the compose file's settings match the app's
+  configuration keys. The restore command in lesson 22 (`pg_restore --clean --if-exists --no-owner` as
+  `erp_owner`) has not been run. Run the whole lesson once on a Docker host before the first sale.
+- **IIS** (lesson 23): not run on a real Windows Server 2019+ (unchanged from the previous round), now with
+  five bundles and the data-protection certificate.
+- **The lessons as a student would follow them** from an empty folder: the code shown matches the reference
+  build file by file where it's printed in full, but the incremental path (intermediate migrations, `.v2`
+  files, intermediate versions of pages) has not been typed through end to end.
+
+---
+
 ## Production course, lessons 00–16 — 2026-11-06
 
 Environment: .NET SDK 10.0.403, PostgreSQL 18.6 (local), Windows 11, Windows PowerShell 5.1.

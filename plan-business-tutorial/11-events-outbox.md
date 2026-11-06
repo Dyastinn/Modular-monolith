@@ -1,8 +1,8 @@
 # Lesson 11 — Events and the Outbox: Reacting, Reliably
 
 Good day, developer! Until now, each feature did its job and stopped. But in a real business, one thing
-leads to another: when an order is approved, it goes in the audit log, and one day an invoice gets created
-and a warehouse gets a pick list. Today we teach the system to *react*, and to do it reliably, even if the
+leads to another: when an order is approved, it goes in the audit log; when it ships, an invoice must be
+issued; when a customer pays, their balance must drop. Today we teach the system to *react*, and to do it reliably, even if the
 server crashes at the worst possible moment. About two hours. Are you ready? Let's begin!
 
 ## What we'll build
@@ -103,12 +103,9 @@ In `SalesDbContext`, tell EF the event list isn't a column: inside the `SalesOrd
 
 ## 2. The event and its first handler
 
+At the bottom of `Domain/SalesOrder.cs`, next to the order it describes:
+
 ```csharp
-// src/Modules/Sales/Erp.Modules.Sales/Domain/SalesOrders/SalesOrderEvents.cs
-using Erp.Shared.BuildingBlocks;
-
-namespace Erp.Modules.Sales.Domain;
-
 // Raise an event only in the change that adds its first handler.
 internal sealed record SalesOrderApproved(SalesOrderId Id, CustomerId CustomerId, Money Total, UserId? ApprovedBy) : IDomainEvent;
 ```
@@ -231,7 +228,9 @@ System.Text.Json.Serialization;` and mark the real constructor:
 ```csharp
 [JsonConstructor]   // without it, JSON (the outbox) builds the struct empty and the amount comes back as 0
 public Money(decimal amount) =>
-    Amount = amount >= 0 ? amount : throw new DomainException("Money cannot be negative.");
+    Amount = amount >= 0
+        ? Math.Round(amount, 2, MidpointRounding.AwayFromZero)
+        : throw new DomainException("An amount of money cannot be negative.");
 ```
 
 Do the same in `Quantity.cs` (`[JsonConstructor]   // see Money`). Run the tests again: green. And as a
@@ -493,12 +492,13 @@ done
 ## Let's run it!
 
 Run `dotnet test` first: the round-trip test passes now. Then restart the app and approve something. The
-quickest is a small order, which is approved on submit:
+quickest is a small order, which is approved on submit. Click through it in the app, or (with a `$TOKEN`
+from lesson 06):
 
 ```bash
-ID=$(curl -s -X POST http://localhost:5264/sales-orders -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+ID=$(curl -s -X POST http://localhost:5264/api/sales-orders -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"customerId":1,"lines":[{"itemId":1,"quantity":1}]}' | jq .id)
-curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:5264/sales-orders/$ID/submit -H "Authorization: Bearer $TOKEN"
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:5264/api/sales-orders/$ID/submit -H "Authorization: Bearer $TOKEN"
 ```
 
 Within two seconds, the API's console shows:
@@ -525,9 +525,9 @@ PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localho
 6. Why does each module have its own outbox table?
 
 And that's where this lesson ends. The system now reacts to what happens, and a crash can't make it forget.
-Next time, we make the running app visible: traces, metrics, logs and health checks, so you can see what it's
-doing when something goes wrong. Good luck, developer!
+Next time, we prove all of it with tests: the rules, the races, the module walls, and the screens. Good
+luck, developer!
 
 ---
 
-← [Lesson 08 — Reads](08-find-orders.md) · Next: [Lesson 14 — Observability](14-observability.md) →
+← [Lesson 10 — Update an order](10-update-order.md) · Next: [Lesson 12 — Testing](12-testing.md) →

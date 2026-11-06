@@ -10,7 +10,7 @@ begin!
 
 Don't try to understand every character at once. Instead:
 
-1. **Read the method names first.** They usually say what happens: `Create`, `AddLine`, `Submit`.
+1. **Read the method names first.** They usually say what happens: `Create`, `SetLines`, `Submit`.
 2. **Skip the punctuation on the first pass.** `<T>`, `=>`, `?`, `async`: get the gist first.
 3. **Then come back here** and decode the symbols.
 
@@ -87,7 +87,7 @@ see an `I` in front of a type name (`IClock`, `ICurrentUser`, `IStockReservation
 
 ## 4. Dependency injection: "hand me what I need"
 
-Look at this class from lesson 08:
+Look at this class from lesson 09:
 
 ```csharp
 internal sealed class CancelSalesOrderHandler(SalesDbContext db, IStockReservation stock)
@@ -157,7 +157,7 @@ The `<T>` you'll see most is a list:
 
 - **`List<SalesOrderLine>`**: a list you can add to and remove from.
 - **`IReadOnlyList<SalesOrderLine>`**: a list you can look at but not change. `SalesOrder` shows its lines
-  this way on purpose. Other code can read them, but can only add one through `AddLine(...)`, which checks
+  this way on purpose. Other code can read them, but can only change them through `SetLines(...)`, which checks
   the rules. It's the `private set` idea, applied to a list.
 
 You'll also spot `in` and `out` on some generic interfaces. They're fine print that lets the compiler
@@ -176,11 +176,11 @@ For reading purposes, `record` and `struct` here mostly mean "a small data holde
 ## 8. Enums: a fixed list of names
 
 ```csharp
-internal enum SalesOrderStatus { Draft, PendingApproval, Approved, Cancelled, Rejected }
+internal enum SalesOrderStatus { Draft, PendingApproval, Approved, Cancelled, Rejected, Shipped }
 ```
 
-A `SalesOrderStatus` can only ever be one of those five. You can't set it to `"draftt"` by accident; the
-compiler won't allow it. That's why an order's status is an enum and not a string. And those five really are
+A `SalesOrderStatus` can only ever be one of those six. You can't set it to `"draftt"` by accident; the
+compiler won't allow it. That's why an order's status is an enum and not a string. And those six really are
 an order's whole life; you'll build each step.
 
 ## 9. Exceptions: "stop, something's wrong"
@@ -224,7 +224,7 @@ lives in **tables**, much like spreadsheets: a `sales_order` table has columns (
 `status`) and one row per order. **SQL** is the language for talking to it: "give me every approved order",
 "insert this row".
 
-We talk to PostgreSQL in two ways, and [lesson 04](04-database.md) and [lesson 08](08-find-orders.md) explain why:
+We talk to PostgreSQL in two ways, and [lesson 04](04-database.md) and [lesson 07](07-find-orders.md) explain why:
 
 - **EF Core** saves our C# objects for us. Every change to data goes through it.
 - **Dapper** runs a SQL query and turns the rows into C# objects. Every screen's data comes through it.

@@ -39,6 +39,11 @@ Search *"mediator pattern refactoring guru"* for friendly diagrams, and *"martin
 the library we use. For validation, read only the *"Creating your first validator"* page of the
 FluentValidation documentation. Notice that a validator checks shape, never business rules.
 
+**Blazor and MudBlazor** (from [lesson 01](01-solution-setup.md))
+Search Microsoft Learn for *"ASP.NET Core Blazor"* and read *"Razor component"* first; the parts about
+WebAssembly hosting are what we use. For components, the MudBlazor site's own docs show every component with
+live examples you can copy.
+
 **Records, structs and enums** ([lesson 03](03-domain-model.md))
 Search Microsoft Learn for *"C# records"*, *"C# struct types"* and *"C# enumeration types"*. To practice,
 write `readonly record struct Money(decimal Amount)`, try `new Money(-5)`, then add the check that throws.
@@ -61,33 +66,42 @@ once you've saved a few objects.
 Search Microsoft Learn for *"Use Identity to secure a Web API backend for SPAs"*: it's the page about
 `MapIdentityApi`. For why we use length over composition rules, search *"NIST SP 800-63B passwords"*.
 
-**Transactions and concurrency** ([lesson 09](09-submit.md) and [lesson 10](10-approve-reject-cancel.md))
+**Transactions and concurrency** ([lesson 08](08-submit.md) and [lesson 09](09-approve-reject-cancel.md))
 Search *"race condition explained"* for the classic "two people withdraw from one account" example, then the
 PostgreSQL documentation's *"Explicit locking"* and *"Transaction isolation"* pages. For EF Core's side,
-search *"EF Core handling concurrency conflicts"*. This is the hardest idea in the course. Re-read lesson 07's
+search *"EF Core handling concurrency conflicts"*. This is the hardest idea in the course. Re-read lesson 08's
 naive version and its timeline more than once; it's supposed to be hard.
 
-**Dapper and SQL functions** ([lesson 08](08-find-orders.md))
+**Dapper and SQL functions** ([lesson 07](07-find-orders.md))
 Search *"Dapper GitHub"*: the README is the best tutorial. For functions, the PostgreSQL documentation's
 *"CREATE FUNCTION"* page; look at the `RETURNS TABLE` examples.
 
-**The outbox** ([lesson 12](12-events-outbox.md))
+**The outbox** ([lesson 11](11-events-outbox.md))
 Search *"transactional outbox pattern microservices.io"*. It's written for microservices, but the problem it
 solves, saving and announcing in one step, is exactly ours.
 
-**OpenTelemetry** ([lesson 14](14-observability.md))
+**OpenTelemetry** ([lesson 13](13-observability.md))
 Search *".NET observability with OpenTelemetry"* on Microsoft Learn, and read *"Observability primer"* on
 opentelemetry.io for what logs, traces and metrics each answer.
 
-**Web security** ([lesson 22](22-security-hardening.md))
+**Web security** ([lesson 21](21-security-hardening.md))
 The OWASP *"Cheat Sheet Series"* has a short page for each topic: *"HTTP Strict Transport Security"*,
 *"Content Security Policy"*, *"Authentication"*. For ASP.NET Core's limiter, search *"Rate limiting middleware
 in ASP.NET Core"*.
 
-**Integration tests** ([lesson 13](13-testing.md))
-Search Microsoft Learn for *"Integration tests in ASP.NET Core"*: it explains `WebApplicationFactory`.
+**Integration and browser tests** ([lesson 12](12-testing.md))
+Search Microsoft Learn for *"Integration tests in ASP.NET Core"*: it explains `WebApplicationFactory`. For
+browser tests, the Playwright for .NET docs at playwright.dev, *"Writing tests"* and *"Locators"*.
 
-**IIS and backups** ([lesson 24](24-deploy-iis.md), [lesson 25](25-production-checklist.md))
+**Integration events and idempotency** ([lesson 16](16-item-catalog.md), [lesson 20](20-payments.md))
+Search *"idempotent consumer pattern microservices.io"*. Like the outbox page, it's written for microservices
+and fits our modules exactly.
+
+**Docker and Compose** ([lesson 22](22-docker.md))
+Docker's own docs: *"Get started"*, then *"Multi-stage builds"* and the *"Compose file reference"*. For HTTPS,
+Caddy's docs, *"Automatic HTTPS"*. For backups, the PostgreSQL docs' *"Backup and Restore"* chapter.
+
+**IIS and backups** ([lesson 23](23-deploy-iis.md), [lesson 24](24-production-checklist.md))
 Search Microsoft Learn for *"Host ASP.NET Core on Windows with IIS"* and *"Troubleshoot ASP.NET Core on
 Azure App Service and IIS"*: the second has every 500.xx code. For backups, the PostgreSQL documentation's
 *"Backup and Restore"* chapter.
@@ -102,7 +116,7 @@ These make far more sense after you've built a few lessons than before. Don't fr
 | Vertical slices | *"Vertical Slice Architecture Jimmy Bogard"* | How we organize inside each module |
 | Domain-driven design | *"Domain-Driven Design Distilled"*, a short book by Vaughn Vernon | The short one. Leave the big "blue book" for much later |
 | Clean Architecture, for contrast | *"The Clean Architecture"*, Robert C. Martin's original blog post | We don't use its layer split. Read it to understand what we replaced, and why |
-| CQRS | *"CQRS pattern"* in the Azure Architecture Center | Then re-read lesson 02 and lesson 10 to see why we do the lite version |
+| CQRS | *"CQRS pattern"* in the Azure Architecture Center | Then re-read lesson 02 and lesson 07 to see why we do the lite version |
 
 ## How to actually practice
 

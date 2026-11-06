@@ -14,7 +14,7 @@ hours. Are you ready? Let's begin!
 | **Value objects** | `Money` and `Quantity`, also shared, plus typed ids like `SalesOrderId` |
 | **Sales' entities** | `Customer`, `ItemCategory`, `SalesItem` |
 | **The aggregate** | `SalesOrder` with its lines, a status state machine, and the approval workflow |
-| **A test project** | Seventeen tests that need no database |
+| **A test project** | Eighteen tests that need no database |
 
 ## Why we build it this way
 
@@ -49,10 +49,10 @@ rows:
 
 | The question | Where it lives |
 |---|---|
-| Is the request well-formed? (positive ids, at least one line) | A validator ([lesson 07](07-create-order.md)) |
+| Is the request well-formed? (positive ids, at least one line) | A validator ([lesson 06](06-create-order.md)) |
 | Is this operation allowed? (blocked, credit, status, approval) | **The domain** — this lesson |
-| Load, act, save | A handler ([lesson 07](07-create-order.md)), with no business `if`s |
-| Two people acting at once | The database, atomically ([lessons 09](09-submit.md) and [10](10-approve-reject-cancel.md)) |
+| Load, act, save | A handler ([lesson 06](06-create-order.md)), with no business `if`s |
+| Two people acting at once | The database, atomically ([lessons 08](08-submit.md) and [09](09-approve-reject-cancel.md)) |
 
 To remember it easily: if the question is "is this allowed?", the answer lives in the domain.
 
@@ -88,7 +88,7 @@ public class DomainException(string message) : Exception(message);
 - **`Entity<TId>`** is anything with an identity. `TId` is a small struct like `SalesOrderId`, never a
   plain `long`; you'll see why in a moment.
 - **`AggregateRoot<TId>`** marks the one entity the outside world talks to. It's empty for now. In
-  [lesson 12](12-events-outbox.md) it learns to record events.
+  [lesson 11](11-events-outbox.md) it learns to record events.
 - **`DomainException`** is how a business rule says no.
 - **`where TId : struct`** appears on both classes. Leave it off `AggregateRoot` and the compiler stops you
   with `CS0453`: a derived generic class must repeat its base class's constraints.
@@ -175,7 +175,7 @@ public static class Roles
 }
 ```
 
-Three roles are all Sales needs. [Lesson 18](18-users-email.md) adds the warehouse, purchasing and
+Three roles are all Sales needs. [Lesson 15](15-users-email.md) adds the warehouse, purchasing and
 accounting roles, when their screens arrive.
 
 You might wonder why all of BuildingBlocks shares one namespace, whatever the folder. Folders like
@@ -201,7 +201,7 @@ internal readonly record struct UserId(long Value);
 Why not plain `long`s? Because then this compiles, and is wrong:
 
 ```csharp
-order.AddLine(customerId, ...);   // a customer id where an item id belongs
+var item = await db.SalesItems.FindAsync(customerId);   // a customer id where an item id belongs
 ```
 
 With typed ids, the compiler refuses it. It costs one line per id type.
@@ -228,6 +228,9 @@ internal sealed class Customer : Entity<CustomerId>
         if (string.IsNullOrWhiteSpace(name)) throw new DomainException("A customer needs a name.");
         return new Customer { Name = name.Trim(), CreditLimit = creditLimit };
     }
+
+    public void Block() => IsBlocked = true;
+    public void Unblock() => IsBlocked = false;
 
     public void EnsureNotBlocked()
     {
@@ -260,8 +263,8 @@ would pass on its own, and once all three were approved, they'd owe ₱270,000.
 
 The private parameterless constructor and the `Create` factory are a pair you'll see everywhere. `Create`
 checks the rules for a new customer; the private constructor is for the database to use later, in
-[lesson 04](04-database.md). [Lesson 15](15-customers.md) gives customers a TIN, an address, payment
-terms and a block button; until then, the seed data sets them up.
+[lesson 04](04-database.md). [Lesson 14](14-customers.md) gives customers a TIN, an address and payment
+terms, and puts `Block` behind a button; until then, the seed data sets them up.
 
 ## 4. Categories and items
 
@@ -592,7 +595,7 @@ That's a lot of code, so let's walk through what each part protects:
 - **Approving charges the customer** (`AddToBalance`), and **cancelling an approved order takes it back**.
   The domain does both, so no handler can forget one.
 - **`Reject` and `Cancel` return the lines to release.** The order knows whether it was holding stock; the
-  handler just does what it's told ([lesson 10](10-approve-reject-cancel.md)). No business `if` leaks out.
+  handler just does what it's told ([lesson 09](09-approve-reject-cancel.md)). No business `if` leaks out.
 - **The time comes in as a parameter** (`nowUtc`) instead of `DateTime.UtcNow`, so tests can control it.
 - `EnsureBelongsTo` throws `InvalidOperationException`, not `DomainException`. Passing the wrong customer is
   a programming bug, not a business rule a user can break.
@@ -648,10 +651,11 @@ internal static class Make
     public static readonly ItemCategory General = ItemCategory.Create("General", 1000, null);
     public static readonly ItemCategory Controlled = ItemCategory.Create("Controlled", 5, Roles.SalesManager);
 
-    public static Customer Customer(decimal limit = 1_000_000, decimal balance = 0)
+    public static Customer Customer(decimal limit = 1_000_000, decimal balance = 0, bool blocked = false)
     {
         var customer = Domain.Customer.Create("Acme", new Money(limit));
         if (balance > 0) customer.AddToBalance(new Money(balance));
+        if (blocked) customer.Block();
         return customer;
     }
 
@@ -662,9 +666,9 @@ internal static class Make
         return item;
     }
 
-    public static SalesOrder Order(Customer customer, decimal unitPrice, decimal qty = 1)
+    public static SalesOrder Order(Customer customer, decimal unitPrice, decimal qty = 1, UserId? createdBy = null)
     {
-        var order = SalesOrder.Create("SO-1", customer.Id, Rep, Now);
+        var order = SalesOrder.Create("SO-1", customer.Id, createdBy ?? Rep, Now);
         order.SetLines([(Item(1, unitPrice), new Quantity(qty))], Roles.SalesRep);
         return order;
     }
@@ -672,6 +676,11 @@ internal static class Make
 
 public class CustomerRuleTests
 {
+    [Fact]
+    public void Blocked_customer_cannot_order() =>
+        Make.Customer(blocked: true).Invoking(c => c.EnsureNotBlocked())
+            .Should().Throw<DomainException>().WithMessage("*blocked*");
+
     [Fact]
     public void Order_over_available_credit_is_rejected() =>
         Make.Customer(limit: 5000, balance: 4500).Invoking(c => c.EnsureWithinCreditLimit(new Money(600), Money.Zero))
@@ -681,14 +690,6 @@ public class CustomerRuleTests
     public void Orders_awaiting_approval_count_against_credit() =>
         Make.Customer(limit: 200_000).Invoking(c => c.EnsureWithinCreditLimit(new Money(75_000), new Money(150_000)))
             .Should().Throw<DomainException>().WithMessage("*Available credit: ₱50,000.00*");
-
-    [Fact]
-    public void A_balance_never_goes_below_zero()
-    {
-        var customer = Make.Customer(balance: 300);
-        customer.DeductFromBalance(new Money(500));
-        customer.OutstandingBalance.Should().Be(Money.Zero);
-    }
 }
 
 public class OrderLineTests
@@ -733,6 +734,12 @@ public class OrderLineTests
             .Invoking(o => o.SetLines([(unpriced, new Quantity(1))], Roles.SalesRep))
             .Should().Throw<DomainException>().WithMessage("*not for sale*");
     }
+
+    [Fact]
+    public void An_item_cannot_go_on_sale_without_a_price() =>
+        SalesItem.FromCatalog(new ItemId(9), "NEW-1", "New", "pc", false, isActive: true)
+            .Invoking(i => i.SetPricing(Money.Zero, Make.General, isForSale: true))
+            .Should().Throw<DomainException>().WithMessage("*price*");
 
     [Fact]
     public void The_same_item_twice_becomes_one_line()
@@ -815,7 +822,7 @@ public class RejectAndCancelTests
     {
         var customer = Make.Customer();
         var order = Make.Order(customer, unitPrice: 25, qty: 2);
-        order.Submit(customer, Money.Zero, Make.Now);   // auto-approved: charged ₱50
+        order.Submit(customer, Money.Zero, Make.Now);
 
         order.Cancel(customer).Should().HaveCount(1);
         customer.OutstandingBalance.Should().Be(Money.Zero);
@@ -872,10 +879,10 @@ dotnet test
 ```
 
 ```
-Passed!  - Failed: 0, Passed: 17, Skipped: 0, Total: 17
+Passed!  - Failed: 0, Passed: 18, Skipped: 0, Total: 18
 ```
 
-Seventeen business rules, proven in well under a second, with no database in sight. That's the reward for
+Eighteen business rules, proven in well under a second, with no database in sight. That's the reward for
 keeping the domain pure.
 
 ## Let's check!

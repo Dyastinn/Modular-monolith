@@ -33,7 +33,7 @@ One business area (Sales, Inventory, Identity) with its own code, its own schema
 Picture an island with one service window: everything inside is private, and other modules can only ask at
 the window.
 
-**Contracts project** (07)
+**Contracts project** (08)
 A module's service window: `Erp.Modules.X.Contracts`, the only public part of a module. It holds the
 interfaces and data other modules may use, and references nothing but BuildingBlocks, so modules can call
 each other without forming a cycle.
@@ -107,15 +107,26 @@ rules.
 
 ## The web edge
 
+**Blazor WebAssembly** (01)
+C# running in the browser. Our screens are a Blazor app, downloaded once and served by the API itself.
+
+**MudBlazor** (01)
+The free component library for the screens: tables, forms, dialogs, menus.
+
+**Razor component** (01)
+A `.razor` file: markup on top, C# in `@code` below. Pages, dialogs and the layout are all components.
+
+**`AuthenticationStateProvider`** (05)
+The class Blazor asks "who's signed in?". Ours asks the API's `/api/auth/me`.
+
 **Minimal API** (02)
 ASP.NET Core's lightweight way to map a URL to a function: `app.MapPost("/sales-orders", ...)`.
 
 **Carter** (02)
 A small library that lets each feature keep its endpoints in its own class (`ICarterModule`).
 
-**Middleware** (13)
-A step every request passes through, in order: exception handling, HTTPS, headers, API key, sign-in, rate
-limits.
+**Middleware** (06)
+A step every request passes through, in order: exception handling, HTTPS, headers, sign-in, rate limits.
 
 **Problem Details** (06)
 The standard JSON shape for errors (RFC 9457): `status`, `title`, `detail`, plus our `traceId`.
@@ -151,6 +162,20 @@ Thrown when a business rule says no. The API turns it into a 422.
 **Domain event** (11)
 Something the domain says has happened: `SalesOrderApproved`. Other code can react to it afterwards.
 
+**Integration event** (16)
+A domain event other *modules* handle, like `ItemCatalogChanged`. Public, in the Contracts project, with
+plain types.
+
+**Snapshot** (03, 19)
+A copy of facts as they were at a moment: an order line's item name, an invoice's customer address. Later
+changes don't touch it.
+
+**Segregation of duties** (03)
+Nobody approves their own order or purchase: spending needs a second pair of eyes.
+
+**Unit of measure** (03)
+How an item is counted: whole pieces, or kilograms that allow 2.5.
+
 ## Database words
 
 **PostgreSQL** (04)
@@ -178,57 +203,79 @@ Tells EF Core how to store a type it doesn't know: `CustomerId` as a `bigint`, `
 **Migration** (04)
 A C# file describing one change to the schema. EF Core records which ones each database has had.
 
-**Migration bundle** (15)
+**Migration bundle** (22)
 One `.exe` containing a module's migrations. Run it with a connection string and it applies whatever is
 missing.
 
 **Seed data** (04)
 Sample rows for development: `DevSeed.sql`, run only when `Database:SeedDevelopmentData` is on.
 
-**Transaction** (07)
+**Transaction** (08)
 A group of changes that all happen or none do. Picture a turnstile: either you're through, or you're not.
 There's no halfway.
 
-**Atomic** (07)
+**Atomic** (08)
 Happens completely or not at all, with no in-between state anyone can see.
 
-**Shared connection** (07)
+**Shared connection** (08)
 One database connection per request, used by every module's DbContext, so a contract can join the
 caller's transaction.
+
+**Gap-free numbering** (19)
+Invoice numbers from a counter row updated inside the invoice's transaction, so a rollback gives the number
+back.
+
+**Filtered unique index** (19)
+Unique only among some rows: one *live* invoice per shipment, however many void ones.
+
+**Type handler** (18)
+Teaches Dapper one type once, for every query: `date` columns become `DateOnly`.
+
+**Common table expression (CTE)** (20)
+A named step inside a query, written with `WITH`. The aging report uses one.
 
 **Sequence** (06)
 A database counter that hands out each number once, even under load: the order numbers.
 
-**Race condition** (07)
+**Race condition** (08)
 A bug that only shows when two things happen at the same moment, like two people buying the last item.
 
-**`FOR UPDATE`** (07)
+**`FOR UPDATE`** (08)
 Locks the rows a query reads until the transaction ends. Anyone else who wants them waits.
 
-**Lost update** (08)
+**Lost update** (09)
 Two people change the same thing; the second save silently overwrites the first.
 
-**Optimistic concurrency** (08)
+**Optimistic concurrency** (09)
 Don't lock; check on save that nobody changed the row since you read it. If someone did, refuse with 409.
 
-**`xmin`** (08)
+**`xmin`** (09)
 PostgreSQL's built-in row version, changed on every update. EF Core uses it as the concurrency token.
 
-**Dapper** (10)
+**Dapper** (07)
 A small library that runs SQL and maps the rows to C# objects. Here it does every read.
 
-**SQL function** (10)
+**SQL function** (07)
 A named query stored in the database, called like `SELECT * FROM sales.search_sales_orders(...)`. We use
 functions because PostgreSQL procedures can't return rows.
 
-**Least privilege** (13)
+**Least privilege** (21)
 Give each account only the rights it needs. The app connects as `erp_app` (read and write rows); only
 deployments use `erp_owner` (change tables).
 
-**Default privileges** (13)
+**Default privileges** (21)
 `ALTER DEFAULT PRIVILEGES`: rights given automatically on everything a role creates from now on.
 
 ## Events and the outbox
+
+**Eventual consistency** (16)
+A copy that catches up a moment later, through events. Fine for names; never for stock.
+
+**Upsert** (16)
+Insert if missing, update if present. Applying the same full record twice gives the same result.
+
+**Inbox** (20)
+The receiving side remembering what it already handled, like Sales' `applied_payment` table.
 
 **Outbox** (11)
 A table where each module writes its events in the same transaction as the change, so an event can't be
@@ -249,7 +296,7 @@ Doing it twice has the same effect as doing it once. Every event handler must be
 **`SKIP LOCKED`** (11)
 Lets two dispatchers share the outbox: each skips rows the other has locked.
 
-**`BackgroundService` / `IHostedService`** (11, 15)
+**`BackgroundService` / `IHostedService`** (11, 22)
 Code ASP.NET Core starts with the app. A `BackgroundService` keeps running (the dispatcher); an
 `IHostedService` can simply do one thing at startup (the first admin).
 
@@ -285,51 +332,59 @@ password) ends every session.
 **`ICurrentUser`** (05)
 The small interface handlers use to ask who's calling.
 
-**Role** (03)
-`SalesRep`, `SalesManager`, `Admin`. Each person has exactly one.
+**Role** (03, 15)
+`SalesRep`, `SalesManager`, `Admin`, and from lesson 15 `InventoryClerk`, `Purchaser`, `Accountant`. Each
+person has exactly one.
 
-**Rate limiting** (13)
+**Rate limiting** (21)
 A budget of requests per caller per minute. Over it, the API answers 429.
 
-**HTTPS / HSTS** (13)
+**HTTPS / HSTS** (21)
 HTTPS encrypts the connection. HSTS tells the browser to never use plain HTTP for this site again.
 
-**Security headers** (13)
+**Security headers** (21)
 Response headers that tell the browser to be careful: no framing, no guessing content types.
 
-**CSP (Content Security Policy)** (13)
-A header listing what a page may load. For our JSON responses: nothing at all.
+**CSP (Content Security Policy)** (21)
+A header listing what a page may load. For our JSON responses: nothing at all. For the app's pages: only
+files from our own site, and never an inline script.
 
-**CORS** (13)
+**CORS** (21)
 The browser rule that stops a web page on one site calling an API on another, unless the API allows it.
 
-**API key** (13)
-A secret per client *program*, sent as `X-Api-Key`. Says which app is calling, not which user.
+**API key** (05)
+A secret per client *program*. We use none: a key shipped in a browser app is public. Every call is protected
+by who's signed in.
 
-**Data protection keys** (13)
-The keys Identity uses to protect cookies and tokens. Stored in the database so restarts sign nobody out.
+**Data protection keys** (21)
+The keys Identity uses to protect cookies and tokens. Stored in the database so restarts sign nobody out,
+and encrypted with a certificate so a stolen backup can't forge a sign-in.
+
+**Open redirect** (05)
+A sign-in page that sends you anywhere after signing in, including an attacker's look-alike site. Ours only
+follows paths inside the app.
 
 ## Observability
 
-**Observability** (12)
+**Observability** (13)
 Being able to tell what the running app is doing, from the outside.
 
-**Logs, traces, metrics** (12)
+**Logs, traces, metrics** (13)
 Logs: what happened. Traces: where the time went in one request. Metrics: how much and how often, over time.
 
-**Span** (12)
+**Span** (13)
 One timed step inside a trace: the HTTP request, the handler, one SQL query.
 
-**Trace id** (12)
+**Trace id** (13)
 One id shared by every span and log line of a request. Returned as `X-Trace-Id`.
 
-**OpenTelemetry / OTLP** (12)
+**OpenTelemetry / OTLP** (13)
 The open standard for producing telemetry, and the protocol for sending it anywhere.
 
-**Health checks** (12)
+**Health checks** (13)
 `/health/live`: is the process up? `/health/ready`: can it reach the database?
 
-**Aspire dashboard** (12)
+**Aspire dashboard** (13)
 A development tool that shows logs, traces and metrics live. Not for production.
 
 ## Testing
@@ -337,40 +392,59 @@ A development tool that shows logs, traces and metrics live. Not for production.
 **Unit test** (03)
 Tests one piece, the domain, with no database. Fast.
 
-**Integration test** (14)
+**Integration test** (12)
 Runs the whole API in memory against a real PostgreSQL database.
 
-**`WebApplicationFactory`** (14)
+**`WebApplicationFactory`** (12)
 Starts the API inside a test without a web server.
 
-**Architecture test** (14)
+**Architecture test** (12)
 A test that fails when a module breaks a boundary rule, such as referencing another module's main project.
 
 **AwesomeAssertions** (03)
 The readable `.Should().Be(...)` assertions. A free fork of FluentAssertions, whose newer versions are paid.
 
+**Playwright** (12)
+Drives a real browser from a test: open a page, type, click, wait for text.
+
 ## Deployment
 
-**IIS** (15)
+**Container / image** (22)
+An image is the app with everything it needs to run, frozen into one file. A container is a running copy of
+it, isolated from the others.
+
+**Docker Compose** (22)
+Runs several containers together on one machine from one file, in the right order.
+
+**Volume** (22)
+Storage that outlives a container, so replacing the database container never touches the data.
+
+**Caddy / reverse proxy** (22)
+A web server in front of the app that takes care of HTTPS and passes requests on.
+
+**Forwarded headers** (22)
+`X-Forwarded-For` and `X-Forwarded-Proto`: how a proxy tells the app the real client address and scheme.
+
+**IIS** (23)
 Windows' web server.
 
-**Hosting Bundle** (15)
+**Hosting Bundle** (23)
 The installer that puts .NET and the ASP.NET Core Module on a Windows server.
 
-**ASP.NET Core Module (ANCM)** (15)
+**ASP.NET Core Module (ANCM)** (23)
 The IIS module that starts our app and hands it every request.
 
-**In-process hosting** (15)
+**In-process hosting** (23)
 The app runs inside IIS's own worker process, `w3wp.exe`.
 
-**App pool** (15)
+**App pool** (23)
 The Windows process an IIS site runs in, with its own identity and settings.
 
-**`app_offline.htm`** (15)
+**`app_offline.htm`** (23)
 Drop this file into the site and ANCM stops the app and shows the page. Remove it and the app starts again.
 
-**Framework-dependent publish** (15)
+**Framework-dependent publish** (22)
 A published app that uses the .NET runtime installed on the server, rather than carrying its own.
 
-**`pg_dump` / `pg_restore`** (16)
+**`pg_dump` / `pg_restore`** (22)
 PostgreSQL's tools to back up a database to one file, and to restore it.

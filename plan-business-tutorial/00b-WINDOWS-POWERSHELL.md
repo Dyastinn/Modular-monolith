@@ -1,9 +1,10 @@
-# Every Checkpoint, in PowerShell
+# Every Terminal Checkpoint, in PowerShell
 
-Good day, developer! The lessons write their "Let's run it!" checkpoints in bash and `curl`, because that's
-how almost every API document on the internet writes them, and it's worth being able to read them. But if
-you're on Windows and would rather stay in PowerShell, this page has the same checkpoints, translated: the
-same requests, in the same order, with the same results. Are you ready? Let's begin!
+Good day, developer! Most "Let's run it!" checkpoints happen in the app, in your browser. The ones that use
+the terminal are written in bash and `curl`, because that's how almost every API document on the internet
+writes them, and it's worth being able to read them. But if you're on Windows and would rather stay in
+PowerShell, this page has the same terminal checks, translated: the same requests, in the same order, with
+the same results. Are you ready? Let's begin!
 
 You have three ways to run a checkpoint. All of them are fine:
 
@@ -11,7 +12,7 @@ You have three ways to run a checkpoint. All of them are fine:
 |---|---|
 | **Git Bash** | Comes with Git for Windows. The lessons' commands work exactly as written. Right-click a folder, *Open Git Bash here* |
 | **PowerShell**, with this page | You already live there |
-| **Swagger** or the test console | You'd rather click than type. Swagger's **Authorize** button takes the token, and from lesson 13 the API key |
+| **Swagger** (`/swagger`, development only) | You'd rather click than type. If you're signed in to the app in the same browser, its cookie works there too |
 
 One thing to watch out for: don't paste the lessons' bash into PowerShell. It looks as if it should work,
 and it won't. `TOKEN=$(...)` isn't PowerShell, and in Windows PowerShell 5.1, `curl` is a nickname for
@@ -23,7 +24,6 @@ Paste this whole block before any checkpoint below:
 
 ```powershell
 $Base = 'http://localhost:5264'     # the port `dotnet run` printed
-$Key  = $null                        # from lesson 13: 'SIUgiguVpxcKJ4Ohk5l00kYJXEDPe8rFO8Do59AEloY='
 $Psql = 'C:\Program Files\PostgreSQL\18\bin\psql.exe'
 $env:PGPASSWORD = 'erp_dev_only'     # the development superuser password from lesson 04
 
@@ -36,7 +36,6 @@ function Invoke-Api {
     )
 
     $headers = @{}
-    if ($Key)   { $headers['X-Api-Key'] = $Key }
     if ($Token) { $headers['Authorization'] = "Bearer $Token" }
 
     $req = @{ Uri = "$Base$Path"; Method = $Method; Headers = $headers; UseBasicParsing = $true; ErrorAction = 'Stop' }
@@ -65,7 +64,7 @@ function Invoke-Api {
 }
 
 function Get-Token([string]$Email) {
-    (Invoke-Api '/auth/login' -Method Post -Body @{ email = $Email; password = 'Password123!' }).Body.accessToken
+    (Invoke-Api '/api/auth/login' -Method Post -Body @{ email = $Email; password = 'Password123!' }).Body.accessToken
 }
 
 function Show([pscustomobject]$Result) {
@@ -82,28 +81,21 @@ inside it. Without `UseBasicParsing`, a *successful* response can fail while bei
 Internet Explorer was never set up. And on 5.1, the error body isn't in `$_.ErrorDetails.Message`, so the
 helper reads it off the response itself. It works the same on PowerShell 7.
 
-`dotnet`, `git` and `psql` are the same commands in every shell. Where a checkpoint only uses those, the
-command below is the lesson's, with PowerShell's way of naming the program.
+`dotnet`, `git`, `docker` and `psql` are the same commands in every shell. Where a checkpoint only uses
+those, it isn't repeated here.
 
-## Lesson 01 — the empty API
+## Lesson 01 — the app and the API
 
 ```powershell
-dotnet build
-dotnet run --project src/Erp.Api     # leave it running, and open a second PowerShell for the rest
-Invoke-RestMethod "$Base/"            # Erp API
+(Invoke-Api '/api/nothing').Status      # 404: an API address that doesn't exist
+(Invoke-Api '/sales-orders').Status     # 200, and the body is the app's HTML
 ```
 
 ## Lesson 02 — the mediator
 
 ```powershell
-Invoke-RestMethod "$Base/ping?message=hello"     # pong: hello
-(Invoke-Api '/ping?message=').Status              # 500, for now; lesson 06 turns it into a 400
-```
-
-## Lesson 03 — the domain
-
-```powershell
-dotnet test                                       # Passed: 21
+(Invoke-Api '/api/ping?message=hello').Body     # pong: hello
+(Invoke-Api '/api/ping?message=').Status        # 500, for now; lesson 06 turns it into a 400
 ```
 
 ## Lesson 04 — the database
@@ -116,145 +108,167 @@ dotnet test                                       # Passed: 21
 
 ```powershell
 $token = Get-Token 'manager@erp.local'
-(Invoke-Api '/auth/me' -Token $token).Body        # id 2, manager@erp.local, SalesManager
+(Invoke-Api '/api/auth/me' -Token $token).Body        # id 2, manager@erp.local, SalesManager
 
-(Invoke-Api '/auth/me').Status                    # 401: no token
-(Invoke-Api '/auth/register' -Method Post -Body @{ email = 'intruder@example.com'; password = 'LongEnoughPassword1' }).Status   # 404
-(Invoke-Api '/auth/login' -Method Post -Body @{ email = 'rep@erp.local'; password = 'wrong' }).Status                           # 401
+(Invoke-Api '/api/auth/me').Status                    # 401: no token
+(Invoke-Api '/api/auth/register' -Method Post -Body @{ email = 'intruder@example.com'; password = 'LongEnoughPassword1' }).Status   # 404
+(Invoke-Api '/api/auth/login' -Method Post -Body @{ email = 'rep@erp.local'; password = 'wrong' }).Status                           # 401
 ```
 
 ## Lesson 06 — create an order
 
 ```powershell
 $token = Get-Token 'rep@erp.local'
-(Invoke-Api '/sales-orders' -Method Post -Token $token -Body @{ customerId = 1; lines = @(@{ itemId = 1; quantity = 2 }) }).Body   # id 1
+(Invoke-Api '/api/sales-orders' -Method Post -Token $token -Body @{ customerId = 1; lines = @(@{ itemId = 1; quantity = 2 }) }).Body   # id
 
 $tries = @(
     @{ customerId = 1;  lines = @() },                                  # 400, the validator
     @{ customerId = 99; lines = @(@{ itemId = 1; quantity = 1 }) },     # 404, unknown customer
     @{ customerId = 3;  lines = @(@{ itemId = 1; quantity = 1 }) },     # 422, Gamma is blocked
     @{ customerId = 2;  lines = @(@{ itemId = 1; quantity = 100 }) },   # 422, over Beta's credit
-    @{ customerId = 1;  lines = @(@{ itemId = 3; quantity = 1 }) }      # 422, Controlled needs a manager
+    @{ customerId = 1;  lines = @(@{ itemId = 3; quantity = 1 }) },     # 422, Controlled needs a manager
+    @{ customerId = 1;  lines = @(@{ itemId = 1; quantity = 1.5 }) },   # 422, Widgets are whole pieces
+    @{ customerId = 1;  lines = @(@{ itemId = 5; quantity = 2.5 }) }    # 201, 2.5 kg of wire is fine
 )
-foreach ($body in $tries) { Show (Invoke-Api '/sales-orders' -Method Post -Token $token -Body $body) }
+foreach ($body in $tries) { Show (Invoke-Api '/api/sales-orders' -Method Post -Token $token -Body $body) }
 
 & $Psql -h localhost -U postgres -d erp -c "SELECT id, order_number, status FROM sales.sales_order;"
 ```
 
-## Lesson 07 — submit reserves stock
+## Lesson 07 — find orders, and who sees what
 
 ```powershell
-$token = Get-Token 'manager@erp.local'
-$kits  = @{ customerId = 5; lines = @(@{ itemId = 3; quantity = 5 }) }
-$a = (Invoke-Api '/sales-orders' -Method Post -Token $token -Body $kits).Body.id
-$b = (Invoke-Api '/sales-orders' -Method Post -Token $token -Body $kits).Body.id
+$rep = Get-Token 'rep@erp.local'
+$mgr = Get-Token 'manager@erp.local'
 
-(Invoke-Api "/sales-orders/$a/submit" -Method Post -Token $token).Status    # 204
-Show (Invoke-Api "/sales-orders/$b/submit" -Method Post -Token $token)      # 422  Insufficient stock for item 3
+(Invoke-Api '/api/sales-orders?search=acme&pageSize=5' -Token $rep).Body.totalCount
+(Invoke-Api '/api/sales-orders?page=9999' -Token $rep).Body | Select-Object items, totalCount    # no items, but a real total
+Show (Invoke-Api '/api/sales-orders?status=Shipped' -Token $rep)                                   # 400 for now; lesson 17 adds it
+(Invoke-Api '/api/customers?search=beta' -Token $rep).Body.items[0].availableCredit               # 500.0
+
+$id = (Invoke-Api '/api/sales-orders' -Method Post -Token $mgr -Body @{ customerId = 1; lines = @(@{ itemId = 1; quantity = 1 }) }).Body.id
+(Invoke-Api "/api/sales-orders/$id" -Token $mgr).Status    # 200
+(Invoke-Api "/api/sales-orders/$id" -Token $rep).Status    # 404: not the rep's order
+
+& $Psql -h localhost -U postgres -d erp -c "SELECT * FROM sales.search_sales_orders(NULL, NULL, NULL, NULL, 1, 5);"
+```
+
+## Lesson 08 — submit reserves stock
+
+```powershell
+$mgr  = Get-Token 'manager@erp.local'
+$kits = @{ customerId = 5; lines = @(@{ itemId = 3; quantity = 5 }) }
+$a = (Invoke-Api '/api/sales-orders' -Method Post -Token $mgr -Body $kits).Body.id
+$b = (Invoke-Api '/api/sales-orders' -Method Post -Token $mgr -Body $kits).Body.id
+
+(Invoke-Api "/api/sales-orders/$a/submit" -Method Post -Token $mgr).Status    # 204
+Show (Invoke-Api "/api/sales-orders/$b/submit" -Method Post -Token $mgr)      # 422  Insufficient stock for Restricted Kit
 
 & $Psql -h localhost -U postgres -d erp `
-    -c "SELECT item_id, on_hand, reserved FROM inventory.stock_item WHERE item_id = 3;" `
+    -c "SELECT id, on_hand, reserved FROM inventory.item WHERE id = 3;" `
     -c "SELECT id, status FROM sales.sales_order WHERE customer_id = 5;"
 ```
 
-## Lesson 08 — approve, reject, cancel
+## Lesson 09 — approve, reject, cancel
 
 ```powershell
 $rep  = Get-Token 'rep@erp.local'
 $mgr  = Get-Token 'manager@erp.local'
 $rack = @{ customerId = 5; lines = @(@{ itemId = 4; quantity = 1 }) }
 
-$id = (Invoke-Api '/sales-orders' -Method Post -Token $rep -Body $rack).Body.id
-(Invoke-Api "/sales-orders/$id/submit"  -Method Post -Token $rep).Status    # 204, waiting for a manager
-(Invoke-Api "/sales-orders/$id/approve" -Method Post -Token $rep).Status    # 403: reps can't approve
-(Invoke-Api "/sales-orders/$id/approve" -Method Post -Token $mgr).Status    # 204: approved
-(Invoke-Api "/sales-orders/$id/approve" -Method Post -Token $mgr).Status    # 422: already approved
+$id = (Invoke-Api '/api/sales-orders' -Method Post -Token $rep -Body $rack).Body.id
+(Invoke-Api "/api/sales-orders/$id/submit"  -Method Post -Token $rep).Status    # 204, waiting for a manager
+(Invoke-Api "/api/sales-orders/$id/approve" -Method Post -Token $rep).Status    # 403: reps can't approve
+(Invoke-Api "/api/sales-orders/$id/approve" -Method Post -Token $mgr).Status    # 204: approved
+(Invoke-Api "/api/sales-orders/$id/approve" -Method Post -Token $mgr).Status    # 422: already approved
 
-$other = (Invoke-Api '/sales-orders' -Method Post -Token $rep -Body $rack).Body.id
-(Invoke-Api "/sales-orders/$other/submit" -Method Post -Token $rep).Status                                  # 204
-(Invoke-Api "/sales-orders/$other/reject" -Method Post -Token $mgr -Body @{ reason = 'Price not agreed' }).Status   # 204
-(Invoke-Api "/sales-orders/$id/cancel" -Method Post -Token $mgr).Status                                     # 204
-
-$own = (Invoke-Api '/sales-orders' -Method Post -Token $mgr -Body $rack).Body.id
-(Invoke-Api "/sales-orders/$own/submit" -Method Post -Token $mgr).Status    # 204
-Show (Invoke-Api "/sales-orders/$own/approve" -Method Post -Token $mgr)     # 422  can't be approved by the person who created it
+$own = (Invoke-Api '/api/sales-orders' -Method Post -Token $mgr -Body $rack).Body.id
+(Invoke-Api "/api/sales-orders/$own/submit" -Method Post -Token $mgr).Status    # 204
+Show (Invoke-Api "/api/sales-orders/$own/approve" -Method Post -Token $mgr)     # 422  can't be approved by the person who created it
 ```
 
-## Lesson 09 — edit a draft
+## Lesson 10 — edit a draft
 
 ```powershell
 $token = Get-Token 'rep@erp.local'
-$id = (Invoke-Api '/sales-orders' -Method Post -Token $token -Body @{ customerId = 1; lines = @(@{ itemId = 1; quantity = 2 }) }).Body.id
+$id = (Invoke-Api '/api/sales-orders' -Method Post -Token $token -Body @{ customerId = 1; lines = @(@{ itemId = 1; quantity = 2 }) }).Body.id
 
-(Invoke-Api "/sales-orders/$id" -Method Put -Token $token -Body @{ lines = @(@{ itemId = 2; quantity = 3 }) }).Status    # 204
-(Invoke-Api "/sales-orders/$id/submit" -Method Post -Token $token).Status                                              # 204
-Show (Invoke-Api "/sales-orders/$id" -Method Put -Token $token -Body @{ lines = @(@{ itemId = 1; quantity = 1 }) })     # 422  Lines can only be changed on a draft order.
-```
-
-## Lesson 10 — reads
-
-```powershell
-(Invoke-Api '/sales-orders/1' -Token $token).Body
-(Invoke-Api '/sales-orders?status=Approved&pageSize=5' -Token $token).Body.items
-(Invoke-Api '/sales-orders?page=9999' -Token $token).Body | Select-Object items, totalCount    # no items, but a real total
-Show (Invoke-Api '/sales-orders?status=Shipped' -Token $token)                                   # 400  Unknown status 'Shipped'.
-
-& $Psql -h localhost -U postgres -d erp -c "SELECT * FROM sales.search_sales_orders(NULL, NULL, 1, 5);"
+(Invoke-Api "/api/sales-orders/$id" -Method Put -Token $token -Body @{ lines = @(@{ itemId = 2; quantity = 3 }) }).Status    # 204
+(Invoke-Api "/api/sales-orders/$id/submit" -Method Post -Token $token).Status                                              # 204
+Show (Invoke-Api "/api/sales-orders/$id" -Method Put -Token $token -Body @{ lines = @(@{ itemId = 1; quantity = 1 }) })     # 422  Lines can only be changed on a draft order.
 ```
 
 ## Lesson 11 — events and the outbox
 
 ```powershell
-$id = (Invoke-Api '/sales-orders' -Method Post -Token $token -Body @{ customerId = 1; lines = @(@{ itemId = 1; quantity = 1 }) }).Body.id
-(Invoke-Api "/sales-orders/$id/submit" -Method Post -Token $token).Status    # 204; the audit line appears in the API's console
-
 & $Psql -h localhost -U postgres -d erp -c "SELECT type, payload, processed_utc, attempts FROM sales.outbox_message ORDER BY occurred_utc DESC LIMIT 1;"
 ```
 
-## Lesson 12 — observability
-
-```powershell
-dotnet run --project src/Erp.AppHost     # open the login link it prints
-
-Invoke-RestMethod "$Base/health/live"     # Healthy
-Invoke-RestMethod "$Base/health/ready"    # Healthy; stop PostgreSQL and it says Unhealthy
-(Invoke-WebRequest "$Base/health/live" -UseBasicParsing).Headers['X-Trace-Id']    # nothing: health isn't traced
-(Invoke-WebRequest "$Base/sales-orders" -Headers @{ Authorization = "Bearer $token" } -UseBasicParsing).Headers['X-Trace-Id']
-```
-
-## Lesson 13 — security hardening
-
-From here on, every request needs the API key, so set it once:
-
-```powershell
-$Key = 'SIUgiguVpxcKJ4Ohk5l00kYJXEDPe8rFO8Do59AEloY='
-
-$saved = $Key; $Key = $null
-(Invoke-Api '/sales-orders').Status           # 401: no API key
-$Key = $saved
-(Invoke-Api '/health/ready').Status           # 200: health is exempt
-
-$token = Get-Token 'rep@erp.local'
-(Invoke-WebRequest "$Base/sales-orders" -Headers @{ 'X-Api-Key' = $Key; Authorization = "Bearer $token" } -UseBasicParsing).Headers
-# X-Frame-Options and Content-Security-Policy are there; Server is not
-
-1..11 | ForEach-Object { (Invoke-Api '/auth/login' -Method Post -Body @{ email = 'rep@erp.local'; password = 'Password123!' }).Status }
-# 200 until this minute's ten sign-ins are used up (the Get-Token above was one of them), then 429
-```
-
-And the least-privilege account, refusing to drop a table:
-
-```powershell
-$env:PGPASSWORD = '<the erp_app password>'
-& $Psql -h localhost -U erp_app -d erp -c "DROP TABLE sales.customer;"     # ERROR:  must be owner of table customer
-$env:PGPASSWORD = 'erp_dev_only'
-```
-
-## Lesson 14 — testing
+## Lesson 12 — testing
 
 ```powershell
 dotnet test
 
+Start-Process dotnet 'run --project src/Erp.Api'      # the app, in its own window
+$env:ERP_UI_URL = 'http://localhost:5264'; $env:ERP_UI_SCREENSHOTS = '.\screens'
+dotnet test tests/Erp.Web.UiTests
+Remove-Item Env:ERP_UI_URL, Env:ERP_UI_SCREENSHOTS
+```
+
+Bash sets variables for one command only; PowerShell keeps them for the whole window. That's why the last
+line removes them.
+
+## Lesson 13 — observability
+
+```powershell
+Invoke-RestMethod "$Base/health/live"     # Healthy
+Invoke-RestMethod "$Base/health/ready"    # Healthy; stop PostgreSQL and it says Unhealthy
+(Invoke-WebRequest "$Base/health/live" -UseBasicParsing).Headers['X-Trace-Id']    # nothing: health isn't traced
+(Invoke-WebRequest "$Base/api/sales-orders" -Headers @{ Authorization = "Bearer $token" } -UseBasicParsing).Headers['X-Trace-Id']
+```
+
+## Lessons 14 to 20
+
+```powershell
+# 14: reps don't maintain customers; the validator checks terms
+$rep = Get-Token 'rep@erp.local'; $mgr = Get-Token 'manager@erp.local'
+(Invoke-Api '/api/customers/1/block' -Method Post -Token $rep).Status          # 403
+(Invoke-Api '/api/customers' -Method Post -Token $mgr -Body @{ name = 'Bad Terms'; creditLimit = 0; paymentTermsDays = 400 }).Body.errors
+
+# 17: a shipped order can't ship again
+$clerk = Get-Token 'clerk@erp.local'
+Show (Invoke-Api '/api/shipments' -Method Post -Token $clerk -Body @{ salesOrderId = 1 })
+
+# 19 and 20: replay an event; nothing changes
+& $Psql -h localhost -U postgres -d erp -c "UPDATE inventory.outbox_message SET processed_utc = NULL WHERE type LIKE '%ShipmentRecorded%';"
+& $Psql -h localhost -U postgres -d erp -c "UPDATE invoicing.outbox_message SET processed_utc = NULL WHERE type LIKE '%PaymentRecorded%';"
+& $Psql -h localhost -U postgres -d erp -c "SELECT number, status FROM invoicing.invoice ORDER BY id;" -c "SELECT * FROM sales.applied_payment;"
+```
+
+## Lesson 21 — security hardening
+
+```powershell
+$rep = Get-Token 'rep@erp.local'
+(Invoke-WebRequest "$Base/api/sales-orders" -Headers @{ Authorization = "Bearer $rep" } -UseBasicParsing).Headers
+# X-Frame-Options and Content-Security-Policy are there; Server is not
+(Invoke-WebRequest "$Base/" -UseBasicParsing).Headers['Content-Security-Policy']    # the app's policy
+
+1..11 | ForEach-Object { (Invoke-Api '/api/auth/login' -Method Post -Body @{ email = 'rep@erp.local'; password = 'wrong' }).Status }
+# 401 until this minute's ten sign-ins are used up, then 429
+```
+
+Production mode without a certificate, which must refuse to start:
+
+```powershell
+$env:ASPNETCORE_ENVIRONMENT = 'Production'
+$env:ConnectionStrings__ErpDb = 'Host=localhost;Database=erp;Username=postgres;Password=erp_dev_only'
+dotnet run --project src/Erp.Api --no-launch-profile     # InvalidOperationException: ... must be encrypted at rest.
+Remove-Item Env:ASPNETCORE_ENVIRONMENT, Env:ConnectionStrings__ErpDb
+```
+
+And the least-privilege accounts:
+
+```powershell
 & $Psql -h localhost -U postgres -v db=erp_roles_check -v owner_password=owner_dev_only -v app_password=app_dev_only `
     -f deploy/postgres/create-roles.sql
 
@@ -262,14 +276,16 @@ $env:ERP_TEST_DB       = 'Host=localhost;Database=erp_roles_check;Username=erp_a
 $env:ERP_TEST_DB_OWNER = 'Host=localhost;Database=erp_roles_check;Username=erp_owner;Password=owner_dev_only'
 dotnet test tests/Erp.Integration.Tests
 Remove-Item Env:ERP_TEST_DB, Env:ERP_TEST_DB_OWNER     # so the next `dotnet test` uses its own database again
+
+$env:PGPASSWORD = 'app_dev_only'
+& $Psql -h localhost -U erp_app -d erp_roles_check -c "DROP TABLE sales.customer;"     # ERROR:  must be owner of table customer
+$env:PGPASSWORD = 'erp_dev_only'
 ```
 
-Bash sets those variables for one command only; PowerShell keeps them for the whole window. That's why the
-last line removes them.
+## Lessons 22 to 24
 
-## Lessons 15 and 16
-
-They're already written in PowerShell, because they run on a Windows server.
+Lesson 22's `docker compose` commands are the same in PowerShell. Lessons 23 and 24 are already written in
+PowerShell, because they run on a Windows server.
 
 ## The translation table
 
@@ -279,7 +295,6 @@ They're already written in PowerShell, because they run on a Windows server.
 | `curl -s URL` | `Invoke-RestMethod URL`, or `(Invoke-Api '/path').Body` |
 | `curl -i ...` or `-w "%{http_code}"` | `(Invoke-Api '/path').Status` |
 | `-H "Authorization: Bearer $TOKEN"` | `-Token $token` |
-| `-H "X-Api-Key: $KEY"` | set `$Key` once; the helper sends it |
 | `-X POST -d '{"a":1}'` | `-Method Post -Body @{ a = 1 }` |
 | `jq .detail` | `.Body.detail`, or `Show (...)` |
 | `PGPASSWORD=x psql ...` | `$env:PGPASSWORD = 'x'; & $Psql ...` |

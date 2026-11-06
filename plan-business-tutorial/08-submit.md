@@ -1,4 +1,4 @@
-# Lesson 07 — Submit: Stock, Two Modules, One Transaction
+# Lesson 08 — Submit: Stock, Two Modules, One Transaction
 
 Good day, developer! Today is the lesson where this architecture earns its keep. When a rep submits an order,
 we must set its stock aside, and stock belongs to a different module: Inventory. So we'll build that module,
@@ -10,9 +10,10 @@ begin!
 
 - The **Inventory module**, with its own schema and its own small public **contracts** project.
 - An **atomic** stock reservation: safe even when two people submit at the same instant.
-- `POST /sales-orders/{id}/submit`, which reserves stock for every line and changes the order's status in
+- `POST /api/sales-orders/{id}/submit`, which reserves stock for every line and changes the order's status in
   **one transaction** across both modules, so it all succeeds or none of it does.
 - A lock that stops two submits for the same customer from both slipping past the credit limit.
+- A **Submit** button on the order page.
 
 ## Why we build it this way
 
@@ -20,7 +21,7 @@ begin!
 
 Because a manager shouldn't approve an order you can't fill. The moment an order is submitted, its stock is
 set aside, so "pending approval" really means "we're holding this for you". If the order is later rejected
-or cancelled, the stock goes back ([lesson 10](10-approve-reject-cancel.md)).
+or cancelled, the stock goes back ([lesson 09](09-approve-reject-cancel.md)).
 
 ### Inventory is its own island
 
@@ -46,9 +47,9 @@ all, so any module can depend on it without ever making a cycle.
 Here's the obvious way to reserve stock:
 
 ```csharp
-var stock = await db.StockItems.FindAsync(itemId);
-if (stock.OnHand - stock.Reserved >= quantity)   // 8 - 0 >= 5? yes
-    stock.Reserve(quantity);                     // reserved = 5
+var item = await db.Items.FindAsync(itemId);
+if (item.OnHand - item.Reserved >= quantity)   // 8 - 0 >= 5? yes
+    item.Reserve(quantity);                    // reserved = 5
 await db.SaveChangesAsync();
 ```
 
@@ -58,9 +59,9 @@ Now picture two reps, each submitting 5 of the last 8 Restricted Kits, at the sa
 The fix is to make the check and the write **one statement**, so the database does both in one step:
 
 ```sql
-UPDATE inventory.stock_item
+UPDATE inventory.item
 SET reserved = reserved + 5
-WHERE item_id = 3 AND on_hand - reserved >= 5;
+WHERE id = 3 AND on_hand - reserved >= 5;
 ```
 
 If the row still has room, it's updated and the database reports "1 row". If someone else got there first,
@@ -104,16 +105,9 @@ public interface ISharedConnection
 }
 ```
 
-Then the implementation, in a new Infrastructure file:
+Then the implementation, next to `PostgresConnectionFactory` in Infrastructure's `PostgresConnections.cs`:
 
 ```csharp
-// src/Shared/Erp.Shared.Infrastructure/Data/PostgresConnections.cs
-using System.Data.Common;
-using Erp.Shared.BuildingBlocks;
-using Npgsql;
-
-namespace Erp.Shared.Infrastructure;
-
 public sealed class SharedPostgresConnection(NpgsqlDataSource dataSource) : ISharedConnection, IAsyncDisposable, IDisposable
 {
     public DbConnection Connection { get; } = dataSource.CreateConnection();
@@ -190,22 +184,25 @@ And the contracts project references nothing at all.
 ## 3. The contract
 
 ```csharp
-// src/Modules/Inventory/Erp.Modules.Inventory.Contracts/IStockReservation.cs
+// src/Modules/Inventory/Erp.Modules.Inventory.Contracts/InventoryContracts.cs
 using System.Data.Common;
 
 namespace Erp.Modules.Inventory.Contracts;
 
-// Both calls join the caller's transaction, so stock and the caller's own change commit or roll back together.
-// The caller must be on the request's ISharedConnection (every module DbContext is).
+// Every call that takes a DbTransaction joins the caller's transaction, so stock and the caller's own change commit
+// or roll back together. The caller must be on the request's ISharedConnection (every module DbContext is).
 public interface IStockReservation
 {
     // false = not enough available stock; nothing changed.
-    Task<bool> TryReserveAsync(long itemId, int quantity, DbTransaction tx, CancellationToken ct);
-    Task ReleaseAsync(long itemId, int quantity, DbTransaction tx, CancellationToken ct);
+    Task<bool> TryReserveAsync(long itemId, decimal quantity, DbTransaction tx, CancellationToken ct);
+    Task ReleaseAsync(long itemId, decimal quantity, DbTransaction tx, CancellationToken ct);
 }
 ```
 
-This is the only public type in Inventory's whole world. It takes the caller's transaction, `tx`, so
+This is the only public type in Inventory's whole world, for now. The file is named for the module, not the
+interface, because later lessons add the rest of Inventory's window to it. The quantity is a `decimal` and
+not our `Quantity` value object: a contract carries plain types, so a module can call it without sharing
+another module's domain. It takes the caller's transaction, `tx`, so
 Inventory can join it.
 
 Now, let's be honest about a cost here. Passing a database transaction through a contract is correct, and
@@ -217,20 +214,27 @@ because Sales never touched Inventory's tables. Just don't imagine that move as 
 ## 4. Inside Inventory
 
 ```csharp
-// src/Modules/Inventory/Erp.Modules.Inventory/Domain/StockItem.cs
+// src/Modules/Inventory/Erp.Modules.Inventory/Domain/Item.cs
+using Erp.Shared.BuildingBlocks;
+
 namespace Erp.Modules.Inventory.Domain;
 
-// ItemId refers to an item in another module: by id only, never a cross-schema FK.
-internal sealed class StockItem
-{
-    public long ItemId { get; private set; }
-    public int OnHand { get; private set; }
-    public int Reserved { get; private set; }   // promised to submitted orders
-    public int Available => OnHand - Reserved;
+internal readonly record struct ItemId(long Value);
 
-    private StockItem() { }
+// Same id as Sales' item: the two modules talk about one item, each keeping only what it needs.
+internal sealed class Item : Entity<ItemId>
+{
+    public decimal OnHand { get; private set; }
+    public decimal Reserved { get; private set; }   // promised to submitted sales orders
+    public decimal Available => OnHand - Reserved;
+
+    private Item() { }
 }
 ```
+
+For now an Inventory item is only its stock: how much is on the shelf, and how much of that is promised.
+[Lesson 16](16-item-catalog.md) makes this class the real item catalog, with SKUs, names and units, and
+turns Sales' copy into exactly that, a copy. Until then, both modules' seeds use the same ids.
 
 ```csharp
 // src/Modules/Inventory/Erp.Modules.Inventory/Infrastructure/InventoryDbContext.cs
@@ -238,6 +242,7 @@ using System.Data.Common;
 using Erp.Modules.Inventory.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Erp.Modules.Inventory.Infrastructure;
 
@@ -245,32 +250,40 @@ internal sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> op
 {
     public const string Schema = "inventory";
 
-    public DbSet<StockItem> StockItems => Set<StockItem>();
+    public DbSet<Item> Items => Set<Item>();
 
     // Shared by the app and `dotnet ef`, so the two can't drift apart.
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder o, DbConnection connection) =>
         o.UseNpgsql(connection, npg => npg.MigrationsHistoryTable("__EFMigrationsHistory", Schema))
          .UseSnakeCaseNamingConvention();
 
+    protected override void ConfigureConventions(ModelConfigurationBuilder c)
+    {
+        c.Properties<ItemId>().HaveConversion<ItemIdConverter>();
+        c.Properties<decimal>().HavePrecision(18, 3);
+    }
+
     protected override void OnModelCreating(ModelBuilder b)
     {
         b.HasDefaultSchema(Schema);
 
-        b.Entity<StockItem>(e =>
+        b.Entity<Item>(e =>
         {
-            e.ToTable("stock_item", t =>
+            e.ToTable("item", t =>
             {
-                t.HasCheckConstraint("ck_stock_item_on_hand", "on_hand >= 0");
-                t.HasCheckConstraint("ck_stock_item_reserved", "reserved >= 0");
+                t.HasCheckConstraint("ck_item_on_hand", "on_hand >= 0");
+                t.HasCheckConstraint("ck_item_reserved", "reserved >= 0");
                 // Overselling is impossible at the data level, whatever the code does.
-                t.HasCheckConstraint("ck_stock_item_not_over", "reserved <= on_hand");
+                t.HasCheckConstraint("ck_item_not_over", "reserved <= on_hand");
             });
-            e.HasKey(x => x.ItemId);
-            e.Property(x => x.ItemId).ValueGeneratedNever();
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
             e.Ignore(x => x.Available);
         });
     }
 }
+
+internal sealed class ItemIdConverter() : ValueConverter<ItemId, long>(v => v.Value, v => new ItemId(v));
 
 // For `dotnet ef migrations add`; never connects.
 internal sealed class InventoryDbContextFactory : IDesignTimeDbContextFactory<InventoryDbContext>
@@ -284,44 +297,48 @@ internal sealed class InventoryDbContextFactory : IDesignTimeDbContextFactory<In
 }
 ```
 
-`ValueGeneratedNever()` says the item id comes from outside (from Sales' item), not from a counter. And
-look at `ck_stock_item_not_over`: even if every line of C# were wrong, PostgreSQL itself refuses to reserve
-more than is on hand.
+`ValueGeneratedNever()` says the item id comes from outside, not from a counter. And look at
+`ck_item_not_over`: even if every line of C# were wrong, PostgreSQL itself refuses to reserve more than is on
+hand. The `ItemId` here is Inventory's own type, separate from Sales' `ItemId`: two islands, two
+definitions, one number.
 
 The reservation:
 
 ```csharp
-// src/Modules/Inventory/Erp.Modules.Inventory/Infrastructure/StockReservationService.cs
+// src/Modules/Inventory/Erp.Modules.Inventory/Infrastructure/StockService.cs
 using System.Data.Common;
 using Erp.Modules.Inventory.Contracts;
+using Erp.Modules.Inventory.Domain;
 using Microsoft.EntityFrameworkCore;
 
 namespace Erp.Modules.Inventory.Infrastructure;
 
-internal sealed class StockReservationService(InventoryDbContext db) : IStockReservation
+// Inventory's service window: what other modules may ask of it.
+internal sealed class StockService(InventoryDbContext db) : IStockReservation
 {
     // Check and write in ONE statement, so two orders racing for the last units can't both win.
-    public Task<bool> TryReserveAsync(long itemId, int quantity, DbTransaction tx, CancellationToken ct) =>
+    public Task<bool> TryReserveAsync(long itemId, decimal quantity, DbTransaction tx, CancellationToken ct) =>
         InTransaction(tx, async () =>
         {
-            var rows = await db.StockItems
-                .Where(s => s.ItemId == itemId && s.OnHand - s.Reserved >= quantity)
-                .ExecuteUpdateAsync(s => s.SetProperty(x => x.Reserved, x => x.Reserved + quantity), ct);
+            var id = new ItemId(itemId);
+            var rows = await db.Items
+                .Where(i => i.Id == id && i.OnHand - i.Reserved >= quantity)
+                .ExecuteUpdateAsync(s => s.SetProperty(i => i.Reserved, i => i.Reserved + quantity), ct);
             return rows == 1;
         }, ct);
 
-    public Task ReleaseAsync(long itemId, int quantity, DbTransaction tx, CancellationToken ct) =>
+    public Task ReleaseAsync(long itemId, decimal quantity, DbTransaction tx, CancellationToken ct) =>
         InTransaction(tx, async () =>
         {
-            await db.StockItems
-                .Where(s => s.ItemId == itemId)
+            var id = new ItemId(itemId);
+            await db.Items.Where(i => i.Id == id)
                 .ExecuteUpdateAsync(s => s.SetProperty(
-                    x => x.Reserved, x => x.Reserved - quantity < 0 ? 0 : x.Reserved - quantity), ct);
+                    i => i.Reserved, i => i.Reserved - quantity < 0 ? 0 : i.Reserved - quantity), ct);
             return true;
         }, ct);
 
     // Join the caller's transaction for one operation, then let go: the caller owns the commit.
-    private async Task<bool> InTransaction(DbTransaction tx, Func<Task<bool>> work, CancellationToken ct)
+    private async Task<T> InTransaction<T>(DbTransaction tx, Func<Task<T>> work, CancellationToken ct)
     {
         await db.Database.UseTransactionAsync(tx, ct);
         try { return await work(); }
@@ -361,15 +378,16 @@ internal sealed class InventoryDatabase(InventoryDbContext db) : IModuleDatabase
 ```sql
 -- src/Modules/Inventory/Erp.Modules.Inventory/Infrastructure/Sql/DevSeed.sql
 -- Development and test data; never runs in production. Item ids match the Sales dev seed.
--- Item 3 has thin stock so the reservation race is testable.
-INSERT INTO inventory.stock_item (item_id, on_hand, reserved)
-SELECT v.item_id, v.on_hand, v.reserved
-FROM (VALUES (1, 100, 0),
-             (2,  50, 0),
-             (3,   8, 0),
-             (4, 100, 0))
-     AS v(item_id, on_hand, reserved)
-WHERE NOT EXISTS (SELECT 1 FROM inventory.stock_item);
+-- Item 3 has thin stock so the reservation race is testable. Item 5 is sold by the kilogram.
+INSERT INTO inventory.item (id, on_hand, reserved)
+SELECT v.id, v.on_hand, 0
+FROM (VALUES (1, 100),
+             (2,  50),
+             (3,   8),
+             (4, 100),
+             (5, 250))
+     AS v(id, on_hand)
+WHERE NOT EXISTS (SELECT 1 FROM inventory.item);
 ```
 
 ```csharp
@@ -390,7 +408,7 @@ public static class InventoryModule
             InventoryDbContext.Configure(o, sp.GetRequiredService<ISharedConnection>().Connection));
 
         services.AddScoped<IModuleDatabase, InventoryDatabase>();
-        services.AddScoped<IStockReservation, StockReservationService>();
+        services.AddScoped<IStockReservation, StockService>();
         return services;
     }
 }
@@ -408,9 +426,26 @@ dotnet ef migrations add InitialCreate \
   --output-dir Infrastructure/Migrations
 ```
 
-## 5. Lock the customer while checking credit
+## 5. Find the order, and lock the customer
 
-Add one method to `SalesDbContext`:
+Submit is the first command that loads an order someone else may have created, so it must ask lesson 07's
+visibility rule. Every later command will ask it too, so it goes on `SalesDbContext`:
+
+```csharp
+// An order the caller may not see is "not found": a rep can't even learn that someone else's order exists.
+public async Task<SalesOrder> GetVisibleOrderAsync(long orderId, UserId user, string role, CancellationToken ct)
+{
+    var id = new SalesOrderId(orderId);
+    var order = await SalesOrders.SingleOrDefaultAsync(o => o.Id == id, ct);
+    return order is not null && order.IsVisibleTo(user, role)
+        ? order
+        : throw new NotFoundException($"Sales order {orderId} not found.");
+}
+```
+
+Invisible and missing give the same exception, so the same 404, with the same words.
+
+Then one more method:
 
 ```csharp
 // Holds the customer's row until the transaction ends, so two submits for one customer can't both pass the
@@ -438,17 +473,14 @@ namespace Erp.Modules.Sales.Features;
 
 internal sealed record SubmitSalesOrderCommand(long OrderId) : ICommand;
 
-internal sealed class SubmitSalesOrderHandler(SalesDbContext db, IStockReservation stock, IClock clock)
+internal sealed class SubmitSalesOrderHandler(SalesDbContext db, IStockReservation stock, ICurrentUser currentUser, IClock clock)
     : ICommandHandler<SubmitSalesOrderCommand>
 {
     public async ValueTask<Unit> Handle(SubmitSalesOrderCommand cmd, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
-        var orderId = new SalesOrderId(cmd.OrderId);
-        var order = await db.SalesOrders.SingleOrDefaultAsync(o => o.Id == orderId, ct)
-            ?? throw new NotFoundException($"Sales order {cmd.OrderId} not found.");
-
+        var order = await db.GetVisibleOrderAsync(cmd.OrderId, new UserId(currentUser.UserId), currentUser.Role, ct);
         await db.LockCustomerAsync(order.CustomerId, ct);
         var customer = await db.Customers.SingleAsync(c => c.Id == order.CustomerId, ct);
         var otherPending = await db.PendingTotalAsync(order.CustomerId, order.Id, ct);
@@ -458,7 +490,7 @@ internal sealed class SubmitSalesOrderHandler(SalesDbContext db, IStockReservati
         foreach (var line in order.Lines)
         {
             if (!await stock.TryReserveAsync(line.ItemId.Value, line.Quantity.Value, tx.GetDbTransaction(), ct))
-                throw new DomainException($"Insufficient stock for item {line.ItemId.Value}. Submission cancelled.");
+                throw new DomainException($"Insufficient stock for {line.ItemName}. Submission cancelled.");
         }
 
         await db.SaveChangesAsync(ct);
@@ -487,7 +519,6 @@ it into a `DomainException`.
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/SubmitSalesOrder/SubmitSalesOrderEndpoint.cs
 using Carter;
-using Erp.Shared.BuildingBlocks;
 using Mediator;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -504,12 +535,59 @@ internal sealed class SubmitSalesOrderEndpoint : ICarterModule
                 await sender.Send(new SubmitSalesOrderCommand(id), ct);
                 return Results.NoContent();
             })
-            .RequireAuthorization(p => p.RequireRole(Roles.SalesRep, Roles.SalesManager, Roles.Admin));
+            .RequireAuthorization(p => p.RequireRole(SalesRoles.Sellers));
 }
 ```
 
-`{id:long}` in the route means "this part of the URL must be a number"; `/sales-orders/abc/submit` won't even
-match.
+`{id:long}` in the route means "this part of the URL must be a number"; `/api/sales-orders/abc/submit` won't
+even match.
+
+## 7. The Submit button
+
+On the order page, the button goes where lesson 07 left a `<MudSpacer />`. In `OrderDetail.razor`, right
+after it:
+
+```razor
+@* The API decides what's allowed; the buttons only show what could make sense for this order and this person. *@
+@if (_order.Status == "Draft")
+{
+    <AuthorizeView Roles="@Sellers">
+        <MudButton OnClick="Submit" Variant="Variant.Filled" Color="Color.Primary">Submit</MudButton>
+    </AuthorizeView>
+}
+```
+
+The history grows two lines, under "Created":
+
+```razor
+@if (_order.SubmittedUtc is not null) { <MudText Typo="Typo.body2">Submitted @Format.Date(_order.SubmittedUtc)</MudText> }
+@if (_order.ApprovedUtc is not null)
+{
+    <MudText Typo="Typo.body2">Approved @(_order.ApprovedBy is null ? "automatically (₱50,000 or less)" : "by a manager"), @Format.Date(_order.ApprovedUtc)</MudText>
+}
+```
+
+And in `@code`:
+
+```csharp
+private static readonly string Sellers = $"{Roles.SalesRep},{Roles.SalesManager},{Roles.Admin}";
+
+private async Task Act(string action, string message)
+{
+    if (await Api.Post($"api/sales-orders/{Id}/{action}", success: message)) await Load();
+}
+
+private Task Submit() => Act("submit", "Submitted. Stock is reserved.");
+```
+
+`Act` is a small helper because the next lesson adds three more buttons that work the same way: post to
+`api/sales-orders/{id}/<action>`, show the message, reload the order. After a submit, the page reloads and
+shows the new status, so the rep sees "Approved" straight away for a small order, or "Pending approval" for
+a big one.
+
+Look at the comment on the button. A button that only shows on a draft is a convenience; the domain's state
+machine is what actually refuses to submit an approved order. If you remove the `@if`, a click still gets
+a clear 422.
 
 ## How a request flows
 
@@ -518,19 +596,22 @@ sequenceDiagram
   participant H as SubmitSalesOrderHandler
   participant SC as Shared connection
   participant D as SalesOrder / Customer
-  participant I as StockReservationService
+  participant I as StockService (Inventory)
   H->>SC: BEGIN
   H->>SC: load order; SELECT ... FOR UPDATE (customer); sum pending
   H->>D: order.Submit(customer, pending, now)
   loop each line
     H->>I: TryReserveAsync(item, qty, tx)
-    I->>SC: UPDATE stock_item ... WHERE available >= qty
+    I->>SC: UPDATE inventory.item ... WHERE available >= qty
   end
   H->>SC: UPDATE sales_order (status)
   H->>SC: COMMIT
 ```
 
 One connection, one transaction, two modules. Clear so far?
+
+The `PendingTotalAsync` call from lesson 06 earns its place now: at last, orders really can be waiting for
+a manager.
 
 ## Mistakes to avoid
 
@@ -539,6 +620,7 @@ One connection, one transaction, two modules. Clear so far?
 - Building a module's DbContext on its own connection. It can't join another module's transaction.
 - Committing inside Inventory. The one who started the transaction commits it.
 - Forgetting the customer lock. Two submits for one customer can slip past the credit limit together.
+- Loading an order by id without asking `IsVisibleTo`. Use `GetVisibleOrderAsync` in every command.
 
 ## Let's run it!
 
@@ -546,28 +628,33 @@ Restart the app so Inventory migrates and seeds. Then, as the manager (only mana
 items), create two orders for 5 Restricted Kits each, for Epsilon. There are only 8 kits.
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:5264/auth/login -H "Content-Type: application/json" \
+TOKEN=$(curl -s -X POST http://localhost:5264/api/auth/login -H "Content-Type: application/json" \
   -d '{"email":"manager@erp.local","password":"Password123!"}' | jq -r .accessToken)
 
-A=$(curl -s -X POST http://localhost:5264/sales-orders -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+A=$(curl -s -X POST http://localhost:5264/api/sales-orders -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"customerId":5,"lines":[{"itemId":3,"quantity":5}]}' | jq .id)
-B=$(curl -s -X POST http://localhost:5264/sales-orders -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+B=$(curl -s -X POST http://localhost:5264/api/sales-orders -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
   -d '{"customerId":5,"lines":[{"itemId":3,"quantity":5}]}' | jq .id)
 
-curl -i -X POST http://localhost:5264/sales-orders/$A/submit -H "Authorization: Bearer $TOKEN"   # 204
-curl -i -X POST http://localhost:5264/sales-orders/$B/submit -H "Authorization: Bearer $TOKEN"   # 422: Insufficient stock for item 3
+curl -i -X POST http://localhost:5264/api/sales-orders/$A/submit -H "Authorization: Bearer $TOKEN"   # 204
+curl -i -X POST http://localhost:5264/api/sales-orders/$B/submit -H "Authorization: Bearer $TOKEN"   # 422: Insufficient stock for Restricted Kit
 ```
 
 ```bash
 PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localhost -U postgres -d erp \
-  -c "SELECT item_id, on_hand, reserved FROM inventory.stock_item WHERE item_id = 3;" \
+  -c "SELECT id, on_hand, reserved FROM inventory.item WHERE id = 3;" \
   -c "SELECT id, status FROM sales.sales_order WHERE customer_id = 5;"
 ```
 
 Item 3 shows `reserved = 5`, not 10. Order A has status 2 (Approved: ₱2,500 is under the threshold, so it was
 approved on submit), and order B is still 0 (Draft): its failed reservation rolled back everything. Those two
-calls ran one after another; [lesson 13](13-testing.md) adds a test that fires them at the exact same time
+calls ran one after another; [lesson 12](12-testing.md) adds a test that fires them at the exact same time
 and proves only one wins.
+
+Now in the app, as `rep@erp.local`: create an order for Acme with 2 Widgets, open it, and click **Submit**.
+"Submitted. Stock is reserved." appears, the status turns green, and the history says it was approved
+automatically. Create one with a Server Rack (₱75,000) for Epsilon and submit it: it stays "Pending
+approval", in amber, waiting for a manager. That's next lesson.
 
 ## Let's check!
 
@@ -585,4 +672,4 @@ Good luck, developer!
 
 ---
 
-← [Lesson 07 — Create an order](07-create-order.md) · Next: [Lesson 10 — Approve, reject, cancel](10-approve-reject-cancel.md) →
+← [Lesson 07 — Find orders](07-find-orders.md) · Next: [Lesson 09 — Approve, reject, cancel](09-approve-reject-cancel.md) →

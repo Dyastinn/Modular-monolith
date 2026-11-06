@@ -28,14 +28,14 @@ domain methods make, and on `SaveChangesAsync` writes only those changes, in one
 That tracking is what keeps our domain pure. `order.Submit(...)` only changes fields; EF Core works out the
 SQL. The domain never sees a database.
 
-Reading data for a screen is a different job, and [lesson 08](08-find-orders.md) uses a different tool for it.
+Reading data for a screen is a different job, and [lesson 07](07-find-orders.md) uses a different tool for it.
 Now, let's be honest about the cost: that's two data tools to learn. The rule that keeps it simple is this:
 **commands save with EF Core, queries read with Dapper.**
 
 ### One DbContext per module, one schema each
 
 Each module gets its own `DbContext` mapped to its own **schema**, a named group of tables. Sales' context
-maps only `sales.*` tables, and Inventory's (in [lesson 09](09-submit.md)) only `inventory.*`. A module can't
+maps only `sales.*` tables, and Inventory's (in [lesson 08](08-submit.md)) only `inventory.*`. A module can't
 query another module's tables, because its context doesn't even know they exist. The module wall reaches all
 the way into the database.
 
@@ -55,7 +55,7 @@ PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localho
 ```
 
 One thing to watch out for: `erp_dev_only` is a password for *your machine*, for development only. In
-production, the app gets its own account with far fewer rights; [lesson 22](22-security-hardening.md) sets
+production, the app gets its own account with far fewer rights; [lesson 21](21-security-hardening.md) sets
 that up.
 
 ## 2. What the host needs from a module's database

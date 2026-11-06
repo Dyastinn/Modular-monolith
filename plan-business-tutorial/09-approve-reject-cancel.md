@@ -1,4 +1,4 @@
-# Lesson 08 — Approve, Reject, Cancel: The Approval Workflow
+# Lesson 09 — Approve, Reject, Cancel: The Approval Workflow
 
 Good day, developer! Orders can now be created and submitted, and small ones are approved on the spot. But a
 big order just sits there, waiting for a manager. Today managers get their say: approve, or reject with a
@@ -10,13 +10,14 @@ half. Are you ready? Let's begin!
 
 | Endpoint | Who | What happens |
 |---|---|---|
-| `POST /sales-orders/{id}/approve` | SalesManager, Admin | A pending order becomes Approved, and the customer is charged |
-| `POST /sales-orders/{id}/reject` | SalesManager, Admin | A pending order becomes Rejected, with a reason; its stock is released |
-| `POST /sales-orders/{id}/cancel` | SalesRep, SalesManager, Admin | The order becomes Cancelled; stock is released and any charge reversed |
+| `POST /api/sales-orders/{id}/approve` | SalesManager, Admin | A pending order becomes Approved, and the customer is charged |
+| `POST /api/sales-orders/{id}/reject` | SalesManager, Admin | A pending order becomes Rejected, with a reason; its stock is released |
+| `POST /api/sales-orders/{id}/cancel` | SalesRep, SalesManager, Admin | The order becomes Cancelled; stock is released and any charge reversed |
 
 Plus protection against **lost updates**: when two people change the same customer or the same order at the
 same moment, the second one is told "someone else changed this, reload", instead of silently erasing the
-first one's work.
+first one's work. And the buttons for all three on the order page, with a dialog that asks for the
+rejection reason.
 
 ## Why we build it this way
 
@@ -59,7 +60,7 @@ To remember it easily: it's like editing a shared document that warns you "this 
 opened it", instead of letting you overwrite it.
 
 This style is called **optimistic concurrency**: we don't lock anything up front, we just detect the clash
-at save time. It suits approvals, where clashes are rare. (In [lesson 09](09-submit.md) we *did* lock the
+at save time. It suits approvals, where clashes are rare. (In [lesson 08](08-submit.md) we *did* lock the
 customer, because a credit check across many orders needed it.)
 
 ## 1. Map the version column
@@ -109,6 +110,12 @@ user.
 
 ## 2. Approve
 
+Managers get their own line in `SalesRoles`:
+
+```csharp
+public static readonly string[] Managers = [Roles.SalesManager, Roles.Admin];
+```
+
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/ApproveSalesOrder/ApproveSalesOrderHandler.cs
 using Erp.Modules.Sales.Domain;
@@ -126,12 +133,11 @@ internal sealed class ApproveSalesOrderHandler(SalesDbContext db, ICurrentUser c
 {
     public async ValueTask<Unit> Handle(ApproveSalesOrderCommand cmd, CancellationToken ct)
     {
-        var orderId = new SalesOrderId(cmd.OrderId);
-        var order = await db.SalesOrders.SingleOrDefaultAsync(o => o.Id == orderId, ct)
-            ?? throw new NotFoundException($"Sales order {cmd.OrderId} not found.");
+        var approver = new UserId(currentUser.UserId);
+        var order = await db.GetVisibleOrderAsync(cmd.OrderId, approver, currentUser.Role, ct);
         var customer = await db.Customers.SingleAsync(c => c.Id == order.CustomerId, ct);
 
-        order.Approve(new UserId(currentUser.UserId), customer, clock.UtcNow);
+        order.Approve(approver, customer, clock.UtcNow);
 
         await db.SaveChangesAsync(ct);   // order and customer balance: one transaction
         return Unit.Value;
@@ -146,7 +152,6 @@ hand when another module has to join it, like Inventory did at submit.
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/ApproveSalesOrder/ApproveSalesOrderEndpoint.cs
 using Carter;
-using Erp.Shared.BuildingBlocks;
 using Mediator;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -163,7 +168,7 @@ internal sealed class ApproveSalesOrderEndpoint : ICarterModule
                 await sender.Send(new ApproveSalesOrderCommand(id), ct);
                 return Results.NoContent();
             })
-            .RequireAuthorization(p => p.RequireRole(Roles.SalesManager, Roles.Admin));
+            .RequireAuthorization(p => p.RequireRole(SalesRoles.Managers));
 }
 ```
 
@@ -184,7 +189,6 @@ using Erp.Modules.Sales.Infrastructure;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
 using Mediator;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Erp.Modules.Sales.Features;
@@ -205,11 +209,10 @@ internal sealed class RejectSalesOrderHandler(SalesDbContext db, IStockReservati
 {
     public async ValueTask<Unit> Handle(RejectSalesOrderCommand cmd, CancellationToken ct)
     {
-        var orderId = new SalesOrderId(cmd.OrderId);
-        var order = await db.SalesOrders.SingleOrDefaultAsync(o => o.Id == orderId, ct)
-            ?? throw new NotFoundException($"Sales order {cmd.OrderId} not found.");
+        var manager = new UserId(currentUser.UserId);
+        var order = await db.GetVisibleOrderAsync(cmd.OrderId, manager, currentUser.Role, ct);
 
-        var toRelease = order.Reject(new UserId(currentUser.UserId), cmd.Reason, clock.UtcNow);
+        var toRelease = order.Reject(manager, cmd.Reason, clock.UtcNow);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         foreach (var line in toRelease)
@@ -228,7 +231,6 @@ won't do. Releasing stock is Inventory's job again, so we're back to a transacti
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/RejectSalesOrder/RejectSalesOrderEndpoint.cs
 using Carter;
-using Erp.Shared.BuildingBlocks;
 using Mediator;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -247,7 +249,7 @@ internal sealed class RejectSalesOrderEndpoint : ICarterModule
                 await sender.Send(new RejectSalesOrderCommand(id, body.Reason), ct);
                 return Results.NoContent();
             })
-            .RequireAuthorization(p => p.RequireRole(Roles.SalesManager, Roles.Admin));
+            .RequireAuthorization(p => p.RequireRole(SalesRoles.Managers));
 }
 ```
 
@@ -267,14 +269,12 @@ namespace Erp.Modules.Sales.Features;
 
 internal sealed record CancelSalesOrderCommand(long OrderId) : ICommand;
 
-internal sealed class CancelSalesOrderHandler(SalesDbContext db, IStockReservation stock)
+internal sealed class CancelSalesOrderHandler(SalesDbContext db, IStockReservation stock, ICurrentUser currentUser)
     : ICommandHandler<CancelSalesOrderCommand>
 {
     public async ValueTask<Unit> Handle(CancelSalesOrderCommand cmd, CancellationToken ct)
     {
-        var orderId = new SalesOrderId(cmd.OrderId);
-        var order = await db.SalesOrders.SingleOrDefaultAsync(o => o.Id == orderId, ct)
-            ?? throw new NotFoundException($"Sales order {cmd.OrderId} not found.");
+        var order = await db.GetVisibleOrderAsync(cmd.OrderId, new UserId(currentUser.UserId), currentUser.Role, ct);
         var customer = await db.Customers.SingleAsync(c => c.Id == order.CustomerId, ct);
 
         var toRelease = order.Cancel(customer);
@@ -296,7 +296,6 @@ handed, and saves.
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/CancelSalesOrder/CancelSalesOrderEndpoint.cs
 using Carter;
-using Erp.Shared.BuildingBlocks;
 using Mediator;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -313,9 +312,123 @@ internal sealed class CancelSalesOrderEndpoint : ICarterModule
                 await sender.Send(new CancelSalesOrderCommand(id), ct);
                 return Results.NoContent();
             })
-            .RequireAuthorization(p => p.RequireRole(Roles.SalesRep, Roles.SalesManager, Roles.Admin));
+            .RequireAuthorization(p => p.RequireRole(SalesRoles.Sellers));
 }
 ```
+
+A rep can cancel only an order they can see, so only their own: `GetVisibleOrderAsync` makes a rep's
+attempt on anyone else's order a 404, without a line of extra code.
+
+## 5. The buttons
+
+Rejecting asks for a reason, and a reason needs somewhere to type it. A **dialog** is a small window over
+the page; MudBlazor draws dialogs through a provider, so add it once to `MainLayout.razor`, next to the
+others:
+
+```razor
+<MudDialogProvider />
+```
+
+Then a dialog we can reuse whenever a step needs a reason (voiding an invoice will need one too):
+
+```razor
+@* src/Erp.Web/Shared/ReasonDialog.razor *@
+@* Asks for a reason before a step that needs one: reject, void, cancel. Returns the text, or nothing if cancelled. *@
+<MudDialog>
+    <DialogContent>
+        <MudText Class="mb-3">@Message</MudText>
+        <MudTextField @bind-Value="_reason" Label="Reason" Lines="3" MaxLength="500" Immediate="true" AutoFocus="true" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Back</MudButton>
+        <MudButton Color="Color.Error" Variant="Variant.Filled" Disabled="string.IsNullOrWhiteSpace(_reason)"
+                   OnClick="() => Dialog.Close(DialogResult.Ok(_reason.Trim()))">@Confirm</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public string Message { get; set; } = "";
+    [Parameter] public string Confirm { get; set; } = "Confirm";
+    private string _reason = "";
+
+    public static async Task<string?> Ask(IDialogService dialogs, string title, string message, string confirm)
+    {
+        var parameters = new DialogParameters<ReasonDialog> { { d => d.Message, message }, { d => d.Confirm, confirm } };
+        var result = await (await dialogs.ShowAsync<ReasonDialog>(title, parameters)).Result;
+        return result is { Canceled: false, Data: string reason } ? reason : null;
+    }
+}
+```
+
+`MaxLength="500"` matches the validator, so the user can't type more than the API accepts. The `Ask`
+helper hides MudBlazor's dialog plumbing: a page calls one line and gets the reason back, or `null` if the
+user changed their mind.
+
+On the order page, add `@inject IDialogService Dialogs` at the top, and the buttons under Submit:
+
+```razor
+@if (_order.Status == "PendingApproval")
+{
+    <AuthorizeView Roles="@Managers">
+        <MudButton OnClick="Reject" Variant="Variant.Outlined" Color="Color.Error">Reject</MudButton>
+        <MudButton OnClick="Approve" Variant="Variant.Filled" Color="Color.Success">Approve</MudButton>
+    </AuthorizeView>
+}
+@if (_order.Status is "Draft" or "PendingApproval" or "Approved")
+{
+    <AuthorizeView Roles="@Sellers">
+        <MudButton OnClick="Cancel" Variant="Variant.Text" Color="Color.Error">Cancel order</MudButton>
+    </AuthorizeView>
+}
+```
+
+A rejection belongs in the history, under the approval line:
+
+```razor
+@if (_order.RejectionReason is not null)
+{
+    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">Rejected: @_order.RejectionReason</MudAlert>
+}
+```
+
+And in `@code`:
+
+```csharp
+private static readonly string Managers = $"{Roles.SalesManager},{Roles.Admin}";
+
+private Task Approve() => Act("approve", "Approved.");
+
+private async Task Reject()
+{
+    if (await ReasonDialog.Ask(Dialogs, "Reject order", "Tell the sales rep why. The reserved stock is released.", "Reject") is { } reason
+        && await Api.Post($"api/sales-orders/{Id}/reject", new { reason }, "Rejected."))
+        await Load();
+}
+
+private async Task Cancel()
+{
+    var confirmed = await Dialogs.ShowMessageBoxAsync("Cancel order", "Cancel this order? Reserved stock is released and any charge is reversed.",
+        yesText: "Cancel order", cancelText: "Keep it");
+    if (confirmed == true) await Act("cancel", "Cancelled.");
+}
+```
+
+Cancelling can't be undone, so it asks first. `ShowMessageBoxAsync` is MudBlazor's built-in yes/no box;
+`true` means the user clicked "Cancel order".
+
+Managers need to find the orders waiting for them. On the home page, next to the "New sales order" tile:
+
+```razor
+<AuthorizeView Roles="@ManagerRoles">
+    <MudItem xs="12" sm="6" md="4">
+        <Tile Title="Waiting for approval" Text="Orders above ₱50,000 that need you." Href="sales-orders?status=PendingApproval" Icon="@Icons.Material.Filled.HowToReg" />
+    </MudItem>
+</AuthorizeView>
+```
+
+with `private static readonly string ManagerRoles = $"{Roles.SalesManager},{Roles.Admin}";` in its `@code`.
+That link opens the order list already filtered, thanks to the `[SupplyParameterFromQuery]` from lesson 07.
 
 ## How a request flows
 
@@ -326,7 +439,7 @@ sequenceDiagram
   participant H as ApproveSalesOrderHandler
   participant D as SalesOrder / Customer
   participant DB as PostgreSQL
-  M->>E: POST /sales-orders/7/approve
+  M->>E: POST /api/sales-orders/7/approve
   E->>E: RequireRole(SalesManager, Admin)
   E->>H: ApproveSalesOrderCommand(7)
   H->>DB: load order 7 and its customer (with their xmin)
@@ -348,13 +461,14 @@ sequenceDiagram
 - Showing EF's concurrency message to users. "Reload and try again" is all they need.
 - Locking rows for every update "to be safe". Optimistic checks are cheaper, and right whenever clashes are
   rare.
+- An irreversible button with no "are you sure?". Cancel asks first.
 
 ## Let's run it!
 
 The approval rules need two different people, so sign in as both:
 
 ```bash
-login() { curl -s -X POST http://localhost:5264/auth/login -H "Content-Type: application/json" \
+login() { curl -s -X POST http://localhost:5264/api/auth/login -H "Content-Type: application/json" \
   -d "{\"email\":\"$1\",\"password\":\"Password123!\"}" | jq -r .accessToken; }
 REP=$(login rep@erp.local); MGR=$(login manager@erp.local)
 ```
@@ -362,18 +476,18 @@ REP=$(login rep@erp.local); MGR=$(login manager@erp.local)
 The rep creates and submits a big order: one Server Rack, ₱75,000, for Epsilon.
 
 ```bash
-ID=$(curl -s -X POST http://localhost:5264/sales-orders -H "Authorization: Bearer $REP" -H "Content-Type: application/json" \
+ID=$(curl -s -X POST http://localhost:5264/api/sales-orders -H "Authorization: Bearer $REP" -H "Content-Type: application/json" \
   -d '{"customerId":5,"lines":[{"itemId":4,"quantity":1}]}' | jq .id)
-curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:5264/sales-orders/$ID/submit -H "Authorization: Bearer $REP"
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:5264/api/sales-orders/$ID/submit -H "Authorization: Bearer $REP"
 # 204 — and it stays PendingApproval, because it's over ₱50,000
 ```
 
 Now try every door:
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:5264/sales-orders/$ID/approve -H "Authorization: Bearer $REP"   # 403: reps can't approve
-curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:5264/sales-orders/$ID/approve -H "Authorization: Bearer $MGR"   # 204: approved
-curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:5264/sales-orders/$ID/approve -H "Authorization: Bearer $MGR"   # 422: already approved
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:5264/api/sales-orders/$ID/approve -H "Authorization: Bearer $REP"   # 403: reps can't approve
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:5264/api/sales-orders/$ID/approve -H "Authorization: Bearer $MGR"   # 204: approved
+curl -s -o /dev/null -w "%{http_code}\n" -X POST http://localhost:5264/api/sales-orders/$ID/approve -H "Authorization: Bearer $MGR"   # 422: already approved
 ```
 
 And the other paths: create and submit another rack order as the rep, then reject it as the manager with
@@ -383,6 +497,12 @@ on submit and back down on reject or cancel.
 
 One more to try: as the manager, create *and submit* a rack order yourself, then approve it. You get a 422:
 "An order can't be approved by the person who created it."
+
+Now the way managers will really do it. Sign in to the app as `manager@erp.local` in one browser and as
+`rep@erp.local` in another (or in a private window). As the rep, create a Server Rack order for Epsilon and
+submit it. As the manager, click the **Waiting for approval** tile on the home page, open the order, and
+click **Reject**. The dialog's Reject button stays grey until you type a reason. Type one and confirm; the
+rep reloads the order and sees your reason in red.
 
 ## Let's check!
 
@@ -400,4 +520,4 @@ order lines. Good luck, developer!
 
 ---
 
-← [Lesson 09 — Submit](09-submit.md) · Next: [Lesson 11 — Update an order](11-update-order.md) →
+← [Lesson 08 — Submit](08-submit.md) · Next: [Lesson 10 — Update an order](10-update-order.md) →
