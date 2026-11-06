@@ -65,6 +65,10 @@ public class BusinessFlowTests(CustomWebAppFactory factory)
 
         var pdf = await accountant.GetAsync($"/api/invoices/{invoice.Id}/pdf");
         pdf.Content.Headers.ContentType!.MediaType.Should().Be("application/pdf");
+        await accountant.GetAsync($"/api/invoices/{invoice.Id}/pdf");
+        await using (var conn = new NpgsqlConnection(CustomWebAppFactory.TestConnectionString))
+            (await conn.ExecuteScalarAsync<int>("SELECT print_count FROM invoicing.invoice WHERE id = @Id", new { invoice.Id }))
+                .Should().Be(2, "every copy after the first is a REPRINT (RR 7-2024 Sec. 6(B.21))");
 
         var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeBySystemTimeZoneId(DateTime.UtcNow, "Asia/Manila"));
         (await accountant.PostAsJsonAsync($"/api/invoices/{invoice.Id}/payments",

@@ -11,6 +11,11 @@
                     <MudSelectItem T="long?" Value="c.Id">@c.Name</MudSelectItem>
                 }
             </MudSelect>
+            <MudSelect T="string" @bind-Value="_taxType" Label="VAT treatment" HelperText="Printed on the invoice's VAT breakdown">
+                <MudSelectItem Value="@("Vatable")">VATable</MudSelectItem>
+                <MudSelectItem Value="@("ZeroRated")">Zero-rated</MudSelectItem>
+                <MudSelectItem Value="@("VatExempt")">VAT-exempt</MudSelectItem>
+            </MudSelect>
             <MudSwitch @bind-Value="_forSale" Label="For sale" Color="Color.Primary" />
         </MudStack>
     </DialogContent>
@@ -28,16 +33,17 @@
     private decimal _price;
     private long? _categoryId;
     private bool _forSale;
+    private string _taxType = "Vatable";
 
     protected override async Task OnInitializedAsync()
     {
-        (_price, _categoryId, _forSale) = (Item.UnitPrice, Item.CategoryId, Item.IsForSale);
+        (_price, _categoryId, _forSale, _taxType) = (Item.UnitPrice, Item.CategoryId, Item.IsForSale, Item.TaxType);
         _categories = await Api.Get<List<ItemCategory>>("api/item-categories") ?? [];
     }
 
     private async Task Save()
     {
-        if (await Api.Put($"api/price-list/{Item.Id}", new { unitPrice = _price, categoryId = _categoryId, isForSale = _forSale }, "Price saved."))
+        if (await Api.Put($"api/price-list/{Item.Id}", new { unitPrice = _price, categoryId = _categoryId, isForSale = _forSale, taxType = _taxType }, "Price saved."))
             Dialog.Close(DialogResult.Ok(true));
     }
 }

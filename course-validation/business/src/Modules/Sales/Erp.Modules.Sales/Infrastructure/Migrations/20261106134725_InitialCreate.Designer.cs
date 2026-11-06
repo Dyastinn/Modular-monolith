@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Erp.Modules.Sales.Infrastructure.Migrations
 {
     [DbContext(typeof(SalesDbContext))]
-    [Migration("20261105214147_AddReadFunctions")]
-    partial class AddReadFunctions
+    [Migration("20261106134725_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -191,6 +191,10 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("sku");
+
+                    b.Property<int>("TaxType")
+                        .HasColumnType("integer")
+                        .HasColumnName("tax_type");
 
                     b.Property<string>("Unit")
                         .IsRequired()
@@ -391,6 +395,10 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                             b1.Property<long>("SalesOrderId")
                                 .HasColumnType("bigint")
                                 .HasColumnName("sales_order_id");
+
+                            b1.Property<int>("TaxType")
+                                .HasColumnType("integer")
+                                .HasColumnName("tax_type");
 
                             b1.Property<string>("Unit")
                                 .IsRequired()

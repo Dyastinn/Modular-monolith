@@ -34,21 +34,24 @@ $$;
 CREATE OR REPLACE FUNCTION invoicing.get_invoice(p_id bigint)
 RETURNS TABLE (id bigint, number text, shipment_id bigint, sales_order_id bigint, order_number text, customer_id bigint,
                customer_name text, customer_tin text, customer_address text, issue_date date, due_date date,
-               status integer, total numeric, amount_paid numeric, void_reason text, voided_by bigint, voided_utc timestamptz)
+               status integer, total numeric, amount_paid numeric, void_reason text, voided_by bigint, voided_utc timestamptz,
+               tax_regime integer, vat_rate numeric, vatable_sales numeric, vat_amount numeric, zero_rated_sales numeric,
+               vat_exempt_sales numeric, print_count integer)
 LANGUAGE sql STABLE
 AS $$
     SELECT i.id, i.number::text, i.shipment_id, i.sales_order_id, i.order_number::text, i.customer_id,
            i.customer_name::text, i.customer_tin::text, i.customer_address::text, i.issue_date, i.due_date,
-           i.status, i.total, i.amount_paid, i.void_reason::text, i.voided_by, i.voided_utc
+           i.status, i.total, i.amount_paid, i.void_reason::text, i.voided_by, i.voided_utc,
+           i.tax_regime, i.vat_rate, i.vatable_sales, i.vat_amount, i.zero_rated_sales, i.vat_exempt_sales, i.print_count
     FROM invoicing.invoice i
     WHERE i.id = p_id;
 $$;
 
 CREATE OR REPLACE FUNCTION invoicing.get_invoice_lines(p_id bigint)
-RETURNS TABLE (description text, unit text, quantity numeric, unit_price numeric)
+RETURNS TABLE (description text, unit text, quantity numeric, unit_price numeric, tax_type integer)
 LANGUAGE sql STABLE
 AS $$
-    SELECT l.description::text, l.unit::text, l.quantity, l.unit_price
+    SELECT l.description::text, l.unit::text, l.quantity, l.unit_price, l.tax_type
     FROM invoicing.invoice_line l WHERE l.invoice_id = p_id ORDER BY l.id;
 $$;
 

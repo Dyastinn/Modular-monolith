@@ -1,11 +1,11 @@
 -- Released scripts are never edited: change a function with a .v2 file and a new migration.
 CREATE OR REPLACE FUNCTION sales.search_price_list(p_search text, p_for_sale_only boolean, p_page integer, p_page_size integer)
 RETURNS TABLE (id bigint, sku text, name text, unit text, allows_fractions boolean, is_active boolean,
-               unit_price numeric, category_id bigint, category_name text, is_for_sale boolean)
+               unit_price numeric, category_id bigint, category_name text, is_for_sale boolean, tax_type integer)
 LANGUAGE sql STABLE
 AS $$
     SELECT i.id, i.sku::text, i.name::text, i.unit::text, i.allows_fractions, i.is_active,
-           i.unit_price, i.category_id, c.name::text, i.is_for_sale
+           i.unit_price, i.category_id, c.name::text, i.is_for_sale, i.tax_type
     FROM sales.item i
     LEFT JOIN sales.item_category c ON c.id = i.category_id
     WHERE (p_search IS NULL OR i.sku ILIKE '%' || p_search || '%' OR i.name ILIKE '%' || p_search || '%')

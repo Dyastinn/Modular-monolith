@@ -1,4 +1,5 @@
 using System.Data.Common;
+using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Contracts;
 
@@ -8,7 +9,7 @@ public sealed record ShippableLine(long ItemId, decimal Quantity);
 public sealed record OrderForInvoice(
     long OrderId, string OrderNumber, long CustomerId, string CustomerName, string? CustomerTin, string? CustomerAddress,
     int PaymentTermsDays, IReadOnlyList<InvoiceableLine> Lines);
-public sealed record InvoiceableLine(long ItemId, string Description, string Unit, decimal Quantity, decimal UnitPrice);
+public sealed record InvoiceableLine(long ItemId, string Description, string Unit, decimal Quantity, decimal UnitPrice, TaxType TaxType);
 
 public interface ISalesOrders
 {

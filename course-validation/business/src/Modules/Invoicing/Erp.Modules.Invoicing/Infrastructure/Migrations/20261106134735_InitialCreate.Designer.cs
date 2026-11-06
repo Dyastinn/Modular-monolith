@@ -12,8 +12,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Erp.Modules.Invoicing.Infrastructure.Migrations
 {
     [DbContext(typeof(InvoicingDbContext))]
-    [Migration("20261105214212_AddReadFunctions")]
-    partial class AddReadFunctions
+    [Migration("20261106134735_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -82,6 +82,10 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                         .HasColumnType("character varying(30)")
                         .HasColumnName("order_number");
 
+                    b.Property<int>("PrintCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("print_count");
+
                     b.Property<uint>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
@@ -100,10 +104,34 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("status");
 
+                    b.Property<int>("TaxRegime")
+                        .HasColumnType("integer")
+                        .HasColumnName("tax_regime");
+
                     b.Property<decimal>("Total")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("total");
+
+                    b.Property<decimal>("VatAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("vat_amount");
+
+                    b.Property<decimal>("VatExemptSales")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("vat_exempt_sales");
+
+                    b.Property<decimal>("VatRate")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("numeric(5,4)")
+                        .HasColumnName("vat_rate");
+
+                    b.Property<decimal>("VatableSales")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("vatable_sales");
 
                     b.Property<string>("VoidReason")
                         .HasMaxLength(500)
@@ -117,6 +145,11 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                     b.Property<DateTime?>("VoidedUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("voided_utc");
+
+                    b.Property<decimal>("ZeroRatedSales")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("zero_rated_sales");
 
                     b.HasKey("Id")
                         .HasName("pk_invoice");
@@ -234,6 +267,10 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                                 .HasPrecision(18, 3)
                                 .HasColumnType("numeric(18,3)")
                                 .HasColumnName("quantity");
+
+                            b1.Property<int>("TaxType")
+                                .HasColumnType("integer")
+                                .HasColumnName("tax_type");
 
                             b1.Property<string>("Unit")
                                 .IsRequired()

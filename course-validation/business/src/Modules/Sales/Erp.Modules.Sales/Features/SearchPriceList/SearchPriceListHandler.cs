@@ -9,7 +9,7 @@ internal sealed record SearchPriceListQuery(string? Search, bool ForSaleOnly, in
 
 internal sealed record PriceListItemDto(
     long Id, string Sku, string Name, string Unit, bool AllowsFractions, bool IsActive,
-    decimal UnitPrice, long? CategoryId, string? CategoryName, bool IsForSale);
+    decimal UnitPrice, long? CategoryId, string? CategoryName, bool IsForSale, TaxType TaxType);
 
 internal sealed class SearchPriceListValidator : AbstractValidator<SearchPriceListQuery>
 {

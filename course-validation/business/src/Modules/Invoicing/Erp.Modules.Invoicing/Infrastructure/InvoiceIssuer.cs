@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Erp.Modules.Invoicing.Infrastructure;
 
 // Bills one shipment. Safe to call again: if the shipment already has a live invoice, that one is returned.
-internal sealed class InvoiceIssuer(InvoicingDbContext db, ISalesOrders orders, IClock clock)
+internal sealed class InvoiceIssuer(InvoicingDbContext db, ISalesOrders orders, IClock clock, InvoicingSettings settings)
 {
     public async Task<long> IssueForShipmentAsync(long shipmentId, long salesOrderId, CancellationToken ct)
     {
@@ -14,7 +14,7 @@ internal sealed class InvoiceIssuer(InvoicingDbContext db, ISalesOrders orders, 
 
         var order = await orders.GetForInvoiceAsync(salesOrderId, ct);
         var lines = order.Lines
-            .Select(l => new InvoiceLine(l.Description, l.Unit, new Quantity(l.Quantity), new Money(l.UnitPrice)))
+            .Select(l => new InvoiceLine(l.Description, l.Unit, new Quantity(l.Quantity), new Money(l.UnitPrice), l.TaxType))
             .ToList();
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
@@ -23,7 +23,7 @@ internal sealed class InvoiceIssuer(InvoicingDbContext db, ISalesOrders orders, 
         if (await LiveInvoiceForAsync(shipmentId, ct) is { } raced) return raced;   // rollback: the number isn't used up
 
         var invoice = Invoice.Issue(number, shipmentId, order.OrderId, order.OrderNumber, order.CustomerId, order.CustomerName,
-            order.CustomerTin, order.CustomerAddress, order.PaymentTermsDays, lines, clock.Today);
+            order.CustomerTin, order.CustomerAddress, order.PaymentTermsDays, lines, clock.Today, settings.Tax);
         db.Invoices.Add(invoice);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);

@@ -11,6 +11,49 @@ internal readonly record struct UserId(long Value);   // owned by Identity
 internal enum InvoiceStatus { Issued = 0, PartiallyPaid = 1, Paid = 2, Void = 3 }
 internal enum PaymentMethod { Cash = 1, Check = 2, BankTransfer = 3, Other = 4 }
 
+// How the seller is registered with the BIR. Stored as numbers: never renumber.
+internal enum TaxRegime
+{
+    Vat = 0,             // VAT-registered: prices include VAT, invoices show the VAT breakdown
+    PercentageTax = 1,   // non-VAT, subject to percentage tax: invoices show sales subject to percentage tax
+    Exempt = 2           // non-VAT, subject to neither: invoices say "EXEMPT"
+}
+
+// The seller's tax setup at the moment an invoice is issued. Comes from configuration; copied onto every invoice.
+internal readonly record struct TaxPolicy
+{
+    public TaxRegime Regime { get; }
+    public decimal VatRate { get; }
+
+    public TaxPolicy(TaxRegime regime, decimal vatRate)
+    {
+        if (!Enum.IsDefined(regime)) throw new DomainException($"'{regime}' is not a tax regime.");
+        if (vatRate is < 0 or >= 1) throw new DomainException("The VAT rate must be a fraction between 0 and 1, such as 0.12.");
+        Regime = regime;
+        VatRate = regime == TaxRegime.Vat ? vatRate : 0;
+    }
+}
+
+// The totals RR 7-2024 Sec. 6(B.13) requires: VATable sales (net of VAT), the VAT, zero-rated and VAT-exempt sales.
+internal readonly record struct TaxBreakdown(Money VatableSales, Money VatAmount, Money ZeroRatedSales, Money VatExemptSales)
+{
+    public static TaxBreakdown Of(IReadOnlyList<InvoiceLine> lines, TaxPolicy policy)
+    {
+        Money Sum(Func<InvoiceLine, bool> include) => lines.Where(include).Aggregate(Money.Zero, (sum, l) => sum + l.LineTotal);
+        var exempt = Sum(l => l.TaxType == TaxType.VatExempt);
+
+        if (policy.Regime == TaxRegime.Exempt)
+            return new(Money.Zero, Money.Zero, Money.Zero, Sum(_ => true));
+        if (policy.Regime == TaxRegime.PercentageTax)
+            return new(Money.Zero, Money.Zero, Money.Zero, exempt);
+
+        // Prices include VAT, so the VAT is taken out of the VATable total once, not line by line.
+        var vatableGross = Sum(l => l.TaxType == TaxType.Vatable);
+        var net = new Money(vatableGross.Amount / (1 + policy.VatRate));
+        return new(net, vatableGross - net, Sum(l => l.TaxType == TaxType.ZeroRated), exempt);
+    }
+}
+
 // What was billed, as it was billed: nothing here follows later changes to the customer or the item.
 internal sealed class InvoiceLine
 {
@@ -18,12 +61,13 @@ internal sealed class InvoiceLine
     public string Unit { get; private set; } = default!;
     public Quantity Quantity { get; private set; }
     public Money UnitPrice { get; private set; }
+    public TaxType TaxType { get; private set; }
     public Money LineTotal => UnitPrice * Quantity;
 
     private InvoiceLine() { }
 
-    public InvoiceLine(string description, string unit, Quantity quantity, Money unitPrice)
-    { Description = description; Unit = unit; Quantity = quantity; UnitPrice = unitPrice; }
+    public InvoiceLine(string description, string unit, Quantity quantity, Money unitPrice, TaxType taxType)
+    { Description = description; Unit = unit; Quantity = quantity; UnitPrice = unitPrice; TaxType = taxType; }
 }
 
 internal sealed class Payment
@@ -67,6 +111,12 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
     public DateOnly DueDate { get; private set; }
     public InvoiceStatus Status { get; private set; }
     public Money Total { get; private set; }
+    public TaxRegime TaxRegime { get; private set; }
+    public decimal VatRate { get; private set; }
+    public Money VatableSales { get; private set; }
+    public Money VatAmount { get; private set; }
+    public Money ZeroRatedSales { get; private set; }
+    public Money VatExemptSales { get; private set; }
     public Money AmountPaid { get; private set; }
     public string? VoidReason { get; private set; }
     public UserId? VoidedBy { get; private set; }
@@ -78,7 +128,7 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
 
     public static Invoice Issue(string number, long shipmentId, long salesOrderId, string orderNumber, long customerId,
         string customerName, string? customerTin, string? customerAddress, int paymentTermsDays,
-        IReadOnlyList<InvoiceLine> lines, DateOnly issueDate)
+        IReadOnlyList<InvoiceLine> lines, DateOnly issueDate, TaxPolicy taxPolicy)
     {
         if (lines.Count == 0) throw new DomainException("An invoice needs at least one line.");
         var invoice = new Invoice
@@ -90,6 +140,10 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
         };
         invoice._lines.AddRange(lines);
         invoice.Total = lines.Aggregate(Money.Zero, (sum, l) => sum + l.LineTotal);
+        var tax = TaxBreakdown.Of(lines, taxPolicy);
+        (invoice.TaxRegime, invoice.VatRate) = (taxPolicy.Regime, taxPolicy.VatRate);
+        (invoice.VatableSales, invoice.VatAmount, invoice.ZeroRatedSales, invoice.VatExemptSales) =
+            (tax.VatableSales, tax.VatAmount, tax.ZeroRatedSales, tax.VatExemptSales);
         return invoice;
     }
 
@@ -148,13 +202,4 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
     {
         if (Status == InvoiceStatus.Void) throw new DomainException($"{Number} is void.");
     }
-}
-
-// The VAT split printed on the invoice. Prices are VAT-inclusive; a non-VAT seller shows no split.
-internal static class VatBreakdown
-{
-    public const decimal Rate = 0.12m;
-
-    public static (Money Vatable, Money Vat) Of(Money total) =>
-        (new Money(total.Amount / (1 + Rate)), new Money(total.Amount - Math.Round(total.Amount / (1 + Rate), 2, MidpointRounding.AwayFromZero)));
 }

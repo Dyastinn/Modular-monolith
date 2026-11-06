@@ -15,6 +15,7 @@ internal sealed class SalesItem : Entity<ItemId>
     public CategoryId? CategoryId { get; private set; }
     public ItemCategory? Category { get; private set; }
     public bool IsForSale { get; private set; }
+    public TaxType TaxType { get; private set; }
 
     private SalesItem() { }
 
@@ -31,14 +32,16 @@ internal sealed class SalesItem : Entity<ItemId>
         Sku = sku; Name = name; Unit = unit; AllowsFractions = allowsFractions; IsActive = isActive;
     }
 
-    public void SetPricing(Money unitPrice, ItemCategory category, bool isForSale)
+    public void SetPricing(Money unitPrice, ItemCategory category, bool isForSale, TaxType taxType)
     {
+        if (!Enum.IsDefined(taxType)) throw new DomainException($"'{taxType}' is not a tax type.");
         if (isForSale && unitPrice == Money.Zero) throw new DomainException($"Set a price for {Sku} before putting it on sale.");
         if (isForSale && !IsActive) throw new DomainException($"{Sku} is inactive in the catalog and can't be sold.");
         UnitPrice = unitPrice;
         CategoryId = category.Id;
         Category = category;
         IsForSale = isForSale;
+        TaxType = taxType;
     }
 
     public ItemCategory EnsureSellable()

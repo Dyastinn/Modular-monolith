@@ -22,6 +22,7 @@ public static class InvoicingModule
             InvoicingDbContext.Configure(o, sp.GetRequiredService<ISharedConnection>().Connection)
                 .AddInterceptors(sp.GetServices<IInterceptor>()));
         services.AddScoped<IModuleDatabase, InvoicingDatabase>();
+        services.AddSingleton(InvoicingSettings.From(config));
         services.AddScoped<InvoiceIssuer>();
 
         // PDFsharp's font resolver is process-wide and may be set only once.

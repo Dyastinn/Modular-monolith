@@ -42,12 +42,13 @@ internal sealed class SalesOrderLine
     public string Unit { get; private set; } = default!;
     public Quantity Quantity { get; private set; }
     public Money UnitPrice { get; private set; }
+    public TaxType TaxType { get; private set; }
     public Money LineTotal => UnitPrice * Quantity;
 
     private SalesOrderLine() { }
 
-    public SalesOrderLine(ItemId itemId, string itemName, string unit, Quantity quantity, Money unitPrice)
-    { ItemId = itemId; ItemName = itemName; Unit = unit; Quantity = quantity; UnitPrice = unitPrice; }
+    public SalesOrderLine(ItemId itemId, string itemName, string unit, Quantity quantity, Money unitPrice, TaxType taxType)
+    { ItemId = itemId; ItemName = itemName; Unit = unit; Quantity = quantity; UnitPrice = unitPrice; TaxType = taxType; }
 
     public void IncreaseQuantity(Quantity extra) => Quantity += extra;
 }
@@ -108,7 +109,7 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
 
             var existing = _lines.FirstOrDefault(l => l.ItemId == item.Id);
             if (existing is not null) existing.IncreaseQuantity(quantity);
-            else _lines.Add(new SalesOrderLine(item.Id, item.Name, item.Unit, quantity, item.UnitPrice));
+            else _lines.Add(new SalesOrderLine(item.Id, item.Name, item.Unit, quantity, item.UnitPrice, item.TaxType));
         }
     }
 

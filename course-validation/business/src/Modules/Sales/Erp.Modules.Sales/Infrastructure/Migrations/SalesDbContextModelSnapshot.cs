@@ -189,6 +189,10 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("sku");
 
+                    b.Property<int>("TaxType")
+                        .HasColumnType("integer")
+                        .HasColumnName("tax_type");
+
                     b.Property<string>("Unit")
                         .IsRequired()
                         .HasMaxLength(10)
@@ -388,6 +392,10 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                             b1.Property<long>("SalesOrderId")
                                 .HasColumnType("bigint")
                                 .HasColumnName("sales_order_id");
+
+                            b1.Property<int>("TaxType")
+                                .HasColumnType("integer")
+                                .HasColumnName("tax_type");
 
                             b1.Property<string>("Unit")
                                 .IsRequired()

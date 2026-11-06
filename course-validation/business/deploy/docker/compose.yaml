@@ -43,9 +43,15 @@ services:
       InitialAdmin__Email: ${INITIAL_ADMIN_EMAIL:-}
       InitialAdmin__Password: ${INITIAL_ADMIN_PASSWORD:-}
       Company__Name: ${COMPANY_NAME:?Set COMPANY_NAME in .env}
+      Company__TradeName: ${COMPANY_TRADE_NAME:-}
       Company__Tin: ${COMPANY_TIN:-}
       Company__Address: ${COMPANY_ADDRESS:-}
-      Company__VatRegistered: ${COMPANY_VAT_REGISTERED:-true}
+      Tax__Regime: ${TAX_REGIME:-Vat}
+      Tax__VatRate: ${TAX_VAT_RATE:-0.12}
+      Invoicing__Title: ${INVOICE_TITLE:-SALES INVOICE}
+      Invoicing__Bir__PermitNumber: ${BIR_PERMIT_NUMBER:-}
+      Invoicing__Bir__SeriesRange: ${BIR_SERIES_RANGE:-}
+      Invoicing__Bir__DateIssued: ${BIR_DATE_ISSUED:-}
       Smtp__Host: ${SMTP_HOST:-}
       Smtp__Port: ${SMTP_PORT:-587}
       Smtp__Username: ${SMTP_USERNAME:-}

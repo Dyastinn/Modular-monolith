@@ -15,7 +15,7 @@ internal sealed class GetInvoiceEndpoint : ICarterModule
             .RequireAuthorization(p => p.RequireRole(InvoicingRoles.Readers));
 
         app.MapGet("/invoices/{id:long}/pdf", async (long id, ISender sender, CancellationToken ct) =>
-                await sender.Send(new GetInvoicePdfQuery(id), ct) is { } pdf
+                await sender.Send(new PrintInvoiceCommand(id), ct) is { } pdf
                     ? Results.File(pdf.Content, "application/pdf", pdf.FileName)
                     : Results.NotFound())
             .RequireAuthorization(p => p.RequireRole(InvoicingRoles.Readers));

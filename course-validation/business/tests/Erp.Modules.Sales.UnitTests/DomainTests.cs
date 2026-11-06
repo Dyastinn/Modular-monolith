@@ -15,7 +15,7 @@ internal static class Make
 
     public static Customer Customer(decimal limit = 1_000_000, decimal balance = 0, bool blocked = false)
     {
-        var customer = Domain.Customer.Create("Acme", "123-456-789-000", "Makati", new Money(limit), 30);
+        var customer = Domain.Customer.Create("Acme", "123-456-789-00000", "Makati", new Money(limit), 30);
         if (balance > 0) customer.AddToBalance(new Money(balance));
         if (blocked) customer.Block();
         return customer;
@@ -24,7 +24,7 @@ internal static class Make
     public static SalesItem Item(long id, decimal price, ItemCategory? category = null, bool fractions = false, string unit = "pc")
     {
         var item = SalesItem.FromCatalog(new ItemId(id), $"SKU-{id}", $"Item {id}", unit, fractions, isActive: true);
-        item.SetPricing(new Money(price), category ?? General, isForSale: true);
+        item.SetPricing(new Money(price), category ?? General, isForSale: true, TaxType.Vatable);
         return item;
     }
 
@@ -120,7 +120,7 @@ public class OrderLineTests
     [Fact]
     public void An_item_cannot_go_on_sale_without_a_price() =>
         SalesItem.FromCatalog(new ItemId(9), "NEW-1", "New", "pc", false, isActive: true)
-            .Invoking(i => i.SetPricing(Money.Zero, Make.General, isForSale: true))
+            .Invoking(i => i.SetPricing(Money.Zero, Make.General, isForSale: true, TaxType.Vatable))
             .Should().Throw<DomainException>().WithMessage("*price*");
 
     [Fact]

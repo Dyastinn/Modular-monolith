@@ -19,7 +19,7 @@
         <MudTable T="PriceListItem" @ref="_table" ServerData="Load" Hover="true" Dense="true">
             <HeaderContent>
                 <MudTh>SKU</MudTh><MudTh>Name</MudTh><MudTh>Unit</MudTh><MudTh>Category</MudTh>
-                <MudTh Class="money">Price</MudTh><MudTh>For sale</MudTh><MudTh></MudTh>
+                <MudTh Class="money">Price</MudTh><MudTh>VAT</MudTh><MudTh>For sale</MudTh><MudTh></MudTh>
             </HeaderContent>
             <RowTemplate>
                 <MudTd>@context.Sku</MudTd>
@@ -27,6 +27,7 @@
                 <MudTd>@context.Unit</MudTd>
                 <MudTd>@context.CategoryName</MudTd>
                 <MudTd Class="money">@Format.Peso(context.UnitPrice)</MudTd>
+                <MudTd>@Format.Words(context.TaxType)</MudTd>
                 <MudTd>@(context.IsForSale ? "Yes" : "No")</MudTd>
                 <MudTd>
                     <AuthorizeView Roles="@Managers" Context="auth">

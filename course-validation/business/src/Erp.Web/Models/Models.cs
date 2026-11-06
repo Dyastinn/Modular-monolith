@@ -16,7 +16,7 @@ public sealed record Customer(long Id, string Name, string? Tin, string? Address
     decimal CreditLimit, decimal OutstandingBalance, decimal PendingTotal, decimal AvailableCredit);
 
 public sealed record PriceListItem(long Id, string Sku, string Name, string Unit, bool AllowsFractions, bool IsActive,
-    decimal UnitPrice, long? CategoryId, string? CategoryName, bool IsForSale);
+    decimal UnitPrice, long? CategoryId, string? CategoryName, bool IsForSale, string TaxType);
 
 public sealed record ItemCategory(long Id, string Name, decimal MaxQuantityPerOrder, string? RequiredRole);
 
@@ -42,14 +42,15 @@ public sealed record PurchaseOrderDetail(long Id, string Number, long SupplierId
 public sealed record InvoiceSummary(long Id, string Number, long CustomerId, string CustomerName, string OrderNumber,
     DateOnly IssueDate, DateOnly DueDate, string Status, decimal Total, decimal AmountPaid, decimal BalanceDue);
 
-public sealed record InvoiceLine(string Description, string Unit, decimal Quantity, decimal UnitPrice, decimal LineTotal);
+public sealed record InvoiceLine(string Description, string Unit, decimal Quantity, decimal UnitPrice, decimal LineTotal, string TaxType);
 
 public sealed record Payment(long Id, decimal Amount, DateOnly PaidOn, string Method, string? Reference, long RecordedBy,
     DateTime RecordedUtc, DateTime? VoidedUtc, string? VoidReason);
 
 public sealed record InvoiceDetail(long Id, string Number, long ShipmentId, long SalesOrderId, string OrderNumber, long CustomerId,
     string CustomerName, string? CustomerTin, string? CustomerAddress, DateOnly IssueDate, DateOnly DueDate, string Status,
-    decimal Total, decimal AmountPaid, decimal BalanceDue, decimal? Vatable, decimal? Vat, string? VoidReason, long? VoidedBy,
+    decimal Total, decimal AmountPaid, decimal BalanceDue, string TaxRegime, decimal VatRate, decimal VatableSales, decimal VatAmount,
+    decimal ZeroRatedSales, decimal VatExemptSales, int PrintCount, string? VoidReason, long? VoidedBy,
     DateTime? VoidedUtc, List<InvoiceLine> Lines, List<Payment> Payments);
 
 public sealed record AgingRow(long CustomerId, string CustomerName, decimal NotYetDue, decimal Days1To30, decimal Days31To60,

@@ -34,6 +34,12 @@ internal sealed class InvoicingDbContext(DbContextOptions<InvoicingDbContext> op
         return DocumentNumber.Format("SI", value, nowUtc);
     }
 
+    // Counts every printing atomically; the BIR requires "REPRINT" on any copy after the first (RR 7-2024 Sec. 6(B.21)).
+    public async Task<int?> RecordPrintAsync(long invoiceId, CancellationToken ct) =>
+        (await Database.SqlQuery<int>(
+                $"UPDATE invoicing.invoice SET print_count = print_count + 1 WHERE id = {invoiceId} RETURNING print_count AS \"Value\"")
+            .ToListAsync(ct)).Cast<int?>().SingleOrDefault();
+
     // The payment id travels in PaymentRecorded, so it must exist before SaveChanges writes the event.
     public async Task<PaymentId> NextPaymentIdAsync(CancellationToken ct) =>
         new((await Database.SqlQuery<long>($"SELECT nextval('invoicing.payment_id_seq') AS \"Value\"").ToListAsync(ct)).Single());
@@ -87,10 +93,12 @@ internal sealed class InvoicingDbContext(DbContextOptions<InvoicingDbContext> op
             e.Property(x => x.CustomerTin).HasMaxLength(20);
             e.Property(x => x.CustomerAddress).HasMaxLength(500);
             e.Property(x => x.VoidReason).HasMaxLength(500);
+            e.Property(x => x.VatRate).HasPrecision(5, 4);
             e.HasIndex(x => new { x.CustomerId, x.Status });
             e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");
             e.Ignore(x => x.BalanceDue);
             e.Ignore(x => x.DomainEvents);
+            e.Property<int>("PrintCount");
 
             e.OwnsMany(x => x.Lines, l =>
             {

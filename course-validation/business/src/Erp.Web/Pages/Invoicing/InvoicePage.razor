@@ -16,7 +16,9 @@
     <MudText Typo="Typo.h4">@_invoice.Number</MudText>
     <StatusChip Status="@_invoice.Status" />
     <MudSpacer />
-    <MudButton Href="@($"api/invoices/{Id}/pdf")" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.PictureAsPdf">PDF</MudButton>
+    <MudButton Href="@($"api/invoices/{Id}/pdf")" Target="_blank" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.PictureAsPdf">
+        @(_invoice.PrintCount == 0 ? "Print" : "Reprint")
+    </MudButton>
     <AuthorizeView Roles="@Accountants">
         @if (_invoice.Status is "Issued" or "PartiallyPaid")
         {
@@ -50,16 +52,23 @@
                     @foreach (var l in _invoice.Lines)
                     {
                         <tr>
-                            <td>@l.Description</td>
+                            <td>@l.Description @(l.TaxType == "Vatable" ? "" : $"({Format.Words(l.TaxType).ToLower()})")</td>
                             <td class="money">@Format.Qty(l.Quantity) @l.Unit</td>
                             <td class="money">@Format.Peso(l.UnitPrice)</td>
                             <td class="money">@Format.Peso(l.LineTotal)</td>
                         </tr>
                     }
-                    @if (_invoice.Vatable is { } vatable)
+                    @if (_invoice.TaxRegime == "Vat")
                     {
-                        <tr><td colspan="3">VATable sales</td><td class="money">@Format.Peso(vatable)</td></tr>
-                        <tr><td colspan="3">VAT (12%)</td><td class="money">@Format.Peso(_invoice.Vat ?? 0)</td></tr>
+                        <tr><td colspan="3">VATable sales</td><td class="money">@Format.Peso(_invoice.VatableSales)</td></tr>
+                        <tr><td colspan="3">VAT (@((_invoice.VatRate * 100).ToString("0.##"))%)</td><td class="money">@Format.Peso(_invoice.VatAmount)</td></tr>
+                        <tr><td colspan="3">Zero-rated sales</td><td class="money">@Format.Peso(_invoice.ZeroRatedSales)</td></tr>
+                        <tr><td colspan="3">VAT-exempt sales</td><td class="money">@Format.Peso(_invoice.VatExemptSales)</td></tr>
+                    }
+                    else if (_invoice.TaxRegime == "PercentageTax")
+                    {
+                        <tr><td colspan="3">Sales subject to percentage tax</td><td class="money">@Format.Peso(_invoice.Total - _invoice.VatExemptSales)</td></tr>
+                        <tr><td colspan="3">Exempt sales</td><td class="money">@Format.Peso(_invoice.VatExemptSales)</td></tr>
                     }
                     <tr><td colspan="3"><b>Total</b></td><td class="money"><b>@Format.Peso(_invoice.Total)</b></td></tr>
                     <tr><td colspan="3">Paid</td><td class="money">@Format.Peso(_invoice.AmountPaid)</td></tr>

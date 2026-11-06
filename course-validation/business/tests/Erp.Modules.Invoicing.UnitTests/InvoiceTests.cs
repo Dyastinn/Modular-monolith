@@ -11,10 +11,15 @@ public class InvoiceTests
     private static readonly DateOnly Issued = new(2026, 11, 5);
     private static readonly UserId Accountant = new(6);
 
-    private static Invoice Invoice() => Domain.Invoice.Issue("SI-1", shipmentId: 1, salesOrderId: 1, "SO-1", customerId: 7,
-        "Acme", "123", "Makati", paymentTermsDays: 30,
-        [new InvoiceLine("Widget", "pc", new Quantity(2), new Money(25)), new InvoiceLine("Wire", "kg", new Quantity(1.5m), new Money(620.50m))],
-        Issued);
+    private static readonly TaxPolicy Vat12 = new(TaxRegime.Vat, 0.12m);
+
+    private static InvoiceLine Line(string name, decimal qty, decimal price, TaxType tax = TaxType.Vatable) =>
+        new(name, "pc", new Quantity(qty), new Money(price), tax);
+
+    private static Invoice Invoice(TaxPolicy? policy = null, params InvoiceLine[] lines) => Domain.Invoice.Issue("SI-1",
+        shipmentId: 1, salesOrderId: 1, "SO-1", customerId: 7, "Acme", "123-456-789-00000", "Makati", paymentTermsDays: 30,
+        lines.Length > 0 ? lines : [Line("Widget", 2, 25), new InvoiceLine("Wire", "kg", new Quantity(1.5m), new Money(620.50m), TaxType.Vatable)],
+        Issued, policy ?? Vat12);
 
     private static void Pay(Invoice invoice, long id, decimal amount, DateOnly? on = null) =>
         invoice.RecordPayment(new PaymentId(id), new Money(amount), on ?? Issued, PaymentMethod.Cash, null, Accountant, Issued, Now);
@@ -83,11 +88,37 @@ public class InvoiceTests
     }
 
     [Fact]
-    public void The_VAT_split_adds_back_to_the_total()
+    public void The_VAT_split_adds_back_to_the_total_and_is_kept_on_the_invoice()
     {
-        var (vatable, vat) = VatBreakdown.Of(new Money(980.75m));
-        vatable.Should().Be(new Money(875.67m));
-        vat.Should().Be(new Money(105.08m));
-        (vatable + vat).Should().Be(new Money(980.75m));
+        var invoice = Invoice();
+        invoice.VatableSales.Should().Be(new Money(875.67m));
+        invoice.VatAmount.Should().Be(new Money(105.08m));
+        (invoice.VatableSales + invoice.VatAmount).Should().Be(invoice.Total);
+        invoice.VatRate.Should().Be(0.12m);
+    }
+
+    [Fact]
+    public void Mixed_sales_are_broken_down_into_vatable_zero_rated_and_exempt()
+    {
+        var invoice = Invoice(Vat12, Line("Widget", 1, 112), Line("Export crate", 1, 50, TaxType.ZeroRated), Line("Book", 1, 30, TaxType.VatExempt));
+
+        invoice.VatableSales.Should().Be(new Money(100));
+        invoice.VatAmount.Should().Be(new Money(12));
+        invoice.ZeroRatedSales.Should().Be(new Money(50));
+        invoice.VatExemptSales.Should().Be(new Money(30));
+        invoice.Total.Should().Be(new Money(192));
+    }
+
+    [Fact]
+    public void The_rate_comes_from_the_policy_and_a_non_vat_seller_charges_no_vat()
+    {
+        Invoice(new TaxPolicy(TaxRegime.Vat, 0.10m), Line("Widget", 1, 110)).VatAmount.Should().Be(new Money(10));
+
+        var nonVat = Invoice(new TaxPolicy(TaxRegime.PercentageTax, 0.12m), Line("Widget", 1, 110), Line("Book", 1, 30, TaxType.VatExempt));
+        nonVat.VatAmount.Should().Be(Money.Zero);
+        nonVat.VatRate.Should().Be(0);
+        nonVat.VatExemptSales.Should().Be(new Money(30));
+
+        FluentActions.Invoking(() => new TaxPolicy(TaxRegime.Vat, 1.2m)).Should().Throw<DomainException>();
     }
 }

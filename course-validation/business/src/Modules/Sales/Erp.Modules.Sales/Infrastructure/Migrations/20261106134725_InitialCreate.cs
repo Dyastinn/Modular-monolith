@@ -140,7 +140,8 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                     is_active = table.Column<bool>(type: "boolean", nullable: false),
                     unit_price = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
                     category_id = table.Column<long>(type: "bigint", nullable: true),
-                    is_for_sale = table.Column<bool>(type: "boolean", nullable: false)
+                    is_for_sale = table.Column<bool>(type: "boolean", nullable: false),
+                    tax_type = table.Column<int>(type: "integer", nullable: false)
                 },
                 constraints: table =>
                 {
@@ -167,6 +168,7 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                     unit = table.Column<string>(type: "character varying(10)", maxLength: 10, nullable: false),
                     quantity = table.Column<decimal>(type: "numeric(18,3)", precision: 18, scale: 3, nullable: false),
                     unit_price = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    tax_type = table.Column<int>(type: "integer", nullable: false),
                     sales_order_id = table.Column<long>(type: "bigint", nullable: false)
                 },
                 constraints: table =>

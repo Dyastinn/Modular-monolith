@@ -2,11 +2,11 @@
 
 INSERT INTO sales.customer (name, tin, address, payment_terms_days, is_blocked, credit_limit, outstanding_balance)
 SELECT v.name, v.tin, v.address, v.terms, v.is_blocked, v.credit_limit, v.outstanding_balance
-FROM (VALUES ('Acme Corp',       '123-456-789-000', 'Makati City',  30, FALSE,   50000, 10000),   -- ₱40,000 headroom
-             ('Beta Industries', '234-567-890-000', 'Pasig City',   30, FALSE,    5000,  4500),   -- only ₱500 left
+FROM (VALUES ('Acme Corp',       '123-456-789-00000', 'Makati City',  30, FALSE,   50000, 10000),   -- ₱40,000 headroom
+             ('Beta Industries', '234-567-890-00000', 'Pasig City',   30, FALSE,    5000,  4500),   -- only ₱500 left
              ('Gamma Traders',   NULL,              'Cebu City',     0, TRUE,    20000,     0),   -- blocked
-             ('Delta Holdings',  '345-678-901-000', 'Davao City',   45, FALSE,  200000,     0),   -- two high-value orders, not three
-             ('Epsilon Retail',  '456-789-012-000', 'Quezon City',  60, FALSE, 5000000,     0))   -- large account for approvals
+             ('Delta Holdings',  '345-678-901-00000', 'Davao City',   45, FALSE,  200000,     0),   -- two high-value orders, not three
+             ('Epsilon Retail',  '456-789-012-00000', 'Quezon City',  60, FALSE, 5000000,     0))   -- large account for approvals
      AS v(name, tin, address, terms, is_blocked, credit_limit, outstanding_balance)
 WHERE NOT EXISTS (SELECT 1 FROM sales.customer);
 
@@ -18,8 +18,8 @@ FROM (VALUES ('General',    1000, NULL),
 WHERE NOT EXISTS (SELECT 1 FROM sales.item_category);
 
 -- Same ids as the Inventory dev seed. In real use these rows arrive through ItemCatalogChanged.
-INSERT INTO sales.item (id, sku, name, unit, allows_fractions, is_active, category_id, unit_price, is_for_sale)
-SELECT v.id, v.sku, v.name, v.unit, v.allows_fractions, TRUE, v.category_id, v.unit_price, TRUE
+INSERT INTO sales.item (id, sku, name, unit, allows_fractions, is_active, category_id, unit_price, is_for_sale, tax_type)
+SELECT v.id, v.sku, v.name, v.unit, v.allows_fractions, TRUE, v.category_id, v.unit_price, TRUE, 0
 FROM (VALUES (1, 'GEN-001', 'Widget',         'pc', FALSE, 1,    25.00),
              (2, 'GEN-002', 'Gadget',         'pc', FALSE, 1,    40.00),
              (3, 'CTL-001', 'Restricted Kit', 'pc', FALSE, 2,   500.00),

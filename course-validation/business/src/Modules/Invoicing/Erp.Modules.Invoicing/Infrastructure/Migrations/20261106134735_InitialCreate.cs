@@ -51,10 +51,17 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                     due_date = table.Column<DateOnly>(type: "date", nullable: false),
                     status = table.Column<int>(type: "integer", nullable: false),
                     total = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    tax_regime = table.Column<int>(type: "integer", nullable: false),
+                    vat_rate = table.Column<decimal>(type: "numeric(5,4)", precision: 5, scale: 4, nullable: false),
+                    vatable_sales = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    vat_amount = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    zero_rated_sales = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    vat_exempt_sales = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
                     amount_paid = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
                     void_reason = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     voided_by = table.Column<long>(type: "bigint", nullable: true),
                     voided_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    print_count = table.Column<int>(type: "integer", nullable: false),
                     xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
                 },
                 constraints: table =>
@@ -93,6 +100,7 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                     unit = table.Column<string>(type: "character varying(10)", maxLength: 10, nullable: false),
                     quantity = table.Column<decimal>(type: "numeric(18,3)", precision: 18, scale: 3, nullable: false),
                     unit_price = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    tax_type = table.Column<int>(type: "integer", nullable: false),
                     invoice_id = table.Column<long>(type: "bigint", nullable: false)
                 },
                 constraints: table =>
