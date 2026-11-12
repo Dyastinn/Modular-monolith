@@ -106,8 +106,9 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
     {
         EnsureDraft();
         if (lines.Count == 0) throw new DomainException("An order needs at least one line.");
-        _lines.Clear();
 
+        // Built aside and swapped in at the end, so a refused line leaves the order exactly as it was.
+        var newLines = new List<SalesOrderLine>();
         var perCategory = new Dictionary<CategoryId, decimal>();
         foreach (var (item, quantity) in lines)
         {
@@ -117,11 +118,13 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
             perCategory[category.Id] = perCategory.GetValueOrDefault(category.Id) + quantity.Value;
             category.EnsureQuantityAllowed(perCategory[category.Id]);
 
-            var existing = _lines.FirstOrDefault(l => l.ItemId == item.Id);
+            var existing = newLines.FirstOrDefault(l => l.ItemId == item.Id);
             if (existing is not null) existing.IncreaseQuantity(quantity);
-            else _lines.Add(new SalesOrderLine(item.Id, item.Name, item.Unit, quantity, item.UnitPrice, item.TaxType,
+            else newLines.Add(new SalesOrderLine(item.Id, item.Name, item.Unit, quantity, item.UnitPrice, item.TaxType,
                 item.IsSpecialDiscountEligible));
         }
+        _lines.Clear();
+        _lines.AddRange(newLines);
         RecalculateSpecialDiscount();
     }
 

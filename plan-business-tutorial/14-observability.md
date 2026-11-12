@@ -1,4 +1,4 @@
-# Lesson 13 — Observability: Seeing What the App Is Doing
+# Lesson 14 — Observability: Seeing What the App Is Doing
 
 Good day, developer! Picture a Monday morning. A manager calls: "approving orders was slow on Friday, and one
 failed." Where do you even start? Right now, you'd scroll through console output and guess. Today we fix that.
@@ -45,7 +45,7 @@ data at a real monitoring system. Same code, one setting.
 
 ## 1. Refactor: from a logging behavior to a telemetry behavior
 
-Back in [lesson 02](02-mediator.md), we wrote a `LoggingBehavior`: it logged each request and how long it
+Back in [lesson 03](03-mediator.md), we wrote a `LoggingBehavior`: it logged each request and how long it
 took. That was enough then. Now it falls short in two ways: it can't tell a slow request's *parts* apart (no
 spans), and you can't chart it (no metrics). Let's replace it with a behavior that does all three.
 
@@ -276,6 +276,26 @@ Here's what each part does:
 In `Program.cs`, call `builder.AddObservability();` right after `CreateBuilder`, and
 `app.UseTraceIdHeader();` right after `UseExceptionHandler()`.
 
+One more thing, so a user's report always leads somewhere. Our own error bodies carry `traceId`, the same
+32 characters as the header. But the errors ASP.NET Core and Identity write themselves (a 401 from sign-in,
+an empty 404 that `UseStatusCodePages` fills in) use a different, longer format (`00-…-…-00`). Two formats of
+one id means a support person searching the logs for the wrong one. Tell the problem-details service to use
+ours. In `Program.cs`, before:
+
+```csharp
+builder.Services.AddProblemDetails();
+```
+
+After:
+
+```csharp
+// Every problem body, ours or the framework's, carries the trace id that the X-Trace-Id header and the logs carry.
+builder.Services.AddProblemDetails(o => o.CustomizeProblemDetails = c =>
+    c.ProblemDetails.Extensions["traceId"] = Activity.Current?.TraceId.ToString() ?? c.HttpContext.TraceIdentifier);
+```
+
+(with `using System.Diagnostics;`). A test in step 5 proves the header and the body agree.
+
 ## 3. Health checks
 
 A load balancer, Docker, or a monitoring tool needs to ask two different questions:
@@ -336,7 +356,7 @@ Replace the `.csproj` entirely, because the AppHost uses Aspire's own SDK:
 
 ```xml
 <!-- src/Erp.AppHost/Erp.AppHost.csproj -->
-<Project Sdk="Aspire.AppHost.Sdk/13.6.4">
+<Project Sdk="Aspire.AppHost.Sdk/13.6.5">
 
   <!-- Development only: runs the API next to the Aspire dashboard (traces, logs, metrics). Never deployed. -->
   <PropertyGroup>
@@ -353,7 +373,7 @@ Replace the `.csproj` entirely, because the AppHost uses Aspire's own SDK:
 </Project>
 ```
 
-The version, 13.6.4, lives in the `Sdk` attribute, so Aspire doesn't go in `Directory.Packages.props`. The
+The version, 13.6.5, lives in the `Sdk` attribute, so Aspire doesn't go in `Directory.Packages.props`. The
 SDK brings its own packages, and putting one of them there too is a build error. About that `NoWarn`: Aspire
 warns that you're not using its separate command-line tool. We're not, on purpose: the dashboard and
 orchestrator come from NuGet, so nobody has to install anything extra. Suppressing one specific warning
@@ -397,6 +417,74 @@ reference.
 Plain `http` on your own machine avoids trusting a development certificate. When the AppHost starts the API,
 it sets `OTEL_EXPORTER_OTLP_ENDPOINT` for it, so the `UseOtlpExporter()` line from step 2 switches on by
 itself. No Docker, no extra install.
+
+## 5. Prove it: the app can tell when it's unwell
+
+Monitoring that's never been tested is worse than none: you trust it, and it's wrong on the one day you need
+it. Three promises from this lesson get tests.
+
+**Healthy when healthy.** In `PlatformTests`:
+
+```csharp
+[Theory]
+[InlineData("/health/live")]
+[InlineData("/health/ready")]
+public async Task Health_endpoints_report_healthy(string path)
+{
+    var response = await factory.CreateClient().GetAsync(path);
+    response.StatusCode.Should().Be(HttpStatusCode.OK);
+}
+```
+
+**Unhealthy when the database is gone.** Stopping the test database would break every other test, so this
+one tests the health check on its own, pointed at an address where nothing listens:
+
+```csharp
+// tests/Erp.Integration.Tests/OperationsTests.cs (add)
+[Fact]
+public async Task The_ready_check_fails_when_the_database_cannot_be_reached()
+{
+    await using var unreachable = NpgsqlDataSource.Create("Host=127.0.0.1;Port=1;Database=erp;Username=x;Password=x;Timeout=2");
+
+    var result = await new DatabaseHealthCheck(unreachable).CheckHealthAsync(new HealthCheckContext());
+
+    result.Status.Should().Be(HealthStatus.Unhealthy);
+}
+```
+
+(with `using Erp.Shared.Infrastructure;`, `using Microsoft.Extensions.Diagnostics.HealthChecks;` and
+`using Npgsql;`). Port 1 is reserved and nothing listens there, and `Timeout=2` keeps the test from waiting
+the default fifteen seconds. A health check that says "Healthy" no matter what is the classic bug: the load
+balancer keeps sending users to a server that can't reach its database.
+
+**One id, everywhere.**
+
+```csharp
+// tests/Erp.Integration.Tests/OperationsTests.cs (add)
+private sealed record Problem(string TraceId);
+
+// The id in the error body is the id in the header is the id in the logs: one search finds the whole story.
+[Fact]
+public async Task An_error_carries_the_same_trace_id_as_its_response_header()
+{
+    var rep = await factory.ClientFor("rep@erp.local");
+    var response = await rep.GetAsync("/api/sales-orders/999999");
+
+    response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    var header = response.Headers.GetValues("X-Trace-Id").Single();
+    (await response.Content.ReadFromJsonAsync<Problem>())!.TraceId.Should().Be(header);
+}
+```
+
+That 404 comes from `Results.NotFound()` in the get endpoint: no exception, so no `GlobalExceptionHandler`.
+Its body comes from `UseStatusCodePages`, and its `traceId` from the line we just added. Remove that line,
+run the test, and see the two formats disagree.
+
+| Test | The edge | Why it matters |
+|---|---|---|
+| `Health_endpoints_report_healthy` | The normal day | The load balancer and Compose know the app is up |
+| `The_ready_check_fails_when_the_database_cannot_be_reached` | The database is gone | "Healthy" must not be a lie |
+| `An_error_carries_the_same_trace_id_as_its_response_header` | An error nobody threw | A user's report leads to the right trace |
 
 ## How a request flows
 
@@ -447,6 +535,8 @@ curl -si http://localhost:5264/health/live | grep -i x-trace-id   # (none: healt
 curl -si http://localhost:5264/api/sales-orders -H "Authorization: Bearer $TOKEN" | grep -i x-trace-id
 ```
 
+And `dotnet test`: all green, the three new tests among them.
+
 ## Let's check!
 
 1. What question does each signal answer: logs, traces, metrics?
@@ -455,6 +545,8 @@ curl -si http://localhost:5264/api/sales-orders -H "Authorization: Bearer $TOKEN
 4. What's the difference between `/health/live` and `/health/ready`, and why does it matter?
 5. Why is the Aspire dashboard only for development?
 6. How does a user's error report help you find the right trace?
+7. How do we test that the ready check fails, without stopping the tests' database?
+8. Why must every error body, even the framework's own, carry the same trace id as the header?
 
 And that's where this lesson ends. When something goes wrong now, you can see exactly what happened, and
 where. The sales core is complete. Next time, we start building out the rest of the business, beginning
@@ -462,4 +554,4 @@ with the customers themselves. Good luck, developer!
 
 ---
 
-← [Lesson 12 — Testing](12-testing.md) · Next: [Lesson 14 — Customers](14-customers.md) →
+← [Lesson 13 — Events and the outbox](13-events-outbox.md) · Next: [Lesson 15 — Customers](15-customers.md) →

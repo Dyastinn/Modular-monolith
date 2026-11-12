@@ -44,7 +44,7 @@ distributed transaction, and you're running five apps to sell one ERP.
 A **modular monolith** sits in between. It's **one** app and **one** database, split into **modules**
 (Sales, Inventory, and so on) whose walls are enforced by the **compiler**. A module's code is `internal`,
 so another module can't even name it. The only way in is a small public **contracts** project, which you'll
-meet in [lesson 08](08-submit.md).
+meet in [lesson 09](09-submit.md).
 
 To remember it easily: each module is an island with one service window. You can't walk onto the island.
 You can only ask at its window, and the window only offers what the island chose to offer.
@@ -112,7 +112,7 @@ of this source would inherit that bill.
 ### One address for the app and the API
 
 `Erp.Api` serves the app's files itself, from the same address as the API. That makes signing in simple and
-safe later ([lesson 05](05-sign-in.md)). But the app wants addresses for its own pages, like
+safe later ([lesson 06](06-sign-in.md)). But the app wants addresses for its own pages, like
 `/sales-orders`, and the API wants addresses for its data. So the whole API lives under **`/api`**, and
 everything else belongs to the app.
 
@@ -235,7 +235,7 @@ and next lesson Sales will need it anyway for its endpoints. In `Erp.Modules.Sal
 </ItemGroup>
 ```
 
-From [lesson 02](02-mediator.md) on, every class you write inside a module starts with `internal`.
+From [lesson 03](03-mediator.md) on, every class you write inside a module starts with `internal`.
 
 ## 5. The host
 
@@ -330,7 +330,7 @@ of browser code.
 
 Blazor replaces whatever is inside `<div id="app">` once it has started, so "Loading…" shows for the second
 or two that takes. `blazor-error-ui` is the bar Blazor shows if the app crashes. And notice there's no
-`<script>` with code inside it. [Lesson 22](22-security-hardening.md) adds a Content-Security-Policy that
+`<script>` with code inside it. [Lesson 23](23-security-hardening.md) adds a Content-Security-Policy that
 forbids inline scripts, the classic way an attacker's script gets onto a page, so we never write one.
 
 ```css
@@ -552,7 +552,7 @@ Every lesson adds a stop to this trip.
 - Referencing `Erp.Shared.Infrastructure` from a module "just to get the connection". That's the one line
   that knocks the wall down.
 - Writing `public class` inside a module. Before you do, ask whether another module truly needs it. Usually
-  the answer is a contract ([lesson 08](08-submit.md)).
+  the answer is a contract ([lesson 09](09-submit.md)).
 - Calling `UseBlazorFrameworkFiles()` from older tutorials as well as `MapStaticAssets()`. In .NET 10 they
   serve the same files twice and `/_framework` breaks with a 500. `MapStaticAssets` alone is right.
 - Forgetting `api.MapFallback`. A typo in an API address then returns the app's HTML with a 200, and the
@@ -597,4 +597,4 @@ screen. Good luck, developer!
 
 ---
 
-← [00 — Start here](00-START-HERE.md) · Next: [Lesson 02 — Mediator](02-mediator.md) →
+← [00 — Start here](00-START-HERE.md) · Next: [Lesson 02 — Testing](02-testing.md) →

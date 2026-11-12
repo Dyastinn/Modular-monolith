@@ -1,4 +1,4 @@
-# Lesson 04 — The Database: PostgreSQL and EF Core
+# Lesson 05 — The Database: PostgreSQL and EF Core
 
 Good day, developer! Last time, we wrote every business rule of the Sales module in plain C#. But right now,
 nothing is remembered: stop the app, and every customer and order is gone. Today we give the module its
@@ -28,14 +28,14 @@ domain methods make, and on `SaveChangesAsync` writes only those changes, in one
 That tracking is what keeps our domain pure. `order.Submit(...)` only changes fields; EF Core works out the
 SQL. The domain never sees a database.
 
-Reading data for a screen is a different job, and [lesson 07](07-find-orders.md) uses a different tool for it.
+Reading data for a screen is a different job, and [lesson 08](08-find-orders.md) uses a different tool for it.
 Now, let's be honest about the cost: that's two data tools to learn. The rule that keeps it simple is this:
 **commands save with EF Core, queries read with Dapper.**
 
 ### One DbContext per module, one schema each
 
 Each module gets its own `DbContext` mapped to its own **schema**, a named group of tables. Sales' context
-maps only `sales.*` tables, and Inventory's (in [lesson 08](08-submit.md)) only `inventory.*`. A module can't
+maps only `sales.*` tables, and Inventory's (in [lesson 09](09-submit.md)) only `inventory.*`. A module can't
 query another module's tables, because its context doesn't even know they exist. The module wall reaches all
 the way into the database.
 
@@ -55,7 +55,7 @@ PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localho
 ```
 
 One thing to watch out for: `erp_dev_only` is a password for *your machine*, for development only. In
-production, the app gets its own account with far fewer rights; [lesson 22](22-security-hardening.md) sets
+production, the app gets its own account with far fewer rights; [lesson 23](23-security-hardening.md) sets
 that up.
 
 ## 2. What the host needs from a module's database
@@ -191,7 +191,7 @@ every PostgreSQL server has, asks whether ours exists, and creates it if not.
 ## 4. Why the domain already has private constructors
 
 Remember the private parameterless constructors we gave `Customer`, `ItemCategory`, `SalesItem`,
-`SalesOrder` and `SalesOrderLine` in lesson 03? This is who they're for. When EF Core loads a saved
+`SalesOrder` and `SalesOrderLine` in lesson 04? This is who they're for. When EF Core loads a saved
 customer, it has to create a `Customer` object *without* running our rules, because loading history isn't a
 new business event. It calls the private constructor, then fills the properties through their private
 setters. The rest of the code still can't do either.
@@ -241,6 +241,7 @@ Now the context itself:
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Infrastructure/SalesDbContext.cs
 using Erp.Modules.Sales.Domain;
+using Erp.Shared.BuildingBlocks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
@@ -374,8 +375,8 @@ That's a lot of configuration, so let's walk through it piece by piece:
 | `UseSnakeCaseNamingConvention()` | `OrderNumber` becomes the column `order_number`, so hand-written SQL stays pleasant |
 | `MigrationsHistoryTable(..., Schema)` | Each module records its applied migrations inside its own schema |
 | `ConfigureConventions` | Tells EF once how to store each value object and id: a `Money` is a `numeric(18,2)` column, a `Quantity` a `numeric(18,3)`, a `CustomerId` a `bigint`. The domain never mentions a column type |
-| `ValueGeneratedNever()` on the item | An item's id will come from the warehouse's catalog ([lesson 16](16-item-catalog.md)), so the database must not invent one |
-| `ItemName` and `Unit` on the line | The snapshot from lesson 03, stored with the line |
+| `ValueGeneratedNever()` on the item | An item's id will come from the warehouse's catalog ([lesson 17](17-item-catalog.md)), so the database must not invent one |
+| `ItemName` and `Unit` on the line | The snapshot from lesson 04, stored with the line |
 | `OwnsMany(Lines)` | The lines *belong* to the order: loaded with it, saved with it, deleted with it. `HasField("_lines")` lets EF fill the private list, so `Lines` stays read-only |
 | `Ignore(Total)` and friends | Computed in C#, never stored |
 | `HasCheckConstraint` | The database's own last line of defense. The domain already refuses negative money; the constraint catches anything that sneaks around it |
@@ -556,6 +557,283 @@ One thing to know before you compare your work with the reference build: your mi
 lesson by lesson (`InitialCreate`, then more as features arrive), while the reference build squashes each
 module's history into one `InitialCreate`. The tables that come out are the same.
 
+## 9. Prove it: tests against a real database
+
+The app now needs a database to start, so our integration tests do too. They must never touch your
+development data: a test that deletes a customer would delete *your* customer. So the tests get a database
+of their own, `erp_test`, dropped at the start of every run so every run begins from the migrations and the
+seed, and yesterday's leftovers can't change today's results.
+
+### The test host gets a database
+
+```bash
+dotnet add tests/Erp.Integration.Tests package Npgsql --version 10.0.3
+dotnet add tests/Erp.Integration.Tests package Dapper --version 2.1.79
+```
+
+Npgsql lets a test open its own connection and look inside the database. **Dapper** (Apache-2.0) is a tiny
+library that runs a SQL query and turns the rows into objects; the tests use it today to read the catalog,
+and in [lesson 08](08-find-orders.md) the app itself starts using it for every screen's reads.
+
+```csharp
+// tests/Erp.Integration.Tests/CustomWebAppFactory.cs
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Npgsql;
+
+namespace Erp.Integration.Tests;
+
+// The whole API in memory against its own database, dropped first so every run starts from migrations + seed.
+public sealed class CustomWebAppFactory : WebApplicationFactory<Program>
+{
+    public static readonly string TestConnectionString =
+        Environment.GetEnvironmentVariable("ERP_TEST_DB")
+        ?? "Host=localhost;Port=5432;Database=erp_test;Username=postgres;Password=erp_dev_only";
+
+    public CustomWebAppFactory() => DropDatabase(TestConnectionString);
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseEnvironment("Development");
+        builder.UseSetting("ConnectionStrings:ErpDb", TestConnectionString);
+    }
+
+    // Starts the app first if no test has yet: the app is what creates and migrates the database.
+    public NpgsqlConnection OpenDatabase()
+    {
+        _ = Server;
+        return new(TestConnectionString);
+    }
+
+    public static void DropDatabase(string connectionString)
+    {
+        var target = new NpgsqlConnectionStringBuilder(connectionString);
+        var admin = new NpgsqlConnectionStringBuilder(connectionString) { Database = "postgres", Pooling = false };
+        using var conn = new NpgsqlConnection(admin.ConnectionString);
+        conn.Open();
+        using var drop = new NpgsqlCommand($"DROP DATABASE IF EXISTS \"{target.Database}\" WITH (FORCE)", conn);
+        drop.ExecuteNonQuery();
+    }
+}
+```
+
+| Choice | Why |
+|---|---|
+| Its own database, `erp_test` | Tests never touch your development data |
+| Dropped when the factory is created | Every run starts from the migrations and the seed; the app creates it again on startup |
+| `UseSetting("ConnectionStrings:ErpDb", ...)` | Overrides `appsettings.Development.json` for the tests only |
+| `ERP_TEST_DB` | Point the suite at another server without touching the code |
+| `OpenDatabase()` | Tests look inside through one method; when the database moves into a container in [lesson 12](12-containers-ci.md), the tests don't change |
+| `_ = Server` in `OpenDatabase()` | The factory starts the app lazily, on the first request. A test that only reads the database, run on its own, would otherwise find no database at all |
+
+Now a catch. xUnit runs test *classes* in parallel, and each `IClassFixture` makes its own factory. Two
+factories means two apps, each dropping `erp_test` while the other is using it. So all the classes that use
+the database join one **collection**: xUnit starts the app once for the whole collection and runs its
+classes one after another.
+
+```csharp
+// tests/Erp.Integration.Tests/IntegrationCollection.cs
+namespace Erp.Integration.Tests;
+
+// One shared test database: one collection boots the app once and runs the classes in series.
+[CollectionDefinition("Integration")]
+public sealed class IntegrationCollection : ICollectionFixture<CustomWebAppFactory> { }
+```
+
+In `HostTests` and `PingTests`, swap the fixture for the collection. Before:
+
+```csharp
+public class HostTests(CustomWebAppFactory factory) : IClassFixture<CustomWebAppFactory>
+```
+
+After:
+
+```csharp
+[Collection("Integration")]
+public class HostTests(CustomWebAppFactory factory)
+```
+
+One test will look inside Sales with its own `SalesDbContext`, which is internal. Let the test project in,
+next to the other `InternalsVisibleTo` lines in `Erp.Modules.Sales.csproj`:
+
+```xml
+<InternalsVisibleTo Include="Erp.Integration.Tests" />
+```
+
+### What the migrations built
+
+```csharp
+// tests/Erp.Integration.Tests/DatabaseTests.cs
+using AwesomeAssertions;
+using Dapper;
+using Erp.Modules.Sales.Domain;
+using Erp.Modules.Sales.Infrastructure;
+using Erp.Shared.BuildingBlocks;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Erp.Integration.Tests;
+
+// What the migrations built, checked in the database itself.
+[Collection("Integration")]
+public class DatabaseTests(CustomWebAppFactory factory)
+{
+    // Every module that registered a database, so the tests grow with the app without being edited.
+    // A module's schema is its name in lower case: Sales → sales.
+    private string[] Schemas
+    {
+        get
+        {
+            using var scope = factory.Services.CreateScope();
+            return scope.ServiceProvider.GetServices<IModuleDatabase>().Select(m => m.Module.ToLowerInvariant()).ToArray();
+        }
+    }
+
+    [Fact]
+    public async Task Every_module_has_its_own_schema_and_migration_history()
+    {
+        await using var conn = factory.OpenDatabase();
+        var histories = (await conn.QueryAsync<string>(
+            "SELECT table_schema FROM information_schema.tables WHERE table_name = '__EFMigrationsHistory'")).ToList();
+
+        histories.Should().BeEquivalentTo(Schemas).And.Contain("sales");
+    }
+
+    [Fact]
+    public async Task Tables_and_columns_are_snake_case()
+    {
+        await using var conn = factory.OpenDatabase();
+        var names = await conn.QueryAsync<string>(
+            """
+            SELECT table_schema || '.' || table_name || '.' || column_name FROM information_schema.columns
+            WHERE table_schema = ANY(@Schemas) AND table_name <> '__EFMigrationsHistory'
+              AND (table_name ~ '[A-Z]' OR column_name ~ '[A-Z]')
+            """, new { Schemas });
+
+        names.Should().BeEmpty("EFCore.NamingConventions maps every name to snake_case");
+    }
+
+    // Modules are islands: a foreign key into another module's schema would tie them together in the database.
+    [Fact]
+    public async Task No_foreign_key_crosses_a_module_boundary()
+    {
+        await using var conn = factory.OpenDatabase();
+        var crossing = await conn.QueryAsync<string>(
+            """
+            SELECT c.conname FROM pg_constraint c
+            JOIN pg_class src ON src.oid = c.conrelid   JOIN pg_namespace s ON s.oid = src.relnamespace
+            JOIN pg_class dst ON dst.oid = c.confrelid  JOIN pg_namespace d ON d.oid = dst.relnamespace
+            WHERE c.contype = 'f' AND s.nspname <> d.nspname
+            """);
+
+        crossing.Should().BeEmpty();
+    }
+
+    // The app seeds on every development start, so the seed must be safe to run again.
+    [Fact]
+    public async Task Seeding_twice_changes_nothing()
+    {
+        await using var conn = factory.OpenDatabase();
+        // Every row in every module's tables: what the seed could possibly have added to.
+        var counts = "SELECT 0" + string.Concat((await conn.QueryAsync<string>(
+            """
+            SELECT quote_ident(table_schema) || '.' || quote_ident(table_name) FROM information_schema.tables
+            WHERE table_schema = ANY(@Schemas) AND table_type = 'BASE TABLE'
+            """, new { Schemas })).Select(t => $" + (SELECT COUNT(*) FROM {t})"));
+        var before = await conn.ExecuteScalarAsync<long>(counts);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+            foreach (var module in scope.ServiceProvider.GetServices<IModuleDatabase>())
+                await module.SeedDevelopmentDataAsync(default);
+
+        (await conn.ExecuteScalarAsync<long>(counts)).Should().Be(before);
+    }
+
+    // Value converters turn ids, Money and Quantity into columns and back. A wrong one corrupts silently.
+    [Fact]
+    public async Task Ids_money_and_quantities_survive_the_trip_to_the_database_and_back()
+    {
+        SalesOrderId id;
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SalesDbContext>();
+            var order = SalesOrder.Create("SO-ROUNDTRIP", new CustomerId(5), new UserId(1), DateTime.UtcNow);
+            var wire = await db.SalesItems.Include(i => i.Category).SingleAsync(i => i.Id == new ItemId(5));   // by the kg
+            order.SetLines([(wire, new Quantity(1.234m))], Roles.SalesRep);
+            db.SalesOrders.Add(order);
+            await db.SaveChangesAsync();
+            id = order.Id;
+        }
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<SalesDbContext>();
+            var loaded = await db.SalesOrders.SingleAsync(o => o.Id == id);
+
+            loaded.CustomerId.Should().Be(new CustomerId(5));
+            loaded.Lines.Single().Quantity.Should().Be(new Quantity(1.234m));
+            loaded.Lines.Single().UnitPrice.Should().Be(new Money(620.50m));
+            loaded.Total.Should().Be(new Money(765.70m));   // 620.50 × 1.234 = 765.697, rounded to centavos
+        }
+    }
+}
+```
+
+A few things worth knowing:
+
+- **`information_schema` and `pg_catalog`** are PostgreSQL's own description of the database: every table,
+  column and constraint is a row you can query. The tests ask the database what it really has, not what we
+  hoped the migration would make.
+- **`~ '[A-Z]'`** is PostgreSQL's regular-expression match: "contains a capital letter". The migration history
+  table is EF's own and keeps its name.
+- **The round trip uses two scopes.** In one scope, EF would hand back the very object it just saved, from
+  memory, and the test would prove nothing. A new scope means a new `DbContext`, which really reads the rows.
+- **`Seeding_twice_changes_nothing`** counts every row in every module table, runs the seed again, and counts
+  again. That's the `WHERE NOT EXISTS` in the seed script, proven.
+
+Why `SO-ROUNDTRIP`, an order number nobody else would use? Tests share one database, so a test makes its own
+data and never counts on another test's.
+
+### A wall test that just went red
+
+Run the architecture tests now:
+
+```
+Expected module.GetExportedTypes().Select(t => t.FullName) to contain a single item because Erp.Modules.Sales
+should expose only its AddXModule entry class, but found {"Erp.Modules.Sales.SalesModule",
+"Erp.Modules.Sales.Infrastructure.Migrations.InitialCreate", ...}.
+```
+
+The test did its job: Sales has new public types. EF Core generates migrations as `public` classes, and they
+must stay that way for the tools to find them. They're not part of the module's surface, though; nobody calls
+them. So the test learns about them. Before:
+
+```csharp
+module.GetExportedTypes().Select(t => t.FullName)
+```
+
+After:
+
+```csharp
+module.GetExportedTypes()
+    // EF generates migrations as public classes.
+    .Where(t => !(t.Namespace ?? "").EndsWith(".Migrations"))
+    .Select(t => t.FullName)
+```
+
+That's how an architecture test should evolve: a rule meets a real exception, and the exception gets written
+down, with its reason, in one place.
+
+### Edge cases covered in this lesson
+
+| Test | The edge | Why it matters |
+|---|---|---|
+| `Every_module_has_its_own_schema_and_migration_history` | One module's tables in another's place | Each module migrates on its own; a shared history table would tangle them |
+| `Tables_and_columns_are_snake_case` | A capital letter | `"SalesOrder"` needs quotes in every SQL query forever |
+| `No_foreign_key_crosses_a_module_boundary` | A shortcut in the database | The cleanest module walls in C# mean nothing if the tables are tied together |
+| `Seeding_twice_changes_nothing` | Twice | The app seeds on every start; a non-idempotent seed doubles the customers each restart |
+| `Ids_money_and_quantities_survive_the_trip_to_the_database_and_back` | Three decimals, centavos, typed ids | A wrong converter or a `numeric(18,2)` quantity column loses data without an error |
+
 ## How it fits together at startup
 
 ```mermaid
@@ -582,6 +860,9 @@ sequenceDiagram
   default is `false`.
 - Running a script with `ExecuteSqlRaw`. It treats `{` and `}` as placeholders and fails at the first brace,
   even in a comment. That's why `EmbeddedSql.ExecuteAsync` exists.
+- Pointing the tests at your development database. One test that deletes a row deletes your row.
+- Letting test classes that share a database run in parallel. Put them all in the `Integration` collection.
+- Reading back in the same `DbContext` you saved with. You get the object from memory and prove nothing.
 
 ## Let's run it!
 
@@ -606,6 +887,21 @@ PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localho
 Five customers, just as the seed promised. Restart the app: migrations report up to date, and the seed adds
 nothing new.
 
+Then the tests, which now build and drop a database of their own:
+
+```bash
+dotnet test
+```
+
+```
+Passed!  - Failed: 0, Passed: 52, ... Erp.Modules.Sales.UnitTests.dll
+Passed!  - Failed: 0, Passed:  5, ... Erp.Architecture.Tests.dll
+Passed!  - Failed: 0, Passed: 20, ... Erp.Integration.Tests.dll
+```
+
+Look in pgAdmin or `psql`: `erp_test` is there, holding whatever the last run left behind, and the next run
+drops it again.
+
 ## Let's check!
 
 1. Why does each module get its own DbContext and its own schema?
@@ -613,11 +909,14 @@ nothing new.
 3. Who calls `Customer`'s private parameterless constructor, and why can't it use `Create`?
 4. NuGet resolves the range "10.0.4 or newer" to which version, and why did we pin EF Core?
 5. Why does the seed script use `WHERE NOT EXISTS`?
-6. Why is there no foreign key from `sales_order.created_by` to a users table?
+6. Why is there no foreign key from `sales_order.created_by` to a users table? Which test would catch one?
+7. Why do the tests use their own database, and why is it dropped at the start of every run?
+8. Why does the round-trip test read the order back in a second scope?
+9. The architecture test failed after the first migration. Was that a bug? What changed in the test, and why?
 
 And that's where this lesson ends. The Sales module now remembers everything, and the app builds its own
 database. Next time, we decide who's allowed in: sign-in, with ASP.NET Core Identity. Good luck, developer!
 
 ---
 
-← [Lesson 03 — Domain model](03-domain-model.md) · Next: [Lesson 05 — Sign-in](05-sign-in.md) →
+← [Lesson 04 — Domain model](04-domain-model.md) · Next: [Lesson 06 — Sign-in](06-sign-in.md) →

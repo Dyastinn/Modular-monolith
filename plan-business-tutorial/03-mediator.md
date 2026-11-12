@@ -1,4 +1,4 @@
-# Lesson 02 — The Mediator: One Door for Every Request
+# Lesson 03 — The Mediator: One Door for Every Request
 
 Good day, developer! Last time, we built the solution and put up the module walls. Today we'll teach our
 endpoints a better way to get work done: instead of calling the code that does the work, they'll send a
@@ -13,7 +13,9 @@ automatically, without a single endpoint asking for it. It takes about an hour. 
 - Two **pipeline behaviors** that wrap every handler: one logs, one validates.
 - Carter endpoints that do just one thing: turn an HTTP request into a message and send it.
 - A throwaway `GET /api/ping` feature, and a page in the app that calls it, to prove it all works. We'll
-  delete both in [lesson 06](06-create-order.md).
+  delete both in [lesson 07](07-create-order.md).
+- The first **unit tests** (the validator and the handler, alone), and the first **architecture tests**
+  (the module walls, checked on every build).
 
 ## Why we build it this way
 
@@ -285,6 +287,8 @@ app.MapStaticAssets();
 app.MapFallbackToFile("index.html");          // any other address is a page of the app: let it route
 
 app.Run();
+
+public partial class Program { }   // lets the integration tests start the app
 ```
 
 `AddCarter()` registers Carter's own services, and `api.MapCarter()` asks every registered `ICarterModule` to
@@ -310,8 +314,8 @@ internals. In `Erp.Modules.Sales.csproj`:
 ```
 
 Does this weaken the module wall? No. The host already references every module; wiring them together is
-its job. What must never happen is a *module* seeing another module's internals, and
-[lesson 12](12-testing.md) adds a test that fails if one ever does. Not so hard, right?
+its job. What must never happen is a *module* seeing another module's internals, and at the end of this lesson
+we write a test that fails if one ever does. Not so hard, right?
 
 ## 6. Call it from a screen
 
@@ -365,6 +369,196 @@ Then a way to get there, in `NavMenu.razor`, under Home:
 <MudNavLink Href="ping" Icon="@Icons.Material.Filled.NetworkCheck">Ping</MudNavLink>
 ```
 
+## 7. Prove it: the first unit tests, and a test for the walls
+
+Last lesson's tests went through the front door, over HTTP. Today we have pieces small enough to test on
+their own: a validator and a handler are plain classes. And we have a rule that no compiler checks: nothing
+but the host and the tests may see a module's internals. Let's prove all three.
+
+### Unit tests: the pieces, alone
+
+A **unit test** creates one class with `new`, calls it, and checks the answer. No web server, no mediator,
+no database. It runs in well under a millisecond, and when it fails, there's only one place to look.
+
+```bash
+dotnet new classlib -n Erp.Modules.Sales.UnitTests -o tests/Erp.Modules.Sales.UnitTests
+rm tests/Erp.Modules.Sales.UnitTests/Class1.cs
+dotnet sln add tests/Erp.Modules.Sales.UnitTests
+dotnet add tests/Erp.Modules.Sales.UnitTests reference src/Modules/Sales/Erp.Modules.Sales
+dotnet add tests/Erp.Modules.Sales.UnitTests package Microsoft.NET.Test.Sdk --version 17.14.1
+dotnet add tests/Erp.Modules.Sales.UnitTests package xunit --version 2.9.3
+dotnet add tests/Erp.Modules.Sales.UnitTests package xunit.runner.visualstudio --version 3.1.4
+dotnet add tests/Erp.Modules.Sales.UnitTests package AwesomeAssertions --version 9.6.0
+```
+
+The same four packages as last lesson, minus the web host. As before, delete the `<PropertyGroup>`, then add
+`<IsPackable>false</IsPackable>` and `<Using Include="Xunit" />`.
+
+Everything in Sales is `internal`, so the test project can't see `PingHandler` yet. Let it in, next to the
+`Erp.Api` line in `Erp.Modules.Sales.csproj`:
+
+```xml
+<InternalsVisibleTo Include="Erp.Modules.Sales.UnitTests" />
+```
+
+```csharp
+// tests/Erp.Modules.Sales.UnitTests/PingTests.cs
+using AwesomeAssertions;
+using Erp.Modules.Sales.Features;
+
+namespace Erp.Modules.Sales.UnitTests;
+
+public class PingTests
+{
+    [Fact]
+    public async Task The_handler_answers_pong_and_the_message() =>
+        (await new PingHandler().Handle(new PingQuery("hi"), default)).Should().Be("pong: hi");
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]   // NotEmpty also refuses whitespace: a message of spaces says nothing
+    public void An_empty_message_is_refused(string message) =>
+        new PingValidator().Validate(new PingQuery(message)).IsValid.Should().BeFalse();
+
+    [Fact]
+    public void Any_real_message_passes() =>
+        new PingValidator().Validate(new PingQuery("a")).IsValid.Should().BeTrue();
+}
+```
+
+### The same thing through the front door
+
+The unit tests prove the validator works. They can't prove it *runs*: that depends on `includeInternalTypes:
+true` in `SalesModule`, and on the behavior being in the pipeline. Forget either one, and the unit tests stay
+green while the API happily answers `pong: ` to an empty message. Only a real request shows it:
+
+```csharp
+// tests/Erp.Integration.Tests/PingTests.cs
+using System.Net;
+using System.Net.Http.Json;
+using AwesomeAssertions;
+
+namespace Erp.Integration.Tests;
+
+public class PingTests(CustomWebAppFactory factory) : IClassFixture<CustomWebAppFactory>
+{
+    [Fact]
+    public async Task Ping_answers_through_the_mediator() =>
+        (await factory.CreateClient().GetFromJsonAsync<string>("/api/ping?message=hello")).Should().Be("pong: hello");
+
+    // Regression guard: validators are internal. Without includeInternalTypes: true they silently never run.
+    [Fact]
+    public async Task An_empty_message_never_reaches_the_handler()
+    {
+        var response = await factory.CreateClient().GetAsync("/api/ping?message=");
+
+        response.StatusCode.Should().NotBe(HttpStatusCode.OK);
+        (await response.Content.ReadAsStringAsync()).Should().NotContain("pong");
+    }
+}
+```
+
+That second test is loose on purpose: today an invalid request is a 500. In [lesson 07](07-create-order.md) it
+becomes a proper 400, and we'll tighten the test to say so.
+
+Make both fail once: remove `includeInternalTypes: true` and watch the integration test go red while the unit
+tests stay green. That's exactly why we have both kinds. Then put it back.
+
+### Architecture tests: the walls themselves
+
+Some of our rules aren't about what the code does, but about how it's built: a module shows one public class;
+its internals are visible to the host and the tests, never to another module; features live in feature
+folders. The compiler doesn't check any of that. A reviewer might miss it in a big change. An
+**architecture test** reads the compiled assemblies with reflection and fails the build when a rule breaks.
+
+```bash
+dotnet new classlib -n Erp.Architecture.Tests -o tests/Erp.Architecture.Tests
+rm tests/Erp.Architecture.Tests/Class1.cs
+dotnet sln add tests/Erp.Architecture.Tests
+dotnet add tests/Erp.Architecture.Tests reference src/Erp.Api
+dotnet add tests/Erp.Architecture.Tests package Microsoft.NET.Test.Sdk --version 17.14.1
+dotnet add tests/Erp.Architecture.Tests package xunit --version 2.9.3
+dotnet add tests/Erp.Architecture.Tests package xunit.runner.visualstudio --version 3.1.4
+dotnet add tests/Erp.Architecture.Tests package AwesomeAssertions --version 9.6.0
+```
+
+It references the host, which references every module, so every module is in reach. Same `.csproj` clean-up
+as the others.
+
+```csharp
+// tests/Erp.Architecture.Tests/ModuleBoundaryTests.cs
+using System.Reflection;
+using System.Runtime.CompilerServices;
+using AwesomeAssertions;
+using Erp.Modules.Sales;
+
+namespace Erp.Architecture.Tests;
+
+// The module rules as tests: a reviewer can miss a stray `public` class; these can't.
+public class ModuleBoundaryTests
+{
+    // Every new module joins this list.
+    private static readonly Assembly[] Modules = [typeof(SalesModule).Assembly];
+
+    [Fact]
+    public void A_module_exposes_only_its_entry_class()
+    {
+        foreach (var module in Modules)
+            module.GetExportedTypes().Select(t => t.FullName)
+                .Should().ContainSingle($"{module.GetName().Name} should expose only its AddXModule entry class")
+                .Which.Should().EndWith("Module");
+    }
+
+    [Fact]
+    public void Internals_are_shared_only_with_the_host_and_tests()
+    {
+        foreach (var module in Modules)
+            module.GetCustomAttributes<InternalsVisibleToAttribute>().Select(a => a.AssemblyName)
+                .Should().OnlyContain(f => f == "Erp.Api" || f.EndsWith("Tests"),
+                    $"{module.GetName().Name} may grant InternalsVisibleTo to Erp.Api (the Mediator generator) and tests, never another module");
+    }
+
+    // Vertical slices: a feature's files sit together. Folders named after a technical layer pull them apart again.
+    [Fact]
+    public void Code_is_grouped_by_feature_not_by_technical_layer()
+    {
+        string[] layers = [".Commands", ".Queries", ".Handlers", ".Validators", ".Endpoints", ".Repositories", ".Services"];
+
+        Modules.SelectMany(m => m.GetTypes())
+            .Select(t => t.Namespace ?? "")
+            .Distinct()
+            .Where(ns => layers.Any(ns.EndsWith))
+            .Should().BeEmpty("a feature folder holds its handler and endpoint together");
+    }
+}
+```
+
+- **`GetExportedTypes()`** returns only the public types: exactly the ones another project could use.
+- **`InternalsVisibleToAttribute`** is what the `<InternalsVisibleTo>` lines in the `.csproj` turn into. The
+  test reads them back out of the compiled module.
+
+Make the first one fail once: add a file to Sales with `public static class SalesHelpers { }`, the kind of
+"just a little helper" that slips in.
+
+```
+Expected module.GetExportedTypes().Select(t => t.FullName) to contain a single item because Erp.Modules.Sales
+should expose only its AddXModule entry class, but found {"Erp.Modules.Sales.SalesHelpers", "Erp.Modules.Sales.SalesModule"}.
+```
+
+Delete it again. These tests grow with the course: the [domain model](04-domain-model.md) adds two, the
+second module in [lesson 09](09-submit.md) adds three, and [lesson 13](13-events-outbox.md) adds the one that
+catches an event nobody handles.
+
+### Edge cases covered in this lesson
+
+| Test | The edge | Why it matters |
+|---|---|---|
+| `An_empty_message_is_refused` | Nothing: empty and whitespace | "Required" must mean more than "not null" |
+| `Any_real_message_passes` | The smallest valid input | A rule that's too strict is a bug too |
+| `An_empty_message_never_reaches_the_handler` | Configuration, not code | The silent failure the unit test can't see |
+| `A_module_exposes_only_its_entry_class` | One `public` too many | The wall gets a hole and nobody notices |
+| `Internals_are_shared_only_with_the_host_and_tests` | A shortcut between modules | One `InternalsVisibleTo` turns two islands into one |
+
 ## How a request flows
 
 ```mermaid
@@ -394,8 +588,12 @@ validation.
 - Granting `InternalsVisibleTo` to another module "just to share one class". Use a contract instead.
 - Putting logic in the endpoint. An endpoint turns HTTP into a message, and a result back into HTTP.
   Nothing else.
+- Testing only the validator with a unit test. It proves the rule, not that the rule runs; keep the one
+  request that proves it.
+- Adding a project's `InternalsVisibleTo` for a test project and forgetting the architecture test allows
+  only names ending in `Tests`. Name test projects `...Tests`.
 - Sharing one handler between two features. If two features need the same logic, it belongs in the domain
-  ([lesson 03](03-domain-model.md)).
+  ([lesson 04](04-domain-model.md)).
 
 ## Let's run it!
 
@@ -419,9 +617,21 @@ curl -i "http://localhost:5264/api/ping?message="
 ```
 
 That 500 is good news for now: it proves the validator ran *before* the handler. It should really be a
-`400 Bad Request` with a tidy body, and [lesson 06](06-create-order.md) will make it one. In the API's
+`400 Bad Request` with a tidy body, and [lesson 07](07-create-order.md) will make it one. In the API's
 console you'll see the logging behavior's lines: `PingQuery handled in 0 ms`, then
 `PingQuery failed after 2 ms`.
+
+Finally, the tests:
+
+```bash
+dotnet test
+```
+
+```
+Passed!  - Failed: 0, Passed:  4, ... Erp.Modules.Sales.UnitTests.dll
+Passed!  - Failed: 0, Passed:  3, ... Erp.Architecture.Tests.dll
+Passed!  - Failed: 0, Passed: 15, ... Erp.Integration.Tests.dll
+```
 
 ## Let's check!
 
@@ -431,11 +641,14 @@ console you'll see the logging behavior's lines: `PingQuery handled in 0 ms`, th
 3. Why is `LoggingBehavior` registered before `ValidationBehavior`?
 4. What's the difference between a command and a query, and why bother telling them apart?
 5. Name one real cost of the mediator pattern.
+6. The unit test for `PingValidator` passes, but the API still answers `pong: ` to an empty message. What's
+   wrong, and which test catches it?
+7. What does an architecture test check that the compiler doesn't? Give two examples.
 
-And that's where this lesson ends. Our endpoints now send messages, and every message is logged and
-validated on its way. Next time, we write the most important code in the whole course: the business rules
+And that's where this lesson ends. Our endpoints now send messages, every message is logged and
+validated on its way, and the walls are checked by a test. Next time, we write the most important code in the whole course: the business rules
 themselves. Good luck, developer!
 
 ---
 
-← [Lesson 01 — Solution setup](01-solution-setup.md) · Next: [Lesson 03 — Domain model](03-domain-model.md) →
+← [Lesson 02 — Testing](02-testing.md) · Next: [Lesson 04 — Domain model](04-domain-model.md) →

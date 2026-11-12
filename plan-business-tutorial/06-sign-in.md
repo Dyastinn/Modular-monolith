@@ -1,4 +1,4 @@
-# Lesson 05 — Sign-in: ASP.NET Core Identity
+# Lesson 06 — Sign-in: ASP.NET Core Identity
 
 Good day, developer! Our Sales module can now remember customers and orders. But right now, anyone who can
 reach the API can do anything. Today we decide who's allowed in. We'll add a whole module for it, Identity,
@@ -96,7 +96,7 @@ dotnet add src/Modules/Identity/Erp.Modules.Identity package Carter --version 10
 ```
 
 `Microsoft.AspNetCore.Identity.EntityFrameworkCore` (MIT) is Identity itself, storing its users and roles
-with EF Core. The other packages you know from lessons 02 and 04. As before, delete the `.csproj`'s
+with EF Core. The other packages you know from lessons 03 and 04. As before, delete the `.csproj`'s
 `<PropertyGroup>`, mark the design package `PrivateAssets="all"`, and add:
 
 ```xml
@@ -332,11 +332,11 @@ Here's what each part decides:
 | The `/auth/register` filter | `MapIdentityApi` always maps it; this filter turns it into a 404. It checks the *end* of the path, because the group will sit under `/api` |
 
 The tokens and cookies are encrypted with keys that ASP.NET Core keeps in your user profile. On your machine,
-that's fine. On a real server it's a problem, and [lesson 22](22-security-hardening.md) moves the keys into
+that's fine. On a real server it's a problem, and [lesson 23](23-security-hardening.md) moves the keys into
 the database.
 
 And one honest gap: `/auth/forgotPassword` needs a way to send email, and we haven't given it one yet. For
-now it quietly sends nothing; [lesson 15](15-users-email.md) gives it real email, and gives admins a screen
+now it quietly sends nothing; [lesson 16](16-users-email.md) gives it real email, and gives admins a screen
 to reset a password.
 
 ## 5. Who's calling?
@@ -842,6 +842,385 @@ Last, the home page greets the person by name. In `Home.razor`:
 </AuthorizeView>
 ```
 
+## 9. Prove it: who gets in, and who doesn't
+
+Sign-in is where an untested edge becomes a security hole. So this lesson gets two kinds of tests: requests
+through the API, and, for the first time, a real browser clicking through the sign-in page.
+
+### Signed-in test clients
+
+Most tests from now on act as someone. The factory learns to sign in the way any client does, through
+`/api/auth/login`, and to make a throwaway user when a test needs one. In `CustomWebAppFactory`, add:
+
+```csharp
+// tests/Erp.Integration.Tests/CustomWebAppFactory.cs (inside the class)
+public const string Password = "Password123!";   // every dev user's password (lesson 06's seed)
+
+public sealed record Tokens(string AccessToken, string RefreshToken);
+
+public async Task<Tokens> LoginAsync(HttpClient client, string email, string password = Password)
+{
+    var response = await client.PostAsJsonAsync("/api/auth/login", new { email, password });
+    response.EnsureSuccessStatusCode();
+    return (await response.Content.ReadFromJsonAsync<Tokens>())!;
+}
+
+public async Task<HttpClient> ClientFor(string email)
+{
+    var client = CreateClient();
+    var tokens = await LoginAsync(client, email);
+    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
+    return client;
+}
+
+// A throwaway staff member, for tests that lock, disable or sign out a user, or need a second person in a role.
+public async Task<string> CreateUserAsync(string role)
+{
+    await using var scope = Services.CreateAsyncScope();
+    var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
+    var email = $"user-{Guid.NewGuid():N}@erp.local";
+    var user = new AppUser { UserName = email, Email = email, EmailConfirmed = true };
+    var created = await users.CreateAsync(user, Password);
+    if (!created.Succeeded) throw new InvalidOperationException(string.Join(" ", created.Errors.Select(e => e.Description)));
+    await users.AddToRoleAsync(user, role);
+    return email;
+}
+```
+
+(with `using System.Net.Http.Headers;`, `using System.Net.Http.Json;`, `using Erp.Modules.Identity.Infrastructure;`,
+`using Microsoft.AspNetCore.Identity;` and `using Microsoft.Extensions.DependencyInjection;` at the top).
+
+A test is a program, not a browser, so it signs in with a **bearer token**: lesson 06's second way to stay
+signed in. `AppUser` is internal to Identity, so give the test project the same access Sales gave it, in
+`Erp.Modules.Identity.csproj`:
+
+```xml
+<InternalsVisibleTo Include="Erp.Integration.Tests" />
+```
+
+Why throwaway users? The lockout test locks an account for fifteen minutes. If it locked `rep@erp.local`,
+every test after it that signs in as the rep would fail, for a reason that has nothing to do with them.
+Tests must not step on each other.
+
+### The doors, tested
+
+```csharp
+// tests/Erp.Integration.Tests/AuthTests.cs
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using AwesomeAssertions;
+using Erp.Shared.BuildingBlocks;
+
+namespace Erp.Integration.Tests;
+
+[Collection("Integration")]
+public class AuthTests(CustomWebAppFactory factory)
+{
+    private sealed record Me(long Id, string Username, string Role);
+    private sealed record LoginProblem(string? Title, int Status, string? Detail);
+
+    [Fact]
+    public async Task Wrong_password_is_401()
+    {
+        var response = await factory.CreateClient().PostAsJsonAsync("/api/auth/login",
+            new { email = "rep@erp.local", password = "not-the-password" });
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    // Same status, same body: an attacker must not learn which emails are staff accounts.
+    [Fact]
+    public async Task An_unknown_email_gets_the_same_answer_as_a_wrong_password()
+    {
+        var client = factory.CreateClient();
+        var unknown = await client.PostAsJsonAsync("/api/auth/login", new { email = "nobody@erp.local", password = "whatever-123" });
+        var wrong = await client.PostAsJsonAsync("/api/auth/login", new { email = "rep@erp.local", password = "whatever-123" });
+
+        unknown.StatusCode.Should().Be(wrong.StatusCode);
+        (await unknown.Content.ReadFromJsonAsync<LoginProblem>()).Should().Be(await wrong.Content.ReadFromJsonAsync<LoginProblem>(),
+            "only the trace id may differ");
+    }
+
+    [Fact]
+    public async Task The_email_is_not_case_sensitive()
+    {
+        var response = await factory.CreateClient().PostAsJsonAsync("/api/auth/login",
+            new { email = "REP@ERP.LOCAL", password = CustomWebAppFactory.Password });
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task Me_returns_the_signed_in_user_and_role()
+    {
+        var me = await (await factory.ClientFor("manager@erp.local")).GetFromJsonAsync<Me>("/api/auth/me");
+
+        me!.Username.Should().Be("manager@erp.local");
+        me.Role.Should().Be(Roles.SalesManager);
+    }
+
+    [Fact]
+    public async Task Refresh_issues_a_new_access_token()
+    {
+        var client = factory.CreateClient();
+        var tokens = await factory.LoginAsync(client, "rep@erp.local");
+
+        var refreshed = await client.PostAsJsonAsync("/api/auth/refresh", new { tokens.RefreshToken });
+
+        refreshed.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Fact]
+    public async Task A_made_up_refresh_token_is_refused()
+    {
+        var response = await factory.CreateClient().PostAsJsonAsync("/api/auth/refresh", new { refreshToken = "not-a-token" });
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task Self_registration_is_disabled()
+    {
+        var response = await factory.CreateClient().PostAsJsonAsync("/api/auth/register",
+            new { email = "intruder@example.com", password = "LongEnoughPassword1" });
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Five_wrong_passwords_lock_the_account()
+    {
+        var email = await factory.CreateUserAsync(Roles.SalesRep);
+        var client = factory.CreateClient();
+        for (var i = 0; i < 5; i++)
+            await client.PostAsJsonAsync("/api/auth/login", new { email, password = "wrong-password!" });
+
+        var withRightPassword = await client.PostAsJsonAsync("/api/auth/login", new { email, password = CustomWebAppFactory.Password });
+
+        withRightPassword.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task A_successful_sign_in_resets_the_count_of_failures()
+    {
+        var email = await factory.CreateUserAsync(Roles.SalesRep);
+        var client = factory.CreateClient();
+        async Task Fail(int times)
+        {
+            for (var i = 0; i < times; i++)
+                await client.PostAsJsonAsync("/api/auth/login", new { email, password = "wrong-password!" });
+        }
+
+        await Fail(4);
+        await factory.LoginAsync(client, email);
+        await Fail(4);
+
+        (await client.PostAsJsonAsync("/api/auth/login", new { email, password = CustomWebAppFactory.Password }))
+            .StatusCode.Should().Be(HttpStatusCode.OK, "4 + 4 failures with a success between is not 5 in a row");
+    }
+
+    [Fact]
+    public async Task Signing_out_everywhere_kills_existing_refresh_tokens()
+    {
+        var email = await factory.CreateUserAsync(Roles.SalesRep);
+        var client = factory.CreateClient();
+        var tokens = await factory.LoginAsync(client, email);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
+
+        (await client.PostAsync("/api/auth/logout-everywhere", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        var refresh = await client.PostAsJsonAsync("/api/auth/refresh", new { tokens.RefreshToken });
+        refresh.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    // The browser app gets a 401 to react to, never a redirect to a login page the API doesn't have.
+    [Theory]
+    [InlineData("/api/auth/me")]
+    public async Task Calling_the_api_without_signing_in_is_401_not_a_redirect(string path)
+    {
+        var client = factory.CreateClient(new() { AllowAutoRedirect = false });
+        (await client.GetAsync(path)).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task The_browser_signs_in_with_a_cookie()
+    {
+        var client = factory.CreateClient();   // keeps cookies, like a browser
+        var login = await client.PostAsJsonAsync("/api/auth/login?useCookies=true",
+            new { email = "rep@erp.local", password = CustomWebAppFactory.Password });
+        login.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        (await client.GetAsync("/api/auth/me")).StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+}
+```
+
+`Calling_the_api_without_signing_in_is_401_not_a_redirect` is a `[Theory]` with a single row today: every
+lesson that adds a protected endpoint adds its address. `AllowAutoRedirect = false` matters: without it, the
+`HttpClient` would quietly follow a redirect, and the test would see the page it landed on, not the redirect.
+
+Here's every edge the file covers:
+
+| Test | The edge | Why it matters |
+|---|---|---|
+| `Wrong_password_is_401` | Broken input | The basic door |
+| `An_unknown_email_gets_the_same_answer_as_a_wrong_password` | Who | Different answers let an attacker list your staff's emails |
+| `The_email_is_not_case_sensitive` | Odd characters | `REP@ERP.LOCAL` is the same person; Identity normalizes it |
+| `Me_returns_the_signed_in_user_and_role` | Who | The app's menu depends on it |
+| `Refresh_issues_a_new_access_token` | When | A user isn't thrown out every fifteen minutes |
+| `A_made_up_refresh_token_is_refused` | Broken input | A guessed token gets nothing |
+| `Self_registration_is_disabled` | Who | Staff accounts are made by an admin, never by a stranger |
+| `Five_wrong_passwords_lock_the_account` | At the limit | Guessing passwords stops at five |
+| `A_successful_sign_in_resets_the_count_of_failures` | Just under the limit, twice | Four mistakes on Monday and four on Friday don't lock anyone out |
+| `Signing_out_everywhere_kills_existing_refresh_tokens` | After it changed | A stolen phone stops working the moment you sign out everywhere |
+| `Calling_the_api_without_signing_in_is_401_not_a_redirect` | Who: nobody | An API never answers with an HTML login page |
+| `The_browser_signs_in_with_a_cookie` | The other client | The browser's way in, not just the token's |
+
+### A real browser
+
+Some bugs only a browser sees: a page that crashes while loading, a button that never appears, a message
+that never shows. **Playwright** (Microsoft, MIT) drives a real browser from C#: open a page, type, click,
+wait for text.
+
+```bash
+dotnet new classlib -n Erp.Web.UiTests -o tests/Erp.Web.UiTests
+rm tests/Erp.Web.UiTests/Class1.cs
+dotnet sln add tests/Erp.Web.UiTests
+dotnet add tests/Erp.Web.UiTests package Microsoft.NET.Test.Sdk --version 17.14.1
+dotnet add tests/Erp.Web.UiTests package xunit --version 2.9.3
+dotnet add tests/Erp.Web.UiTests package xunit.runner.visualstudio --version 3.1.4
+dotnet add tests/Erp.Web.UiTests package AwesomeAssertions --version 9.6.0
+dotnet add tests/Erp.Web.UiTests package Microsoft.Playwright --version 1.64.1
+```
+
+Same `.csproj` clean-up as the others. Notice it references no project at all: it only knows the app's
+address, like a real user.
+
+```csharp
+// tests/Erp.Web.UiTests/BusinessFlowUiTests.cs
+using System.Text.RegularExpressions;
+using AwesomeAssertions;
+using Microsoft.Playwright;
+
+namespace Erp.Web.UiTests;
+
+// Runs only against a running app with the development seed: set ERP_UI_URL (e.g. http://localhost:5264).
+// ERP_UI_SCREENSHOTS, if set, is a folder that receives a screenshot of every step.
+// ERP_UI_BROWSER picks the browser: msedge (Windows default), chrome (elsewhere), or chromium for the one
+// `playwright install chromium` downloads, on a machine with neither.
+public sealed class UiFactAttribute : FactAttribute
+{
+    public UiFactAttribute()
+    {
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ERP_UI_URL")))
+            Skip = "Set ERP_UI_URL to a running ERP to run browser tests.";
+    }
+}
+
+public class BusinessFlowUiTests : IAsyncLifetime
+{
+    private static readonly string BaseUrl = Environment.GetEnvironmentVariable("ERP_UI_URL")?.TrimEnd('/') ?? "";
+    private static readonly string? Screenshots = Environment.GetEnvironmentVariable("ERP_UI_SCREENSHOTS");
+    private IPlaywright _playwright = default!;
+    private IBrowser _browser = default!;
+    private int _shot;
+
+    public async Task InitializeAsync()
+    {
+        if (BaseUrl.Length == 0) return;
+        _playwright = await Playwright.CreateAsync();
+        // By default the Edge (or Chrome) already on the machine: nothing to download.
+        var channel = Environment.GetEnvironmentVariable("ERP_UI_BROWSER") ?? (OperatingSystem.IsWindows() ? "msedge" : "chrome");
+        _browser = await _playwright.Chromium.LaunchAsync(new() { Channel = channel == "chromium" ? null : channel });
+    }
+
+    public async Task DisposeAsync()
+    {
+        if (BaseUrl.Length == 0) return;
+        await _browser.DisposeAsync();
+        _playwright.Dispose();
+    }
+
+    // Each person gets their own browser context: their own cookie, like their own computer.
+    private async Task<IPage> SignIn(string email)
+    {
+        var context = await _browser.NewContextAsync(new() { BaseURL = BaseUrl, ViewportSize = new() { Width = 1366, Height = 820 } });
+        var page = await context.NewPageAsync();
+        await page.GotoAsync("/login");
+        await page.GetByLabel("Email").FillAsync(email);
+        await page.GetByLabel("Password").FillAsync("Password123!");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
+        await page.GetByText("Good day,").WaitForAsync();
+        return page;
+    }
+
+    private async Task Shot(IPage page, string name)
+    {
+        if (Screenshots is null) return;
+        Directory.CreateDirectory(Screenshots);
+        await page.ScreenshotAsync(new() { Path = Path.Combine(Screenshots, $"{++_shot:00}-{name}.png"), FullPage = true });
+    }
+
+    [UiFact]
+    public async Task Signing_in_greets_you_by_name()
+    {
+        var page = await SignIn("rep@erp.local");
+        await Shot(page, "signed-in");
+        new Uri(page.Url).AbsolutePath.Should().Be("/");
+    }
+
+    [UiFact]
+    public async Task A_wrong_password_shows_a_message_and_stays_on_the_sign_in_page()
+    {
+        var context = await _browser.NewContextAsync(new() { BaseURL = BaseUrl });
+        var page = await context.NewPageAsync();
+        await page.GotoAsync("/login");
+        await page.GetByLabel("Email").FillAsync("rep@erp.local");
+        await page.GetByLabel("Password").FillAsync("not-the-password");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
+
+        await page.GetByText("Wrong email or password.").WaitForAsync();
+        new Uri(page.Url).AbsolutePath.Should().Be("/login");
+    }
+
+    [UiFact]
+    public async Task A_page_opened_before_signing_in_asks_for_sign_in()
+    {
+        var context = await _browser.NewContextAsync(new() { BaseURL = BaseUrl });
+        var page = await context.NewPageAsync();
+        await page.GotoAsync("/sales-orders");
+
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).WaitForAsync();
+    }
+}
+```
+
+- **It finds things the way a person does**: by label ("Email"), by button name ("Sign in"), by text on
+  screen. So it breaks when the screen breaks, not when a CSS class changes.
+- **`WaitForAsync()` waits** (up to 30 seconds) for the text to appear. A browser test never sleeps for a fixed
+  time; it waits for what a person would wait for.
+- **Each person gets their own browser context**: their own cookies, so two people in one test are really two
+  different sign-ins.
+- **It uses a browser you already have**: Edge on Windows, Chrome elsewhere. On a machine with neither, set
+  `ERP_UI_BROWSER=chromium` and download Playwright's own Chromium once:
+  `pwsh tests/Erp.Web.UiTests/bin/Debug/net10.0/playwright.ps1 install chromium`.
+
+These tests need a running app, so `UiFact` skips them unless `ERP_UI_URL` says where it is. Start the app in
+one terminal and run them from another:
+
+```bash
+dotnet run --project src/Erp.Api
+```
+
+```bash
+ERP_UI_URL=http://localhost:5264 ERP_UI_SCREENSHOTS=./screens dotnet test tests/Erp.Web.UiTests
+```
+
+Open the `screens` folder afterwards: each step is a picture. The browser runs *headless* (no window), so
+the screenshots are how you see what it saw. The flow through orders, approvals and invoices grows in later
+lessons, one step per feature.
+
+Now, let's be honest about the cost here: browser tests are the slowest and the most fragile tests we have.
+They need a running app, and a slow machine can make them time out. So we keep only a few: the main flows,
+and one that opens every page. The rules are tested underneath, where it's fast.
+
 ## How a request flows
 
 ```mermaid
@@ -871,6 +1250,9 @@ sequenceDiagram
 - An API key in the browser app. Anything shipped to a browser is public.
 - Treating a hidden button as security. The API must check every call; hiding is for convenience.
 - Trusting `returnUrl`. Only follow paths inside your own app.
+- Testing lockout on a dev user. Every later test that signs in as that user fails for fifteen minutes.
+- Letting a browser test sleep for a fixed time. Wait for the text a person would wait for.
+- Writing dozens of browser tests. They're slow and fragile; test the rules underneath.
 
 ## Let's run it!
 
@@ -906,7 +1288,20 @@ curl -i -X POST http://localhost:5264/api/auth/login -H "Content-Type: applicati
 ```
 
 Five wrong passwords in a row would lock `rep@erp.local` for 15 minutes, so don't try that on a user you
-still need. [Lesson 12](12-testing.md) proves lockout with a throwaway user instead.
+still need. The tests prove lockout with a throwaway user instead:
+
+```bash
+dotnet test
+```
+
+```
+Passed!  - Failed: 0, Passed: 52, ... Erp.Modules.Sales.UnitTests.dll
+Passed!  - Failed: 0, Passed:  5, ... Erp.Architecture.Tests.dll
+Passed!  - Failed: 0, Passed: 32, ... Erp.Integration.Tests.dll
+Skipped! - Failed: 0, Skipped: 3, ... Erp.Web.UiTests.dll
+```
+
+The browser tests skip until you point them at a running app, as in step 9.
 
 ## Let's check!
 
@@ -918,6 +1313,9 @@ still need. [Lesson 12](12-testing.md) proves lockout with a throwaway user inst
 6. Why does `CurrentUser` live in Infrastructure, while `ICurrentUser` lives in BuildingBlocks?
 7. The browser app can't read the sign-in cookie. How does it know who's signed in?
 8. What is an open redirect, and which line on the sign-in page prevents it?
+9. Why does the lockout test use a throwaway user instead of `rep@erp.local`?
+10. Why must an unknown email get exactly the same answer as a wrong password?
+11. How does a browser test find the "Sign in" button, and why not by its CSS class?
 
 And that's where this lesson ends. People can now sign in, and the app knows who they are and what role
 they have, in the app and through the API. Next time, we build our first real feature from end to end, from
@@ -925,4 +1323,4 @@ the handler to its screen: creating a sales order. Good luck, developer!
 
 ---
 
-← [Lesson 04 — Database](04-database.md) · Next: [Lesson 06 — Create an order](06-create-order.md) →
+← [Lesson 05 — Database](05-database.md) · Next: [Lesson 07 — Create an order](07-create-order.md) →

@@ -1,4 +1,4 @@
-# Lesson 06 — Create an Order: The First Real Feature
+# Lesson 07 — Create an Order: The First Real Feature
 
 Good day, developer! Everything we've built so far has been foundation: walls, a mediator, the rules, a
 database, sign-in, and an app to put it all in. Today it all meets in one place. A sales rep will send an order, and the system will check
@@ -25,7 +25,7 @@ The handler coordinates; the domain decides. Here's the whole job, in order:
 
 1. Load the customer, and ask the customer whether it may order.
 2. Load the items with their categories.
-3. Create the order and hand it the lines. `SetLines` from lesson 03 checks every item, role and category
+3. Create the order and hand it the lines. `SetLines` from lesson 04 checks every item, role and category
    cap.
 4. Ask the customer whether the total fits its credit.
 5. Save.
@@ -34,7 +34,7 @@ Every "is this allowed?" is a method call on a domain object. If a rule changes,
 
 ### Errors the caller can understand
 
-Run lesson 02's checkpoint again and you'll remember the problem: a failed validation came back as a
+Run lesson 03's checkpoint again and you'll remember the problem: a failed validation came back as a
 **500 Internal Server Error**, with a stack trace. That's wrong in two ways. A 500 means "the server broke",
 when really the caller sent a bad request. And a stack trace tells an attacker far too much.
 
@@ -401,7 +401,13 @@ builder.Services.AddProblemDetails();
 // ...
 var app = builder.Build();
 app.UseExceptionHandler();
+app.UseStatusCodePages();   // an error with no body (a bare 404, 401, 403) gets a problem+json body too
 ```
+
+`UseStatusCodePages` covers the errors that never throw: an endpoint that returns `Results.NotFound()`, a
+401 from sign-in, the `/api` fallback. Without it, those answer with an empty body, and a client that reads
+every error the same way finds nothing to read. With it, they get the same kind of body as every other
+error.
 
 ## 5. Swagger: try your endpoints in the browser
 
@@ -554,10 +560,11 @@ file. In `Erp.Web.csproj`:
 and `@using Erp.Shared.BuildingBlocks` in `_Imports.razor`. The names still live in exactly one place.
 
 Build now, and the compiler refuses with `CS0433`: `Roles` reaches `Erp.Api` twice, once from BuildingBlocks
-and once from `Erp.Web`. The host's reference to the app needs two attributes. Before:
+and once from `Erp.Web`. The host's reference to the app needs one more attribute. Before:
 
 ```xml
-<ProjectReference Include="..\Erp.Web\Erp.Web.csproj" />
+<!-- PrivateAssets: the browser app's classes stop here; the test projects that reference the host never see them. -->
+<ProjectReference Include="..\Erp.Web\Erp.Web.csproj" PrivateAssets="all" />
 ```
 
 After:
@@ -576,7 +583,7 @@ Is the browser app allowed to hide things by role? Yes, as a courtesy. A hidden 
 API checks every call on its own, and a rep who builds the URL by hand still gets a 403.
 
 Now the page. We can't search customers or items yet (reading lists is next lesson), so for today the
-form asks for ids. It's plain on purpose; [lesson 07](07-find-orders.md) gives it search boxes.
+form asks for ids. It's plain on purpose; [lesson 08](08-find-orders.md) gives it search boxes.
 
 ```razor
 @* src/Erp.Web/Pages/Sales/OrderEditor.razor *@
@@ -655,6 +662,222 @@ Last, a way to get there. In `NavMenu.razor`, under the Home link:
 }
 ```
 
+## 7. Prove it: every kind of "no"
+
+The ping feature is gone, and so are its tests: delete `PingTests.cs` from both test projects. Its most
+important test guarded `includeInternalTypes: true`; the create slice takes over that job.
+
+### The validator, alone
+
+```csharp
+// tests/Erp.Modules.Sales.UnitTests/ValidatorTests.cs
+using AwesomeAssertions;
+using Erp.Modules.Sales.Features;
+
+namespace Erp.Modules.Sales.UnitTests;
+
+// Validators are plain classes: test the shape rules directly, no HTTP, no database.
+public class CreateSalesOrderValidatorTests
+{
+    private static readonly CreateSalesOrderValidator Validator = new();
+
+    private static CreateSalesOrderCommand Order(long customerId = 1, long itemId = 1, decimal quantity = 1) =>
+        new(customerId, [new OrderLineInput(itemId, quantity)]);
+
+    [Fact]
+    public void A_well_formed_order_passes() => Validator.Validate(Order()).IsValid.Should().BeTrue();
+
+    [Theory]
+    [InlineData(0, 1, "1")]
+    [InlineData(-1, 1, "1")]
+    [InlineData(1, 0, "1")]
+    [InlineData(1, -5, "1")]
+    [InlineData(1, 1, "0")]
+    [InlineData(1, 1, "-1")]
+    [InlineData(1, 1, "1.2345")]
+    public void A_bad_id_or_quantity_is_refused(long customerId, long itemId, string quantity) =>
+        Validator.Validate(Order(customerId, itemId, decimal.Parse(quantity))).IsValid.Should().BeFalse();
+
+    [Fact]
+    public void An_order_without_lines_is_refused_with_a_readable_message() =>
+        Validator.Validate(new CreateSalesOrderCommand(1, [])).Errors
+            .Should().ContainSingle().Which.ErrorMessage.Should().Be("An order needs at least one line.");
+
+    [Fact]
+    public void Every_bad_line_is_reported_not_just_the_first()
+    {
+        var result = Validator.Validate(new CreateSalesOrderCommand(1, [new(0, 1), new(1, 0), new(1, 1)]));
+        result.Errors.Should().HaveCount(2);
+    }
+}
+```
+
+`Every_bad_line_is_reported_not_just_the_first` checks something easy to get wrong: a form with three bad
+lines should hear about all of them at once, not fix one, submit, and discover the next.
+
+### Through the front door
+
+Two files, which the next four lessons keep growing. The first holds the main path of an order's life:
+
+```csharp
+// tests/Erp.Integration.Tests/SalesOrderWorkflowTests.cs
+using System.Net;
+using System.Net.Http.Json;
+using AwesomeAssertions;
+
+namespace Erp.Integration.Tests;
+
+// Seed: customers 1 Acme, 2 Beta (₱500 left), 3 Gamma (blocked), 4 Delta (₱200k limit), 5 Epsilon (large);
+// items 1 Widget ₱25, 2 Gadget ₱40, 3 Restricted Kit ₱500, 4 Server Rack ₱75,000, 5 Copper Wire ₱620.50/kg.
+[Collection("Integration")]
+public class SalesOrderWorkflowTests(CustomWebAppFactory factory)
+{
+    private const string Rep = "rep@erp.local", Manager = "manager@erp.local";
+
+    private sealed record Created(long Id);
+    private sealed record Problem(string Detail, string[] Errors);
+
+    private static async Task<long> CreateOrder(HttpClient client, long customerId, long itemId, int quantity)
+    {
+        var response = await client.PostAsJsonAsync("/api/sales-orders",
+            new { customerId, lines = new[] { new { itemId, quantity } } });
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        return (await response.Content.ReadFromJsonAsync<Created>())!.Id;
+    }
+
+    [Fact]
+    public async Task Blocked_customer_is_rejected_with_422()
+    {
+        var manager = await factory.ClientFor(Manager);
+        var create = await manager.PostAsJsonAsync("/api/sales-orders",
+            new { customerId = 3, lines = new[] { new { itemId = 1, quantity = 1 } } });
+        create.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+    }
+
+    [Fact]
+    public async Task Over_credit_limit_is_rejected_with_422()
+    {
+        var manager = await factory.ClientFor(Manager);
+        var create = await manager.PostAsJsonAsync("/api/sales-orders",
+            new { customerId = 2, lines = new[] { new { itemId = 1, quantity = 100 } } });   // ₱2,500 > ₱500 left
+        create.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+    }
+
+    // Regression guard: validators are internal; without includeInternalTypes: true they silently never run.
+    [Fact]
+    public async Task Order_with_no_lines_is_rejected_by_the_internal_validator()
+    {
+        var manager = await factory.ClientFor(Manager);
+        var create = await manager.PostAsJsonAsync("/api/sales-orders", new { customerId = 1, lines = Array.Empty<object>() });
+        create.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        create.Content.Headers.ContentType!.ToString().Should().Be("application/problem+json; charset=utf-8");
+        var problem = await create.Content.ReadFromJsonAsync<Problem>();
+        problem!.Detail.Should().Be("An order needs at least one line.");
+        problem.Errors.Should().Equal("An order needs at least one line.");
+    }
+}
+```
+
+The second holds the edges. Each test makes **its own customer**, straight through `SalesDbContext` (the
+customers screen arrives in [lesson 15](15-customers.md)), so no test's credit or balance depends on what
+an earlier test did:
+
+```csharp
+// tests/Erp.Integration.Tests/SalesOrderEdgeCaseTests.cs
+using System.Net;
+using System.Net.Http.Json;
+using System.Text;
+using AwesomeAssertions;
+using Erp.Modules.Sales.Domain;
+using Erp.Modules.Sales.Infrastructure;
+using Erp.Shared.BuildingBlocks;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Erp.Integration.Tests;
+
+// The edges of the order's life: wrong input, wrong person, wrong moment, and two people at once.
+// Each test makes its own customer, so earlier tests' balances can't change the answer.
+[Collection("Integration")]
+public class SalesOrderEdgeCaseTests(CustomWebAppFactory factory)
+{
+    private const string Rep = "rep@erp.local", Manager = "manager@erp.local";
+
+    private sealed record Created(long Id);
+    private sealed record Problem(string Title, string? Detail);
+
+    // Straight into the database: the customers screen and its API only arrive in lesson 15.
+    private async Task<long> NewCustomer(string? name = null, decimal creditLimit = 1_000_000)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<SalesDbContext>();
+        var customer = Customer.Create(name ?? $"Edge {Guid.NewGuid():N}", new Money(creditLimit));
+        db.Customers.Add(customer);
+        await db.SaveChangesAsync();
+        return customer.Id.Value;
+    }
+
+    private static Task<HttpResponseMessage> PostOrder(HttpClient client, long customerId, long itemId, decimal quantity) =>
+        client.PostAsJsonAsync("/api/sales-orders", new { customerId, lines = new[] { new { itemId, quantity } } });
+
+    private static async Task<long> CreateOrder(HttpClient client, long customerId, long itemId, decimal quantity)
+    {
+        var response = await PostOrder(client, customerId, itemId, quantity);
+        response.StatusCode.Should().Be(HttpStatusCode.Created, await response.Content.ReadAsStringAsync());
+        return (await response.Content.ReadFromJsonAsync<Created>())!.Id;
+    }
+
+    [Fact]
+    public async Task An_unknown_customer_or_item_is_404()
+    {
+        var rep = await factory.ClientFor(Rep);
+        (await PostOrder(rep, customerId: 999_999, itemId: 1, quantity: 1)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+        (await PostOrder(rep, await NewCustomer(), itemId: 999_999, quantity: 1)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-3")]
+    [InlineData("1.2345")]
+    public async Task A_quantity_that_is_zero_negative_or_too_precise_is_400(string quantity)
+    {
+        var rep = await factory.ClientFor(Rep);
+        (await PostOrder(rep, await NewCustomer(), 1, decimal.Parse(quantity))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    // Shape is fine (400 rules pass), but widgets are counted in whole pieces: that's the item's rule, so 422.
+    [Fact]
+    public async Task Half_a_widget_is_a_business_rule_not_a_bad_request()
+    {
+        var rep = await factory.ClientFor(Rep);
+        (await PostOrder(rep, await NewCustomer(), itemId: 1, quantity: 1.5m)).StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+    }
+
+    [Fact]
+    public async Task Broken_json_is_400_with_problem_details_not_500()
+    {
+        var rep = await factory.ClientFor(Rep);
+        var response = await rep.PostAsync("/api/sales-orders", new StringContent("{ \"customerId\": ", Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadFromJsonAsync<Problem>())!.Title.Should().Be("The request could not be read");
+    }
+}
+```
+
+### Edge cases covered in this lesson
+
+| Test | The edge | Why it matters |
+|---|---|---|
+| `A_bad_id_or_quantity_is_refused` (7 cases) | Zero, negative, too precise | The shape rules, one by one |
+| `Every_bad_line_is_reported_not_just_the_first` | Many | Users fix everything in one go |
+| `An_unknown_customer_or_item_is_404` | An id that doesn't exist | 404, not 500 |
+| `A_quantity_that_is_zero_negative_or_too_precise_is_400` | Same edges, through HTTP | The validator really runs on this endpoint |
+| `Half_a_widget_is_a_business_rule_not_a_bad_request` | The line between 400 and 422 | Shape is the validator's; "is this allowed?" is the domain's |
+| `Broken_json_is_400_with_problem_details_not_500` | Broken input | A client's typo isn't our crash |
+| `Blocked_customer_is_rejected_with_422`, `Over_credit_limit_is_rejected_with_422` | Who, how much | The domain's rules reach the caller as 422 with the domain's words |
+| `Order_with_no_lines_is_rejected_by_the_internal_validator` | Configuration | The `includeInternalTypes` guard, now on a real feature |
+
 ## How a request flows
 
 ```mermaid
@@ -687,6 +910,9 @@ If any domain check throws, nothing is saved, and the exception handler turns th
 - Catching errors on every page. `ApiClient` shows the API's own message once, for every page.
 - Returning stack traces to the caller in production.
 - Forgetting `UseExceptionHandler()` must come first. Anything registered before it isn't covered.
+- Testing a rule only through HTTP. The domain test says *which* rule broke; the HTTP test only says
+  *something* did.
+- Sharing a seeded customer between tests that change its balance. Make a fresh one per test.
 
 ## Let's run it!
 
@@ -726,6 +952,18 @@ And now the way a sales rep will do it. Open `http://localhost:5264`, sign in as
 the customer to 3 and save again: a red snackbar says Gamma Traders is blocked, word for word what the
 domain wrote.
 
+Then the tests:
+
+```bash
+dotnet test
+```
+
+```
+Passed!  - Failed: 0, Passed: 58, ... Erp.Modules.Sales.UnitTests.dll
+Passed!  - Failed: 0, Passed:  5, ... Erp.Architecture.Tests.dll
+Passed!  - Failed: 0, Passed: 39, ... Erp.Integration.Tests.dll
+```
+
 Check the order number in the database:
 
 ```bash
@@ -745,6 +983,8 @@ PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localho
 4. What status does each of these produce, and why: a blocked customer, an empty order, an unknown item?
 5. Why does the error body include a `traceId`?
 6. Why is Swagger only turned on in Development?
+7. Half a widget is a 422, but a quantity of 1.2345 is a 400. Why the difference?
+8. Why does each edge-case test create its own customer?
 
 And that's where this lesson ends. You've built your first real feature, from a form in the browser all the
 way to a saved order, with every rule in its proper place. Next time, we read orders back: a list to search,
@@ -752,4 +992,4 @@ a page for each order, and search boxes for that form. Good luck, developer!
 
 ---
 
-← [Lesson 05 — Sign-in](05-sign-in.md) · Next: [Lesson 07 — Find orders](07-find-orders.md) →
+← [Lesson 06 — Sign-in](06-sign-in.md) · Next: [Lesson 08 — Find orders](08-find-orders.md) →

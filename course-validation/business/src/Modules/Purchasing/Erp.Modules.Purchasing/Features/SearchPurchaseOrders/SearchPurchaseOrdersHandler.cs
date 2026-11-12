@@ -21,7 +21,7 @@ internal sealed class SearchPurchaseOrdersValidator : AbstractValidator<SearchPu
     {
         RuleFor(x => x.Page).ValidPage();
         RuleFor(x => x.PageSize).ValidPageSize();
-        RuleFor(x => x.Status).Must(s => s is null || Enum.TryParse<PurchaseOrderStatus>(s, true, out _))
+        RuleFor(x => x.Status).Must(s => s is null || Enum.GetNames<PurchaseOrderStatus>().Contains(s, StringComparer.OrdinalIgnoreCase))
             .WithMessage(x => $"Unknown status '{x.Status}'.");
     }
 }
@@ -32,7 +32,7 @@ internal sealed class SearchPurchaseOrdersHandler(IDbConnectionFactory connectio
     public async ValueTask<PagedResult<PurchaseOrderSummaryDto>> Handle(SearchPurchaseOrdersQuery q, CancellationToken ct)
     {
         int? status = q.Status is null ? null : (int)Enum.Parse<PurchaseOrderStatus>(q.Status, true);
-        var args = new { q.SupplierId, Status = status, Search = string.IsNullOrWhiteSpace(q.Search) ? null : q.Search.Trim(), q.Page, q.PageSize };
+        var args = new { q.SupplierId, Status = status, Search = SearchText.ForLike(q.Search), q.Page, q.PageSize };
 
         await using var conn = connections.Create();
         using var multi = await conn.QueryMultipleAsync(new CommandDefinition(

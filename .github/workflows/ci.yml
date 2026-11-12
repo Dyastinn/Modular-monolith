@@ -1,0 +1,54 @@
+# Every push and pull request: build, then run every test against a throwaway PostgreSQL.
+# The runner has Docker; Testcontainers uses it the way it uses Podman on our machines.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:   # the "Run workflow" button, for the mutation run below
+
+defaults:
+  run:
+    working-directory: course-validation/business
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet tool restore
+      - run: dotnet build Erp.slnx
+      - run: dotnet test Erp.slnx --no-build --collect "XPlat Code Coverage" --results-directory TestResults
+      - name: Coverage report
+        if: always()
+        run: >
+          dotnet reportgenerator -reports:"TestResults/*/coverage.cobertura.xml" -targetdir:coverage
+          -reporttypes:"Html;MarkdownSummaryGithub"
+          -assemblyfilters:"+Erp.*;-Erp.Web;-Erp.AppHost" -classfilters:"-*.Migrations.*;-Mediator.*;-Microsoft.*;-System.*"
+          && cat coverage/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: coverage
+          path: course-validation/business/coverage
+
+  # Slow (minutes), so only on request: does every rule have a test that notices when it breaks?
+  mutation:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet tool restore
+      - run: dotnet stryker
+        working-directory: course-validation/business/tests/Erp.Modules.Sales.UnitTests
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: mutation-report
+          path: course-validation/business/tests/Erp.Modules.Sales.UnitTests/StrykerOutput

@@ -480,3 +480,9 @@ $RECYCLE.BIN/
 
 # Vim temporary swap files
 *.swp
+
+# Test tool output (coverage report, mutation report, screenshots)
+StrykerOutput/
+TestResults/
+coverage/
+screens/

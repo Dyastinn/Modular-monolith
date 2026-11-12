@@ -24,7 +24,7 @@ internal sealed class SearchUsersHandler(IDbConnectionFactory connections) : IQu
 {
     public async ValueTask<PagedResult<UserDto>> Handle(SearchUsersQuery q, CancellationToken ct)
     {
-        var search = string.IsNullOrWhiteSpace(q.Search) ? null : q.Search.Trim();
+        var search = SearchText.ForLike(q.Search);
         await using var conn = connections.Create();
         using var multi = await conn.QueryMultipleAsync(new CommandDefinition(
             """

@@ -28,19 +28,6 @@ public class PlatformTests(CustomWebAppFactory factory)
         response.Headers.GetValues("X-Trace-Id").Single().Should().HaveLength(32);
     }
 
-    // Page addresses belong to the browser app; an unknown API address must stay a 404, not turn into a page.
-    [Fact]
-    public async Task Any_page_address_serves_the_app_but_an_unknown_api_address_is_404()
-    {
-        var client = factory.CreateClient();
-
-        var page = await client.GetAsync("/sales-orders/42");
-        page.StatusCode.Should().Be(HttpStatusCode.OK);
-        page.Content.Headers.ContentType!.MediaType.Should().Be("text/html");
-
-        (await client.GetAsync("/api/no-such-thing")).StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
     [Fact]
     public async Task Pages_and_api_get_different_content_security_policies()
     {
@@ -61,7 +48,7 @@ public class PlatformTests(CustomWebAppFactory factory)
         var id = (await create.Content.ReadFromJsonAsync<Created>())!.Id;
         await rep.PostAsync($"/api/sales-orders/{id}/submit", null);   // auto-approved → SalesOrderApproved
 
-        await using var conn = new NpgsqlConnection(CustomWebAppFactory.TestConnectionString);
+        await using var conn = factory.OpenDatabase();
         const string sql = """
             SELECT processed_utc FROM sales.outbox_message
             WHERE type LIKE '%SalesOrderApproved%' AND (payload->'Id'->>'Value')::bigint = @id

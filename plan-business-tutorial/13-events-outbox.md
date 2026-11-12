@@ -1,4 +1,4 @@
-# Lesson 11 — Events and the Outbox: Reacting, Reliably
+# Lesson 13 — Events and the Outbox: Reacting, Reliably
 
 Good day, developer! Until now, each feature did its job and stopped. But in a real business, one thing
 leads to another: when an order is approved, it goes in the audit log; when it ships, an invoice must be
@@ -481,6 +481,233 @@ for m in Identity Sales Inventory; do
 done
 ```
 
+## 7. Prove it: delivered, retried, parked, and never twice
+
+The outbox promises four things: an event is delivered after the commit; an event from a rolled-back change
+is never delivered; a message that keeps failing is retried, then set aside; and delivering an event twice
+changes nothing. Each one gets a test.
+
+The dispatcher wakes every two seconds, which would make every outbox test wait. The tests' copy of the app
+can be quicker. In `CustomWebAppFactory.ConfigureWebHost`:
+
+```csharp
+builder.UseSetting("Outbox:PollIntervalMs", "200");
+```
+
+### Delivered, and rolled back
+
+```csharp
+// tests/Erp.Integration.Tests/PlatformTests.cs
+using System.Net.Http.Json;
+using AwesomeAssertions;
+using Dapper;
+
+namespace Erp.Integration.Tests;
+
+[Collection("Integration")]
+public class PlatformTests(CustomWebAppFactory factory)
+{
+    private sealed record Created(long Id);
+
+    [Fact]
+    public async Task An_approval_event_is_delivered_through_the_outbox()
+    {
+        var rep = await factory.ClientFor("rep@erp.local");
+        var create = await rep.PostAsJsonAsync("/api/sales-orders",
+            new { customerId = 1, lines = new[] { new { itemId = 1, quantity = 1 } } });
+        var id = (await create.Content.ReadFromJsonAsync<Created>())!.Id;
+        await rep.PostAsync($"/api/sales-orders/{id}/submit", null);   // auto-approved → SalesOrderApproved
+
+        await using var conn = factory.OpenDatabase();
+        const string sql = """
+            SELECT processed_utc FROM sales.outbox_message
+            WHERE type LIKE '%SalesOrderApproved%' AND (payload->'Id'->>'Value')::bigint = @id
+            """;
+
+        DateTime? processed = null;
+        for (var attempt = 0; attempt < 50 && processed is null; attempt++)
+        {
+            processed = await conn.QuerySingleOrDefaultAsync<DateTime?>(sql, new { id });
+            if (processed is null) await Task.Delay(200);
+        }
+
+        processed.Should().NotBeNull("the dispatcher should deliver the event within a few seconds");
+    }
+}
+```
+
+Delivery happens on a background timer, not inside the request, so the test **polls**: it checks, waits 200
+ms, checks again, and gives up after ten seconds. Never a single fixed `Task.Delay(5000)`: that's slow when
+things are fast and flaky when the machine is busy. `payload->'Id'->>'Value'` reads inside the stored JSON:
+PostgreSQL's `->` steps into an object and `->>` returns text.
+
+The rollback half goes where the failing submit already is. In `SalesOrderEdgeCaseTests`,
+`Too_little_stock_refuses_the_submit_and_leaves_everything_as_it_was` gains one more check, after the balance:
+
+```csharp
+(await conn.ExecuteScalarAsync<long>(
+    "SELECT COUNT(*) FROM sales.outbox_message WHERE (payload->'Id'->>'Value')::bigint = @id", new { id }))
+    .Should().Be(0, "the approval event was rolled back with everything else");
+```
+
+That order was approved inside `Submit` before the stock check failed, so `SalesOrderApproved` *was*
+raised. The interceptor wrote it into the same transaction, and the rollback took it away again. That's the
+whole point of an outbox, in one line.
+
+### Retried, then parked
+
+```csharp
+// tests/Erp.Integration.Tests/OperationsTests.cs
+using System.Net;
+using System.Net.Http.Json;
+using AwesomeAssertions;
+using Dapper;
+using Erp.Shared.BuildingBlocks;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Erp.Integration.Tests;
+
+// What keeps the running system honest: the outbox, health, tracing, limits and the database role.
+[Collection("Integration")]
+public class OperationsTests(CustomWebAppFactory factory)
+{
+    private sealed record Created(long Id);
+
+    private static async Task<T> Eventually<T>(Func<Task<T>> read, Func<T, bool> done)
+    {
+        var value = await read();
+        for (var i = 0; i < 75 && !done(value); i++)
+        {
+            await Task.Delay(200);
+            value = await read();
+        }
+        return value;
+    }
+
+    // A message that can never be delivered must not block the others, and must not be retried forever.
+    [Fact]
+    public async Task A_message_that_keeps_failing_is_parked_with_its_error()
+    {
+        var id = Guid.NewGuid();
+        await using var conn = factory.OpenDatabase();
+        await conn.ExecuteAsync(
+            """
+            INSERT INTO sales.outbox_message (id, type, payload, occurred_utc, attempts)
+            VALUES (@id, 'Erp.NoSuchEvent, Erp.NoSuchAssembly', '{}', now(), 0)
+            """, new { id });
+
+        var attempts = await Eventually(
+            () => conn.ExecuteScalarAsync<int>("SELECT attempts FROM sales.outbox_message WHERE id = @id", new { id }),
+            a => a >= 10);
+        await Task.Delay(1000);   // a few more dispatcher ticks
+
+        var row = await conn.QuerySingleAsync<(int Attempts, DateTime? Processed, string? Error)>(
+            "SELECT attempts, processed_utc, last_error FROM sales.outbox_message WHERE id = @id", new { id });
+        attempts.Should().Be(10);
+        row.Attempts.Should().Be(10, "after MaxAttempts it is left alone");
+        row.Processed.Should().BeNull();
+        row.Error.Should().Contain("NoSuchAssembly");
+    }
+}
+```
+
+The test writes a message nobody can read, a type from an assembly that doesn't exist, straight into the
+table, and watches the dispatcher try. Ten tries, the error kept in `last_error`, and then it's left alone
+for a person to look at. The extra second of waiting is the edge: it proves try number eleven never comes.
+
+### Twice changes nothing
+
+At-least-once delivery means every handler will, one day, see the same event twice. The strongest test of
+that: deliver *every* event again, and check that nothing in the business changed.
+
+```csharp
+// tests/Erp.Integration.Tests/OperationsTests.cs (add)
+// At-least-once delivery means a handler can see the same event twice. Deliver everything again: nothing may change.
+[Fact]
+public async Task Delivering_every_event_a_second_time_changes_nothing()
+{
+    const string snapshot = """
+        SELECT (SELECT COUNT(*) FROM sales.sales_order)::text
+            || '|' || (SELECT COALESCE(SUM(outstanding_balance), 0) FROM sales.customer)::text
+        """;
+    string[] schemas;
+    await using (var scope = factory.Services.CreateAsyncScope())
+        schemas = scope.ServiceProvider.GetServices<IModuleDatabase>().Select(m => m.Schema).ToArray();
+    await using var conn = factory.OpenDatabase();
+
+    // Raise at least one event of our own, so the test doesn't depend on what ran before it.
+    var rep = await factory.ClientFor("rep@erp.local");
+    var created = await rep.PostAsJsonAsync("/api/sales-orders", new { customerId = 5, lines = new[] { new { itemId = 1, quantity = 1 } } });
+    var orderId = (await created.Content.ReadFromJsonAsync<Created>())!.Id;
+    (await rep.PostAsync($"/api/sales-orders/{orderId}/submit", null)).EnsureSuccessStatusCode();   // auto-approved
+
+    // Let it, and whatever earlier tests raised, finish first.
+    async Task<long> Waiting() => await conn.ExecuteScalarAsync<long>(string.Join(" + ", schemas.Select(s =>
+        $"(SELECT COUNT(*) FROM {s}.outbox_message WHERE processed_utc IS NULL AND attempts < 10)")).Insert(0, "SELECT "));
+    await Eventually(Waiting, n => n == 0);
+    var before = await conn.ExecuteScalarAsync<string>(snapshot);
+
+    var redelivered = 0;
+    foreach (var schema in schemas)
+        redelivered += await conn.ExecuteAsync($"UPDATE {schema}.outbox_message SET processed_utc = NULL WHERE processed_utc IS NOT NULL");
+    (await Eventually(Waiting, n => n == 0)).Should().Be(0);
+
+    redelivered.Should().BeGreaterThan(0, "this test raised an approval");
+    (await conn.ExecuteScalarAsync<string>(snapshot)).Should().Be(before);
+}
+```
+
+Setting `processed_utc` back to `NULL` is exactly what a crash between "handler ran" and "marked as done"
+looks like to the dispatcher. Today the only handler writes a log line, so the snapshot only has orders and
+balances to watch. Every later lesson whose handler changes data adds a line to `snapshot`: the item copies in
+[lesson 17](17-item-catalog.md), invoices in [lesson 20](20-invoicing.md), applied payments in
+[lesson 21](21-payments.md). If one of those handlers isn't idempotent, this test catches it the day it's
+written.
+
+Two things this test taught us, by failing the first time it was written. Run alone, it had no events to
+redeliver, so it raises one of its own. And it reads the schemas from the registered modules, so each new
+module's outbox joins automatically. A test should pass alone, and in any order.
+
+### Every event has a handler
+
+An event nobody handles is a feature that silently does nothing. The Mediator generator warns at compile
+time when a *message* has no handler (MSG0005, which we keep on), but an event with zero handlers is legal.
+An architecture test makes it illegal:
+
+```csharp
+// tests/Erp.Architecture.Tests/ModuleBoundaryTests.cs (add)
+// Raise an event only with its first handler. An event nobody handles is a feature that silently does nothing.
+[Fact]
+public void Every_event_has_a_handler()
+{
+    var events = Modules.Concat(ContractsAssemblies)
+        .SelectMany(a => a.GetTypes())
+        .Where(t => t is { IsAbstract: false, IsInterface: false } && typeof(IDomainEvent).IsAssignableFrom(t));
+
+    var handled = Modules.SelectMany(a => a.GetTypes())
+        .SelectMany(t => t.GetInterfaces())
+        .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(INotificationHandler<>))
+        .Select(i => i.GetGenericArguments()[0])
+        .ToHashSet();
+
+    events.Where(e => !handled.Contains(e)).Select(e => e.FullName).Should().BeEmpty("every event needs at least one handler");
+}
+```
+
+(with `using Erp.Shared.BuildingBlocks;` and `using Mediator;`). Delete `SalesOrderApprovedAuditHandler` and
+run it: `SalesOrderApproved` is named as unhandled. Put it back.
+
+### Edge cases covered in this lesson
+
+| Test | The edge | Why it matters |
+|---|---|---|
+| `An_event_survives_the_round_trip_through_the_outbox` | A value object in JSON | Found a real bug: `Money` came back as ₱0 |
+| `An_approval_event_is_delivered_through_the_outbox` | After the commit | The reaction really happens |
+| `Too_little_stock_...` (the outbox line) | Rolled back | An event from a change that never happened is never delivered |
+| `A_message_that_keeps_failing_is_parked_with_its_error` | Forever | A poison message is set aside, with its error, and doesn't block the rest |
+| `Delivering_every_event_a_second_time_changes_nothing` | Twice | At-least-once delivery, made safe |
+| `Every_event_has_a_handler` | Nobody listening | A feature that silently does nothing |
+
 ## Mistakes to avoid
 
 - Publishing events yourself, before or after `SaveChangesAsync`. Let the outbox do it, inside the save.
@@ -488,12 +715,14 @@ done
 - Raising events nobody handles "for later". The generator's warning is there to catch exactly that.
 - Putting a value object in an event without `[JsonConstructor]`. It may come back empty, silently.
 - Letting one module read another module's outbox. Each schema has its own.
+- Waiting for the dispatcher with one fixed `Task.Delay`. Poll, with a limit.
+- A test that only passes after other tests. Run each test class alone once in a while.
 
 ## Let's run it!
 
 Run `dotnet test` first: the round-trip test passes now. Then restart the app and approve something. The
 quickest is a small order, which is approved on submit. Click through it in the app, or (with a `$TOKEN`
-from lesson 06):
+from lesson 07):
 
 ```bash
 ID=$(curl -s -X POST http://localhost:5264/api/sales-orders -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
@@ -511,9 +740,18 @@ info: Erp.Modules.Sales.Infrastructure.SalesOrderApprovedAuditHandler[0]
 And the outbox row shows it was delivered:
 
 ```bash
-PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localhost -U postgres -d erp \
+podman exec -i erp-postgres psql -U postgres -d erp \
   -c "SELECT type, payload, processed_utc, attempts FROM sales.outbox_message ORDER BY occurred_utc DESC LIMIT 1;"
 ```
+
+Then the tests, the new outbox ones among them:
+
+```bash
+dotnet test
+```
+
+All green. If you like, watch the parked message: run `A_message_that_keeps_failing_is_parked_with_its_error`
+alone and look at `sales.outbox_message` while it runs, `attempts` climbing to 10.
 
 ## Let's check!
 
@@ -523,11 +761,15 @@ PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localho
 4. What does `FOR UPDATE SKIP LOCKED` protect against?
 5. Why did `Money` come back as ₱0, and what fixed it?
 6. Why does each module have its own outbox table?
+7. How does a test wait for something that happens on a background timer, without a fixed delay?
+8. How does `Delivering_every_event_a_second_time_changes_nothing` imitate a crash, and what does it prove?
+9. Why must a test pass when it's run alone? What went wrong the first time this lesson's tests were?
 
 And that's where this lesson ends. The system now reacts to what happens, and a crash can't make it forget.
-Next time, we prove all of it with tests: the rules, the races, the module walls, and the screens. Good
+Next time, we make the running app visible: traces, metrics, logs and health checks, so you can see what
+it's doing when something goes wrong. Good
 luck, developer!
 
 ---
 
-← [Lesson 10 — Update an order](10-update-order.md) · Next: [Lesson 12 — Testing](12-testing.md) →
+← [Lesson 12 — Containers and CI](12-containers-ci.md) · Next: [Lesson 14 — Observability](14-observability.md) →

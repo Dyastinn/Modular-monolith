@@ -6,10 +6,15 @@
 
   <ItemGroup>
     <PackageReference Include="AwesomeAssertions" />
+    <PackageReference Include="coverlet.collector">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
     <PackageReference Include="Dapper" />
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="Npgsql" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
@@ -20,6 +25,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Erp.Api\Erp.Api.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The same roles script production runs, applied to the test container. -->
+    <None Include="..\..\deploy\postgres\create-roles.sql" Link="create-roles.sql" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

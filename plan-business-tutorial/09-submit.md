@@ -1,4 +1,4 @@
-# Lesson 08 — Submit: Stock, Two Modules, One Transaction
+# Lesson 09 — Submit: Stock, Two Modules, One Transaction
 
 Good day, developer! Today is the lesson where this architecture earns its keep. When a rep submits an order,
 we must set its stock aside, and stock belongs to a different module: Inventory. So we'll build that module,
@@ -21,7 +21,7 @@ begin!
 
 Because a manager shouldn't approve an order you can't fill. The moment an order is submitted, its stock is
 set aside, so "pending approval" really means "we're holding this for you". If the order is later rejected
-or cancelled, the stock goes back ([lesson 09](09-approve-reject-cancel.md)).
+or cancelled, the stock goes back ([lesson 10](10-approve-reject-cancel.md)).
 
 ### Inventory is its own island
 
@@ -233,7 +233,7 @@ internal sealed class Item : Entity<ItemId>
 ```
 
 For now an Inventory item is only its stock: how much is on the shelf, and how much of that is promised.
-[Lesson 16](16-item-catalog.md) makes this class the real item catalog, with SKUs, names and units, and
+[Lesson 17](17-item-catalog.md) makes this class the real item catalog, with SKUs, names and units, and
 turns Sales' copy into exactly that, a copy. Until then, both modules' seeds use the same ids.
 
 ```csharp
@@ -428,7 +428,7 @@ dotnet ef migrations add InitialCreate \
 
 ## 5. Find the order, and lock the customer
 
-Submit is the first command that loads an order someone else may have created, so it must ask lesson 07's
+Submit is the first command that loads an order someone else may have created, so it must ask lesson 08's
 visibility rule. Every later command will ask it too, so it goes on `SalesDbContext`:
 
 ```csharp
@@ -544,7 +544,7 @@ even match.
 
 ## 7. The Submit button
 
-On the order page, the button goes where lesson 07 left a `<MudSpacer />`. In `OrderDetail.razor`, right
+On the order page, the button goes where lesson 08 left a `<MudSpacer />`. In `OrderDetail.razor`, right
 after it:
 
 ```razor
@@ -589,6 +589,249 @@ Look at the comment on the button. A button that only shows on a draft is a conv
 machine is what actually refuses to submit an approved order. If you remove the `@if`, a click still gets
 a clear 422.
 
+## 8. Prove it: races, rollbacks, and a second wall
+
+This lesson made three promises nobody can check by hand: two people grabbing the last kits never both win;
+a failed submit leaves *nothing* behind, in either module; and Sales sees Inventory only through its
+contract.
+
+### The race nobody can test by hand
+
+Two terminals and a fast finger won't make two requests arrive in the same millisecond. A test can:
+
+```csharp
+// tests/Erp.Integration.Tests/InventoryReservationTests.cs
+using AwesomeAssertions;
+using Dapper;
+using Erp.Modules.Inventory.Contracts;
+using Erp.Shared.BuildingBlocks;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Erp.Integration.Tests;
+
+// Each caller gets its own DI scope (connection, transaction), like two simultaneous requests.
+[Collection("Integration")]
+public class InventoryReservationTests(CustomWebAppFactory factory)
+{
+    private const long RestrictedKitId = 3;   // dev seed: on_hand = 8, reserved = 0
+
+    [Fact]
+    public async Task Two_concurrent_reservations_for_the_last_units_only_one_wins()
+    {
+        await SetReserved(RestrictedKitId, 0);
+
+        bool[] results = await Task.WhenAll(
+            ReserveInOwnCommittedTransaction(RestrictedKitId, 5),
+            ReserveInOwnCommittedTransaction(RestrictedKitId, 5));
+
+        results.Count(r => r).Should().Be(1);
+        (await GetReserved(RestrictedKitId)).Should().Be(5);   // the winner's 5; 3 still available
+
+        await SetReserved(RestrictedKitId, 0);
+    }
+
+    [Fact]
+    public async Task A_reservation_rolls_back_with_the_callers_transaction()
+    {
+        await SetReserved(RestrictedKitId, 0);
+
+        await using (var scope = factory.Services.CreateAsyncScope())
+        {
+            var conn = scope.ServiceProvider.GetRequiredService<ISharedConnection>().Connection;
+            await conn.OpenAsync();
+            await using var tx = await conn.BeginTransactionAsync();
+            var stock = scope.ServiceProvider.GetRequiredService<IStockReservation>();
+
+            (await stock.TryReserveAsync(RestrictedKitId, 5, tx, default)).Should().BeTrue();
+            // disposed without a commit
+        }
+
+        (await GetReserved(RestrictedKitId)).Should().Be(0);   // Inventory really joined the caller's transaction
+    }
+
+    private async Task<bool> ReserveInOwnCommittedTransaction(long itemId, decimal qty)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var conn = scope.ServiceProvider.GetRequiredService<ISharedConnection>().Connection;
+        await conn.OpenAsync();
+        await using var tx = await conn.BeginTransactionAsync();
+        var stock = scope.ServiceProvider.GetRequiredService<IStockReservation>();   // the public contract only
+
+        var reserved = await stock.TryReserveAsync(itemId, qty, tx, default);
+        await tx.CommitAsync();   // commit, so the race is real
+        return reserved;
+    }
+
+    private async Task<decimal> GetReserved(long itemId)
+    {
+        await using var conn = factory.OpenDatabase();
+        return await conn.ExecuteScalarAsync<decimal>("SELECT reserved FROM inventory.item WHERE id = @itemId", new { itemId });
+    }
+
+    private async Task SetReserved(long itemId, decimal reserved)
+    {
+        await using var conn = factory.OpenDatabase();
+        await conn.ExecuteAsync("UPDATE inventory.item SET reserved = @reserved WHERE id = @itemId", new { itemId, reserved });
+    }
+}
+```
+
+`Task.WhenAll` starts both reservations at once, each in its own scope, so each has its own connection and
+transaction, exactly like two real requests. If the reservation checked the stock in C# and then wrote, both
+would win now and then. Here, the check is in the `UPDATE`'s `WHERE`, so exactly one wins, every time. And the
+second test proves the transaction really spans the modules: dispose it without committing, and Inventory's
+change disappears too.
+
+Make the race test fail once. In `StockService`, replace the atomic update with the obvious version: read
+`on_hand - reserved` first, then `UPDATE` if there's enough. Run the race test a few times. Some runs it
+passes, some it fails with *two* winners. That's what a race looks like: wrong only sometimes, and never when
+you're watching. Put the atomic version back.
+
+Notice the test's own `SetReserved(..., 0)` at the start and the end. Tests share one database, so a test
+that changes shared rows puts them back.
+
+### The whole submit, through the front door
+
+Add to `SalesOrderEdgeCaseTests`:
+
+```csharp
+private async Task<decimal> Balance(long customerId)
+{
+    await using var conn = factory.OpenDatabase();
+    return await conn.ExecuteScalarAsync<decimal>("SELECT outstanding_balance FROM sales.customer WHERE id = @customerId", new { customerId });
+}
+
+private async Task<decimal> Reserved(long itemId)
+{
+    await using var conn = factory.OpenDatabase();
+    return await conn.ExecuteScalarAsync<decimal>("SELECT reserved FROM inventory.item WHERE id = @itemId", new { itemId });
+}
+
+[Fact]
+public async Task Submitting_twice_is_refused_and_charges_once()
+{
+    var rep = await factory.ClientFor(Rep);
+    var customerId = await NewCustomer();
+    var id = await CreateOrder(rep, customerId, 1, 2);
+
+    (await rep.PostAsync($"/api/sales-orders/{id}/submit", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+    (await rep.PostAsync($"/api/sales-orders/{id}/submit", null)).StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+
+    (await Balance(customerId)).Should().Be(50);
+}
+
+// Approval and the charge happen before the stock check fails; the transaction must take all of it back.
+[Fact]
+public async Task Too_little_stock_refuses_the_submit_and_leaves_everything_as_it_was()
+{
+    const long kit = 3;   // dev seed: 8 on hand
+    await using var conn = factory.OpenDatabase();
+    var reservedBefore = await Reserved(kit);
+    await conn.ExecuteAsync("UPDATE inventory.item SET reserved = 6 WHERE id = @kit", new { kit });
+    try
+    {
+        var manager = await factory.ClientFor(Manager);
+        var customerId = await NewCustomer();
+        var id = await CreateOrder(manager, customerId, kit, 3);   // 3 wanted, 2 available
+
+        var submit = await manager.PostAsync($"/api/sales-orders/{id}/submit", null);
+
+        submit.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await manager.GetFromJsonAsync<Detail>($"/api/sales-orders/{id}"))!.Status.Should().Be("Draft");
+        (await Reserved(kit)).Should().Be(6);
+        (await Balance(customerId)).Should().Be(0);
+    }
+    finally
+    {
+        await conn.ExecuteAsync("UPDATE inventory.item SET reserved = @reservedBefore WHERE id = @kit", new { reservedBefore, kit });
+    }
+}
+```
+
+(with `using Dapper;` at the top). Read that second one closely, because it's the most important test of the
+lesson. A ₱1,500 order is under the threshold, so `Submit` *approves it and charges the customer* before the
+handler even asks for stock. Then the stock check fails. If anything had committed along the way, the
+customer would owe ₱1,500 for an order that never happened. The test proves the order is still a draft, the
+stock untouched, the balance zero. The `try`/`finally` puts the shared row back even when an assertion fails.
+
+And in `Another_reps_order_is_404_for_reading_submitting_and_editing`, the submit joins the read:
+
+```csharp
+(await other.PostAsync($"/api/sales-orders/{id}/submit", null)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+```
+
+### Three more walls
+
+We now have two modules, and the rules for how they may reference each other. Make the module list in
+`ModuleBoundaryTests` two long, add a list of contracts, and three tests:
+
+```csharp
+// tests/Erp.Architecture.Tests/ModuleBoundaryTests.cs (the lists, and three more tests)
+private static readonly Assembly[] Modules =
+    [typeof(SalesModule).Assembly, typeof(InventoryModule).Assembly];
+
+private static readonly Assembly[] ContractsAssemblies = [typeof(IStockReservation).Assembly];
+
+[Fact]
+public void A_module_references_other_modules_only_through_their_Contracts()
+{
+    foreach (var module in Modules)
+    {
+        var illegal = module.GetReferencedAssemblies()
+            .Select(a => a.Name!)
+            .Where(n => n.StartsWith("Erp.Modules.") && !n.EndsWith(".Contracts"));
+
+        illegal.Should().BeEmpty($"{module.GetName().Name} may reference another module's .Contracts only");
+    }
+}
+
+[Fact]
+public void Contracts_reference_no_module_so_no_cycle_can_form()
+{
+    foreach (var contracts in ContractsAssemblies)
+        contracts.GetReferencedAssemblies().Select(a => a.Name!)
+            .Where(n => n.StartsWith("Erp.Modules."))
+            .Should().BeEmpty($"{contracts.GetName().Name} must not depend on any module");
+}
+
+[Fact]
+public void Only_the_host_references_shared_infrastructure()
+{
+    foreach (var module in Modules.Concat(ContractsAssemblies))
+        module.GetReferencedAssemblies().Select(a => a.Name)
+            .Should().NotContain("Erp.Shared.Infrastructure",
+                $"{module.GetName().Name} must code against BuildingBlocks interfaces, never their implementations");
+}
+```
+
+(with `using Erp.Modules.Inventory;` and `using Erp.Modules.Inventory.Contracts;`). Add the reference from
+Sales to Inventory's *main* project, just to see it, and run them:
+
+```
+Expected illegal to be empty because Erp.Modules.Sales may reference another module's .Contracts only,
+but found {"Erp.Modules.Inventory"}.
+```
+
+One thing to know: a compiler drops a reference to an assembly whose types you never use, so the test only
+sees the reference once some code in Sales actually uses an Inventory type. That's still the moment it
+matters. Remove the reference.
+
+### Edge cases covered in this lesson
+
+| Test | The edge | Why it matters |
+|---|---|---|
+| `Two_concurrent_reservations_for_the_last_units_only_one_wins` | At the same instant | Overselling stock you don't have |
+| `A_reservation_rolls_back_with_the_callers_transaction` | Half-done, across modules | Stock reserved for an order that was never submitted |
+| `Submitting_twice_is_refused_and_charges_once` | Twice | A double-click charges the customer twice |
+| `Too_little_stock_refuses_the_submit_and_leaves_everything_as_it_was` | Half-done, through HTTP | Approval and charge happen before the stock check fails |
+| `Orders_awaiting_approval_count_against_credit` | Money in flight | Two big orders awaiting approval mustn't add up past the limit |
+| `Another_reps_order_is_404_for_reading_submitting_and_editing` (submit) | Someone else's draft | Submitting is acting on it; still a 404 |
+| `A_module_references_other_modules_only_through_their_Contracts` | One wrong reference | Islands become one tangled island |
+| `Contracts_reference_no_module_so_no_cycle_can_form` | A contract that leans on a module | The first step towards a reference cycle |
+| `Only_the_host_references_shared_infrastructure` | A module reaching for the connection | Modules code against interfaces, never implementations |
+
+`Orders_awaiting_approval_count_against_credit` is in the reference build's `SalesOrderWorkflowTests.cs`.
+
 ## How a request flows
 
 ```mermaid
@@ -610,7 +853,7 @@ sequenceDiagram
 
 One connection, one transaction, two modules. Clear so far?
 
-The `PendingTotalAsync` call from lesson 06 earns its place now: at last, orders really can be waiting for
+The `PendingTotalAsync` call from lesson 07 earns its place now: at last, orders really can be waiting for
 a manager.
 
 ## Mistakes to avoid
@@ -621,6 +864,8 @@ a manager.
 - Committing inside Inventory. The one who started the transaction commits it.
 - Forgetting the customer lock. Two submits for one customer can slip past the credit limit together.
 - Loading an order by id without asking `IsVisibleTo`. Use `GetVisibleOrderAsync` in every command.
+- Testing a race with `Thread.Sleep` and hope. Start both at once with `Task.WhenAll`, each in its own scope.
+- Changing a shared seeded row in a test without putting it back. The next test inherits your mess.
 
 ## Let's run it!
 
@@ -648,8 +893,15 @@ PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localho
 
 Item 3 shows `reserved = 5`, not 10. Order A has status 2 (Approved: ₱2,500 is under the threshold, so it was
 approved on submit), and order B is still 0 (Draft): its failed reservation rolled back everything. Those two
-calls ran one after another; [lesson 12](12-testing.md) adds a test that fires them at the exact same time
-and proves only one wins.
+calls ran one after another; the race test in step 8 fires them at the exact same time and proves only one
+wins. Run the tests:
+
+```bash
+dotnet test
+```
+
+All green, with the race test among them. Run it ten times in a row if you like
+(`dotnet test --filter "FullyQualifiedName~Two_concurrent"`); a race that's really closed never loses.
 
 Now in the app, as `rep@erp.local`: create an order for Acme with 2 Widgets, open it, and click **Submit**.
 "Submitted. Stock is reserved." appears, the status turns green, and the history says it was approved
@@ -665,6 +917,10 @@ approval", in amber, waiting for a manager. That's next lesson.
 5. The third of three lines is out of stock. What happens to the first two reservations, and why?
 6. Two reps submit orders for the same customer at the same instant. What does `FOR UPDATE` make the second
    one do?
+7. How does the race test make two reservations arrive at the same instant, and why does each get its own scope?
+8. A ₱1,500 order is approved and charged before its stock check fails. Which test proves the charge
+   disappears, and what does it check?
+9. Name the three architecture tests this lesson adds, and what each one prevents.
 
 And that's where this lesson ends. You've built a second module, a contract between the two, and a submit
 that's safe under real-world races. Next time, managers get their say: approving, rejecting and cancelling.
@@ -672,4 +928,4 @@ Good luck, developer!
 
 ---
 
-← [Lesson 07 — Find orders](07-find-orders.md) · Next: [Lesson 09 — Approve, reject, cancel](09-approve-reject-cancel.md) →
+← [Lesson 08 — Find orders](08-find-orders.md) · Next: [Lesson 10 — Approve, reject, cancel](10-approve-reject-cancel.md) →

@@ -25,7 +25,7 @@ internal sealed class SearchSuppliersHandler(IDbConnectionFactory connections)
 {
     public async ValueTask<PagedResult<SupplierDto>> Handle(SearchSuppliersQuery q, CancellationToken ct)
     {
-        var args = new { Search = string.IsNullOrWhiteSpace(q.Search) ? null : q.Search.Trim(), q.ActiveOnly, q.Page, q.PageSize };
+        var args = new { Search = SearchText.ForLike(q.Search), q.ActiveOnly, q.Page, q.PageSize };
         await using var conn = connections.Create();
         using var multi = await conn.QueryMultipleAsync(new CommandDefinition(
             """

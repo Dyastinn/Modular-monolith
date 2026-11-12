@@ -84,4 +84,25 @@ public class PurchaseOrderTests
         po.Close();
         po.Status.Should().Be(PurchaseOrderStatus.Closed);
     }
+
+    [Fact]
+    public void A_refused_receipt_leaves_the_order_exactly_as_it_was()
+    {
+        var po = Draft(Line(1, 10, 300));
+        po.Approve(Admin, Now);
+
+        // The same line twice: 4 fits, but 4 + 7 is more than the 10 ordered.
+        po.Invoking(p => p.Receive([(0, new Quantity(4)), (0, new Quantity(7))])).Should().Throw<DomainException>();
+
+        po.Lines.Single().Outstanding.Should().Be(10);
+        po.Status.Should().Be(PurchaseOrderStatus.Approved);
+    }
+
+    [Fact]
+    public void A_refused_line_leaves_the_old_lines()
+    {
+        var po = Draft(Line(1, 10, 300));
+        po.Invoking(p => p.SetLines([Line(2, 1, 10), Line(3, 1, 10, active: false)])).Should().Throw<DomainException>();
+        po.Lines.Should().ContainSingle().Which.ItemId.Should().Be(new ItemId(1));
+    }
 }

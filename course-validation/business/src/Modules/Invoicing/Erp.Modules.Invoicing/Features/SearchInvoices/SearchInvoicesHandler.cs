@@ -21,7 +21,7 @@ internal sealed class SearchInvoicesValidator : AbstractValidator<SearchInvoices
     {
         RuleFor(x => x.Page).ValidPage();
         RuleFor(x => x.PageSize).ValidPageSize();
-        RuleFor(x => x.Status).Must(s => s is null || Enum.TryParse<InvoiceStatus>(s, true, out _))
+        RuleFor(x => x.Status).Must(s => s is null || Enum.GetNames<InvoiceStatus>().Contains(s, StringComparer.OrdinalIgnoreCase))
             .WithMessage(x => $"Unknown status '{x.Status}'.");
     }
 }
@@ -35,7 +35,7 @@ internal sealed class SearchInvoicesHandler(IDbConnectionFactory connections, IC
         {
             q.CustomerId,
             Status = q.Status is null ? (int?)null : (int)Enum.Parse<InvoiceStatus>(q.Status, true),
-            Search = string.IsNullOrWhiteSpace(q.Search) ? null : q.Search.Trim(),
+            Search = SearchText.ForLike(q.Search),
             OverdueOn = q.OverdueOnly ? clock.Today : (DateOnly?)null,
             q.Page, q.PageSize
         };

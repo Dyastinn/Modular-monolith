@@ -1,6 +1,6 @@
-# Lesson 14 — Customers: Maintenance, and a Function's Second Version
+# Lesson 15 — Customers: Maintenance, and a Function's Second Version
 
-Good day, developer! Our five customers have lived in the seed script since lesson 04. A real business adds
+Good day, developer! Our five customers have lived in the seed script since lesson 05. A real business adds
 customers every week, raises a credit limit after a good year, and blocks a customer who stopped paying. And
 when we start invoicing, each customer needs a tax number, an address, and payment terms. Today Sales
 managers get a customer screen. Along the way you'll change a released SQL function the right way, with a
@@ -36,8 +36,8 @@ and blocking them, are for managers. Reps keep reading customers, because they p
 
 ### Changing a released function
 
-The order form reads customers through `sales.search_customers`, which shipped in lesson 07's migration. It
-needs the three new columns now. Lesson 07's rule says we never edit a released script, so we add
+The order form reads customers through `sales.search_customers`, which shipped in lesson 08's migration. It
+needs the three new columns now. Lesson 08's rule says we never edit a released script, so we add
 `sales.search_customers.v2.sql` and a migration that applies it.
 
 There's a PostgreSQL detail to know: `CREATE OR REPLACE FUNCTION` can replace a function's body, but not
@@ -46,7 +46,7 @@ return type of existing function". So version 2 starts by dropping version 1.
 
 ## 1. The customer grows
 
-Here's lesson 03's `Create`, before:
+Here's lesson 04's `Create`, before:
 
 ```csharp
 public static Customer Create(string name, Money creditLimit)
@@ -194,7 +194,7 @@ migrationBuilder.Sql("DROP FUNCTION IF EXISTS sales.search_customers(bigint, tex
 migrationBuilder.Sql(EmbeddedSql.Read(typeof(AddCustomerDetails).Assembly, "sales.search_customers.v1.sql"));
 ```
 
-(add `using Erp.Shared.BuildingBlocks;`). Look at what happens on a brand-new database: lesson 07's
+(add `using Erp.Shared.BuildingBlocks;`). Look at what happens on a brand-new database: lesson 08's
 migration creates version 1, and this one replaces it with version 2, in order. That's why the old file
 stays exactly as it was: the old migration still reads it.
 
@@ -254,7 +254,7 @@ internal sealed class CreateCustomerHandler(SalesDbContext db) : ICommandHandler
 }
 ```
 
-The payment-terms range appears twice, once in the validator and once in the domain. That's lesson 09's
+The payment-terms range appears twice, once in the validator and once in the domain. That's lesson 10's
 reason-check pattern again: the validator gives a fast, well-formed 400 with every field's problem at once;
 the domain guarantees the rule even for code that never passes through a validator.
 
@@ -335,7 +335,7 @@ internal sealed class SetCustomerBlockedHandler(SalesDbContext db) : ICommandHan
 `FindAsync` looks the customer up by its key: a one-line way to load by id. And `if (cmd.Blocked)` isn't a
 business `if`. It doesn't decide anything; it only picks which domain verb the caller asked for.
 
-Lesson 09's `xmin` row version on `Customer` protects these too. A manager raising Acme's limit while an
+Lesson 10's `xmin` row version on `Customer` protects these too. A manager raising Acme's limit while an
 approval charges Acme's balance can't silently undo either change: the second save gets a 409.
 
 ```csharp
@@ -388,7 +388,7 @@ public sealed record Customer(long Id, string Name, string? Tin, string? Address
     decimal CreditLimit, decimal OutstandingBalance, decimal PendingTotal, decimal AvailableCredit);
 ```
 
-The form for adding and editing is a dialog, like lesson 09's reason dialog, but with five fields:
+The form for adding and editing is a dialog, like lesson 10's reason dialog, but with five fields:
 
 ```razor
 @* src/Erp.Web/Pages/Sales/CustomerDialog.razor *@
@@ -540,6 +540,77 @@ Available credit: <b>@Format.Peso(_customer.AvailableCredit)</b> · Terms: @_cus
 
 And in the UI test's `Every_page_opens_without_an_error`, add `"/customers"` to `pages`.
 
+## 5. Prove it: the customer's edges
+
+`Customer.Create` grew three parameters, so the integration tests' helper grows with it. In
+`SalesOrderEdgeCaseTests.NewCustomer`, before:
+
+```csharp
+var customer = Customer.Create(name ?? $"Edge {Guid.NewGuid():N}", new Money(creditLimit));
+```
+
+After:
+
+```csharp
+var customer = Customer.Create(name ?? $"Edge {Guid.NewGuid():N}", null, null, new Money(creditLimit), 30);
+```
+
+The new rules have edges of their own. In the unit tests' `BoundaryTests.cs`, add:
+
+```csharp
+[Theory]
+[InlineData(0, true)]      // cash on delivery
+[InlineData(365, true)]
+[InlineData(-1, false)]
+[InlineData(366, false)]
+public void Payment_terms_run_from_0_to_365_days(int days, bool allowed)
+{
+    var create = () => Customer.Create("Acme", null, null, Money.Zero, days);
+    if (allowed) create.Should().NotThrow();
+    else create.Should().Throw<DomainException>();
+}
+
+[Theory]
+[InlineData("")]
+[InlineData("   ")]
+public void A_customer_needs_a_name(string name) =>
+    FluentActions.Invoking(() => Customer.Create(name, null, null, Money.Zero, 30)).Should().Throw<DomainException>();
+```
+
+and in `RulesFoundByMutationTests.cs`, the rule Stryker would find the moment you run it:
+
+```csharp
+[Fact]
+public void A_blank_TIN_or_address_is_stored_as_nothing_and_the_rest_is_trimmed()
+{
+    var customer = Customer.Create("  Acme  ", "  ", " Makati ", Money.Zero, 30);
+
+    customer.Name.Should().Be("Acme");
+    customer.Tin.Should().BeNull();
+    customer.Address.Should().Be("Makati");
+}
+
+[Fact]
+public void An_unblocked_customer_can_order_again()
+{
+    var customer = Make.Customer(blocked: true);
+    customer.Unblock();
+    customer.Invoking(c => c.EnsureNotBlocked()).Should().NotThrow();
+}
+```
+
+A TIN of three spaces stored as `"   "` prints a blank line on every invoice and never matches a search.
+Stored as `null`, it's honestly missing.
+
+| Test | The edge | Why it matters |
+|---|---|---|
+| `Payment_terms_run_from_0_to_365_days` (4 cases) | 0, 365, and one past each | Both ends of the range are allowed; one step past is not |
+| `A_customer_needs_a_name` | Empty, spaces | A customer nobody can find in a list |
+| `A_blank_TIN_or_address_is_stored_as_nothing_and_the_rest_is_trimmed` | Whitespace | Blank is missing, not a value |
+| `An_unblocked_customer_can_order_again` | Undoing | Unblocking really lets them order |
+
+Add `/customers` to the `pages` list in `Every_page_opens_without_an_error`.
+
 ## How a request flows
 
 ```mermaid
@@ -558,7 +629,7 @@ sequenceDiagram
 
 ## Mistakes to avoid
 
-- Editing `sales.search_customers.v1.sql`. Lesson 07's migration reads it; a fresh database would get the
+- Editing `sales.search_customers.v1.sql`. Lesson 08's migration reads it; a fresh database would get the
   wrong function first.
 - Trying `CREATE OR REPLACE` on a function whose result columns changed. Drop it first.
 - Letting the edit form set `OutstandingBalance`. It moves only with orders and payments.
@@ -589,15 +660,15 @@ curl -s -X POST http://localhost:5264/api/customers -H "Authorization: Bearer $M
 # [ "'Payment Terms Days' must be between 0 and 365. You entered 400." ]
 ```
 
-(with `$MGR` signed in as the manager, as in lesson 07). Run `dotnet test` too: the new unit test passes,
+(with `$MGR` signed in as the manager, as in lesson 08). Run `dotnet test` too: the new unit test passes,
 and every integration test still does, because nothing about orders changed.
 
 ## Let's check!
 
-1. Why are TIN, address and payment terms on the customer now, and not in lesson 03?
+1. Why are TIN, address and payment terms on the customer now, and not in lesson 04?
 2. Why does `Create` call `Update`?
 3. What does version 2 of `search_customers` do first, and why?
-4. Why does lesson 07's `search_customers.v1.sql` stay exactly as it was?
+4. Why does lesson 08's `search_customers.v1.sql` stay exactly as it was?
 5. Who may block a customer, and where is that decided?
 6. Why are block and unblock separate endpoints instead of one `PUT`?
 
@@ -608,4 +679,4 @@ luck, developer!
 
 ---
 
-← [Lesson 13 — Observability](13-observability.md) · Next: [Lesson 15 — Users and email](15-users-email.md) →
+← [Lesson 14 — Observability](14-observability.md) · Next: [Lesson 16 — Users and email](16-users-email.md) →

@@ -25,7 +25,7 @@ Paste this whole block before any checkpoint below:
 ```powershell
 $Base = 'http://localhost:5264'     # the port `dotnet run` printed
 $Psql = 'C:\Program Files\PostgreSQL\18\bin\psql.exe'
-$env:PGPASSWORD = 'erp_dev_only'     # the development superuser password from lesson 04
+$env:PGPASSWORD = 'erp_dev_only'     # the development superuser password from lesson 05
 
 function Invoke-Api {
     param(
@@ -81,7 +81,7 @@ inside it. Without `UseBasicParsing`, a *successful* response can fail while bei
 Internet Explorer was never set up. And on 5.1, the error body isn't in `$_.ErrorDetails.Message`, so the
 helper reads it off the response itself. It works the same on PowerShell 7.
 
-`dotnet`, `git`, `docker` and `psql` are the same commands in every shell. Where a checkpoint only uses
+`dotnet`, `git`, `podman` and `psql` are the same commands in every shell. Where a checkpoint only uses
 those, it isn't repeated here.
 
 ## Lesson 01 — the app and the API
@@ -91,20 +91,30 @@ those, it isn't repeated here.
 (Invoke-Api '/sales-orders').Status     # 200, and the body is the app's HTML
 ```
 
-## Lesson 02 — the mediator
+## Lesson 02 — testing
+
+`dotnet test`, `--filter` and `dotnet watch test` are the same in PowerShell. Quote a filter in single
+quotes, so PowerShell leaves the `~` and `=` alone:
+
+```powershell
+dotnet test --filter 'FullyQualifiedName~HostTests'
+dotnet test --logger 'console;verbosity=normal'
+```
+
+## Lesson 03 — the mediator
 
 ```powershell
 (Invoke-Api '/api/ping?message=hello').Body     # pong: hello
-(Invoke-Api '/api/ping?message=').Status        # 500, for now; lesson 06 turns it into a 400
+(Invoke-Api '/api/ping?message=').Status        # 500, for now; lesson 07 turns it into a 400
 ```
 
-## Lesson 04 — the database
+## Lesson 05 — the database
 
 ```powershell
 & $Psql -h localhost -U postgres -d erp -c "SELECT id, name, credit_limit, outstanding_balance, is_blocked FROM sales.customer;"
 ```
 
-## Lesson 05 — sign-in
+## Lesson 06 — sign-in
 
 ```powershell
 $token = Get-Token 'manager@erp.local'
@@ -115,7 +125,19 @@ $token = Get-Token 'manager@erp.local'
 (Invoke-Api '/api/auth/login' -Method Post -Body @{ email = 'rep@erp.local'; password = 'wrong' }).Status                           # 401
 ```
 
-## Lesson 06 — create an order
+The browser tests, against a running app:
+
+```powershell
+Start-Process dotnet 'run --project src/Erp.Api'      # the app, in its own window
+$env:ERP_UI_URL = 'http://localhost:5264'; $env:ERP_UI_SCREENSHOTS = '.\screens'
+dotnet test tests/Erp.Web.UiTests
+Remove-Item Env:ERP_UI_URL, Env:ERP_UI_SCREENSHOTS
+```
+
+Bash sets variables for one command only; PowerShell keeps them for the whole window. That's why the last
+line removes them.
+
+## Lesson 07 — create an order
 
 ```powershell
 $token = Get-Token 'rep@erp.local'
@@ -135,7 +157,7 @@ foreach ($body in $tries) { Show (Invoke-Api '/api/sales-orders' -Method Post -T
 & $Psql -h localhost -U postgres -d erp -c "SELECT id, order_number, status FROM sales.sales_order;"
 ```
 
-## Lesson 07 — find orders, and who sees what
+## Lesson 08 — find orders, and who sees what
 
 ```powershell
 $rep = Get-Token 'rep@erp.local'
@@ -143,7 +165,7 @@ $mgr = Get-Token 'manager@erp.local'
 
 (Invoke-Api '/api/sales-orders?search=acme&pageSize=5' -Token $rep).Body.totalCount
 (Invoke-Api '/api/sales-orders?page=9999' -Token $rep).Body | Select-Object items, totalCount    # no items, but a real total
-Show (Invoke-Api '/api/sales-orders?status=Shipped' -Token $rep)                                   # 400 for now; lesson 17 adds it
+Show (Invoke-Api '/api/sales-orders?status=Shipped' -Token $rep)                                   # 400 for now; lesson 18 adds it
 (Invoke-Api '/api/customers?search=beta' -Token $rep).Body.items[0].availableCredit               # 500.0
 
 $id = (Invoke-Api '/api/sales-orders' -Method Post -Token $mgr -Body @{ customerId = 1; lines = @(@{ itemId = 1; quantity = 1 }) }).Body.id
@@ -153,7 +175,7 @@ $id = (Invoke-Api '/api/sales-orders' -Method Post -Token $mgr -Body @{ customer
 & $Psql -h localhost -U postgres -d erp -c "SELECT * FROM sales.search_sales_orders(NULL, NULL, NULL, NULL, 1, 5);"
 ```
 
-## Lesson 08 — submit reserves stock
+## Lesson 09 — submit reserves stock
 
 ```powershell
 $mgr  = Get-Token 'manager@erp.local'
@@ -169,7 +191,7 @@ Show (Invoke-Api "/api/sales-orders/$b/submit" -Method Post -Token $mgr)      # 
     -c "SELECT id, status FROM sales.sales_order WHERE customer_id = 5;"
 ```
 
-## Lesson 09 — approve, reject, cancel
+## Lesson 10 — approve, reject, cancel
 
 ```powershell
 $rep  = Get-Token 'rep@erp.local'
@@ -187,7 +209,7 @@ $own = (Invoke-Api '/api/sales-orders' -Method Post -Token $mgr -Body $rack).Bod
 Show (Invoke-Api "/api/sales-orders/$own/approve" -Method Post -Token $mgr)     # 422  can't be approved by the person who created it
 ```
 
-## Lesson 10 — edit a draft
+## Lesson 11 — edit a draft
 
 ```powershell
 $token = Get-Token 'rep@erp.local'
@@ -198,27 +220,44 @@ $id = (Invoke-Api '/api/sales-orders' -Method Post -Token $token -Body @{ custom
 Show (Invoke-Api "/api/sales-orders/$id" -Method Put -Token $token -Body @{ lines = @(@{ itemId = 1; quantity = 1 }) })     # 422  Lines can only be changed on a draft order.
 ```
 
-## Lesson 11 — events and the outbox
+## Lesson 12 — containers and CI
+
+Install Podman Desktop, then open it once to create and start the Podman machine, and turn on **Settings →
+Docker compatibility** (that's what lets Testcontainers find it):
 
 ```powershell
-& $Psql -h localhost -U postgres -d erp -c "SELECT type, payload, processed_utc, attempts FROM sales.outbox_message ORDER BY occurred_utc DESC LIMIT 1;"
+winget install -e --id RedHat.Podman-Desktop
+podman run --rm docker.io/library/hello-world
 ```
 
-## Lesson 12 — testing
+Stop the PostgreSQL from lesson 05, in a PowerShell window opened **as administrator**:
 
 ```powershell
-dotnet test
-
-Start-Process dotnet 'run --project src/Erp.Api'      # the app, in its own window
-$env:ERP_UI_URL = 'http://localhost:5264'; $env:ERP_UI_SCREENSHOTS = '.\screens'
-dotnet test tests/Erp.Web.UiTests
-Remove-Item Env:ERP_UI_URL, Env:ERP_UI_SCREENSHOTS
+Stop-Service postgresql-x64-18; Set-Service postgresql-x64-18 -StartupType Disabled
 ```
 
-Bash sets variables for one command only; PowerShell keeps them for the whole window. That's why the last
-line removes them.
+Then, in an ordinary window:
 
-## Lesson 13 — observability
+```powershell
+podman run -d --name erp-postgres `
+  -e POSTGRES_PASSWORD=erp_dev_only `
+  -p 5432:5432 `
+  -v erp-pgdata:/var/lib/postgresql `
+  docker.io/library/postgres:18
+
+podman exec -it erp-postgres psql -U postgres -d erp -c "SELECT name, credit_limit FROM sales.customer;"
+```
+
+From here on, `psql` runs inside the container, so every `& $Psql -h localhost -U postgres -d erp ...` below
+is `podman exec -i erp-postgres psql -U postgres -d erp ...`. Git and GitHub work the same in PowerShell.
+
+## Lesson 13 — events and the outbox
+
+```powershell
+podman exec -i erp-postgres psql -U postgres -d erp -c "SELECT type, payload, processed_utc, attempts FROM sales.outbox_message ORDER BY occurred_utc DESC LIMIT 1;"
+```
+
+## Lesson 14 — observability
 
 ```powershell
 Invoke-RestMethod "$Base/health/live"     # Healthy
@@ -227,7 +266,7 @@ Invoke-RestMethod "$Base/health/ready"    # Healthy; stop PostgreSQL and it says
 (Invoke-WebRequest "$Base/api/sales-orders" -Headers @{ Authorization = "Bearer $token" } -UseBasicParsing).Headers['X-Trace-Id']
 ```
 
-## Lessons 14 to 20
+## Lessons 15 to 20
 
 ```powershell
 # 14: reps don't maintain customers; the validator checks terms
@@ -240,12 +279,12 @@ $clerk = Get-Token 'clerk@erp.local'
 Show (Invoke-Api '/api/shipments' -Method Post -Token $clerk -Body @{ salesOrderId = 1 })
 
 # 19 and 20: replay an event; nothing changes
-& $Psql -h localhost -U postgres -d erp -c "UPDATE inventory.outbox_message SET processed_utc = NULL WHERE type LIKE '%ShipmentRecorded%';"
-& $Psql -h localhost -U postgres -d erp -c "UPDATE invoicing.outbox_message SET processed_utc = NULL WHERE type LIKE '%PaymentRecorded%';"
-& $Psql -h localhost -U postgres -d erp -c "SELECT number, status FROM invoicing.invoice ORDER BY id;" -c "SELECT * FROM sales.applied_payment;"
+podman exec -i erp-postgres psql -U postgres -d erp -c "UPDATE inventory.outbox_message SET processed_utc = NULL WHERE type LIKE '%ShipmentRecorded%';"
+podman exec -i erp-postgres psql -U postgres -d erp -c "UPDATE invoicing.outbox_message SET processed_utc = NULL WHERE type LIKE '%PaymentRecorded%';"
+podman exec -i erp-postgres psql -U postgres -d erp -c "SELECT number, status FROM invoicing.invoice ORDER BY id;" -c "SELECT * FROM sales.applied_payment;"
 ```
 
-## Lesson 22 — security hardening
+## Lesson 23 — security hardening
 
 ```powershell
 $rep = Get-Token 'rep@erp.local'
@@ -266,25 +305,14 @@ dotnet run --project src/Erp.Api --no-launch-profile     # InvalidOperationExcep
 Remove-Item Env:ASPNETCORE_ENVIRONMENT, Env:ConnectionStrings__ErpDb
 ```
 
-And the least-privilege accounts:
+And the least-privilege accounts: every `dotnet test` already creates them in its own container and runs
+the whole suite as `erp_app`, so there's nothing extra to type.
 
-```powershell
-& $Psql -h localhost -U postgres -v db=erp_roles_check -v owner_password=owner_dev_only -v app_password=app_dev_only `
-    -f deploy/postgres/create-roles.sql
+## Lesson 24 — deploying with Podman
 
-$env:ERP_TEST_DB       = 'Host=localhost;Database=erp_roles_check;Username=erp_app;Password=app_dev_only'
-$env:ERP_TEST_DB_OWNER = 'Host=localhost;Database=erp_roles_check;Username=erp_owner;Password=owner_dev_only'
-dotnet test tests/Erp.Integration.Tests
-Remove-Item Env:ERP_TEST_DB, Env:ERP_TEST_DB_OWNER     # so the next `dotnet test` uses its own database again
-
-$env:PGPASSWORD = 'app_dev_only'
-& $Psql -h localhost -U erp_app -d erp_roles_check -c "DROP TABLE sales.customer;"     # ERROR:  must be owner of table customer
-$env:PGPASSWORD = 'erp_dev_only'
-```
-
-## Lessons 23 and 24
-
-Their `docker compose` commands are the same in PowerShell.
+The server is Linux, so its commands are bash. To try the stack on your Windows machine, the `podman compose`
+commands are the same in PowerShell; Podman Desktop's machine runs the containers, and it needs a Compose
+program to hand the file to (Podman Desktop offers to install one; look for **Compose** in its settings).
 
 ## The translation table
 
@@ -296,7 +324,7 @@ Their `docker compose` commands are the same in PowerShell.
 | `-H "Authorization: Bearer $TOKEN"` | `-Token $token` |
 | `-X POST -d '{"a":1}'` | `-Method Post -Body @{ a = 1 }` |
 | `jq .detail` | `.Body.detail`, or `Show (...)` |
-| `PGPASSWORD=x psql ...` | `$env:PGPASSWORD = 'x'; & $Psql ...` |
+| `PGPASSWORD=x psql ...` | `$env:PGPASSWORD = 'x'; & $Psql ...` (from lesson 12: `podman exec -i erp-postgres psql ...`) |
 | `NAME=value command` | `$env:NAME = 'value'; command; Remove-Item Env:NAME` |
 | a line ending in `\` | a line ending in a backtick `` ` `` |
 

@@ -33,7 +33,7 @@ internal sealed class SearchItemsHandler(IDbConnectionFactory connections) : IQu
             SELECT * FROM inventory.search_items(@Search, @ActiveOnly, @Page, @PageSize);
             SELECT inventory.count_items(@Search, @ActiveOnly);
             """,
-            new { Search = string.IsNullOrWhiteSpace(q.Search) ? null : q.Search.Trim(), q.ActiveOnly, q.Page, q.PageSize },
+            new { Search = SearchText.ForLike(q.Search), q.ActiveOnly, q.Page, q.PageSize },
             cancellationToken: ct));
 
         var items = (await multi.ReadAsync<ItemRow>())

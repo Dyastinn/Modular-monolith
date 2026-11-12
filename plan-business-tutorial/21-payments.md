@@ -1,4 +1,4 @@
-# Lesson 20 — Payments and Receivables: The Money Comes In
+# Lesson 21 — Payments and Receivables: The Money Comes In
 
 Good day, developer! Invoices go out; today the money comes back. The accountant records each payment
 against its invoice (cash, check, bank transfer, part or whole) and the invoice knows what's still owed. Then
@@ -26,16 +26,16 @@ each payment exactly once, and the payment dialog, aging and withholding tax scr
 
 ### Two balances, one truth
 
-Since lesson 03, Sales has kept each customer's `OutstandingBalance`: approved orders not yet paid for. It's
+Since lesson 04, Sales has kept each customer's `OutstandingBalance`: approved orders not yet paid for. It's
 what the credit check reads, and it must go down when money comes in. But payments belong to Invoicing.
 Sales may not read Invoicing's tables, and Invoicing may not change Sales' customers.
 
 So Invoicing announces each payment with an integration event, and Sales lowers the balance itself, like
-lesson 16's catalog copy. A voided payment is announced too, and Sales puts the amount back.
+lesson 17's catalog copy. A voided payment is announced too, and Sales puts the amount back.
 
 ### Exactly once, from at least once
 
-Lesson 11's outbox delivers at least once. For the catalog, delivering twice was harmless: writing the same
+Lesson 13's outbox delivers at least once. For the catalog, delivering twice was harmless: writing the same
 name twice changes nothing. For money, it's a disaster: the same ₱50,000 payment applied twice takes ₱100,000
 off what the customer owes.
 
@@ -51,7 +51,7 @@ This pattern has a name, the **inbox**: the receiving side remembers what it has
 
 A customer owes ₱300 but pays ₱500. The invoice can't take more than its balance (the domain refuses), so
 that happens across invoices: the balance in Sales is lower than what a payment covers, because another
-order was cancelled meanwhile. Sales' balance never goes below zero (lesson 03's `DeductFromBalance`), so the
+order was cancelled meanwhile. Sales' balance never goes below zero (lesson 04's `DeductFromBalance`), so the
 applied payment records what was **actually** deducted, ₱300. If that payment is later voided, Sales puts
 back exactly ₱300, not ₱500. The overpayment itself is the accountant's to sort out with the customer, outside
 the system.
@@ -86,7 +86,7 @@ last month's report today: invoices issued after that day, and payments made aft
 
 ## 1. Invoices take payments
 
-The invoice grows. Its status gets the two numbers lesson 19 left free:
+The invoice grows. Its status gets the two numbers lesson 20 left free:
 
 ```csharp
 internal enum InvoiceStatus { Issued = 0, PartiallyPaid = 1, Paid = 2, Void = 3 }
@@ -136,7 +136,7 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
     public IReadOnlyList<Payment> Payments => _payments;
     public Money AmountPaid { get; private set; }   // everything settled: money received plus tax withheld
     public Money BalanceDue => Total - AmountPaid;
-    // ... everything from lesson 19; Issue sets AmountPaid = Money.Zero ...
+    // ... everything from lesson 20; Issue sets AmountPaid = Money.Zero ...
 
     // taxWithheld: the creditable withholding tax the customer deducted (BIR Form 2307). It settles the invoice like money does.
     public void RecordPayment(PaymentId id, Money amount, Money taxWithheld, DateOnly paidOn, PaymentMethod method, string? reference,
@@ -192,7 +192,7 @@ What each rule protects:
 - **No payment over the balance.** Money in, plus tax withheld, can never make an invoice "more than paid".
 - **Sales hears the settled amount.** For the customer's balance, ₱8.89 withheld is as good as ₱8.89 paid.
 - **No payment dated before the invoice, or in the future.** Both are typing mistakes that would wreck the
-  aging report. "Future" means after *today in the business's time zone*, lesson 19's `clock.Today`, passed
+  aging report. "Future" means after *today in the business's time zone*, lesson 20's `clock.Today`, passed
   in as `today` so the rule stays testable.
 - **The status follows the money.** `RefreshStatus` works it out from the amounts every time; it's never set
   by hand. Void a payment on a paid invoice, and it's partly paid again.
@@ -201,7 +201,7 @@ What each rule protects:
 
 ## 2. The events, in Invoicing's window
 
-Invoicing's Contracts project (lesson 19) gets two events, because Sales must handle them:
+Invoicing's Contracts project (lesson 20) gets two events, because Sales must handle them:
 
 ```bash
 dotnet add src/Modules/Sales/Erp.Modules.Sales reference src/Modules/Invoicing/Erp.Modules.Invoicing.Contracts
@@ -219,7 +219,7 @@ public sealed record PaymentRecorded(long PaymentId, long CustomerId, decimal Am
 public sealed record PaymentVoided(long PaymentId, long CustomerId, decimal Amount) : IDomainEvent;
 ```
 
-And lesson 16's trap, avoided this time on purpose: now that it holds events, the Contracts assembly goes into
+And lesson 17's trap, avoided this time on purpose: now that it holds events, the Contracts assembly goes into
 `options.Assemblies` in `Program.cs`.
 
 ```csharp
@@ -339,14 +339,14 @@ internal sealed class VoidPaymentHandler(InvoicingDbContext db, IClock clock) : 
 ```
 
 One `SaveChangesAsync` writes the payment, the invoice's new totals, and the event in the outbox. There's no
-"tell Sales" call anywhere in the handler: the domain raised the event, and lesson 11's interceptor did the
+"tell Sales" call anywhere in the handler: the domain raised the event, and lesson 13's interceptor did the
 rest.
 
 The endpoints, in `RecordPaymentEndpoint.cs`, take a `RecordPaymentRequest(decimal Amount, DateOnly PaidOn,
 PaymentMethod Method, string? Reference, decimal TaxWithheld = 0)` and a `VoidRequest(string Reason)`, both for
-`InvoicingRoles.Accountants`. (Move `VoidRequest` here from lesson 19's void endpoint: both voids share it.)
+`InvoicingRoles.Accountants`. (Move `VoidRequest` here from lesson 20's void endpoint: both voids share it.)
 
-The method arrives as `"BankTransfer"` from the app, and the enum converter from lesson 19 reads it by name.
+The method arrives as `"BankTransfer"` from the app, and the enum converter from lesson 20 reads it by name.
 
 ## 5. Sales applies each payment once
 
@@ -438,7 +438,7 @@ internal sealed class PaymentVoidedHandler(SalesDbContext db, IClock clock) : IN
 }
 ```
 
-The customer's `xmin` from lesson 09 protects this too: a payment lowering the balance while a manager
+The customer's `xmin` from lesson 10 protects this too: a payment lowering the balance while a manager
 approves an order that raises it can't lose either change; the loser gets a concurrency error, and the outbox
 retries it with fresh numbers.
 
@@ -468,7 +468,7 @@ public void A_payment_never_takes_the_balance_below_zero()
 ## 6. Reads: version 2 of the invoice search, and the aging report
 
 Invoices now need `amount_paid` in their results, an "overdue" filter, and their payments. That changes
-lesson 19's released functions, so it's lesson 14's recipe: `invoicing.search_invoices.v2.sql` starts by
+lesson 20's released functions, so it's lesson 15's recipe: `invoicing.search_invoices.v2.sql` starts by
 dropping `search_invoices`, `count_invoices` and `get_invoice` (their parameters or results change), then
 creates:
 
@@ -527,7 +527,7 @@ main query sorts those amounts into buckets with `CASE`. In PostgreSQL, subtract
 gives a number of days, which is what makes `p_as_of - o.due_date BETWEEN 1 AND 30` read so plainly.
 
 It reads only Invoicing's own tables: the customer's name was copied onto each invoice at issue. That's
-lesson 19's snapshot paying off a second time.
+lesson 20's snapshot paying off a second time.
 
 Ship both files in one migration, `AddPaymentReads`, with the old functions put back in `Down`. The slice:
 
@@ -564,7 +564,7 @@ internal sealed class ReceivablesAgingHandler(IDbConnectionFactory connections, 
 ```
 
 `GET /reports/receivables-aging` takes an optional `DateOnly? asOf` (today, in the business's time zone, if
-it's missing), for `InvoicingRoles.Readers`. Dapper fills the `DateOnly` parameter through lesson 18's type
+it's missing), for `InvoicingRoles.Readers`. Dapper fills the `DateOnly` parameter through lesson 19's type
 handler. The totals row is summed in C# from the rows already read; a second query would add nothing.
 
 The PDF gets its payment rows back. In `InvoicePdf`, the model gains `decimal AmountPaid`, and after the
@@ -708,7 +708,7 @@ public sealed record AgingReport(DateOnly AsOf, List<AgingRow> Customers, AgingR
 | Screen | What changes |
 |---|---|
 | **Invoices** | A **Balance due** column, and an "Overdue only" switch that adds `overdueOnly=true` (and reads it from the address, for the tile below) |
-| **One invoice** | Paid and balance rows under the total; a **Payments** table with each payment's date, method, reference, amount and who recorded it (lesson 15's user directory), void ones struck through with their reason; a **Record payment** button while there's a balance; a **Void** link on each live payment (`ReasonDialog` again) |
+| **One invoice** | Paid and balance rows under the total; a **Payments** table with each payment's date, method, reference, amount and who recorded it (lesson 16's user directory), void ones struck through with their reason; a **Record payment** button while there's a balance; a **Void** link on each live payment (`ReasonDialog` again) |
 | **Payment dialog** | Amount received (starting at the balance due), **tax withheld** (with a hint: "certified on BIR Form 2307"), date (`MudDatePicker`, starting today), method (`MudSelect` over the four names), reference |
 | **Receivables aging** (`/receivables-aging`) | An as-of date picker and a `MudSimpleTable` of the report, with the totals row in bold |
 | **Withholding tax** (`/withholding-tax`, accountants and admins) | A year field; per customer and quarter, withheld, certified and missing (in red), with **Record 2307** on rows still missing; under it, the certificates received, each with a **Void** button |
@@ -807,6 +807,43 @@ It needs the order's number, read right after the rep submits: `var orderNumber 
 Rename the test `From_order_to_paid_invoice_through_the_screens`, and add `"/receivables-aging"` and
 `"/withholding-tax"` to `pages`.
 
+### Applied once, whatever happens
+
+`PaymentRecorded` and `PaymentVoided` change Sales' balance, through the `applied_payment` inbox. The
+redelivery test's snapshot gains one more line:
+
+```csharp
+|| '|' || (SELECT COUNT(*) FROM sales.applied_payment)::text
+```
+
+and the customer balance already in the snapshot does the rest. Redeliver every payment event, and every
+balance must stay exactly where it was.
+
+The browser flow reaches its name at last. After the accountant opens the invoice:
+
+```csharp
+// The accountant records full payment.
+await accountant.GetByRole(AriaRole.Button, new() { Name = "Record payment" }).ClickAsync();
+await accountant.GetByRole(AriaRole.Button, new() { Name = "Record", Exact = true }).ClickAsync();
+await accountant.Locator(".mud-chip").Filter(new() { HasText = "Paid" }).WaitForAsync();
+await Shot(accountant, "accountant-paid");
+
+(await accountant.GetByRole(AriaRole.Row).Filter(new() { HasText = "Balance due" }).InnerTextAsync()).Should().Contain("₱0.00");
+```
+
+The payment dialog fills in the balance due, so pressing **Record** pays the invoice in full. `Exact = true`
+matters: without it, "Record" also matches the "Record payment" button behind the dialog.
+
+| Test | The edge | Why it matters |
+|---|---|---|
+| `A_payment_can_never_exceed_the_balance_or_be_dated_oddly` | One centavo over; before the invoice; in the future | Typos that would put the books out |
+| `A_payment_never_takes_the_balance_below_zero` | Below zero | An overpayment is the accountant's to sort out, not a negative balance |
+| `Voiding_a_payment_reopens_the_balance_and_tells_Sales` | Undoing | A bounced check is money that never came |
+| `An_invoice_with_payments_cannot_be_voided` | When | Void the payments first, so nothing is lost |
+| `Tax_withheld_cannot_be_more_than_the_sales_before_VAT` | Over the limit | Withholding more than the sale is a typo |
+| `A_withholding_certificate_covers_one_real_quarter_and_is_voided_once` | Twice | One 2307 per quarter, voided once |
+| The snapshot line in the redelivery test | Twice | Every payment reaches the balance exactly once |
+
 ## How a request flows
 
 ```mermaid
@@ -855,10 +892,10 @@ Restart the app. Then:
 8. **Withholding tax (2307)**: Beta, this quarter, ₱2.23 withheld, ₱0.00 certified, ₱2.23 missing in red.
    Click **Record 2307**, accept the amount, save: missing is ₱0.00.
 
-And replay the event on purpose, as in lesson 19:
+And replay the event on purpose, as in lesson 20:
 
 ```bash
-PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localhost -U postgres -d erp \
+podman exec -i erp-postgres psql -U postgres -d erp \
   -c "UPDATE invoicing.outbox_message SET processed_utc = NULL WHERE type LIKE '%PaymentRecorded%';" \
   -c "SELECT payment_id, amount, reversed_utc FROM sales.applied_payment;"
 ```
@@ -886,4 +923,4 @@ developer!
 
 ---
 
-← [Lesson 19 — Invoicing](19-invoicing.md) · Next: [Lesson 21 — Special discounts](21-special-discounts.md) →
+← [Lesson 20 — Invoicing](20-invoicing.md) · Next: [Lesson 22 — Special discounts](22-special-discounts.md) →

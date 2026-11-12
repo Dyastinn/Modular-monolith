@@ -26,7 +26,7 @@ internal sealed class SearchPriceListHandler(IDbConnectionFactory connections)
 {
     public async ValueTask<PagedResult<PriceListItemDto>> Handle(SearchPriceListQuery q, CancellationToken ct)
     {
-        var args = new { Search = string.IsNullOrWhiteSpace(q.Search) ? null : q.Search.Trim(), q.ForSaleOnly, q.Page, q.PageSize };
+        var args = new { Search = SearchText.ForLike(q.Search), q.ForSaleOnly, q.Page, q.PageSize };
         await using var conn = connections.Create();
         using var multi = await conn.QueryMultipleAsync(new CommandDefinition(
             """

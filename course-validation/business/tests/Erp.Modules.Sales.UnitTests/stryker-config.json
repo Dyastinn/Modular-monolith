@@ -1,0 +1,8 @@
+{
+  "stryker-config": {
+    "project": "Erp.Modules.Sales.csproj",
+    "mutate": [ "**/Domain/**/*.cs" ],
+    "reporters": [ "progress", "html", "cleartext" ],
+    "thresholds": { "high": 90, "low": 80, "break": 75 }
+  }
+}

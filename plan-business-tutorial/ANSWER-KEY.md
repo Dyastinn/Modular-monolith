@@ -7,14 +7,16 @@ Try each question first, out loud or on paper, and only then come here. Getting 
 seeing why plants it far deeper than reading the right one. Look first, and you get the warm feeling of
 understanding without the understanding.
 
-**Jump to:** [01](#lesson-01--solution-setup) · [02](#lesson-02--mediator) · [03](#lesson-03--domain-model) ·
-[04](#lesson-04--database) · [05](#lesson-05--sign-in) · [06](#lesson-06--create-an-order) ·
-[07](#lesson-07--find-orders) · [08](#lesson-08--submit) · [09](#lesson-09--approve-reject-cancel) ·
-[10](#lesson-10--update-an-order) · [11](#lesson-11--events-and-the-outbox) · [12](#lesson-12--testing) ·
-[13](#lesson-13--observability) · [14](#lesson-14--customers) · [15](#lesson-15--users-and-email) ·
-[16](#lesson-16--item-catalog-and-stock) · [17](#lesson-17--shipping) · [18](#lesson-18--purchasing) ·
-[19](#lesson-19--invoicing) · [20](#lesson-20--payments-and-receivables) · [21](#lesson-21--special-discounts) ·
-[22](#lesson-22--security-hardening) · [23](#lesson-23--docker) · [24](#lesson-24--production-checklist)
+**Jump to:** [01](#lesson-01--solution-setup) · [02](#lesson-02--testing) · [03](#lesson-03--mediator) ·
+[04](#lesson-04--domain-model) · [05](#lesson-05--database) · [06](#lesson-06--sign-in) ·
+[07](#lesson-07--create-an-order) · [08](#lesson-08--find-orders) · [09](#lesson-09--submit) ·
+[10](#lesson-10--approve-reject-cancel) · [11](#lesson-11--update-an-order) ·
+[12](#lesson-12--containers-and-ci) · [13](#lesson-13--events-and-the-outbox) ·
+[14](#lesson-14--observability) · [15](#lesson-15--customers) · [16](#lesson-16--users-and-email) ·
+[17](#lesson-17--item-catalog-and-stock) · [18](#lesson-18--shipping) · [19](#lesson-19--purchasing) ·
+[20](#lesson-20--invoicing) · [21](#lesson-21--payments-and-receivables) · [22](#lesson-22--special-discounts) ·
+[23](#lesson-23--security-hardening) · [24](#lesson-24--deploying-with-podman) ·
+[25](#lesson-25--production-checklist)
 
 ---
 
@@ -50,7 +52,40 @@ The app wants page addresses like `/sales-orders` for itself, and the API wants 
 prefix keeps them apart. `GET /api/typo` hits the API group's own fallback and answers 404, never the app's
 HTML.
 
-## Lesson 02 — Mediator
+## Lesson 02 — Testing
+
+**1. What are the three parts of a test, and what does each one do?**
+Arrange gets everything ready (a client, an order, a customer). Act does the one thing being tested. Assert
+checks what happened. One act per test, so a failure points at one behavior.
+
+**2. Why do we break the code on purpose after writing a test?**
+A test that has never failed might not be able to fail: it could check the wrong thing, or nothing. Seeing it
+go red when the code breaks, and green when it's fixed, is the only proof it guards what its name says.
+
+**3. What does `WebApplicationFactory` do, and why doesn't it need a port?**
+It runs our real `Program.cs` inside the test process, with an in-memory server instead of a network
+listener. `CreateClient()` returns an `HttpClient` wired straight to that server, so requests go through the
+real middleware and routing without touching the network.
+
+**4. When would you write a `[Theory]` instead of a `[Fact]`?**
+When the same check should hold for several inputs: every HTTP method, every boundary value. One theory with
+`[InlineData]` rows instead of copies of one test, and each row reported on its own.
+
+**5. Pick three rows of the edge-case checklist and give an example of each for a sales order.**
+For example: *at the limit*, an order of exactly ₱50,000 (approved) and ₱50,000.01 (waits for a manager);
+*twice*, pressing Submit twice; *who*, a rep opening another rep's order (404). Any three with a concrete
+order example are right.
+
+**6. What is a regression test? Name the one in this lesson and the bug it guards against.**
+A test written after a bug so it can't come back. `The_component_library_files_are_served` guards against the
+`ReferenceOutputAssembly="false"` reference that once left the app without MudBlazor's CSS and JS.
+
+**7. Why should most tests be unit tests, and only a few drive a browser?**
+Unit tests run in microseconds, never flake, and a failure names one rule. Browser tests need a running app,
+take seconds each, and break for reasons unrelated to the rule (timing, layout). Test rules underneath; keep a
+few browser tests for the main flows.
+
+## Lesson 03 — Mediator
 
 **1. Why does the generator need `InternalsVisibleTo("Erp.Api")`? Why is granting it to the host safe, but
 granting it to another module not?**
@@ -73,7 +108,18 @@ the domain for commands, Dapper for queries) and makes it obvious which requests
 Indirection: from an endpoint you can't click straight through to the code that runs; you follow the
 message type to its handler. Keeping the handler in the same file as its message softens it.
 
-## Lesson 03 — Domain model
+**6. The unit test for `PingValidator` passes, but the API still answers `pong: ` to an empty message. What's
+wrong, and which test catches it?**
+The validator works but never runs: most likely `includeInternalTypes: true` is missing, so
+`AddValidatorsFromAssembly` never registers it (or the behavior isn't in the pipeline). The integration test
+`An_empty_message_never_reaches_the_handler` catches it, because it sends a real request.
+
+**7. What does an architecture test check that the compiler doesn't? Give two examples.**
+Rules about how the code is built: a module exposes only its entry class; `InternalsVisibleTo` goes only to the
+host and tests; code is grouped by feature, not by technical layer. The compiler accepts all of those
+violations.
+
+## Lesson 04 — Domain model
 
 **1. Why does `EnsureWithinCreditLimit` take `otherPendingTotal`? Describe the bug without it.**
 Orders waiting for a manager aren't in the balance yet. Without them, a customer with ₱100,000 of room could
@@ -99,7 +145,20 @@ check.
 An order is a record of what was sold. Rename the item next year, and this order must still say what was
 ordered, like a printed copy would.
 
-## Lesson 04 — Database
+**7. Name three edges of "an order over ₱50,000 needs a manager", and what each test checks.**
+Exactly ₱50,000 (auto-approved, because the rule says *above*), ₱50,000.01 (waits for a manager), and a
+discount bringing a bigger order down to the threshold or below (the rule uses `Total`, after discounts). The
+first two are `An_order_of_exactly_50000_is_approved_on_submit` and `One_centavo_over_50000_waits_for_a_manager`.
+
+**8. What does a property-based test give you that a `[Theory]` with ten cases doesn't? What does it cost?**
+It tries a hundred inputs nobody picked, including ones you'd never think of, and shrinks a failure to the
+simplest input. The cost: it's harder to write, a poor generator tests nothing interesting, and it catches
+different bugs from examples (the `ToEven` rounding change passed the properties and failed the theory).
+
+**9. Why does `SetLines` build the new lines aside before replacing the old ones? Which test proves it?**
+So a refused line leaves the order exactly as it was, instead of half-changed. `A_failed_change_of_lines_keeps_the_old_lines`.
+
+## Lesson 05 — Database
 
 **1. Why does each module get its own DbContext and schema?**
 So the wall between modules reaches into the database: a module's context can't even see another module's
@@ -124,7 +183,22 @@ It runs on every development start; the second run must insert nothing.
 Users live in another module's schema. A foreign key across schemas would weld the modules together. Store
 the id; show the name through the other module's API.
 
-## Lesson 05 — Sign-in
+The test that would catch such a key: `No_foreign_key_crosses_a_module_boundary` (question 6).
+
+**7. Why do the tests use their own database, and why is it dropped at the start of every run?**
+So a test can't change or delete your development data, and so every run starts from the migrations and the
+seed, not from whatever the last run left behind.
+
+**8. Why does the round-trip test read the order back in a second scope?**
+In the same scope, EF Core would return the object it already has in memory, and the test would prove nothing
+about the columns. A new scope means a new `DbContext` that really reads the rows.
+
+**9. The architecture test failed after the first migration. Was that a bug? What changed in the test, and
+why?**
+Not a bug in the module: EF Core generates migrations as public classes, and they must stay public. The test
+learned the exception, with its reason: types in a `.Migrations` namespace are left out.
+
+## Lesson 06 — Sign-in
 
 **1. Three things production sign-in needs that a hand-written version forgets.**
 Any three of: safe password hashing with a work factor, lockout after repeated failures, expiring tokens with
@@ -159,7 +233,18 @@ the answer into claims for `<AuthorizeView>`.
 A sign-in page that sends you to any `returnUrl` after signing in, including an attacker's look-alike site.
 The check that only follows paths without `//` or `:` keeps it inside the app.
 
-## Lesson 06 — Create an order
+**9. Why does the lockout test use a throwaway user instead of `rep@erp.local`?**
+Locking the rep for fifteen minutes would make every later test that signs in as the rep fail, for a reason
+that has nothing to do with them. Tests must not step on each other.
+
+**10. Why must an unknown email get exactly the same answer as a wrong password?**
+Different answers let an attacker try emails and learn which ones are staff accounts, then aim at those.
+
+**11. How does a browser test find the "Sign in" button, and why not by its CSS class?**
+By its role and accessible name (`GetByRole(AriaRole.Button, new() { Name = "Sign in" })`), the way a person
+finds it. A CSS class is a styling detail that changes for reasons unrelated to whether the button works.
+
+## Lesson 07 — Create an order
 
 **1. Validator or domain: "quantity is positive", "customer isn't blocked", "at most 5 Controlled"?**
 Quantity positive: validator (shape). Blocked and the category cap: domain (business rules about this
@@ -183,7 +268,15 @@ A user can quote it, and you can find that exact request's logs and trace.
 **6. Why Swagger only in Development?**
 A production server shouldn't advertise its API to strangers.
 
-## Lesson 07 — Find orders
+**7. Half a widget is a 422, but a quantity of 1.2345 is a 400. Why the difference?**
+1.2345 breaks the request's shape for every item (at most three decimals): that's the validator, a 400. 1.5
+is a fine quantity in general, but widgets are counted in whole pieces: that's the item's business rule, a 422.
+
+**8. Why does each edge-case test create its own customer?**
+Tests share one database, and orders change balances. A fresh customer means a test's credit and balance
+can't depend on which tests ran before it.
+
+## Lesson 08 — Find orders
 
 **1. Why don't query handlers load aggregates with EF Core?**
 A screen wants a shape, not an aggregate. Loading and tracking full orders with every line to show six
@@ -210,7 +303,21 @@ Minimal APIs treat it as required, so a bare `GET /api/sales-orders` fails with 
 The server's DTOs are internal to each module, and the app must not reference a module. The HTTP contract
 is the only thing they share.
 
-## Lesson 08 — Submit
+The browser test `Every_page_opens_without_an_error` catches the copies drifting (question 7).
+
+**8. A user searches for `50%`. What did the first version return, and how does `SearchText.ForLike` fix it?**
+Every order whose number or customer name contains "50", because `%` is a wildcard inside `LIKE`. `ForLike`
+escapes `%`, `_` and `\`, so they're matched as the characters they are.
+
+**9. Why does the status filter compare names instead of calling `Enum.TryParse`?**
+`Enum.TryParse` accepts any number, even one that's no status at all (`"99"`), so the search would silently
+return nothing instead of saying the filter is wrong.
+
+**10. Which test keeps the C# total and the SQL total in agreement, and why pick a quantity like 1.333?**
+`The_list_shows_the_same_total_the_domain_computes`. 620.50 × 1.333 = 827.1265 has to be rounded, so it shows
+whether both sides round the same way, at the same point.
+
+## Lesson 09 — Submit
 
 **1. Why reserve at submit, not at approval?**
 So a manager never approves an order that can't be filled. "Pending approval" means "we're holding this".
@@ -235,7 +342,23 @@ it, Inventory's included, is undone.
 The second waits at the lock until the first commits, then sees the first order as pending and checks credit
 against true numbers.
 
-## Lesson 09 — Approve, reject, cancel
+**7. How does the race test make two reservations arrive at the same instant, and why does each get its own
+scope?**
+`Task.WhenAll` starts both before waiting for either. Each runs in its own DI scope, so each has its own
+connection and transaction, exactly like two separate requests.
+
+**8. A ₱1,500 order is approved and charged before its stock check fails. Which test proves the charge
+disappears, and what does it check?**
+`Too_little_stock_refuses_the_submit_and_leaves_everything_as_it_was`: after the 422 the order is still a
+draft, the stock's `reserved` is unchanged, and the customer's balance is zero (from lesson 13, also that no
+outbox row exists).
+
+**9. Name the three architecture tests this lesson adds, and what each one prevents.**
+`A_module_references_other_modules_only_through_their_Contracts` (modules tangled together),
+`Contracts_reference_no_module_so_no_cycle_can_form` (a reference cycle), and
+`Only_the_host_references_shared_infrastructure` (a module reaching past the interfaces to the implementations).
+
+## Lesson 10 — Approve, reject, cancel
 
 **1. A lost update with two approvals.**
 Both managers load a customer owing ₱0, each approves a ₱60,000 order, each saves "owes ₱60,000". The second
@@ -260,7 +383,16 @@ real reason, not blanks) for every caller.
 **6. When would you lock up front instead?**
 When clashes are likely, or when a check spans many rows, like the credit check across all pending orders.
 
-## Lesson 10 — Update an order
+**7. Two managers approve at once. Why does the test accept either 409 or 422 for the loser?**
+Both are correct, depending on timing: if both loaded the order before either saved, the version check refuses
+the second (409); if the first committed before the second loaded, the domain refuses to approve an approved
+order (422). The test checks every correct outcome: exactly one approval, one charge.
+
+**8. How would you know the `xmin` mapping really protects anything?**
+Remove it and run the race test a few times: sometimes both approvals win and the customer is charged twice.
+Put it back, and the test always passes.
+
+## Lesson 11 — Update an order
 
 **1. Why replace the whole list?**
 Simpler, and nothing can drift: the client sends exactly what the order should look like afterwards.
@@ -280,7 +412,55 @@ and that update carries the version check.
 The rules belong to the order (domain) and the loading belongs to the context; both are the natural homes.
 A shared handler helper would tie two slices together through code that has no home of its own.
 
-## Lesson 11 — Events and the outbox
+**6. How do two scopes in one test act like Ana and Bob? Why not just send two HTTP requests?**
+Each scope has its own `DbContext`, so each loads the draft before either saves: the exact moment that
+matters. Two HTTP requests would almost never overlap that precisely.
+
+**7. Coverage is 95% for a class. Does that mean its rules are tested? What would tell you more?**
+No: coverage only says the lines ran. A test that checks nothing covers them too. Mutation testing tells you
+more: whether a test would notice if a line were wrong.
+
+**8. A mutant survived. What does that mean, and what do you do about it? When is it fine to leave one?**
+A change to the code that no test noticed: a rule without a test. Write the test. It's fine to leave one that
+only changes an error message's wording, or removes a check another check already makes.
+
+## Lesson 12 — Containers and CI
+
+**1. Name three problems the shared `erp_test` database caused.**
+The tests dropped a database on whatever server was configured; two runs at once dropped it from under each
+other; every machine needed the same PostgreSQL installed; a fresh machine (like a CI server) couldn't run the
+tests at all.
+
+**2. What is the difference between an image and a container? And a volume?**
+An image is the frozen package: a program and everything it needs. A container is a running copy of an image.
+A volume is storage outside the container, so data survives when the container is removed.
+
+**3. Give two reasons the course uses Podman. Would anything change if your company uses Docker?**
+It's free for any use on every system (Apache-2.0), and it runs rootless with no background service as root.
+Nothing changes with Docker: the images and files follow the open standards, and Testcontainers and Compose
+work with either.
+
+**4. Why did no test change when the factory moved to Testcontainers?**
+Every test reached the database through `factory.OpenDatabase()`, so only the factory knew where the database
+was.
+
+**5. What does Ryuk do, and when does it matter?**
+It's Testcontainers' cleaner: it removes the test containers even if the test run crashes or is stopped
+halfway, so they don't pile up.
+
+**6. What happens, step by step, when you push to GitHub?**
+GitHub starts the workflow on a fresh Ubuntu machine: fetch the code, install .NET, restore the tools, build,
+run every test (Testcontainers starts PostgreSQL on the machine's Docker), make the coverage report, and show a
+green tick or a red cross (and email you on red).
+
+**7. Why does the coverage step say `if: always()`?**
+So the report is made even when a test failed, which is exactly when you want to see what was and wasn't run.
+
+**8. Why don't the browser tests run in CI?**
+They need a running app, and they're the slowest and most fragile tests. They run on your machine before a
+release.
+
+## Lesson 13 — Events and the outbox
 
 **1. Why isn't "publish right after saving" good enough?**
 A crash between the commit and the publish loses the event forever, and it works every time you test it.
@@ -303,34 +483,21 @@ on the real constructor fixed it.
 **6. Why does each module have its own outbox table?**
 No SQL crosses a schema. Each module's event commits with its own changes, in its own schema.
 
-## Lesson 12 — Testing
+**7. How does a test wait for something that happens on a background timer, without a fixed delay?**
+It polls: check, wait a short moment, check again, up to a limit. Fast when the system is fast, patient when
+the machine is busy, and never flaky because of one guessed delay.
 
-**1. Which bugs can't a unit test catch?**
-Ones that depend on the database or the wiring: two requests racing, a transaction that doesn't really span
-modules, a validator that isn't registered, a screen that crashes.
+**8. How does `Delivering_every_event_a_second_time_changes_nothing` imitate a crash, and what does it prove?**
+It sets `processed_utc` back to `NULL` on every delivered message, which is what a crash between "handler ran"
+and "marked as done" looks like. When everything is delivered again and the business snapshot is unchanged,
+every handler is idempotent.
 
-**2. Why drop the test database every run?**
-So every run starts from the migrations and seed, and yesterday's leftovers can't change today's results.
+**9. Why must a test pass when it's run alone? What went wrong the first time this lesson's tests were?**
+Because you'll run it alone while debugging, and because test order isn't guaranteed. Run alone, the
+redelivery test had no events to redeliver (it relied on earlier tests), and a test that only read the
+database found no schema, because the app hadn't started yet.
 
-**3. How does the race test make two reservations simultaneous?**
-`Task.WhenAll` starts both at once, each in its own scope with its own connection and transaction, like two
-real requests.
-
-**4. How do you know the lost-update test protects anything?**
-Remove the `SaveChangesAsync` override and watch it fail; put it back and watch it pass.
-
-**5. Why does the lockout test use a throwaway user?**
-Locking a dev user would break every other test that signs in as them.
-
-**6. Two architecture rules the tests enforce.**
-For example: a module references other modules only through their Contracts (no cycles, no reaching into
-internals); and `InternalsVisibleTo` only to the host and tests (no module sees another's internals).
-
-**7. Why only a few browser tests, and how do they find a button?**
-They're slow and need a running app, so a few walk the main flows. They find things as a person does: by
-label, by role and name, by visible text.
-
-## Lesson 13 — Observability
+## Lesson 14 — Observability
 
 **1. What does each signal answer?**
 Logs: what happened, in words. Traces: where did the time go in this one request. Metrics: how much, how
@@ -353,9 +520,17 @@ It keeps everything in memory, forgets it on restart, and can't alert.
 **6. How does a user's error report find the trace?**
 The error body and the `X-Trace-Id` header carry the trace id; search for it.
 
-## Lesson 14 — Customers
+**7. How do we test that the ready check fails, without stopping the tests' database?**
+By running the health check on its own, against a data source pointed at an address where nothing listens
+(port 1), with a short timeout.
 
-**1. Why add TIN, address and terms now, not in lesson 03?**
+**8. Why must every error body, even the framework's own, carry the same trace id as the header?**
+So a user's report leads to exactly one trace in the logs. Two formats of one id means searching for the wrong
+one.
+
+## Lesson 15 — Customers
+
+**1. Why add TIN, address and terms now, not in lesson 04?**
 Nothing needed them until customers were maintained and invoiced. Introduce each thing when it's needed.
 
 **2. Why does `Create` call `Update`?**
@@ -365,7 +540,7 @@ So creating and updating check exactly the same rules. A new customer is an upda
 It drops v1, because `CREATE OR REPLACE` can't change a function's result columns.
 
 **4. Why does `search_customers.v1.sql` stay as it was?**
-Lesson 07's migration reads it. On a fresh database, v1 is created, then v2 replaces it, in order.
+Lesson 08's migration reads it. On a fresh database, v1 is created, then v2 replaces it, in order.
 
 **5. Who may block a customer, and where is that decided?**
 SalesManager and Admin, at the endpoint, through `SalesRoles.Managers`.
@@ -373,7 +548,7 @@ SalesManager and Admin, at the endpoint, through `SalesRoles.Managers`.
 **6. Why separate block and unblock endpoints?**
 They're two business actions. Audit entries or notifications attach to exactly one of them.
 
-## Lesson 15 — Users and email
+## Lesson 16 — Users and email
 
 **1. Why admin-created accounts, and how does the admin not know passwords?**
 The company decides who works there and in which role. The admin sets a temporary password, and the person
@@ -398,7 +573,7 @@ Otherwise anyone could test which emails have accounts.
 **7. How does the screen show a name for `created_by`?**
 The app asks Identity's `GET /api/users/directory` and maps ids to names. No SQL crosses a schema.
 
-## Lesson 16 — Item catalog and stock
+## Lesson 17 — Item catalog and stock
 
 **1. Who owns the name, who owns the price, and why not one module?**
 Inventory owns what an item is; Sales owns what it costs and who may sell it. Each fact has one owner, so two
@@ -425,7 +600,7 @@ That the Contracts assembly is in the Mediator's `options.Assemblies`.
 **7. Why does the seed end with `setval`?**
 Explicit ids don't advance the sequence; without it, the first real item would collide with id 1.
 
-## Lesson 17 — Shipping
+## Lesson 18 — Shipping
 
 **1. Why does the shipment belong to Inventory and the status to Sales?**
 Moving stock is the warehouse's fact; whether the order is shipped is Sales' fact. Each changes only its own.
@@ -448,7 +623,7 @@ The goods are gone. Taking them back is a return, a different process.
 **6. Why take the shipment's id from a sequence?**
 Its number is built from the id, before the shipment exists, and later its event carries the id.
 
-## Lesson 18 — Purchasing
+## Lesson 19 — Purchasing
 
 **1. Who approves a purchase order, and why not the buyer?**
 An admin. Spending needs a second pair of eyes.
@@ -471,7 +646,7 @@ The order's `xmin`, checked because `SaveChangesAsync` touches the order when li
 **6. Why is `PurchaseOrder` an `Entity`?**
 It raises no events because nothing reacts to it. An event arrives with its first handler.
 
-## Lesson 19 — Invoicing
+## Lesson 20 — Invoicing
 
 **1. Why create the invoice by an event?**
 So Inventory doesn't know Invoicing exists, and shipping keeps working even if Invoicing is down; the event
@@ -509,7 +684,7 @@ BuildingBlocks, so that's where a type both sides share must live.
 **9. Why do enums travel as names?**
 Names can't be misread silently; a number from an older client could mean a different VAT treatment.
 
-## Lesson 20 — Payments and receivables
+## Lesson 21 — Payments and receivables
 
 **1. Why does Sales lower the balance itself?**
 The balance is Sales' fact, and Invoicing may not change Sales' data. Invoicing announces the payment;
@@ -534,7 +709,7 @@ Yes, paid: tax withheld settles the invoice like money, and Sales lowers the bal
 needs the customer's BIR Form 2307 for ₱8.89, to claim it against its income tax. **Withholding tax (2307)**
 shows it as missing until the certificate is recorded.
 
-## Lesson 21 — Special discounts
+## Lesson 22 — Special discounts
 
 **1. Why does the order compute the discount, not the invoice?**
 The customer's balance is charged with the order's total at approval, and payments settle the invoice. If only
@@ -559,7 +734,7 @@ for the holder's signature (RR 7-2024 Sec. 6(B.18)).
 The business, with its tax adviser, since the law decides what's covered. A sales manager records it per item
 in the price list, and the order line copies it.
 
-## Lesson 22 — Security hardening
+## Lesson 23 — Security hardening
 
 **1. Lockout vs rate limiting.**
 Lockout protects one account from many guesses. A per-IP rate limit stops one password tried on many
@@ -587,17 +762,17 @@ automatically.
 Blazor can't run WebAssembly without the first; MudBlazor sets styles on elements. Inline styles can't run
 code; inline scripts, the classic attack, stay forbidden.
 
-## Lesson 23 — Docker
+## Lesson 24 — Deploying with Podman
 
 **1. What does an image contain, and what does the server need?**
-The app with everything it needs to run: runtime, compiled code, fonts. The server needs only Docker Engine.
+The app with everything it needs to run: runtime, compiled code, fonts. The server needs only Podman (or Docker Engine).
 
 **2. Why a separate migrate container?**
 A failing migration then stops the deploy, not every restart, and the app never needs rights to change
 tables.
 
 **3. Why no `ports` on `db`, and how do you look inside?**
-So nothing outside the Docker network can reach it. Use `docker compose exec db psql -U postgres erp`.
+So nothing outside the stack's private network can reach it. Use `podman compose exec db psql -U postgres erp`.
 
 **4. What does `ASPNETCORE_FORWARDEDHEADERS_ENABLED` fix, and why only behind Caddy?**
 It makes the app see the real client IP and HTTPS scheme from Caddy's headers. Trusting those headers is
@@ -610,7 +785,18 @@ So a forgotten setting can't recreate a deleted account a year later.
 Nightly into the host's `backups` folder; also copied off the server daily. To restore a working system you
 also need the data-protection certificate and its password (or everyone just signs in again).
 
-## Lesson 24 — Production checklist
+**7. Why does the ERP run as its own ordinary user, and which two things does rootless Podman need allowed?**
+So a break-in gets one ordinary user's rights, not root's. It needs ports 80 and 443 opened to ordinary users
+(the `sysctl` line) and lingering, so the containers keep running after that user logs out.
+
+**8. A buyer already runs Docker. What do they change to install your ERP?**
+They type `docker compose` instead of `podman compose`. The `Dockerfile` and `compose.yaml` are the same.
+
+**9. Why does the first-run test check that `admin@erp.local` *can't* sign in?**
+If the development seed ever ran in production, anyone who read the course could sign in as admin with a
+known password. The test proves a production install has no development users.
+
+## Lesson 25 — Production checklist
 
 **1. Why is an untested backup only a hope?**
 You only know a backup works when you've restored it. Until then, it might be empty, broken or incomplete.
@@ -628,7 +814,7 @@ BIR's permit number (or acknowledgement certificate number), the approved series
 into **Invoicing → Company and tax**, and every invoice issued after that prints them at the bottom.
 
 **5. Where do logs go without an OTLP endpoint?**
-`docker compose logs api` keeps recent ones, and nothing more. For search, history and alerts, set
+`podman compose logs api` keeps recent ones, and nothing more. For search, history and alerts, set
 `OTEL_EXPORTER_OTLP_ENDPOINT`.
 
 **6. One left-out tool, its pain, and what stays.**

@@ -1,4 +1,4 @@
-# Lesson 18 — Purchasing: Filling the Shelves
+# Lesson 19 — Purchasing: Filling the Shelves
 
 Good day, developer! Stock leaves with every shipment, and so far the only way it comes back is a clerk's
 adjustment. A real business buys it: a buyer orders from a supplier, someone else approves the spending, the
@@ -44,7 +44,7 @@ Three business rules hide in that picture:
 
 | Rule | Why |
 |---|---|
-| Nobody approves their own purchase order | Spending needs a second pair of eyes: segregation of duties, as in lesson 03 |
+| Nobody approves their own purchase order | Spending needs a second pair of eyes: segregation of duties, as in lesson 04 |
 | Goods can be received once approved, even before "Sent" | Suppliers deliver when they deliver; the clerk must not be blocked by a missing click |
 | A partly received order can be **closed short** | The supplier ran out; the remaining quantity will never come, and the order shouldn't stay open forever |
 
@@ -136,7 +136,7 @@ internal sealed class Supplier : Entity<SupplierId>
 }
 ```
 
-`Supplier` is lesson 14's `Customer` pattern on the other side of the business: `Create` calls `Update`, and
+`Supplier` is lesson 15's `Customer` pattern on the other side of the business: `Create` calls `Update`, and
 blanks become `null`.
 
 ```csharp
@@ -176,10 +176,15 @@ internal sealed class PurchaseOrderLine
     public PurchaseOrderLine(ItemId itemId, string sku, string itemName, string unit, Quantity quantity, Money unitCost)
     { ItemId = itemId; Sku = sku; ItemName = itemName; Unit = unit; Quantity = quantity; UnitCost = unitCost; }
 
+    public void EnsureCanReceive(decimal quantity)
+    {
+        if (quantity > Outstanding)
+            throw new DomainException($"Only {Outstanding:0.###} {Unit} of {Sku} is still to come; {quantity:0.###} was entered.");
+    }
+
     public void Receive(Quantity quantity)
     {
-        if (quantity.Value > Outstanding)
-            throw new DomainException($"Only {Outstanding:0.###} {Unit} of {Sku} is still to come; {quantity} was entered.");
+        EnsureCanReceive(quantity.Value);
         ReceivedQuantity += quantity.Value;
     }
 }
@@ -230,14 +235,15 @@ internal sealed class PurchaseOrder : Entity<PurchaseOrderId>
         if (lines.GroupBy(l => l.ItemId).Any(g => g.Count() > 1))
             throw new DomainException("Each item may appear on a purchase order only once.");
 
-        _lines.Clear();
         foreach (var l in lines)
         {
             if (!l.IsActive) throw new DomainException($"Item {l.Sku} is inactive.");
             if (!l.AllowsFractions && !l.Quantity.IsWhole)
                 throw new DomainException($"Item {l.Sku} is counted in whole {l.Unit}; {l.Quantity} is not allowed.");
-            _lines.Add(new PurchaseOrderLine(l.ItemId, l.Sku, l.Name, l.Unit, l.Quantity, l.UnitCost));
         }
+        // Checked first, replaced after: a refused line leaves the order exactly as it was.
+        _lines.Clear();
+        _lines.AddRange(lines.Select(l => new PurchaseOrderLine(l.ItemId, l.Sku, l.Name, l.Unit, l.Quantity, l.UnitCost)));
     }
 
     // Spending needs a second pair of eyes: nobody approves their own purchase order.
@@ -264,11 +270,17 @@ internal sealed class PurchaseOrder : Entity<PurchaseOrderId>
         EnsureStatus(PurchaseOrderStatus.Approved, PurchaseOrderStatus.Sent, PurchaseOrderStatus.PartiallyReceived);
         if (received.Count == 0) throw new DomainException("Enter at least one received quantity.");
 
+        var receipt = received
+            .Select(r => (Line: _lines.SingleOrDefault(l => l.Id == r.LineId)
+                ?? throw new DomainException($"Line {r.LineId} is not on {Number}."), r.Quantity))
+            .ToList();
+        // Every line is checked before any changes, so a refused line leaves the whole order as it was.
+        foreach (var sameLine in receipt.GroupBy(r => r.Line))
+            sameLine.Key.EnsureCanReceive(sameLine.Sum(r => r.Quantity.Value));
+
         var toStock = new List<(ItemId, Quantity)>();
-        foreach (var (lineId, quantity) in received)
+        foreach (var (line, quantity) in receipt)
         {
-            var line = _lines.SingleOrDefault(l => l.Id == lineId)
-                ?? throw new DomainException($"Line {lineId} is not on {Number}.");
             line.Receive(quantity);
             toStock.Add((line.ItemId, quantity));
         }
@@ -303,7 +315,7 @@ Compare it with `SalesOrder` and you'll see two honest differences:
   purchase order's moves don't follow a single chain, and each method naming its allowed starting states
   reads more plainly here. Both styles keep the rule inside the aggregate, which is what matters.
 - **`PurchaseOrder` is an `Entity`, not an `AggregateRoot`.** It raises no events, because nothing reacts to
-  it. Lesson 11's rule again: an event arrives in the same change as its first handler.
+  it. Lesson 13's rule again: an event arrives in the same change as its first handler.
 
 `Receive` returns what goes into stock, the way `Reject` and `Cancel` return what to release in Sales. The
 order decides what arrived; the handler only carries it to Inventory.
@@ -403,10 +415,10 @@ public async Task<string> NextOrderNumberAsync(DateTime nowUtc, CancellationToke
 }
 ```
 
-Lesson 06 put `DocumentNumber` in BuildingBlocks for exactly this day: "PO-2026-000001" looks like its
+Lesson 07 put `DocumentNumber` in BuildingBlocks for exactly this day: "PO-2026-000001" looks like its
 sales cousin.
 
-The mapping for the order is lesson 04's, with three things worth reading:
+The mapping for the order is lesson 05's, with three things worth reading:
 
 ```csharp
 l.ToTable("purchase_order_line", t =>
@@ -422,7 +434,7 @@ l.Property(x => x.Id).UseIdentityColumn();
 
 - **The line's `Id` is a real property**, not a shadow one, because a receipt names the line it's for.
 - **`received_quantity <= quantity`** is the database's own version of `PurchaseOrderLine.Receive`.
-- **`xmin` on the order, plus lesson 10's override**: a receipt changes only line rows, so
+- **`xmin` on the order, plus lesson 11's override**: a receipt changes only line rows, so
   `SaveChangesAsync` touches the order, and two clerks counting the same delivery at once get a 409 instead
   of counting it twice.
 
@@ -444,7 +456,7 @@ follow Inventory's. Then `dotnet ef migrations add InitialCreate` for the new mo
 
 ## 5. The slices
 
-**Suppliers** (`Features/SaveSupplier/`, `Features/SearchSuppliers/`) are lesson 14's customer slices
+**Suppliers** (`Features/SaveSupplier/`, `Features/SearchSuppliers/`) are lesson 15's customer slices
 again: one `SupplierInput` shared by create and update, `activate`/`deactivate`, and a search function with
 a count. Who may do what lives in one place:
 
@@ -611,7 +623,7 @@ internal sealed class ChangePurchaseOrderStatusEndpoint : ICarterModule
 }
 ```
 
-Is the `switch` a business `if`? No: it only picks which domain verb the caller asked for, like lesson 14's
+Is the `switch` a business `if`? No: it only picks which domain verb the caller asked for, like lesson 15's
 block and unblock. Every rule (who may approve, from which status) is inside the verb. Sharing one command
 here is a judgement call: four slices of five lines each would say the same thing four times. Approval keeps
 its own role, `Approvers`, on its own address.
@@ -669,12 +681,12 @@ internal sealed class ReceivePurchaseOrderHandler(PurchasingDbContext db, IStock
 }
 ```
 
-It's lesson 09's reject handler, mirrored: the domain says what moves, Inventory joins the transaction to
+It's lesson 10's reject handler, mirrored: the domain says what moves, Inventory joins the transaction to
 move it, and the order's own save commits with it. The address is
 `POST /purchase-orders/{id:long}/receipts`, taking `{ lines: [{ lineId, quantity }] }`, for
 `PurchasingRoles.Receivers`: a receipt is something created, like a shipment.
 
-**Reading** follows lesson 07: `purchasing.search_suppliers.v1.sql` (with `count_suppliers`) and
+**Reading** follows lesson 08: `purchasing.search_suppliers.v1.sql` (with `count_suppliers`) and
 `purchasing.search_purchase_orders.v1.sql`, which also holds `count_purchase_orders`, `get_purchase_order`
 and `get_purchase_order_lines`. The search computes each order's total with
 `SUM(ROUND(quantity * unit_cost, 2))`, `Money`'s arithmetic once more; the lines return `outstanding` as
@@ -741,10 +753,10 @@ The pages are built from parts you know:
 
 | Page | Built like |
 |---|---|
-| **Suppliers** (`/suppliers`) and its `SupplierDialog` | Customers and `CustomerDialog`, lesson 14 |
-| **Purchase orders** (`/purchase-orders`), with a status filter that reads `?status=` | The order list, lesson 07 |
-| **New / edit purchase order** (`/purchase-orders/new`, `/purchase-orders/{id}/edit`) | The order form, lessons 07 and 10, with a supplier picker, an item picker over `api/items?activeOnly=true`, a unit cost per line, an expected date (`MudDatePicker`) and notes |
-| **One purchase order** (`/purchase-orders/{id}`) | The order page, lesson 07, with buttons that show by status and role: Edit and Approve on a draft, Send once approved, **Receive** while goods are due, Close on a partly received order, Cancel before anything arrives |
+| **Suppliers** (`/suppliers`) and its `SupplierDialog` | Customers and `CustomerDialog`, lesson 15 |
+| **Purchase orders** (`/purchase-orders`), with a status filter that reads `?status=` | The order list, lesson 08 |
+| **New / edit purchase order** (`/purchase-orders/new`, `/purchase-orders/{id}/edit`) | The order form, lessons 08 and 10, with a supplier picker, an item picker over `api/items?activeOnly=true`, a unit cost per line, an expected date (`MudDatePicker`) and notes |
+| **One purchase order** (`/purchase-orders/{id}`) | The order page, lesson 08, with buttons that show by status and role: Edit and Approve on a draft, Send once approved, **Receive** while goods are due, Close on a partly received order, Cancel before anything arrives |
 
 Type them out, then compare with the reference build's
 [Purchasing pages](../course-validation/business/src/Erp.Web/Pages/Purchasing/). The one new idea is the
@@ -838,11 +850,12 @@ with `private static readonly string BuyerRoles = $"{Roles.Purchaser},{Roles.Adm
 
 ## 7. Tests
 
-A unit test project for Purchasing, set up like Inventory's, with six tests in
+A unit test project for Purchasing, set up like Inventory's, with eight tests in
 [PurchaseOrderTests.cs](../course-validation/business/tests/Erp.Modules.Purchasing.UnitTests/PurchaseOrderTests.cs):
 an inactive supplier gets no orders; lines check each item (whole units, active, once each); the buyer
 can't approve their own order; receiving in parts tracks what's still to come; a draft can't be received and
-a received order can't be cancelled; a partly received order can be closed short. Here's the one that tells
+a received order can't be cancelled; a partly received order can be closed short; and two that keep a
+refused change from leaving anything half-done (below). Here's the one that tells
 the story of a delivery:
 
 ```csharp
@@ -873,6 +886,49 @@ line:
 ```csharp
 (await rep.GetByText("Purchasing").CountAsync()).Should().Be(0);
 ```
+
+### A refused line, and nothing half-done
+
+Two more tests, and the story behind them. An early version of `Receive` applied each line as it went: line
+one received, line two refused, and the order was left with line one counted and the exception thrown. The
+handler never saved, so nothing reached the database, but the order object was half-changed, and the next
+person to add code after that `Receive` call could save it by accident. The same was true of `SetLines`. Both
+now check every line first and change nothing until all have passed, and these tests hold them to it:
+
+```csharp
+[Fact]
+public void A_refused_receipt_leaves_the_order_exactly_as_it_was()
+{
+    var po = Draft(Line(1, 10, 300));
+    po.Approve(Admin, Now);
+
+    // The same line twice: 4 fits, but 4 + 7 is more than the 10 ordered.
+    po.Invoking(p => p.Receive([(0, new Quantity(4)), (0, new Quantity(7))])).Should().Throw<DomainException>();
+
+    po.Lines.Single().Outstanding.Should().Be(10);
+    po.Status.Should().Be(PurchaseOrderStatus.Approved);
+}
+
+[Fact]
+public void A_refused_line_leaves_the_old_lines()
+{
+    var po = Draft(Line(1, 10, 300));
+    po.Invoking(p => p.SetLines([Line(2, 1, 10), Line(3, 1, 10, active: false)])).Should().Throw<DomainException>();
+    po.Lines.Should().ContainSingle().Which.ItemId.Should().Be(new ItemId(1));
+}
+```
+
+The first one also covers an edge that's easy to miss: the *same line twice* in one receipt. Each quantity
+alone fits; together they don't. That's why `Receive` adds them up per line before checking.
+
+| Test | The edge | Why it matters |
+|---|---|---|
+| `Receiving_in_parts_tracks_what_is_still_to_come` | One more than outstanding | Over-receipt puts phantom stock on the shelf |
+| `A_refused_receipt_leaves_the_order_exactly_as_it_was` | The same line twice; half-done | All or nothing, inside the aggregate too |
+| `A_refused_line_leaves_the_old_lines` | Half-done | A refused edit keeps the order as it was |
+| `The_buyer_cannot_approve_their_own_order` | Who: yourself | The second pair of eyes on spending |
+| `A_draft_cannot_be_received_and_a_received_order_cannot_be_cancelled` | When | Goods can't arrive for an order nobody approved |
+| `A_partly_received_order_can_be_closed_short` | The supplier never sends the rest | The order can still be finished |
 
 ## How a request flows
 
@@ -934,4 +990,4 @@ fault. Good luck, developer!
 
 ---
 
-← [Lesson 17 — Shipping](17-shipping.md) · Next: [Lesson 19 — Invoicing](19-invoicing.md) →
+← [Lesson 18 — Shipping](18-shipping.md) · Next: [Lesson 20 — Invoicing](20-invoicing.md) →

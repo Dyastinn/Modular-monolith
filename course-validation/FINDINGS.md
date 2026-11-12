@@ -11,6 +11,65 @@ exist.
 
 ---
 
+## Tests in every lesson, and Podman — 2026-11-12/13
+
+Environment: Fedora Linux 45, .NET SDK 10.0.113, Podman 6.1.3 (rootless), PostgreSQL 18.6 in a container,
+Playwright's Chromium (no Chrome/Edge installed).
+
+**Test suite:** 159 unit (Sales 124, Invoicing 18, Purchasing 8, Inventory 5, Identity 4) + 9 architecture + 103
+integration, all passing, 0 build warnings. The integration suite runs on Testcontainers (a fresh `postgres:18`
+per run) as `erp_app`, with migrations as `erp_owner`, using `deploy/postgres/create-roles.sql`; every
+integration class also passes on its own. 6 Playwright tests pass against a running app. Coverage 83% of lines
+(generated code excluded); Stryker on the Sales domain: 94%.
+
+### 🟠 Fixed — search text was a LIKE pattern
+Every search function does `ILIKE '%' || p_search || '%'`, and the handlers passed the user's text straight
+in, so `%` matched everything and `_` any character. `SearchText.ForLike` (BuildingBlocks) trims and escapes
+`\`, `%`, `_`; all nine search handlers use it. Found by `Wildcard_characters_in_a_search_are_matched_literally`.
+
+### 🟠 Fixed — aggregates left half-changed by a refused line
+`SalesOrder.SetLines`, `PurchaseOrder.SetLines` and `PurchaseOrder.Receive` changed lines one at a time and
+threw midway, leaving the in-memory aggregate half-updated (never saved, because the handler threw, but a trap).
+All three now check everything first. `Receive` also sums the same line given twice before checking.
+
+### 🟡 Fixed — `?status=99` passed validation
+`Enum.TryParse` accepts any integer. The three status validators compare against `Enum.GetNames` instead.
+
+### 🟡 Fixed — two error-body shapes
+`GET /api/sales-orders/{id}` answered a missing order with an empty 404, and Identity's/framework problem bodies
+used the W3C `00-…-…-00` trace id, unlike `X-Trace-Id`. `UseStatusCodePages()` (lesson 07) and
+`AddProblemDetails(CustomizeProblemDetails …)` (lesson 14) make every error a problem body with the header's id.
+
+### 🟠 Fixed — invoice PDFs failed on Fedora/RHEL/macOS
+`ErpFontResolver` knew only Debian's DejaVu path and Windows' Arial. Added Fedora DejaVu, Liberation Sans
+(Fedora and Debian paths) and macOS Arial. Found because two integration tests failed on this Linux machine.
+
+### 🟡 Fixed — tests that depended on order
+Run alone, `OperationsTests` found no schema (the app starts lazily) and the redelivery test had nothing to
+redeliver. `OpenDatabase()` now starts the app first, and the redelivery test raises its own event.
+
+### 🟡 Fixed — lesson 05 didn't compile as written
+The `SalesDbContext.cs` listing lacked `using Erp.Shared.BuildingBlocks;` (`Money`, `Quantity`). Found by
+rebuilding lessons 01–05 from the lesson text alone; their stated test counts (13, 4/3/15, 52/5/15, 52/5/20) match.
+
+### 🟡 Fixed — Aspire 13.6.4 advisory
+NU1903 for CVE-2026-120006 (elevation of privilege, dev-only AppHost); now 13.6.5.
+
+### Deployment on Podman
+`deploy/docker/` → `deploy/compose/`. Mounts gained `,z` (SELinux hosts refuse unlabeled bind mounts to rootless
+containers). Connection strings gained `GSS Encryption Mode=Disable` (Npgsql otherwise logs a missing
+`libgssapi_krb5.so.2` on every start in the slim image). Both images build with `podman build`; the db (initdb
+roles), migrate and app containers ran together in Production as `erp_app` with a test certificate: healthy,
+first admin signs in, home page served. ⚠️ **Not run:** `podman compose up` with Caddy and the backup container
+(no Compose program installed; downloading one was declined), and the GitHub Actions workflow (nothing pushed).
+⚠️ Lessons 06–25 were checked against the reference build, not rebuilt from scratch.
+
+### 💡 Noticed, not changed
+`DocumentNumber.Format` takes the year from UTC, so an order created on 1 January before 08:00 Manila time is
+numbered with the previous year. Harmless (the counter never resets), but worth deciding before the first sale.
+
+---
+
 ## Business data out of configuration, special discounts, Form 2307 — 2026-11-07
 
 Environment: .NET SDK 10.0.403, PostgreSQL 18.6 (local), Windows 11, Edge (for Playwright).

@@ -1,4 +1,4 @@
-# Lesson 03 — The Domain Model: The Rules, in Plain C#
+# Lesson 04 — The Domain Model: The Rules, in Plain C#
 
 Good day, developer! Today is the most important lesson in the whole course. We'll write the business rules
 themselves: when a customer is blocked, how much credit is left, who may sell a controlled item, when an
@@ -49,10 +49,10 @@ rows:
 
 | The question | Where it lives |
 |---|---|
-| Is the request well-formed? (positive ids, at least one line) | A validator ([lesson 06](06-create-order.md)) |
+| Is the request well-formed? (positive ids, at least one line) | A validator ([lesson 07](07-create-order.md)) |
 | Is this operation allowed? (blocked, credit, status, approval) | **The domain** — this lesson |
-| Load, act, save | A handler ([lesson 06](06-create-order.md)), with no business `if`s |
-| Two people acting at once | The database, atomically ([lessons 08](08-submit.md) and [09](09-approve-reject-cancel.md)) |
+| Load, act, save | A handler ([lesson 07](07-create-order.md)), with no business `if`s |
+| Two people acting at once | The database, atomically ([lessons 09](09-submit.md) and [10](10-approve-reject-cancel.md)) |
 
 To remember it easily: if the question is "is this allowed?", the answer lives in the domain.
 
@@ -88,7 +88,7 @@ public class DomainException(string message) : Exception(message);
 - **`Entity<TId>`** is anything with an identity. `TId` is a small struct like `SalesOrderId`, never a
   plain `long`; you'll see why in a moment.
 - **`AggregateRoot<TId>`** marks the one entity the outside world talks to. It's empty for now. In
-  [lesson 11](11-events-outbox.md) it learns to record events.
+  [lesson 13](13-events-outbox.md) it learns to record events.
 - **`DomainException`** is how a business rule says no.
 - **`where TId : struct`** appears on both classes. Leave it off `AggregateRoot` and the compiler stops you
   with `CS0453`: a derived generic class must repeat its base class's constraints.
@@ -175,7 +175,7 @@ public static class Roles
 }
 ```
 
-Three roles are all Sales needs. [Lesson 15](15-users-email.md) adds the warehouse, purchasing and
+Three roles are all Sales needs. [Lesson 16](16-users-email.md) adds the warehouse, purchasing and
 accounting roles, when their screens arrive.
 
 You might wonder why all of BuildingBlocks shares one namespace, whatever the folder. Folders like
@@ -263,7 +263,7 @@ would pass on its own, and once all three were approved, they'd owe ₱270,000.
 
 The private parameterless constructor and the `Create` factory are a pair you'll see everywhere. `Create`
 checks the rules for a new customer; the private constructor is for the database to use later, in
-[lesson 04](04-database.md). [Lesson 14](14-customers.md) gives customers a TIN, an address and payment
+[lesson 05](05-database.md). [Lesson 15](15-customers.md) gives customers a TIN, an address and payment
 terms, and puts `Block` behind a button; until then, the seed data sets them up.
 
 ## 4. Categories and items
@@ -311,7 +311,7 @@ internal sealed class ItemCategory : Entity<CategoryId>
 
 An **item**, as far as Sales is concerned, is something with a price that it may sell. Sales doesn't own the
 list of items: that's the warehouse's catalog, which arrives with the Inventory module in
-[lesson 16](16-item-catalog.md). Sales keeps its own copy of what it needs from the catalog (SKU, name,
+[lesson 17](17-item-catalog.md). Sales keeps its own copy of what it needs from the catalog (SKU, name,
 unit, whether fractions are allowed, whether the item is active), plus the three things only Sales decides:
 the price, the category, and whether it's on sale.
 
@@ -374,7 +374,7 @@ internal sealed class SalesItem : Entity<ItemId>
 }
 ```
 
-Until lesson 16, the development seed puts the items in directly. The rules don't care where an item came
+Until lesson 17, the development seed puts the items in directly. The rules don't care where an item came
 from.
 
 ## 5. The sales order
@@ -483,8 +483,9 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
     {
         EnsureDraft();
         if (lines.Count == 0) throw new DomainException("An order needs at least one line.");
-        _lines.Clear();
 
+        // Built aside and swapped in at the end, so a refused line leaves the order exactly as it was.
+        var newLines = new List<SalesOrderLine>();
         var perCategory = new Dictionary<CategoryId, decimal>();
         foreach (var (item, quantity) in lines)
         {
@@ -494,10 +495,12 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
             perCategory[category.Id] = perCategory.GetValueOrDefault(category.Id) + quantity.Value;
             category.EnsureQuantityAllowed(perCategory[category.Id]);
 
-            var existing = _lines.FirstOrDefault(l => l.ItemId == item.Id);
+            var existing = newLines.FirstOrDefault(l => l.ItemId == item.Id);
             if (existing is not null) existing.IncreaseQuantity(quantity);
-            else _lines.Add(new SalesOrderLine(item.Id, item.Name, item.Unit, quantity, item.UnitPrice));
+            else newLines.Add(new SalesOrderLine(item.Id, item.Name, item.Unit, quantity, item.UnitPrice));
         }
+        _lines.Clear();
+        _lines.AddRange(newLines);
     }
 
     // otherPendingTotal: the customer's other submitted-but-unapproved orders, which already count against credit.
@@ -595,7 +598,7 @@ That's a lot of code, so let's walk through what each part protects:
 - **Approving charges the customer** (`AddToBalance`), and **cancelling an approved order takes it back**.
   The domain does both, so no handler can forget one.
 - **`Reject` and `Cancel` return the lines to release.** The order knows whether it was holding stock; the
-  handler just does what it's told ([lesson 09](09-approve-reject-cancel.md)). No business `if` leaks out.
+  handler just does what it's told ([lesson 10](10-approve-reject-cancel.md)). No business `if` leaks out.
 - **The time comes in as a parameter** (`nowUtc`) instead of `DateTime.UtcNow`, so tests can control it.
 - `EnsureBelongsTo` throws `InvalidOperationException`, not `DomainException`. Passing the wrong customer is
   a programming bug, not a business rule a user can break.
@@ -604,35 +607,9 @@ Clear so far? Good. Now let's prove all of it.
 
 ## 6. The unit tests
 
-```bash
-dotnet new xunit -o tests/Erp.Modules.Sales.UnitTests
-dotnet sln add tests/Erp.Modules.Sales.UnitTests
-```
-
-The template's `.csproj` names a version on each package, which central package management forbids. Open it,
-delete every `<PackageReference>` line, and delete the generated `UnitTest1.cs`. Then add the packages our
-way:
-
-```bash
-dotnet add tests/Erp.Modules.Sales.UnitTests reference src/Modules/Sales/Erp.Modules.Sales
-dotnet add tests/Erp.Modules.Sales.UnitTests package Microsoft.NET.Test.Sdk --version 17.14.1
-dotnet add tests/Erp.Modules.Sales.UnitTests package xunit --version 2.9.3
-dotnet add tests/Erp.Modules.Sales.UnitTests package xunit.runner.visualstudio --version 3.1.4
-dotnet add tests/Erp.Modules.Sales.UnitTests package AwesomeAssertions --version 9.6.0
-```
-
-| Package | What it's for | License |
-|---|---|---|
-| `xunit`, `xunit.runner.visualstudio` | The test framework, and what lets `dotnet test` find the tests | Apache-2.0 |
-| `Microsoft.NET.Test.Sdk` | The plumbing between `dotnet test` and the framework | MIT |
-| `AwesomeAssertions` | Readable checks: `total.Should().Be(...)`. A free fork of FluentAssertions, whose version 8 needs a paid license | Apache-2.0 |
-
-The domain is `internal`, so let the test project in. In `Erp.Modules.Sales.csproj`, add a line next to
-the `Erp.Api` one:
-
-```xml
-<InternalsVisibleTo Include="Erp.Modules.Sales.UnitTests" />
-```
+The test project has been waiting since [lesson 03](03-mediator.md), and it can already see Sales' internals.
+The domain is exactly what unit tests are for: plain classes, no database, no web. Let's prove every rule
+we just wrote.
 
 ```csharp
 // tests/Erp.Modules.Sales.UnitTests/DomainTests.cs
@@ -860,6 +837,372 @@ has an id of 0 until the database gives it one, so `Make.Order` uses `customer.I
 one. Each test reads like a sentence from the business rules; when a rule changes, the test that names it is
 the first thing you update.
 
+## 7. Hunting for edges
+
+The tests above prove each rule with one comfortable example: ₱600 over a ₱500 headroom, an order of ₱60,000.
+Bugs don't live there. They live at the edges: an order of *exactly* ₱50,000, credit used to the last
+centavo, five kits when the cap is five. Take the checklist from [lesson 02](02-testing.md) and walk it over
+the domain:
+
+```csharp
+// tests/Erp.Modules.Sales.UnitTests/BoundaryTests.cs
+using AwesomeAssertions;
+using Erp.Modules.Sales.Domain;
+using Erp.Shared.BuildingBlocks;
+
+namespace Erp.Modules.Sales.UnitTests;
+
+// Bugs live at the edges: exactly at a limit, one centavo past it, zero, the smallest step.
+public class MoneyAndQuantityBoundaryTests
+{
+    [Theory]
+    [InlineData("0.005", "0.01")]   // half a centavo rounds up, away from zero
+    [InlineData("0.004", "0.00")]
+    [InlineData("1.005", "1.01")]
+    [InlineData("2.675", "2.68")]   // the classic double-rounding trap; decimal gets it right
+    [InlineData("0", "0.00")]
+    public void Money_rounds_half_a_centavo_away_from_zero(string amount, string expected) =>
+        new Money(decimal.Parse(amount)).Amount.Should().Be(decimal.Parse(expected));
+
+    [Fact]
+    public void Taking_away_more_money_than_there_is_fails() =>
+        FluentActions.Invoking(() => new Money(5) - new Money(5.01m)).Should().Throw<DomainException>();
+
+    [Theory]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("-0.001")]
+    [InlineData("0.0001")]
+    [InlineData("1.0005")]
+    public void A_quantity_that_is_not_positive_or_has_four_decimals_is_refused(string value) =>
+        FluentActions.Invoking(() => new Quantity(decimal.Parse(value))).Should().Throw<DomainException>();
+}
+
+public class LimitBoundaryTests
+{
+    [Fact]
+    public void Credit_up_to_exactly_the_limit_is_allowed() =>
+        Make.Customer(limit: 5000, balance: 4500).Invoking(c => c.EnsureWithinCreditLimit(new Money(500), Money.Zero))
+            .Should().NotThrow();
+
+    [Fact]
+    public void One_centavo_over_the_limit_is_refused() =>
+        Make.Customer(limit: 5000, balance: 4500).Invoking(c => c.EnsureWithinCreditLimit(new Money(500.01m), Money.Zero))
+            .Should().Throw<DomainException>().WithMessage("*Available credit: ₱500.00*");
+
+    [Fact]
+    public void An_order_of_exactly_50000_is_approved_on_submit()
+    {
+        var customer = Make.Customer();
+        var order = Make.Order(customer, unitPrice: 50_000);
+
+        order.Submit(customer, Money.Zero, Make.Now);
+
+        order.Status.Should().Be(SalesOrderStatus.Approved);
+    }
+
+    [Fact]
+    public void One_centavo_over_50000_waits_for_a_manager()
+    {
+        var customer = Make.Customer();
+        var order = Make.Order(customer, unitPrice: 50_000.01m);
+
+        order.Submit(customer, Money.Zero, Make.Now);
+
+        order.Status.Should().Be(SalesOrderStatus.PendingApproval);
+    }
+
+    // SetLines builds the new lines aside and swaps them in at the end. This proves why.
+    [Fact]
+    public void A_failed_change_of_lines_keeps_the_old_lines()
+    {
+        var order = Make.Order(Make.Customer(), unitPrice: 25, qty: 2);
+
+        order.Invoking(o => o.SetLines([(Make.Item(3, 500, Make.Controlled), new Quantity(1))], Roles.SalesRep))
+            .Should().Throw<DomainException>();
+
+        order.Lines.Should().ContainSingle().Which.Quantity.Should().Be(new Quantity(2));
+    }
+}
+```
+
+Notice how a `[Theory]` takes the numbers as strings and parses them: C# attributes can't hold a `decimal`,
+and a `double` would bring back exactly the rounding errors we're testing for.
+
+That last test is worth a closer look. An early version of `SetLines` cleared the lines first and then
+added the new ones, checking each as it went. A refused third line left the order with two lines, or none:
+half-changed. The handler would throw and never save, so nobody noticed. The test noticed. That's why
+`SetLines` builds `newLines` aside, and only replaces `_lines` once every line has passed.
+
+### Every status change that isn't allowed
+
+The state machine has five statuses and four actions so far. That's twenty combinations, and only a handful
+are allowed. One `[Theory]` tries the forbidden ones and checks that each fails *and changes nothing*:
+
+```csharp
+// tests/Erp.Modules.Sales.UnitTests/StatusTransitionTests.cs
+using AwesomeAssertions;
+using Erp.Modules.Sales.Domain;
+using Erp.Shared.BuildingBlocks;
+
+namespace Erp.Modules.Sales.UnitTests;
+
+// Every status change that isn't on the list must fail, and leave the order and the customer as they were.
+public class StatusTransitionTests
+{
+    public enum Step { Submit, Approve, Reject, Cancel }
+
+    private static (SalesOrder Order, Customer Customer) OrderIn(SalesOrderStatus status)
+    {
+        var customer = Make.Customer();
+        var order = Make.Order(customer, unitPrice: 60_000);   // over the threshold, so it waits for a manager
+        if (status == SalesOrderStatus.Draft) return (order, customer);
+
+        order.Submit(customer, Money.Zero, Make.Now);
+        switch (status)
+        {
+            case SalesOrderStatus.Approved: order.Approve(Make.Manager, customer, Make.Now); break;
+            case SalesOrderStatus.Rejected: order.Reject(Make.Manager, "No", Make.Now); break;
+            case SalesOrderStatus.Cancelled: order.Cancel(customer); break;
+        }
+        return (order, customer);
+    }
+
+    private static void Do(Step step, SalesOrder order, Customer customer)
+    {
+        switch (step)
+        {
+            case Step.Submit: order.Submit(customer, Money.Zero, Make.Now); break;
+            case Step.Approve: order.Approve(Make.Manager, customer, Make.Now); break;
+            case Step.Reject: order.Reject(Make.Manager, "No", Make.Now); break;
+            case Step.Cancel: order.Cancel(customer); break;
+        }
+    }
+
+    [Theory]
+    [InlineData("Draft", Step.Approve)]
+    [InlineData("Draft", Step.Reject)]
+    [InlineData("PendingApproval", Step.Submit)]
+    [InlineData("Approved", Step.Submit)]
+    [InlineData("Approved", Step.Approve)]
+    [InlineData("Approved", Step.Reject)]
+    [InlineData("Rejected", Step.Approve)]
+    [InlineData("Rejected", Step.Cancel)]
+    [InlineData("Cancelled", Step.Submit)]
+    [InlineData("Cancelled", Step.Cancel)]
+    public void A_step_not_allowed_from_a_status_is_refused_and_changes_nothing(string status, Step step)
+    {
+        var from = Enum.Parse<SalesOrderStatus>(status);   // the status enum is internal; a public test can't take it
+        var (order, customer) = OrderIn(from);
+        var balance = customer.OutstandingBalance;
+
+        order.Invoking(o => Do(step, o, customer)).Should().Throw<DomainException>();
+
+        order.Status.Should().Be(from);
+        customer.OutstandingBalance.Should().Be(balance);
+    }
+}
+```
+
+`SalesOrderStatus` is `internal`, and a public test method can't take an internal type as a parameter, so
+the status travels as its name. `Step` is the test's own enum, so it can be public. When
+[lesson 18](18-shipping.md) adds shipping, it adds a `Ship` step and four more rows.
+
+The rest of the edges follow the same patterns. Here's every one this lesson's tests cover; the ones not
+shown above are in the reference build's `BoundaryTests.cs`:
+
+| Test | The edge | Why it matters |
+|---|---|---|
+| `Money_rounds_half_a_centavo_away_from_zero` | Half a centavo | Rounding the wrong way loses a centavo per line, thousands a year |
+| `Taking_away_more_money_than_there_is_fails` | Below zero | Money is never negative; a refund is its own document |
+| `A_quantity_that_is_not_positive_or_has_four_decimals_is_refused` | Zero, negative, too precise | The database holds three decimals; a fourth would vanish silently |
+| `The_smallest_and_largest_sensible_quantities_are_accepted` | 0.001 and 999,999.999 | A rule that's too strict is a bug too |
+| `Credit_up_to_exactly_the_limit_is_allowed` | Exactly at the limit | `<` where `<=` belongs refuses a customer who's within their rights |
+| `One_centavo_over_the_limit_is_refused` | One step over | The other side of the same boundary |
+| `A_customer_already_over_the_limit_shows_zero_available_not_a_negative` | Already over | "Available credit: -₱500.00" confuses everyone |
+| `Exactly_the_category_cap_is_allowed` | At the cap | Same `<` versus `<=` question |
+| `The_same_item_twice_counts_toward_the_cap` | Twice | Splitting six kits over two lines must not dodge the cap of five |
+| `An_order_of_exactly_50000_is_approved_on_submit` | At the threshold | The policy says *above* ₱50,000 needs a manager |
+| `One_centavo_over_50000_waits_for_a_manager` | One step over | The other side |
+| `An_order_needs_at_least_one_line` | Nothing | An empty order is no order |
+| `An_admin_may_sell_controlled_items` | Who | The exception to the category's role rule |
+| `A_failed_change_of_lines_keeps_the_old_lines` | Half-done | A refused change must leave the order exactly as it was |
+| `A_step_not_allowed_from_a_status_is_refused_and_changes_nothing` (10 cases) | When | The whole state machine, not just the happy path |
+| `Cancelling_an_order_awaiting_approval_releases_stock_but_reverses_no_charge` | When | It was never charged, so nothing is taken back |
+| `A_rejection_reason_is_kept_without_its_surrounding_spaces` | Odd input | `"  Price  "` is stored as `"Price"` |
+
+## 8. Property-based tests: let the computer pick the numbers
+
+Every example above was picked by us. But we can only think of the numbers we think of. What about
+₱13,617.37 × 0.731 kg? A **property-based test** states a rule that must hold for *every* input, and a library
+makes up a hundred inputs to try. If one fails, it shrinks it down to the simplest input that still fails,
+and shows you that.
+
+```bash
+dotnet add tests/Erp.Modules.Sales.UnitTests package FsCheck.Xunit --version 3.6.0
+```
+
+`FsCheck.Xunit` (BSD-3-Clause) gives us the `[Property]` attribute. A property is a method that takes
+generated values and returns `true` when the rule holds:
+
+```csharp
+// tests/Erp.Modules.Sales.UnitTests/PropertyTests.cs
+using Erp.Modules.Sales.Domain;
+using Erp.Shared.BuildingBlocks;
+using FsCheck;
+using FsCheck.Xunit;
+
+namespace Erp.Modules.Sales.UnitTests;
+
+// A [Fact] checks the examples we thought of; a [Property] checks a rule against a hundred inputs FsCheck makes up.
+public class MoneyProperties
+{
+    [Property]
+    public bool Money_always_holds_whole_centavos(NonNegativeInt pesos, NonNegativeInt thousandths)
+    {
+        var amount = pesos.Get + thousandths.Get % 1000 / 1000m;
+        var money = new Money(amount);
+        return money.Amount * 100 == decimal.Truncate(money.Amount * 100) && Math.Abs(money.Amount - amount) <= 0.005m;
+    }
+
+    [Property]
+    public bool Adding_amounts_never_drifts_a_centavo(NonNegativeInt[] centavos)
+    {
+        var sum = centavos.Aggregate(Money.Zero, (total, c) => total + new Money(c.Get / 100m));
+        return sum.Amount == centavos.Sum(c => (decimal)c.Get) / 100m;
+    }
+
+    [Property]
+    public bool Subtracting_what_was_added_gives_back_the_start(NonNegativeInt start, NonNegativeInt added)
+    {
+        var a = new Money(start.Get / 100m);
+        var b = new Money(added.Get / 100m);
+        return a + b - b == a;
+    }
+}
+
+public class OrderTotalProperties
+{
+    // The C# total and, from lesson 08, the SQL functions' SUM(ROUND(quantity * unit_price, 2)) must agree, or
+    // the list and the detail page show different totals.
+    [Property]
+    public bool An_order_total_is_the_sum_of_its_lines_rounded_one_by_one(PositiveInt[] priceCentavos, PositiveInt[] gramsSeed)
+    {
+        var count = Math.Min(Math.Min(priceCentavos.Length, gramsSeed.Length), 5);
+        if (count == 0) return true;
+
+        var lines = Enumerable.Range(0, count).Select(i =>
+        {
+            var price = priceCentavos[i].Get % 10_000_000 / 100m + 0.01m;
+            var quantity = gramsSeed[i].Get % 200_000 / 1000m + 0.001m;   // up to 200 kg, gram by gram
+            return (Item: Make.Item(i + 1, price, fractions: true, unit: "kg"), Price: price, Quantity: quantity);
+        }).ToList();
+
+        var order = SalesOrder.Create("SO-1", new CustomerId(0), Make.Rep, Make.Now);
+        order.SetLines(lines.Select(l => (l.Item, new Quantity(l.Quantity))).ToList(), Roles.SalesRep);
+
+        return order.Total.Amount == lines.Sum(l => Math.Round(l.Price * l.Quantity, 2, MidpointRounding.AwayFromZero));
+    }
+}
+```
+
+Here's what each piece does:
+
+- **`NonNegativeInt`, `PositiveInt`** are FsCheck's types for "any whole number, 0 or more" and "1 or more".
+  `.Get` is the number. Arrays of them come in any length, including empty, which is an edge for free.
+- **The `%` and `+ 0.001m`** squeeze the made-up numbers into the shape we need: prices up to ₱100,000, weights
+  up to 200 kg, never zero.
+- **The order total property** pins down a decision: each line rounds to centavos *first*, then the lines add
+  up. Round only the sum, and a ten-line order can differ by a few centavos from the invoice a customer
+  adds up by hand.
+
+Run the tests and you'll see each property counted once, but it ran a hundred times. Now break `Money`: in its
+constructor, replace `Math.Round(amount, 2, MidpointRounding.AwayFromZero)` with just `amount`, and run again.
+Among the failures:
+
+```
+Failed Erp.Modules.Sales.UnitTests.MoneyProperties.Money_always_holds_whole_centavos
+Falsifiable, after 1 test (1 shrink)
+Original:
+(NonNegativeInt 1, NonNegativeInt 1)
+Shrunk:
+(NonNegativeInt 0, NonNegativeInt 1)
+```
+
+FsCheck found ₱1.001 on its first try, then **shrank** it to the simplest amount that still fails: ₱0.001, a
+tenth of a centavo that our `Money` would now happily keep. Put the rounding back.
+
+Try one more break: change `AwayFromZero` to `ToEven`. This time the properties stay green, because ₱0.005
+rounded down is still a whole centavo, and still within half a centavo. Only the boundary theory from step 7
+catches it. That's the honest picture: properties and examples catch different bugs, so we keep both.
+
+Now, let's be honest about the cost here: a property is harder to write than an example, and a badly
+squeezed generator can test nothing interesting a hundred times. Use properties for math and rules over
+many values (money, tax, totals), and examples for everything else.
+
+## 9. Two more walls to test
+
+Two rules from this lesson are about how the code is built, so they get architecture tests:
+
+- **The domain stays pure.** No EF Core, no SQL, no web types in `Domain/`. If one sneaks in, the domain can't
+  be unit-tested without a database any more.
+- **State changes only through methods.** A public setter lets any handler write `order.Status = Approved`,
+  and the whole state machine becomes decoration.
+
+Add both to `ModuleBoundaryTests`:
+
+```csharp
+// tests/Erp.Architecture.Tests/ModuleBoundaryTests.cs (two more tests)
+[Fact]
+public void The_domain_does_not_depend_on_data_access_or_web()
+{
+    string[] forbidden = ["Microsoft.EntityFrameworkCore", "Npgsql", "Dapper", "Microsoft.AspNetCore", "Carter"];
+
+    foreach (var module in Modules)
+    {
+        var domainTypes = module.GetTypes().Where(t => (t.Namespace ?? "").EndsWith(".Domain"));
+        foreach (var type in domainTypes)
+        {
+            var used = type.GetFields(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+                .Select(f => f.FieldType)
+                .Concat(type.GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                    .SelectMany(c => c.GetParameters()).Select(p => p.ParameterType))
+                .Concat(type.GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
+                    .SelectMany(m => m.GetParameters().Select(p => p.ParameterType).Append(m.ReturnType)));
+
+            used.Select(t => t.Assembly.GetName().Name!)
+                .Where(a => forbidden.Any(a.StartsWith))
+                .Should().BeEmpty($"{type.FullName} is domain code and must stay free of data access and web types");
+        }
+    }
+}
+
+// A rich domain changes state through methods that check the rules. A public setter would let anyone skip them.
+[Fact]
+public void Domain_state_changes_only_through_its_methods()
+{
+    var setters = Modules.SelectMany(m => m.GetTypes())
+        .Where(t => (t.Namespace ?? "").EndsWith(".Domain"))
+        .SelectMany(t => t.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly))
+        .Where(p => p.SetMethod is { IsPublic: true } setter
+                    && !setter.ReturnParameter.GetRequiredCustomModifiers().Contains(typeof(IsExternalInit)))
+        .Select(p => $"{p.DeclaringType!.Name}.{p.Name}");
+
+    setters.Should().BeEmpty("domain properties have private setters; records' init-only properties are fine");
+}
+```
+
+The first looks at every field, constructor and method a domain type has, and asks which assembly each type
+comes from. The second finds every public setter, except `init` ones: a record's properties are set once,
+when it's created, which is fine. `IsExternalInit` is the marker the compiler puts on an `init` setter.
+
+Make it fail once: change `public string OrderNumber { get; private set; }` to `{ get; set; }`.
+
+```
+Expected setters to be empty because domain properties have private setters; records' init-only properties
+are fine, but found at least one item {"SalesOrder.OrderNumber"}.
+```
+
 ## Mistakes to avoid
 
 - Public setters "for convenience". One `order.Status = Approved` anywhere, and the state machine is just
@@ -869,6 +1212,8 @@ the first thing you update.
 - `DateTime.UtcNow` inside the domain. You can't test it. Pass the time in.
 - Throwing `DomainException` for programmer mistakes. It becomes a 422 the user sees, when a bug should be
   a loud 500.
+- Testing only the comfortable middle. Test exactly at each limit, and one step either side.
+- Using `double` in a test's numbers. Pass decimals as strings and parse them.
 - Vague method names. Use one method per business verb (`Submit`, `Approve`, `Reject`, `Cancel`), named in
   the business's own words.
 
@@ -879,11 +1224,14 @@ dotnet test
 ```
 
 ```
-Passed!  - Failed: 0, Passed: 18, Skipped: 0, Total: 18
+Passed!  - Failed: 0, Passed: 52, ... Erp.Modules.Sales.UnitTests.dll
+Passed!  - Failed: 0, Passed:  5, ... Erp.Architecture.Tests.dll
+Passed!  - Failed: 0, Passed: 15, ... Erp.Integration.Tests.dll
 ```
 
-Eighteen business rules, proven in well under a second, with no database in sight. That's the reward for
-keeping the domain pure.
+Every business rule, its edges, and four properties tried a hundred times each, proven in about a second,
+with no database in sight. (If you also wrote the tests from the edge-case table that aren't shown, your
+count is higher.) That's the reward for keeping the domain pure.
 
 ## Let's check!
 
@@ -893,10 +1241,13 @@ keeping the domain pure.
 4. What stops a handler from setting `order.Status = SalesOrderStatus.Approved` on a draft?
 5. Why does `SetLines` check the category cap across the whole order, not line by line?
 6. Why does an order line keep the item's name, instead of looking it up when needed?
+7. Name three edges of "an order over ₱50,000 needs a manager", and what each test checks.
+8. What does a property-based test give you that a `[Theory]` with ten cases doesn't? What does it cost?
+9. Why does `SetLines` build the new lines aside before replacing the old ones? Which test proves it?
 
 And that's where this lesson ends. You now have every rule of a sales order, in plain C#, with tests to
 prove them. Next time, we give the module its memory: a PostgreSQL database. Good luck, developer!
 
 ---
 
-← [Lesson 02 — Mediator](02-mediator.md) · Next: [Lesson 04 — Database](04-database.md) →
+← [Lesson 03 — Mediator](03-mediator.md) · Next: [Lesson 05 — Database](05-database.md) →

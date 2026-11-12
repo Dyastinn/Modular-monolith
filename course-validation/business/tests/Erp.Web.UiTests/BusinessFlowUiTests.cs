@@ -6,6 +6,8 @@ namespace Erp.Web.UiTests;
 
 // Runs only against a running app with the development seed: set ERP_UI_URL (e.g. http://localhost:5264).
 // ERP_UI_SCREENSHOTS, if set, is a folder that receives a screenshot of every step.
+// ERP_UI_BROWSER picks the browser: msedge (Windows default), chrome (elsewhere), or chromium for the one
+// `playwright install chromium` downloads, on a machine with neither.
 public sealed class UiFactAttribute : FactAttribute
 {
     public UiFactAttribute()
@@ -27,8 +29,9 @@ public class BusinessFlowUiTests : IAsyncLifetime
     {
         if (BaseUrl.Length == 0) return;
         _playwright = await Playwright.CreateAsync();
-        // The Edge (or Chrome) already on the machine: nothing to download.
-        _browser = await _playwright.Chromium.LaunchAsync(new() { Channel = OperatingSystem.IsWindows() ? "msedge" : "chrome" });
+        // By default the Edge (or Chrome) already on the machine: nothing to download.
+        var channel = Environment.GetEnvironmentVariable("ERP_UI_BROWSER") ?? (OperatingSystem.IsWindows() ? "msedge" : "chrome");
+        _browser = await _playwright.Chromium.LaunchAsync(new() { Channel = channel == "chromium" ? null : channel });
     }
 
     public async Task DisposeAsync()
@@ -62,6 +65,38 @@ public class BusinessFlowUiTests : IAsyncLifetime
     {
         await page.GetByLabel(label).First.FillAsync(search);
         await page.GetByText(option).First.ClickAsync();
+    }
+
+    [UiFact]
+    public async Task Signing_in_greets_you_by_name()
+    {
+        var page = await SignIn("rep@erp.local");
+        await Shot(page, "signed-in");
+        new Uri(page.Url).AbsolutePath.Should().Be("/");
+    }
+
+    [UiFact]
+    public async Task A_wrong_password_shows_a_message_and_stays_on_the_sign_in_page()
+    {
+        var context = await _browser.NewContextAsync(new() { BaseURL = BaseUrl });
+        var page = await context.NewPageAsync();
+        await page.GotoAsync("/login");
+        await page.GetByLabel("Email").FillAsync("rep@erp.local");
+        await page.GetByLabel("Password").FillAsync("not-the-password");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
+
+        await page.GetByText("Wrong email or password.").WaitForAsync();
+        new Uri(page.Url).AbsolutePath.Should().Be("/login");
+    }
+
+    [UiFact]
+    public async Task A_page_opened_before_signing_in_asks_for_sign_in()
+    {
+        var context = await _browser.NewContextAsync(new() { BaseURL = BaseUrl });
+        var page = await context.NewPageAsync();
+        await page.GotoAsync("/sales-orders");
+
+        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).WaitForAsync();
     }
 
     [UiFact]

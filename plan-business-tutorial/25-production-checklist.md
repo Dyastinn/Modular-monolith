@@ -1,4 +1,4 @@
-# Lesson 24 — The Production Checklist: What's Done, What's Left
+# Lesson 25 — The Production Checklist: What's Done, What's Left
 
 Good day, developer! The ERP runs the whole business, on a real server, over HTTPS. Today we step back and
 walk the production checklist, line by line, honestly: what's done and which lesson did it, the first day of
@@ -27,46 +27,46 @@ backup yet; it's a hope.
 
 | Security | Lesson |
 |---|---|
-| Passwords hashed by ASP.NET Core Identity; lockout after 5 wrong tries; 12-character minimum; no self sign-up | [05](05-sign-in.md) |
-| Cookies for the browser (HttpOnly, SameSite=Strict), short-lived bearer tokens with refresh for programs, sign out everywhere; no API keys in the browser | [05](05-sign-in.md) |
-| Role checks at the endpoint; data-dependent rules in the domain (nobody approves their own order or purchase) | [06](06-create-order.md), [09](09-approve-reject-cancel.md), [18](18-purchasing.md) |
-| A sales rep sees only their own orders; anyone else's is a 404 | [07](07-find-orders.md) |
-| Staff accounts by an admin only, temporary passwords, disable instead of delete, no lockout of the last admin, sign-in log | [15](15-users-email.md) |
-| Errors as problem details with a trace id, never a stack trace | [06](06-create-order.md) |
-| Rate limits per user and per IP, strict on sign-in | [22](22-security-hardening.md) |
-| HTTPS with HSTS, security headers, a Content-Security-Policy with no inline scripts, no server banners | [22](22-security-hardening.md), [23](23-docker.md) |
-| Sign-in keys in the database, encrypted with a certificate; the app refuses to start without one | [22](22-security-hardening.md) |
-| The app runs as `erp_app` (rows only); only deployments run as `erp_owner` | [22](22-security-hardening.md), [23](23-docker.md) |
+| Passwords hashed by ASP.NET Core Identity; lockout after 5 wrong tries; 12-character minimum; no self sign-up | [06](06-sign-in.md) |
+| Cookies for the browser (HttpOnly, SameSite=Strict), short-lived bearer tokens with refresh for programs, sign out everywhere; no API keys in the browser | [06](06-sign-in.md) |
+| Role checks at the endpoint; data-dependent rules in the domain (nobody approves their own order or purchase) | [07](07-create-order.md), [10](10-approve-reject-cancel.md), [19](19-purchasing.md) |
+| A sales rep sees only their own orders; anyone else's is a 404 | [08](08-find-orders.md) |
+| Staff accounts by an admin only, temporary passwords, disable instead of delete, no lockout of the last admin, sign-in log | [16](16-users-email.md) |
+| Errors as problem details with a trace id, never a stack trace | [07](07-create-order.md) |
+| Rate limits per user and per IP, strict on sign-in | [23](23-security-hardening.md) |
+| HTTPS with HSTS, security headers, a Content-Security-Policy with no inline scripts, no server banners | [23](23-security-hardening.md), [24](24-deploy-podman.md) |
+| Sign-in keys in the database, encrypted with a certificate; the app refuses to start without one | [23](23-security-hardening.md) |
+| The app runs as `erp_app` (rows only); only deployments run as `erp_owner` | [23](23-security-hardening.md), [24](24-deploy-podman.md) |
 
 | Correctness | Lesson |
 |---|---|
-| The credit check counts the balance *and* orders waiting for approval, with the customer row locked | [08](08-submit.md) |
-| Stock reserved, shipped and received in single atomic statements: two people can't take the last unit | [08](08-submit.md), [17](17-shipping.md), [18](18-purchasing.md) |
-| Lost updates refused with 409, including edits that only change lines | [09](09-approve-reject-cancel.md), [10](10-update-order.md) |
-| Approval is a workflow: pending, then approved or rejected, with a reason | [09](09-approve-reject-cancel.md) |
-| Units of measure and decimal quantities; money rounded to centavos everywhere | [03](03-domain-model.md) |
-| Every stock change audited, with who and why | [16](16-item-catalog.md) |
-| No event lost on a crash: the outbox; handlers idempotent (upserts, the issuer's checks, the payments inbox) | [11](11-events-outbox.md), [16](16-item-catalog.md), [19](19-invoicing.md), [20](20-payments.md) |
-| Invoice numbers without gaps; invoices never edited, only voided and reissued | [19](19-invoicing.md) |
-| A customer's balance follows payments in and out, exactly once | [20](20-payments.md) |
+| The credit check counts the balance *and* orders waiting for approval, with the customer row locked | [09](09-submit.md) |
+| Stock reserved, shipped and received in single atomic statements: two people can't take the last unit | [09](09-submit.md), [18](18-shipping.md), [19](19-purchasing.md) |
+| Lost updates refused with 409, including edits that only change lines | [10](10-approve-reject-cancel.md), [11](11-update-order.md) |
+| Approval is a workflow: pending, then approved or rejected, with a reason | [10](10-approve-reject-cancel.md) |
+| Units of measure and decimal quantities; money rounded to centavos everywhere | [04](04-domain-model.md) |
+| Every stock change audited, with who and why | [17](17-item-catalog.md) |
+| No event lost on a crash: the outbox; handlers idempotent (upserts, the issuer's checks, the payments inbox) | [13](13-events-outbox.md), [17](17-item-catalog.md), [20](20-invoicing.md), [21](21-payments.md) |
+| Invoice numbers without gaps; invoices never edited, only voided and reissued | [20](20-invoicing.md) |
+| A customer's balance follows payments in and out, exactly once | [21](21-payments.md) |
 
 | Tax and invoices | Lesson |
 |---|---|
-| The invoice prints what BIR RR 7-2024 Sec. 6(B) asks for: registered name, TIN statement, address, the word "Invoice", a serial number, space for the buyer's name, address and TIN, the VAT breakdown, and the permit details at the bottom | [19](19-invoicing.md) |
-| The company's registered details, tax regime and VAT rate are business data, kept by the accountant on a screen and checked by the domain; each invoice keeps the seller details and rate it was issued with | [19](19-invoicing.md) |
-| Nothing ships until the company profile is complete, so no invoice goes out without the seller's details | [19](19-invoicing.md) |
-| Each item is VATable, zero-rated or VAT-exempt; the order line and the invoice line keep that choice | [19](19-invoicing.md) |
-| A second print of the same invoice says "REPRINT" | [19](19-invoicing.md) |
-| Tax withheld by customers settles their invoices; every BIR Form 2307 is tracked per customer and quarter, with what's still missing | [20](20-payments.md) |
-| Senior citizen and PWD discounts (and any other program the business adds): VAT exemption, then 20%, on the order and the invoice alike, with the ID and signature line Sec. 6(B.18) asks for | [21](21-special-discounts.md) |
+| The invoice prints what BIR RR 7-2024 Sec. 6(B) asks for: registered name, TIN statement, address, the word "Invoice", a serial number, space for the buyer's name, address and TIN, the VAT breakdown, and the permit details at the bottom | [20](20-invoicing.md) |
+| The company's registered details, tax regime and VAT rate are business data, kept by the accountant on a screen and checked by the domain; each invoice keeps the seller details and rate it was issued with | [20](20-invoicing.md) |
+| Nothing ships until the company profile is complete, so no invoice goes out without the seller's details | [20](20-invoicing.md) |
+| Each item is VATable, zero-rated or VAT-exempt; the order line and the invoice line keep that choice | [20](20-invoicing.md) |
+| A second print of the same invoice says "REPRINT" | [20](20-invoicing.md) |
+| Tax withheld by customers settles their invoices; every BIR Form 2307 is tracked per customer and quarter, with what's still missing | [21](21-payments.md) |
+| Senior citizen and PWD discounts (and any other program the business adds): VAT exemption, then 20%, on the order and the invoice alike, with the ID and signature line Sec. 6(B.18) asks for | [22](22-special-discounts.md) |
 
 | Operations | Lesson |
 |---|---|
-| Structured logs, traces and metrics; a trace id on every response and log line | [13](13-observability.md) |
-| `/health/live` and `/health/ready` | [13](13-observability.md) |
-| Unit, integration, architecture and browser tests, also run as the least-privilege accounts | [12](12-testing.md), [22](22-security-hardening.md) |
-| One-command install and upgrade with Docker Compose: migrations as a step, HTTPS by Caddy, nightly backups | [23](23-docker.md) |
-| The first admin from configuration, once | [23](23-docker.md) |
+| Structured logs, traces and metrics; a trace id on every response and log line | [14](14-observability.md) |
+| `/health/live` and `/health/ready` | [14](14-observability.md) |
+| Tests in every lesson: unit, property-based, integration on a throwaway PostgreSQL run as the least-privilege account, architecture, race, browser; coverage and mutation testing; CI on every push | [02](02-testing.md) to [23](23-security-hardening.md), CI in [12](12-containers-ci.md) |
+| One-command install and upgrade with Compose on rootless Podman (Docker works unchanged): migrations as a step, HTTPS by Caddy, nightly backups | [24](24-deploy-podman.md) |
+| The first admin from configuration, once | [24](24-deploy-podman.md) |
 | A restore drill | this lesson |
 
 ## 2. The first day of a new install
@@ -77,7 +77,7 @@ needs the one before it.
 | Step | Who | Where |
 |---|---|---|
 | 1. Fill in the SMTP settings and the initial admin | IT | `.env` |
-| 2. Sign in as the initial admin, change the password, remove the `InitialAdmin` settings | IT | Lesson 23 |
+| 2. Sign in as the initial admin, change the password, remove the `InitialAdmin` settings | IT | Lesson 24 |
 | 3. Create the staff accounts, one role each | Admin | Administration → Users |
 | 4. Fill in the company's registered name, TIN and address exactly as on its BIR certificate, and its tax regime. Nothing can ship until this is done | Accountant | Invoicing → Company and tax |
 | 5. Set up item categories (who may sell what, how much per order) | Sales manager | Sales → Price list → Categories |
@@ -96,15 +96,15 @@ list in section 4.
 
 ## 3. Prove it: the restore drill
 
-The Docker install already backs itself up every night ([lesson 23](23-docker.md)). Now, let's be honest
+The install already backs itself up every night ([lesson 24](24-deploy-podman.md)). Now, let's be honest
 about what that proves: nothing, until you've restored one. So restore last night's file into a scratch
 database next to the real one, and look inside:
 
 ```bash
-docker compose exec db createdb --username postgres --owner erp_owner erp_restore_check
-docker compose exec backup pg_restore --host db --username erp_owner --dbname erp_restore_check --no-owner /backups/erp-2026-11-06.dump
-docker compose exec backup psql --host db --username erp_owner --dbname erp_restore_check -c "SELECT count(*) FROM invoicing.invoice;"
-docker compose exec db dropdb --username postgres erp_restore_check
+podman compose exec db createdb --username postgres --owner erp_owner erp_restore_check
+podman compose exec backup pg_restore --host db --username erp_owner --dbname erp_restore_check --no-owner /backups/erp-2026-11-06.dump
+podman compose exec backup psql --host db --username erp_owner --dbname erp_restore_check -c "SELECT count(*) FROM invoicing.invoice;"
+podman compose exec db dropdb --username postgres erp_restore_check
 ```
 
 If the count matches what you expect, the backup works. Do this once a month, and after every PostgreSQL
@@ -115,9 +115,9 @@ copy the backups somewhere else every day: another server, a NAS, cloud storage.
 everything: customers, orders, password hashes, the (encrypted) sign-in keys. Protect the backup folder
 exactly like the database, and keep the data-protection certificate *apart* from it.
 
-On the day you need it for real, on a new server: install as on day one ([lesson 23](23-docker.md), with new
+On the day you need it for real, on a new server: install as on day one ([lesson 24](24-deploy-podman.md), with new
 passwords if you like; the role names are what matter), then restore the latest dump over the empty
-database (lesson 23, step 6, shows the command). No migrations are needed: the dump includes each module's
+database (lesson 24, step 6, shows the command). No migrations are needed: the dump includes each module's
 migration history, so the next upgrade's bundles know exactly where they left off.
 
 ## 4. What this product doesn't do yet
@@ -140,8 +140,8 @@ isn't built. Show this list to a buyer before they buy.
 
 ## 5. Where the logs go in production
 
-Nobody watches a server's console, so the JSON logs from [lesson 13](13-observability.md) need a
-destination. In Docker, `docker compose logs api` keeps recent logs, which is enough for "what just
+Nobody watches a server's console, so the JSON logs from [lesson 14](14-observability.md) need a
+destination. On the server, `podman compose logs api` keeps recent logs, which is enough for "what just
 happened?". For anything more, the app already knows how to send everything: set one setting,
 `OTEL_EXPORTER_OTLP_ENDPOINT` in `.env`, and logs, traces and metrics all go there over OTLP.
 
@@ -149,16 +149,16 @@ happened?". For anything more, the app already knows how to send everything: set
 |---|---|
 | "Tell us when it's down" | An uptime monitor that calls `/health/ready` every minute and emails someone when it fails |
 | Search logs, follow one request through every step, alerts | An OTLP backend. Self-hosted, free: SigNoz, or the Grafana stack, each as a few more containers next to the ERP. Hosted, paid: most monitoring services accept OTLP directly |
-| Secrets in a vault instead of `.env` | Docker secrets for more settings, or a vault (OpenBao, HashiCorp Vault) when the business has one |
+| Secrets in a vault instead of `.env` | Compose secrets for more settings, or a vault (OpenBao, HashiCorp Vault) when the business has one |
 
 These are separate programs the business runs next to the ERP. Nothing in the ERP's source depends on
-them, so their licenses never pass to a buyer of your code. And the Aspire dashboard from lesson 13 stays a
+them, so their licenses never pass to a buyer of your code. And the Aspire dashboard from lesson 14 stays a
 development tool: it keeps everything in memory, forgets it on restart, and can't send an alert.
 
 ## 6. When you'd add the tools we left out
 
 Every tool below solves a real problem. Each one also adds something to run, secure and learn. So the rule
-is the one this course has followed since the mediator in [lesson 02](02-mediator.md): add a tool when you
+is the one this course has followed since the mediator in [lesson 03](03-mediator.md): add a tool when you
 feel the pain it solves, not before.
 
 | Tool | Add it when | Until then |
@@ -169,7 +169,6 @@ feel the pain it solves, not before.
 | Kubernetes | The business runs many apps on a cluster already | Compose on one host is the whole requirement. The same images run on a cluster unchanged |
 | Microservices | Separate teams need to release separately | Our modules are already islands with one service window each, so a split would be mechanical. It would also bring network failures and no shared transaction |
 | OpenIddict (Apache-2.0) | Other companies' apps must sign in *your* users (single sign-on, OAuth), or a machine client needs client credentials | Identity covers our own users and programs |
-| Testcontainers | Your build server has no PostgreSQL but has Docker | The tests use a local PostgreSQL |
 
 To remember it easily: every tool is the answer to a question. If nobody's asking the question yet, the tool
 is just one more thing that can break.
@@ -188,7 +187,7 @@ is just one more thing that can break.
 
 ## Let's run it!
 
-Run a backup now, instead of waiting for 1 a.m. (the `pg_dump` line from lesson 23), and run the restore
+Run a backup now, instead of waiting for 1 a.m. (the `pg_dump` line from lesson 24), and run the restore
 drill from section 3 against it. Then, one last time, on your own machine:
 
 ```bash
@@ -232,4 +231,4 @@ a reason, and you know what it is. Good luck, developer!
 
 ---
 
-← [Lesson 23 — Docker](23-docker.md) · Back to [Start here](00-START-HERE.md)
+← [Lesson 24 — Deploying with Podman](24-deploy-podman.md) · Back to [Start here](00-START-HERE.md)

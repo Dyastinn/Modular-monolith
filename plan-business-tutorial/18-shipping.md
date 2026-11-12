@@ -1,9 +1,9 @@
-# Lesson 17 — Shipping: Two Modules Calling Each Other
+# Lesson 18 — Shipping: Two Modules Calling Each Other
 
 Good day, developer! An approved order is a promise. Today the warehouse keeps it: the clerk opens an
 approved order, clicks **Ship**, and three things happen at once. Stock leaves the shelf, the reservation is
 used up, and the order becomes Shipped. Two modules, one transaction, and for the first time the call goes
-the other way: Inventory asks Sales. That's the day lesson 08's Contracts projects were built for. About an
+the other way: Inventory asks Sales. That's the day lesson 09's Contracts projects were built for. About an
 hour and a half. Are you ready? Let's begin!
 
 ## What we'll build
@@ -29,7 +29,7 @@ it shipped".
 
 Sales already calls Inventory (to reserve stock). Now Inventory calls Sales. If each module referenced the
 other's main project, the build would refuse: two projects can't reference each other. That's exactly why
-lesson 08 put Inventory's window in a separate Contracts project. Now Sales gets one too:
+lesson 09 put Inventory's window in a separate Contracts project. Now Sales gets one too:
 
 ```mermaid
 flowchart LR
@@ -55,7 +55,7 @@ Sales' transaction at submit.
 ### Two clerks, one order
 
 Two clerks click Ship on the same order at the same moment. Both see "Approved", both start shipping. The
-fix is lesson 08's customer lock, applied to the order: Sales locks the order's row inside the transaction.
+fix is lesson 09's customer lock, applied to the order: Sales locks the order's row inside the transaction.
 The second clerk waits at the lock, then sees "Shipped" and gets a clear 422. And a unique index on
 `shipment.sales_order_id` stands behind it: whatever the code does, one order can only ship once.
 
@@ -133,7 +133,7 @@ public Task LockOrderAsync(SalesOrderId id, CancellationToken ct) =>
 ```
 
 The order page reads `shipped_utc` too, so `sales.get_sales_order` needs it. That's a changed result, so
-it's lesson 14's recipe again: a `sales.get_sales_order.v2.sql` that drops version 1 and creates the
+it's lesson 15's recipe again: a `sales.get_sales_order.v2.sql` that drops version 1 and creates the
 function with one more column at the end, `shipped_utc timestamptz` (selecting `o.shipped_utc`). Its
 companion `get_sales_order_lines` is unchanged, so version 2 recreates it as it was. Then:
 
@@ -320,7 +320,7 @@ b.Entity<Shipment>(e =>
 
 The shipment number is built from its id ("SH-2026-000001"), so the id comes from a sequence before the
 shipment exists. The unique index on `sales_order_id` is the database's own "an order ships once"; if two
-clerks ever slipped past the lock, PostgreSQL's 23505 would make the second one a 409, thanks to lesson 16.
+clerks ever slipped past the lock, PostgreSQL's 23505 would make the second one a 409, thanks to lesson 17.
 
 ```bash
 dotnet ef migrations add AddShipments \
@@ -394,12 +394,12 @@ Read it as a story:
 1. **Start the transaction**, and ask Sales for the order inside it. Sales locks it and checks it's
    approved; if not, its `DomainException` ends everything right here.
 2. **Take the stock, one line at a time, with a guard.** Each `UPDATE` lowers both on-hand and reserved,
-   but only if the reservation is really there. It's lesson 08's turnstile, used in reverse.
+   but only if the reservation is really there. It's lesson 09's turnstile, used in reverse.
 3. **Write a movement for each line**, referencing the shipment number, and record the shipment.
 4. **Save Inventory's changes, then tell Sales** the order shipped, still in the same transaction.
 5. **Commit.** Stock, movements, shipment and order status become true together.
 
-Is the `if (rows != 1)` a business `if` in a handler? No: it's lesson 08's pattern, turning the database's
+Is the `if (rows != 1)` a business `if` in a handler? No: it's lesson 09's pattern, turning the database's
 "0 rows matched" into an exception. The rule ("you can only ship what's reserved") lives in the `WHERE`,
 where it's atomic.
 
@@ -567,6 +567,64 @@ await Shot(clerk, "clerk-shipped");
 
 and `"/shipments"` joins `pages`.
 
+## 7. Prove it: only once, and only when approved
+
+Orders can ship now, so the state machine has a sixth status. The status test from
+[lesson 04](04-domain-model.md) grows: `Ship` joins the `Step` enum and `Do`, `OrderIn` learns to reach
+`Shipped`, and four rows join the theory:
+
+```csharp
+public enum Step { Submit, Approve, Reject, Cancel, Ship }
+
+// in OrderIn:
+case SalesOrderStatus.Shipped: order.Approve(Make.Manager, customer, Make.Now); order.MarkShipped(Make.Now); break;
+
+// in Do:
+case Step.Ship: order.MarkShipped(Make.Now); break;
+
+[InlineData("Draft", Step.Ship)]
+[InlineData("PendingApproval", Step.Ship)]
+[InlineData("Shipped", Step.Cancel)]
+[InlineData("Shipped", Step.Ship)]
+```
+
+That's the value of writing the forbidden moves as a table: a new status is four new rows, not four new tests.
+
+Through the front door, in `LaterModuleEdgeCaseTests`:
+
+```csharp
+// Lesson 18: only an approved order leaves the warehouse.
+[Fact]
+public async Task A_draft_order_cannot_be_shipped()
+{
+    var rep = await factory.ClientFor("rep@erp.local");
+    var create = await rep.PostAsJsonAsync("/api/sales-orders", new { customerId = 5, lines = new[] { new { itemId = 1, quantity = 1 } } });
+    var id = (await create.Content.ReadFromJsonAsync<Created>())!.Id;
+
+    var clerk = await factory.ClientFor("clerk@erp.local");
+    (await clerk.PostAsJsonAsync("/api/shipments", new { salesOrderId = id })).StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+}
+```
+
+And the browser flow takes its next step: after the manager approves, the clerk ships. In
+`From_order_to_paid_invoice_through_the_screens`, after the approval:
+
+```csharp
+// The warehouse ships it.
+var clerk = await SignIn("clerk@erp.local");
+await clerk.GotoAsync(orderUrl);
+await clerk.GetByRole(AriaRole.Button, new() { Name = "Ship" }).ClickAsync();
+await clerk.Locator(".mud-chip").Filter(new() { HasText = "Shipped" }).WaitForAsync();
+await Shot(clerk, "clerk-shipped");
+```
+
+| Test | The edge | Why it matters |
+|---|---|---|
+| `A_step_not_allowed_from_a_status_is_refused_and_changes_nothing` (+4 rows) | When | Shipping a draft, cancelling what's on the truck |
+| `A_draft_order_cannot_be_shipped` | When, through HTTP | The warehouse can't ship what nobody approved |
+| "an order ships once" (in `Shipping_issues_an_invoice_and_a_payment_lowers_the_customer_balance`) | Twice | Two shipments, two invoices, one order |
+| `An_order_awaiting_approval_is_not_ready_to_ship` | When | Inventory asks Sales before it moves anything |
+
 ## How a request flows
 
 ```mermaid
@@ -640,4 +698,4 @@ developer!
 
 ---
 
-← [Lesson 16 — Item catalog and stock](16-item-catalog.md) · Next: [Lesson 18 — Purchasing](18-purchasing.md) →
+← [Lesson 17 — Item catalog and stock](17-item-catalog.md) · Next: [Lesson 19 — Purchasing](19-purchasing.md) →

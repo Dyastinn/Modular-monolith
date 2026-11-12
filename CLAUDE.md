@@ -59,7 +59,11 @@ every piece of it — and no more words than that took.
 6. **Be honest about costs.** Name each pattern's downsides (mediator indirection, EF change-tracking
    overhead, two data-access tools, best-effort vs. outbox), in the voice: *"Now, let's be honest about the
    cost here: …"*
-7. **Production means production.** The final build has no "known shortcut" left in it. If an early phase
+7. **Every lesson proves itself with tests (user decision, 2026-11-12).** From lesson 02 (Testing) on, each
+   lesson ends with tests for what it built: the ones that teach something new in full, then a table of every
+   edge case (test name + why). Each test kind is set up and explained in the lesson that first needs it. A
+   test that has never failed proves nothing: make each one fail once. Plan: [ROADMAP.md](ROADMAP.md) M8.
+8. **Production means production.** The final build has no "known shortcut" left in it. If an early phase
    uses a simpler version for teaching, a later phase **replaces it** and says so — the course never ends
    on a shortcut.
 
@@ -97,13 +101,18 @@ migrations** · **`martinothamar/Mediator`** (source-generated, MIT) · **CQRS-l
 refresh tokens for other clients, lockout, password policy, role-based authorization; keys persisted to
 PostgreSQL · **Blazor WebAssembly + MudBlazor**, hosted by `Erp.Api`, built along the way (every feature lesson
 adds its screen) · the API lives under **`/api`** · **OpenTelemetry** (traces, metrics, logs, OTLP export) +
-health checks; **Aspire AppHost** as the dev-only dashboard · **transactional outbox** · **xUnit +
-AwesomeAssertions** · **PdfSharp/MigraDoc 6.2.4** for invoices · **MailKit** for email · deployment: **Docker
-only** (Linux containers, Docker Compose, Caddy for HTTPS). IIS was dropped on 2026-11-06 (user decision); don't
+health checks; **Aspire AppHost** as the dev-only dashboard · **transactional outbox** · **xUnit 2.9.3 +
+AwesomeAssertions**, **FsCheck.Xunit** (property-based), **Testcontainers.PostgreSql** (from lesson 12),
+**coverlet**, **Stryker.NET**, **GitHub Actions** CI · **PdfSharp/MigraDoc 6.2.4** for invoices · **MailKit** for
+email · containers: **Podman** (user decision 2026-11-12) for the dev database (from lesson 12), tests and
+deployment (Linux containers, **Compose** files run with `podman compose`, Caddy for HTTPS). Keep every container
+file **Docker-compatible** (plain Compose spec, OCI `Dockerfile`, no Quadlet or other Podman-only format) and say
+once, where it matters, that Docker runs the same files. Lessons 05–11 use a natively installed PostgreSQL on
+purpose: lesson 12 shows the pain, then moves to containers. IIS was dropped on 2026-11-06 (user decision); don't
 reintroduce an IIS path, `web.config` or Windows-hosting lesson.
 
-> **Direction update (2026-11-06, user decision).** The product runs on Docker; the interface is built in the
-> course alongside the logic: lesson 01 creates the Blazor app, lesson 05 signs in through it, and every
+> **Direction update (2026-11-06, user decision).** The product runs in containers (Podman since 2026-11-12); the
+> interface is built in the course alongside the logic: lesson 01 creates the Blazor app, lesson 06 signs in through it, and every
 > feature lesson adds its screen. There is no separate test console and no separate "interface" lesson. The browser app signs in with Identity's
 > cookie; there are **no API keys** (a key shipped in a browser app is public). Add machine-client keys only
 > when a non-person client exists.
@@ -131,7 +140,7 @@ Clean Architecture's four-layer project split · a generic `Repository<T>` · an
 (reads are Dapper) · Dapper for **writes** · message brokers (RabbitMQ, Kafka, MassTransit) · Redis /
 distributed caching · microservices · AutoMapper · Kubernetes or any orchestrator as a requirement (Compose on
 one host is the target) · Docker Desktop as a requirement for *servers* (it's paid for larger companies; servers
-run the free Docker Engine) · hand-written authentication/token code (see above).
+run the free Docker Engine, and the course's path is Podman) · hand-written authentication/token code (see above).
 
 These may appear only in a lesson's *"when you'd add this later, and why not now"* discussion.
 
@@ -271,7 +280,7 @@ The finished product has **no deliberate shortcuts**. In particular the old tuto
 - Rate limiting, HTTPS/HSTS, security headers, and a CSP for the Blazor app are on.
 - Observability: structured logs, traces and metrics via OpenTelemetry; `/health/live` and
   `/health/ready`; correlation ids in every log line.
-- The app installs from the docs alone: Docker Compose, migration bundles, first-run admin, backups.
+- The app installs from the docs alone: Compose on Podman (Docker-compatible), migration bundles, first-run admin, backups.
 - Sign-in keys (data protection) are encrypted at rest with a certificate in Production.
 
 A lesson may still *start* from a simpler version for teaching — rule 2.7 — as long as a later phase

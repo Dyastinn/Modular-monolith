@@ -58,7 +58,7 @@ public string Status { get; private set; }   // anyone can read it, only this cl
 
 That `private set` matters a lot in this course. It's how a `SalesOrder` protects its rules: other code can
 look at the status, but can only change it by calling a method like `Submit(...)`, which checks the rules
-first. [Lesson 03](03-domain-model.md) is built on it.
+first. [Lesson 04](04-domain-model.md) is built on it.
 
 ## 3. Interfaces: a promise, not the real thing
 
@@ -87,7 +87,7 @@ see an `I` in front of a type name (`IClock`, `ICurrentUser`, `IStockReservation
 
 ## 4. Dependency injection: "hand me what I need"
 
-Look at this class from lesson 09:
+Look at this class from lesson 10:
 
 ```csharp
 internal sealed class CancelSalesOrderHandler(SalesDbContext db, IStockReservation stock)
@@ -224,7 +224,7 @@ lives in **tables**, much like spreadsheets: a `sales_order` table has columns (
 `status`) and one row per order. **SQL** is the language for talking to it: "give me every approved order",
 "insert this row".
 
-We talk to PostgreSQL in two ways, and [lesson 04](04-database.md) and [lesson 07](07-find-orders.md) explain why:
+We talk to PostgreSQL in two ways, and [lesson 05](05-database.md) and [lesson 08](08-find-orders.md) explain why:
 
 - **EF Core** saves our C# objects for us. Every change to data goes through it.
 - **Dapper** runs a SQL query and turns the rows into C# objects. Every screen's data comes through it.

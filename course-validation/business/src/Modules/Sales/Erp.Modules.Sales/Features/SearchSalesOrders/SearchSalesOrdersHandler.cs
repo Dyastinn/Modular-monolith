@@ -22,7 +22,7 @@ internal sealed class SearchSalesOrdersValidator : AbstractValidator<SearchSales
         RuleFor(x => x.Page).ValidPage();
         RuleFor(x => x.PageSize).ValidPageSize();
         RuleFor(x => x.Status)
-            .Must(s => s is null || Enum.TryParse<SalesOrderStatus>(s, ignoreCase: true, out _))
+            .Must(s => s is null || Enum.GetNames<SalesOrderStatus>().Contains(s, StringComparer.OrdinalIgnoreCase))
             .WithMessage(x => $"Unknown status '{x.Status}'.");
     }
 }
@@ -35,7 +35,7 @@ internal sealed class SearchSalesOrdersHandler(IDbConnectionFactory connections,
         int? status = q.Status is null ? null : (int)Enum.Parse<SalesOrderStatus>(q.Status, ignoreCase: true);
         var args = new
         {
-            q.CustomerId, Status = status, Search = string.IsNullOrWhiteSpace(q.Search) ? null : q.Search.Trim(),
+            q.CustomerId, Status = status, Search = SearchText.ForLike(q.Search),
             CreatedBy = SalesOrder.CreatorFilterFor(new UserId(currentUser.UserId), currentUser.Role)?.Value,
             q.Page, q.PageSize
         };

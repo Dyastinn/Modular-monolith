@@ -43,17 +43,25 @@ the same change.
 | AwesomeAssertions | Apache-2.0 |
 | Microsoft.NET.Test.Sdk, Microsoft.AspNetCore.Mvc.Testing | MIT |
 | Microsoft.Playwright (browser tests; drives the browser already installed) | MIT |
+| FsCheck, FsCheck.Xunit (property-based tests) | BSD-3-Clause |
+| Testcontainers, Testcontainers.PostgreSql (a throwaway PostgreSQL per test run) | MIT |
+| coverlet.collector (code coverage) | MIT |
+| dotnet-reportgenerator-globaltool (coverage report) | Apache-2.0 |
+| dotnet-stryker (mutation testing) | Apache-2.0 |
+| Podman (containers on developer machines and in CI-like runs) | Apache-2.0 |
 | Aspire (Aspire.AppHost.Sdk, dashboard, orchestrator) — development dashboard only | MIT |
 
 ## Server software the buyer runs (not part of this source)
 
 | Component | License |
 |---|---|
-| PostgreSQL 16+ (`postgres:18` image for Docker) | PostgreSQL |
+| PostgreSQL 16+ (`postgres:18` image) | PostgreSQL |
 | .NET ASP.NET Core runtime images (`mcr.microsoft.com/dotnet/aspnet`) | MIT |
-| Caddy (`caddy:2` image): HTTPS for the Docker install | Apache-2.0 |
+| Caddy (`caddy:2` image): HTTPS for the container install | Apache-2.0 |
 | DejaVu fonts (installed in the app image from Debian, used for invoice PDFs) | Bitstream Vera / public domain (free to use and redistribute) |
-| Docker Engine on the server | Apache-2.0. Docker *Desktop* is a developer tool, free only for small businesses; servers don't need it |
+| Podman on the server (the course's path) | Apache-2.0 |
+| docker-compose v2, the Compose program `podman compose` hands the file to | Apache-2.0 |
+| Docker Engine, if the buyer prefers it (the same files run unchanged) | Apache-2.0. Docker *Desktop* is a developer tool, free only for small businesses; servers don't need it |
 
 ## Deliberately NOT used
 

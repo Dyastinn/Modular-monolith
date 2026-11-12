@@ -1,4 +1,4 @@
-# Lesson 19 — Invoicing: Every Shipment Billed, Every Number Accounted For
+# Lesson 20 — Invoicing: Every Shipment Billed, Every Number Accounted For
 
 Good day, developer! Goods have left the building, and now the business wants to be paid. Today a fifth
 module, Invoicing, bills every shipment by itself, a moment after the clerk clicks Ship. Its invoice numbers
@@ -25,7 +25,7 @@ invoice screens.
 
 ### Billed by an event
 
-When should an invoice exist? When the goods ship. Shipping is Inventory's transaction (lesson 17), and it
+When should an invoice exist? When the goods ship. Shipping is Inventory's transaction (lesson 18), and it
 has no business creating invoices. So Inventory raises an integration event, `ShipmentRecorded`, through its
 outbox, and Invoicing handles it. Neither module knows the other exists: Inventory announces a fact, and
 whoever cares reacts. Tomorrow, a "notify the customer" module could handle the same event without a line
@@ -38,7 +38,7 @@ has a problem.
 
 ### Numbers without gaps
 
-Lesson 06 numbered orders with a PostgreSQL sequence. A sequence is fast and safe, but it doesn't promise to
+Lesson 07 numbered orders with a PostgreSQL sequence. A sequence is fast and safe, but it doesn't promise to
 be gap-free: a number taken in a transaction that rolls back is gone. For sales orders, a gap is harmless.
 For invoices, a tax auditor asks "where is invoice 42?", and "a transaction rolled back" is not an answer
 you want to give.
@@ -86,12 +86,12 @@ Section 6, lists what every invoice must show, and ours is built from that list:
 | On a system-generated invoice: "REPRINT" on every copy after the first; at the bottom, the BIR permit number, the approved series range and the date issued | A print counter on the invoice; the permit details in the company profile |
 
 The buyer's TIN is required for a sale of ₱1,000 or more to a VAT-registered buyer (Section 3), which is why
-lesson 14 gave customers a TIN.
+lesson 15 gave customers a TIN.
 
 Now, let's be honest about the limit here: following the list isn't the same as being allowed to issue. A
 business that issues invoices from a computer system must register that system with the BIR first, and the
 permit it gets back goes into the company profile. A tax adviser should see the printed invoice before the first real
-one. [Lesson 24](24-production-checklist.md) puts both on the first-day list. The sources: the BIR's
+one. [Lesson 25](25-production-checklist.md) puts both on the first-day list. The sources: the BIR's
 [RMC 77-2024 digest](https://bir-cdn.bir.gov.ph/BIR/pdf/RMC%20No.%2077-2024%20Digest.pdf), the
 [full text of RR 7-2024](https://www.offshore-management.com.ph/blog/wordpress/wp-content/uploads/2024/05/RR-7-2024_Full.pdf)
 (a copy; the BIR's website has the official one), and a plain-language
@@ -180,9 +180,9 @@ And at the end of `Shipment.Record`, before `return shipment;`:
 shipment.Raise(new ShipmentRecorded(id.Value, number, salesOrderId, nowUtc));
 ```
 
-This is why lesson 17 took the shipment's id from a sequence before creating it: the event carries the id,
+This is why lesson 18 took the shipment's id from a sequence before creating it: the event carries the id,
 and the outbox writes the event during `SaveChanges`. And it's why `Shipment` was an `AggregateRoot` from
-the start: it was always going to announce itself. Lesson 11's rule (raise an event in the change that adds
+the start: it was always going to announce itself. Lesson 13's rule (raise an event in the change that adds
 its handler) holds, because Invoicing's handler arrives in this same lesson.
 
 Inventory's unit tests get their fifth, for the shipment:
@@ -217,7 +217,7 @@ public enum TaxType
 }
 ```
 
-Lesson 03's `SalesItem.SetPricing` learns it. Before:
+Lesson 04's `SalesItem.SetPricing` learns it. Before:
 
 ```csharp
 public void SetPricing(Money unitPrice, ItemCategory category, bool isForSale)
@@ -245,7 +245,7 @@ same reason it copies the price: the invoice bills what was ordered, not what th
 03's unit tests call `SetPricing` in two places; add `TaxType.Vatable` to both.
 
 Down the slice: `SetItemPricingCommand` and `SetItemPricingRequest` gain `TaxType TaxType` at the end (the
-request defaults it to `TaxType.Vatable`, so lesson 16's test still passes), the validator adds
+request defaults it to `TaxType.Vatable`, so lesson 17's test still passes), the validator adds
 `RuleFor(x => x.TaxType).IsInEnum();`, and the handler passes `cmd.TaxType` on.
 
 The browser sends `"taxType": "ZeroRated"`, but System.Text.Json reads an enum only as a number by default,
@@ -260,7 +260,7 @@ builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Ad
 (add `using System.Text.Json.Serialization;`). Names are also safer than numbers on the wire: a client from an
 older version that sends `2` meaning something else would silently record the wrong thing.
 
-The price list must show it, and that changes a released function's result: lesson 14's recipe.
+The price list must show it, and that changes a released function's result: lesson 15's recipe.
 `sales.search_price_list.v2.sql` starts with `DROP FUNCTION IF EXISTS sales.search_price_list(text, boolean,
 integer, integer);`, then creates it with `tax_type integer` at the end (selecting `i.tax_type`), and
 recreates `count_price_list` as it was. `PriceListItemDto` gains `TaxType TaxType` at the end. Then:
@@ -320,7 +320,7 @@ public async Task<OrderForInvoice> GetForInvoiceAsync(long orderId, Cancellation
 
 No transaction this time: the invoice is issued after the shipment committed, and reading a shipped order
 can't race anything. The prices come from the order's lines, as ordered, never from today's price list.
-Lesson 03's line snapshot pays off here too.
+Lesson 04's line snapshot pays off here too.
 
 ## 5. The module and its domain
 
@@ -492,7 +492,7 @@ What to notice:
   the profile's own object.
 
 `TaxType`, `TaxRegime` and `TaxPolicy` sit in BuildingBlocks' `Domain/Tax.cs`, because Sales needs the policy
-too, in [lesson 21](21-special-discounts.md).
+too, in [lesson 22](22-special-discounts.md).
 
 ## 6. The company profile, and its screen
 
@@ -689,7 +689,7 @@ public interface IInvoicingSetup
 }
 ```
 
-Invoicing's service window is a project of its own, like Sales' in lesson 17:
+Invoicing's service window is a project of its own, like Sales' in lesson 18:
 
 ```bash
 dotnet new classlib -n Erp.Modules.Invoicing.Contracts -o src/Modules/Invoicing/Erp.Modules.Invoicing.Contracts
@@ -710,7 +710,7 @@ opens its transaction:
 await invoicing.EnsureReadyToInvoiceAsync(ct);
 ```
 
-`GetTaxPolicyAsync` waits for [lesson 21](21-special-discounts.md), where Sales needs the rate.
+`GetTaxPolicyAsync` waits for [lesson 22](22-special-discounts.md), where Sales needs the rate.
 
 ## 7. Invoicing's database
 
@@ -909,7 +909,7 @@ internal sealed class ReissueInvoiceHandler(InvoicingDbContext db, InvoiceIssuer
 ```
 
 Reissuing reads the order *again*, and takes today's company profile. So the usual fix for a wrong invoice is:
-correct the customer in Sales (lesson 14), void the invoice, reissue. The new invoice copies the corrected
+correct the customer in Sales (lesson 15), void the invoice, reissue. The new invoice copies the corrected
 details. The endpoints are
 `POST /invoices/{id:long}/void` (taking `{ reason }`) and `POST /invoices/{id:long}/reissue` (answering
 201 with the new id), both for:
@@ -931,7 +931,7 @@ Sales managers read invoices (they answer customers' questions about them) but n
 
 ## 10. Reading invoices, and the PDF
 
-`invoicing.search_invoices.v1.sql` holds four functions, the patterns from lesson 07:
+`invoicing.search_invoices.v1.sql` holds four functions, the patterns from lesson 08:
 
 | Function | Returns |
 |---|---|
@@ -941,7 +941,7 @@ Sales managers read invoices (they answer customers' questions about them) but n
 | `get_invoice_lines(p_id)` | Its lines, with `tax_type` |
 
 Apply it with an `AddReadFunctions` migration, and write the two slices (`Features/SearchInvoices/`,
-`Features/GetInvoice/`) from lesson 07's pattern. `InvoiceDetailDto` carries the seller (an `InvoiceSellerDto`) and the stored tax fields as they
+`Features/GetInvoice/`) from lesson 08's pattern. `InvoiceDetailDto` carries the seller (an `InvoiceSellerDto`) and the stored tax fields as they
 are, with the regime as its name (`((TaxRegime)h.TaxRegime).ToString()`), each line's `TaxType` the same way,
 and `PrintCount`. The handler calculates no tax: it shows what was issued. Compare with the reference build
 when you're done; its versions already include the payment columns that next lesson adds.
@@ -973,7 +973,8 @@ using PdfSharp.Fonts;
 namespace Erp.Modules.Invoicing.Infrastructure;
 
 // PDFsharp embeds the font it draws with, so it needs the font file. One family, regular and bold, found on the
-// machine: DejaVu Sans in the Docker image (fonts-dejavu-core), Arial on Windows, or paths from configuration.
+// machine: DejaVu Sans in the container image (fonts-dejavu-core), DejaVu or Liberation Sans on a Linux desktop,
+// Arial on Windows and macOS, or paths from configuration.
 // The fonts come with the operating system, so no font file ships in this source.
 internal sealed class ErpFontResolver(string? regularPath, string? boldPath) : IFontResolver
 {
@@ -982,11 +983,19 @@ internal sealed class ErpFontResolver(string? regularPath, string? boldPath) : I
     private static readonly string[] RegularCandidates =
     [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
+        "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arial.ttf"),
     ];
     private static readonly string[] BoldCandidates =
     [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/liberation-sans-fonts/LiberationSans-Bold.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+        "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Fonts), "arialbd.ttf"),
     ];
 
@@ -1008,8 +1017,8 @@ internal sealed class ErpFontResolver(string? regularPath, string? boldPath) : I
 }
 ```
 
-Fonts are licensed too. Arial ships with Windows and DejaVu with Linux, so the app uses whichever the machine
-already has, and no font file ships in this source. The [Docker lesson](23-docker.md) installs DejaVu in the
+Fonts are licensed too. Arial ships with Windows and macOS, DejaVu or Liberation Sans with Linux, so the app uses
+whichever the machine already has, and no font file ships in this source. The [Docker lesson](24-deploy-podman.md) installs DejaVu in the
 image. Settings can point elsewhere:
 
 ```json
@@ -1092,8 +1101,8 @@ the safe direction to be wrong in.
 
 | Page | What it shows |
 |---|---|
-| **Invoices** (`/invoices`) | Lesson 07's list pattern: search by number, order or customer, a status filter, issue and due dates, total |
-| **One invoice** (`/invoices/{id}`) | The header (customer, TIN, address, order, dates), the lines (marked when zero-rated or exempt), the totals with the breakdown for its regime, a **Print** button, and for accountants a **Void** button (using lesson 09's `ReasonDialog`) and, on a void invoice, **Reissue** |
+| **Invoices** (`/invoices`) | Lesson 08's list pattern: search by number, order or customer, a status filter, issue and due dates, total |
+| **One invoice** (`/invoices/{id}`) | The header (customer, TIN, address, order, dates), the lines (marked when zero-rated or exempt), the totals with the breakdown for its regime, a **Print** button, and for accountants a **Void** button (using lesson 10's `ReasonDialog`) and, on a void invoice, **Reissue** |
 
 The Print button is just a link, labelled by the count:
 
@@ -1175,7 +1184,7 @@ And in `BusinessFlowTests.cs`, the gap check, which reads the numbers straight f
 [Fact]
 public async Task Invoice_numbers_have_no_gaps()
 {
-    await using var conn = new NpgsqlConnection(CustomWebAppFactory.TestConnectionString);
+    await using var conn = factory.OpenDatabase();
     var numbers = (await conn.QueryAsync<string>("SELECT number FROM invoicing.invoice ORDER BY id")).ToList();
     var counters = numbers.Select(n => int.Parse(n[^6..])).ToList();
 
@@ -1188,6 +1197,104 @@ ship an order through the API, wait (`Eventually`) for its invoice to appear, ch
 the PDF twice; then `print_count` must be 2, because the second copy was a reprint. Its second half comes with
 payments. And `The_company_profile_is_kept_on_a_screen_and_checked_like_the_BIR_would` sends the profile a TIN
 without its branch code and a rate of 1.2 (both 422), tries it as a rep (403), then saves it properly (204).
+
+### The breakdown, for any invoice
+
+The tests above check the breakdown for the invoices we thought of. The BIR checks it for every invoice, so
+let FsCheck invent a hundred, with every mix of VATable, zero-rated and exempt lines, and odd quantities:
+
+```bash
+dotnet add tests/Erp.Modules.Invoicing.UnitTests package FsCheck.Xunit --version 3.6.0
+```
+
+```csharp
+// tests/Erp.Modules.Invoicing.UnitTests/PropertyTests.cs
+using Erp.Modules.Invoicing.Contracts;
+using Erp.Modules.Invoicing.Domain;
+using Erp.Shared.BuildingBlocks;
+using FsCheck;
+using FsCheck.Xunit;
+
+namespace Erp.Modules.Invoicing.UnitTests;
+
+// The BIR checks that the printed breakdown adds back to the amount due. FsCheck tries a hundred invoices for us.
+public class TaxBreakdownProperties
+{
+    private static readonly TaxPolicy Vat12 = new(TaxRegime.Vat, 0.12m);
+    private static readonly SellerDetails Seller = new("Demo Trading Corp.", null, "000-111-222-00000", "Pasig", "SALES INVOICE", null, null, null);
+
+    private static Invoice Issue(PositiveInt[] centavos, PositiveInt[] thousandths)
+    {
+        var count = Math.Min(Math.Min(centavos.Length, thousandths.Length), 8);
+        var lines = Enumerable.Range(0, count).Select(i => new InvoiceLine($"Item {i}", "kg",
+            new Quantity(thousandths[i].Get % 100_000 / 1000m + 0.001m),
+            new Money(centavos[i].Get % 10_000_000 / 100m + 0.01m),
+            (TaxType)(i % 3))).ToList();
+
+        return Invoice.Issue("SI-1", Seller, shipmentId: 1, salesOrderId: 1, "SO-1", customerId: 7, "Acme", null, "Makati",
+            paymentTermsDays: 30, lines, new DateOnly(2026, 11, 5), Vat12);
+    }
+
+    [Property]
+    public bool The_breakdown_always_adds_back_to_the_total(PositiveInt[] centavos, PositiveInt[] thousandths)
+    {
+        if (centavos.Length == 0 || thousandths.Length == 0) return true;
+        var invoice = Issue(centavos, thousandths);
+        return invoice.VatableSales + invoice.VatAmount + invoice.ZeroRatedSales + invoice.VatExemptSales == invoice.Total;
+    }
+}
+```
+
+`(TaxType)(i % 3)` gives the lines VATable, zero-rated and exempt in turn, so every invoice mixes them. The
+VAT is taken out of the VATable total *once*, not line by line, precisely so this property holds: round each
+line's VAT and the centavos drift. Try it: compute the net per line in `TaxBreakdown.Of`, and watch FsCheck
+find an invoice that's off by one centavo.
+
+`ShipmentRecorded` now writes an invoice, so the redelivery test's snapshot gains two lines:
+
+```csharp
+|| '|' || (SELECT COUNT(*) FROM invoicing.invoice)::text
+|| '|' || (SELECT COALESCE(SUM(total), 0) FROM invoicing.invoice)::text
+```
+
+Redelivering a shipment must never issue a second invoice. `InvoiceIssuer` checks for the shipment's invoice
+first, and this proves it.
+
+And the browser flow takes its next step. The invoice is issued by the outbox a moment after the shipment,
+so the accountant's list may not show it yet. Keep the order number when the rep submits (right after the
+`Pending approval` chip):
+
+```csharp
+var orderNumber = await rep.Locator("h4").First.InnerTextAsync();
+```
+
+and after the clerk ships:
+
+```csharp
+// The invoice appears by itself; the accountant opens it.
+var accountant = await SignIn("accountant@erp.local");
+var invoiceRow = accountant.GetByRole(AriaRole.Row).Filter(new() { HasText = orderNumber });
+for (var attempt = 0; attempt < 15 && await invoiceRow.CountAsync() == 0; attempt++)
+{
+    await accountant.GotoAsync($"/invoices?search={Uri.EscapeDataString(orderNumber)}");
+    await accountant.WaitForTimeoutAsync(1000);
+}
+await Shot(accountant, "accountant-invoices");
+await invoiceRow.First.ClickAsync();
+```
+
+The loop is the browser's version of polling the outbox: reload the list, up to fifteen times, until the
+invoice is there.
+
+| Test | The edge | Why it matters |
+|---|---|---|
+| `The_breakdown_always_adds_back_to_the_total` | A hundred invoices nobody wrote by hand | The printed totals always reconcile |
+| `Invoice_numbers_have_no_gaps` | At the same instant | A gap in the series is the first thing an auditor asks about |
+| `Only_a_void_invoice_can_be_reissued` | When | Two live invoices for one shipment |
+| `A_blank_company_profile_stops_invoicing_until_it_is_filled_in` | Nothing | An invoice without the seller's TIN is not an invoice |
+| `The_company_profile_refuses_what_the_BIR_would_refuse` | Odd input | A TIN without its branch code, a rate of 12 instead of 0.12 |
+| `An_invoice_keeps_the_seller_it_was_issued_with` | After it changed | A reprint must match the original |
+| The snapshot lines in the redelivery test | Twice | One shipment, one invoice |
 
 ## How a request flows
 
@@ -1247,7 +1354,7 @@ then set its `processed_utc` back to `NULL`. A couple of seconds later the dispa
 nothing changes: still one live invoice, and the counter didn't move.
 
 ```bash
-PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localhost -U postgres -d erp \
+podman exec -i erp-postgres psql -U postgres -d erp \
   -c "UPDATE inventory.outbox_message SET processed_utc = NULL WHERE type LIKE '%ShipmentRecorded%';" \
   -c "SELECT number, status FROM invoicing.invoice ORDER BY id;"
 ```
@@ -1270,4 +1377,4 @@ accountant who's late. Good luck, developer!
 
 ---
 
-← [Lesson 18 — Purchasing](18-purchasing.md) · Next: [Lesson 20 — Payments and receivables](20-payments.md) →
+← [Lesson 19 — Purchasing](19-purchasing.md) · Next: [Lesson 21 — Payments and receivables](21-payments.md) →

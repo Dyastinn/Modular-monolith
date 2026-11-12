@@ -1,4 +1,4 @@
-# Lesson 07 — Find Orders: Dapper, SQL Functions, and Who Sees What
+# Lesson 08 — Find Orders: Dapper, SQL Functions, and Who Sees What
 
 Good day, developer! Last time we saved our first order, through a form that made you type ids. Today we
 read. A list of orders you can search and page through, a page for each order, and search boxes for that
@@ -39,8 +39,8 @@ filter, sort, give me page 3". So reads skip the domain entirely:
 | Returns | Usually nothing, or an id | A shape made for one screen |
 
 This is the "query" half of CQRS-lite, and it's where it pays off. Now, let's be honest about the cost:
-the same idea ("an order's total") is now written twice, once in C# and once in SQL. The integration tests
-in [lesson 12](12-testing.md) are what keep the two in agreement.
+the same idea ("an order's total") is now written twice, once in C# and once in SQL. A test at the end of this
+lesson is what keeps the two in agreement.
 
 ### Why functions in the database
 
@@ -188,7 +188,7 @@ parameter. Both come from these two lines.
 ## 3. The SQL functions
 
 Create the folder `src/Modules/Sales/Erp.Modules.Sales/Infrastructure/Sql/Functions/`. The `.sql` files are
-already embedded by the `EmbeddedResource` line from [lesson 04](04-database.md). One file per read, named
+already embedded by the `EmbeddedResource` line from [lesson 05](05-database.md). One file per read, named
 `schema.function.vN.sql`, holding the function and its companion: the lines for a "get", the count for a
 "search".
 
@@ -516,7 +516,7 @@ internal sealed class SearchSalesOrdersValidator : AbstractValidator<SearchSales
         RuleFor(x => x.Page).ValidPage();
         RuleFor(x => x.PageSize).ValidPageSize();
         RuleFor(x => x.Status)
-            .Must(s => s is null || Enum.TryParse<SalesOrderStatus>(s, ignoreCase: true, out _))
+            .Must(s => s is null || Enum.GetNames<SalesOrderStatus>().Contains(s, StringComparer.OrdinalIgnoreCase))
             .WithMessage(x => $"Unknown status '{x.Status}'.");
     }
 }
@@ -757,8 +757,8 @@ public sealed record PriceListItem(long Id, string Sku, string Name, string Unit
 Add `@using Erp.Web.Models` to `_Imports.razor`. Every later lesson adds its shapes to this file.
 
 Now, let's be honest about the cost: these are copies, and a copy can drift. If the API renames a field,
-the app shows a blank where the value used to be. The UI tests in [lesson 12](12-testing.md) catch that,
-because they look at real screens.
+the app shows a blank where the value used to be. The browser test at the end of this lesson catches
+that, because it looks at real screens.
 
 A few helpers every screen will use:
 
@@ -1003,7 +1003,7 @@ where those buttons will go.
 
 ### The form, with search boxes
 
-Here's the order form from lesson 06, refactored. The id boxes become **autocompletes**: you type part of a
+Here's the order form from lesson 07, refactored. The id boxes become **autocompletes**: you type part of a
 name, and it searches as you type.
 
 Before:
@@ -1151,6 +1151,228 @@ under the subtitle and still inside `<AuthorizeView>`:
 }
 ```
 
+## 8. Prove it: searching is full of edges
+
+A search box takes anything a person types. That makes it one of the richest places for edges: odd
+characters, empty boxes, page numbers that make no sense, someone else's orders.
+
+### A bug, found by a test
+
+Take the checklist's *odd characters* row and try it on the search box. A customer named "50% Off Hardware"
+exists; a clerk types `50%`. What comes back?
+
+```csharp
+// tests/Erp.Integration.Tests/SalesOrderEdgeCaseTests.cs (add)
+private sealed record Summary(long Id, string OrderNumber, string CustomerName, decimal Total);
+private sealed record Page(int TotalCount, List<Summary> Items);
+
+// ILIKE treats % and _ as wildcards. A search for "50%" must look for those characters, not match everything.
+[Theory]
+[InlineData("%")]
+[InlineData("_")]
+[InlineData("\\")]
+public async Task Wildcard_characters_in_a_search_are_matched_literally(string search)
+{
+    var rep = await factory.ClientFor(Rep);
+    await CreateOrder(rep, await NewCustomer(), 1, 1);
+
+    var page = await rep.GetFromJsonAsync<Page>($"/api/sales-orders?search={Uri.EscapeDataString(search)}");
+
+    page!.TotalCount.Should().Be(0, "no order number or customer name contains '{0}'", search);
+}
+```
+
+Run it:
+
+```
+Failed Wildcard_characters_in_a_search_are_matched_literally(search: "%")
+  Expected page!.TotalCount to be 0 because no order number or customer name contains '%', but found 7.
+```
+
+There's the bug. Our functions build `'%' || p_search || '%'`, and inside a `LIKE` pattern, `%` means "anything"
+and `_` means "any one character". So a search for `%` becomes `%%%`: everything. A search for "50%" finds
+every name with "50" in it. Nobody would notice in a demo; a user would, eventually, and wonder.
+
+The fix is to **escape** them: in a `LIKE` pattern, `\%` means a real percent sign, `\_` a real underscore, and
+`\\` a real backslash. Every search handler needs this, so it goes in BuildingBlocks, once:
+
+```csharp
+// src/Shared/Erp.Shared.BuildingBlocks/Abstractions/SearchText.cs
+namespace Erp.Shared.BuildingBlocks;
+
+// For the SQL functions' ILIKE '%' || p_search || '%': trimmed, null when blank, and with LIKE's own wildcards escaped,
+// so a search for "50%" finds "50%" instead of everything that contains "50".
+public static class SearchText
+{
+    public static string? ForLike(string? text) =>
+        string.IsNullOrWhiteSpace(text)
+            ? null
+            : text.Trim().Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_");
+}
+```
+
+The backslash goes first, or we'd escape the backslashes we just added. In each of the three search handlers
+(orders, customers, price list), before:
+
+```csharp
+Search = string.IsNullOrWhiteSpace(q.Search) ? null : q.Search.Trim()
+```
+
+After:
+
+```csharp
+Search = SearchText.ForLike(q.Search)
+```
+
+Run the test again: green. Why not fix it in the SQL instead? We could, but then every function written from
+now on has to remember. In one C# helper that every handler calls, it can't be forgotten. And a shipped SQL
+function is never edited, so changing three of them means three `.v2` files and a migration, for a fix that
+fits in one line of C#.
+
+To remember it easily: anything a person types is data, never part of the pattern.
+
+### A filter that accepted nonsense
+
+The status filter has its own trap. The obvious check is `Enum.TryParse<SalesOrderStatus>(s, true, out _)`.
+But `TryParse` also accepts *any number*: `"99"` parses fine, to a status that doesn't exist, and the search
+quietly returns nothing. That's why the validator above compares against the status *names* with
+`Enum.GetNames`. The test that proves it:
+
+```csharp
+// tests/Erp.Modules.Sales.UnitTests/ValidatorTests.cs (add)
+public class SearchSalesOrdersValidatorTests
+{
+    private static readonly SearchSalesOrdersValidator Validator = new();
+
+    [Theory]
+    [InlineData(1, 1)]
+    [InlineData(1, 100)]
+    [InlineData(500, 20)]
+    public void Pages_from_one_and_sizes_from_1_to_100_pass(int page, int pageSize) =>
+        Validator.Validate(new SearchSalesOrdersQuery(null, null, null, page, pageSize)).IsValid.Should().BeTrue();
+
+    [Theory]
+    [InlineData(0, 20)]
+    [InlineData(-1, 20)]
+    [InlineData(1, 0)]
+    [InlineData(1, 101)]
+    public void Page_zero_negative_pages_and_sizes_outside_1_to_100_are_refused(int page, int pageSize) =>
+        Validator.Validate(new SearchSalesOrdersQuery(null, null, null, page, pageSize)).IsValid.Should().BeFalse();
+
+    [Theory]
+    [InlineData("Approved", true)]
+    [InlineData("approved", true)]
+    [InlineData("Lost", false)]
+    [InlineData("1", false)]    // Enum.TryParse accepts any number, even one that is no status at all
+    [InlineData("99", false)]
+    [InlineData("", false)]
+    public void A_status_filter_must_name_a_real_status(string status, bool valid) =>
+        Validator.Validate(new SearchSalesOrdersQuery(null, status, null)).IsValid.Should().Be(valid);
+}
+```
+
+Swap `Enum.GetNames<...>().Contains(...)` for `Enum.TryParse` in the validator, run the tests, and watch `"1"`
+and `"99"` go red. Then put it back.
+
+### Two copies of one total
+
+At the start of this lesson we were honest about a cost: an order's total is now computed in C# (for the
+credit check) and in SQL (for the list). If they ever disagree, the list says one thing and the credit check
+another. One test pins them together, with a quantity chosen to round awkwardly:
+
+```csharp
+// tests/Erp.Integration.Tests/SalesOrderEdgeCaseTests.cs (add)
+// The total lives twice: in C# (the domain, for credit) and in SQL (the list). They must never disagree.
+[Fact]
+public async Task The_list_shows_the_same_total_the_domain_computes()
+{
+    var rep = await factory.ClientFor(Rep);
+    var name = $"Totals {Guid.NewGuid():N}";
+    var id = await CreateOrder(rep, await NewCustomer(name), itemId: 5, quantity: 1.333m);   // 620.50 × 1.333 = 827.1265
+
+    var listed = (await rep.GetFromJsonAsync<Page>($"/api/sales-orders?search={name}"))!.Items.Single();
+
+    await using var scope = factory.Services.CreateAsyncScope();
+    var db = scope.ServiceProvider.GetRequiredService<SalesDbContext>();
+    var order = await db.SalesOrders.FindAsync(new SalesOrderId(id));
+    listed.Total.Should().Be(order!.Total.Amount).And.Be(827.13m);
+}
+```
+
+### Ten orders at once
+
+Now that an order can be read back, one more test for last lesson's sequence. `Task.WhenAll` starts all ten
+requests before waiting for any of them, so they really arrive together, and the sequence must hand out ten
+different numbers under pressure. `MAX(order_number) + 1` would fail this most runs.
+
+```csharp
+// tests/Erp.Integration.Tests/SalesOrderEdgeCaseTests.cs (add)
+private sealed record Detail(string Status, string OrderNumber);
+
+[Fact]
+public async Task Orders_created_at_the_same_moment_get_different_numbers()
+{
+    var rep = await factory.ClientFor(Rep);
+    var customerId = await NewCustomer();
+
+    var ids = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => CreateOrder(rep, customerId, 1, 1)));
+    var numbers = await Task.WhenAll(ids.Select(async id => (await rep.GetFromJsonAsync<Detail>($"/api/sales-orders/{id}"))!.OrderNumber));
+
+    numbers.Should().OnlyHaveUniqueItems();
+}
+```
+
+### And the rest of this lesson's edges
+
+The reference build's `SalesOrderEdgeCaseTests.cs`, `SalesOrderWorkflowTests.cs` and `BusinessFlowTests.cs`
+hold these; write them in the same style. In `AuthTests`, the search address also joins the 401 theory with
+`[InlineData("/api/sales-orders")]`, and in `DatabaseTests` one more: `Nothing_of_ours_lands_in_the_public_schema`,
+which checks that no table or function was created outside a module's schema.
+
+| Test | The edge | Why it matters |
+|---|---|---|
+| `Wildcard_characters_in_a_search_are_matched_literally` (`%`, `_`, `\`) | Odd characters | Found a real bug: `%` matched everything |
+| `A_search_finds_names_with_quotes_and_ignores_case` | `O'Brien`, capitals | A quote must never break the SQL; parameters make sure it can't |
+| `A_bad_page_or_status_is_400` (6 cases) | Zero, negative, too big, nonsense | A 400 that says why, not a 500 or a silent empty page |
+| `A_status_filter_must_name_a_real_status` | A number posing as a status | `Enum.TryParse` accepts `"99"` |
+| `Search_with_no_query_string_returns_the_first_page` | Nothing | `int?` parameters, or a bare `GET` is a 400 |
+| `A_page_past_the_end_still_reports_the_real_total` | Past the end | The count is a separate function, so the pager still knows how many pages there are |
+| `A_rep_sees_only_their_own_orders` | Someone else's data | The list obeys `CreatorFilterFor` |
+| `Another_reps_order_is_404_for_reading_submitting_and_editing` | Someone else's data, by id | A rep can't even learn another rep's order exists (submit and edit join it in lessons 09 and 11) |
+| `The_list_shows_the_same_total_the_domain_computes` | Two copies of one rule | C# and SQL round the same way |
+| `Orders_created_at_the_same_moment_get_different_numbers` | At the same instant | Duplicate order numbers break every report after |
+| `Nothing_of_ours_lands_in_the_public_schema` | A function without its schema | An unqualified name lands in `public`, outside every module |
+
+### The screens, once each
+
+The app has real pages now, so the browser tests gain one that opens each page and checks nothing crashed.
+In `BusinessFlowUiTests`:
+
+```csharp
+[UiFact]
+public async Task Every_page_opens_without_an_error()
+{
+    var admin = await SignIn("admin@erp.local");
+    string[] pages = ["/sales-orders", "/sales-orders/new"];
+
+    foreach (var path in pages)
+    {
+        await admin.GotoAsync(path);
+        await admin.Locator("h4, h5").First.WaitForAsync();
+        await admin.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        await Shot(admin, path.Trim('/').Replace('/', '-'));
+
+        (await admin.Locator("#blazor-error-ui").IsVisibleAsync()).Should().BeFalse($"{path} crashed the app");
+        (await admin.Locator(".mud-alert-filled-error, .mud-snackbar.mud-alert-filled-error").CountAsync())
+            .Should().Be(0, $"{path} showed an error");
+    }
+}
+```
+
+`#blazor-error-ui` is the bar from lesson 01's `index.html`; if it's visible, a page threw. This test catches
+exactly the cost we named above: a field the API renamed, which the app's copy of the shape still expects.
+Every later lesson that adds a screen adds its address to `pages`.
+
 ## How a request flows
 
 ```mermaid
@@ -1178,6 +1400,8 @@ No change tracking, no transaction, one trip to the database. Easy, right?
 - Answering 403 for someone else's order. 404 tells them nothing.
 - Declaring an optional query parameter as plain `int`.
 - Paging in the browser. `ServerData` asks for one page at a time.
+- Passing what the user typed straight into a `LIKE` pattern. Escape `%`, `_` and `\` with `SearchText.ForLike`.
+- Checking an enum filter with `Enum.TryParse`. It accepts any number; compare against the names.
 
 ## Let's run it!
 
@@ -1193,7 +1417,7 @@ curl -s "http://localhost:5264/api/sales-orders?search=acme&pageSize=5" -H "Auth
 curl -s "http://localhost:5264/api/sales-orders?page=9999" -H "Authorization: Bearer $REP" | jq '{items, totalCount}'
 # { "items": [], "totalCount": 3 }   (your count will differ, but it's not 0)
 curl -s "http://localhost:5264/api/sales-orders?status=Shipped" -H "Authorization: Bearer $REP" | jq .errors
-# [ "Unknown status 'Shipped'." ]   (for now: lesson 17 adds it)
+# [ "Unknown status 'Shipped'." ]   (for now: lesson 18 adds it)
 curl -s "http://localhost:5264/api/customers?search=beta" -H "Authorization: Bearer $REP" | jq '.items[0].availableCredit'
 # 500.0
 ```
@@ -1212,6 +1436,16 @@ Then **New order**: type `be` in the customer box, pick Beta Industries, and see
 ₱500.00". Add 30 Widgets and watch the total reach ₱750.00. Save it, and the red snackbar says it would
 exceed the credit limit. Now pick Copper Wire, and the quantity box steps by 0.5 kg.
 
+Then the tests:
+
+```bash
+dotnet test
+```
+
+Every project should be green. If you wrote the wildcard test before `SearchText`, you've already seen it red,
+which is the point. The integration count is however many of the table's tests you wrote; the reference build
+has them all.
+
 You can also call a function straight from `psql`, which is handy when you're tuning one:
 
 ```bash
@@ -1228,7 +1462,10 @@ PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localho
 5. Where is "a rep sees only their own orders" decided, and how do the list and the single-order read both
    use it?
 6. What happens on `GET /api/sales-orders` if `page` is declared as `int` instead of `int?`?
-7. Why does the browser app keep its own copies of the API's shapes?
+7. Why does the browser app keep its own copies of the API's shapes? Which test catches them drifting?
+8. A user searches for `50%`. What did the first version return, and how does `SearchText.ForLike` fix it?
+9. Why does the status filter compare names instead of calling `Enum.TryParse`?
+10. Which test keeps the C# total and the SQL total in agreement, and why pick a quantity like 1.333?
 
 And that's where this lesson ends. Every write goes through the domain, every read goes straight to a query
 built for its screen, and a rep sees only their own pipeline. Next time, we submit an order: reserving stock
@@ -1236,4 +1473,4 @@ in a second module, inside one transaction. Good luck, developer!
 
 ---
 
-← [Lesson 06 — Create an order](06-create-order.md) · Next: [Lesson 08 — Submit](08-submit.md) →
+← [Lesson 07 — Create an order](07-create-order.md) · Next: [Lesson 09 — Submit](09-submit.md) →

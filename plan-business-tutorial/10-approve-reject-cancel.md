@@ -1,4 +1,4 @@
-# Lesson 09 — Approve, Reject, Cancel: The Approval Workflow
+# Lesson 10 — Approve, Reject, Cancel: The Approval Workflow
 
 Good day, developer! Orders can now be created and submitted, and small ones are approved on the spot. But a
 big order just sits there, waiting for a manager. Today managers get their say: approve, or reject with a
@@ -23,7 +23,7 @@ rejection reason.
 
 ### The rules are already written
 
-Look back at `SalesOrder` from [lesson 03](03-domain-model.md). `Approve`, `Reject` and `Cancel` are all
+Look back at `SalesOrder` from [lesson 04](04-domain-model.md). `Approve`, `Reject` and `Cancel` are all
 there, already tested: nobody approves their own order, a rejection needs a reason, cancelling an approved
 order takes the charge back, and `Reject` and `Cancel` hand back the lines whose stock must be released. So
 today's handlers are short. They load, call one domain method, and save.
@@ -60,7 +60,7 @@ To remember it easily: it's like editing a shared document that warns you "this 
 opened it", instead of letting you overwrite it.
 
 This style is called **optimistic concurrency**: we don't lock anything up front, we just detect the clash
-at save time. It suits approvals, where clashes are rare. (In [lesson 08](08-submit.md) we *did* lock the
+at save time. It suits approvals, where clashes are rare. (In [lesson 09](09-submit.md) we *did* lock the
 customer, because a credit check across many orders needed it.)
 
 ## 1. Map the version column
@@ -428,7 +428,107 @@ Managers need to find the orders waiting for them. On the home page, next to the
 ```
 
 with `private static readonly string ManagerRoles = $"{Roles.SalesManager},{Roles.Admin}";` in its `@code`.
-That link opens the order list already filtered, thanks to the `[SupplyParameterFromQuery]` from lesson 07.
+That link opens the order list already filtered, thanks to the `[SupplyParameterFromQuery]` from lesson 08.
+
+## 6. Prove it: the workflow, and two managers at once
+
+The rules were proven in [lesson 04](04-domain-model.md), state machine and all. What's new today is the
+plumbing around them: roles on the endpoints, stock released through the contract, and the `xmin` version
+that stops a lost update.
+
+### Two managers, one order
+
+The lost update from the start of this lesson, as a test. Both the manager and the admin click **Approve** on
+the same order at the same moment:
+
+```csharp
+// tests/Erp.Integration.Tests/SalesOrderEdgeCaseTests.cs (add)
+private const string Admin = "admin@erp.local";
+
+[Fact]
+public async Task Two_managers_approving_at_once_charge_the_customer_once()
+{
+    var rep = await factory.ClientFor(Rep);
+    var customerId = await NewCustomer();
+    var id = await CreateOrder(rep, customerId, 4, 1);   // a ₱75,000 rack: waits for a manager
+    await rep.PostAsync($"/api/sales-orders/{id}/submit", null);
+
+    var manager = await factory.ClientFor(Manager);
+    var admin = await factory.ClientFor(Admin);
+    var responses = await Task.WhenAll(
+        manager.PostAsync($"/api/sales-orders/{id}/approve", null),
+        admin.PostAsync($"/api/sales-orders/{id}/approve", null));
+
+    responses.Count(r => r.StatusCode == HttpStatusCode.NoContent).Should().Be(1);
+    responses.Select(r => r.StatusCode).Should().Contain(s => s == HttpStatusCode.Conflict || s == HttpStatusCode.UnprocessableEntity);
+    (await Balance(customerId)).Should().Be(75_000);
+}
+```
+
+Why "409 *or* 422"? It depends on timing, and both are right. If both requests load the order before either
+saves, the second save finds the `xmin` changed: **409**, someone else changed this. If the first commits
+before the second even loads, the second sees an approved order and the domain refuses: **422**. Either way,
+exactly one approval, one charge of ₱75,000. A test about a race must accept every correct outcome, and only
+those.
+
+Make it fail once: comment out the `xmin` mapping from step 1 (the column is PostgreSQL's own, so no
+migration is needed either way), and run the test a few times. Sometimes both managers win, and
+the customer owes ₱150,000. Put the mapping back.
+
+### The rest of the workflow
+
+The reference build's `SalesOrderWorkflowTests.cs` and `SalesOrderEdgeCaseTests.cs` hold these:
+
+| Test | The edge | Why it matters |
+|---|---|---|
+| `Small_order_is_approved_on_submit` | Under the threshold | No manager's time spent on a ₱50 order |
+| `High_value_order_waits_for_a_manager_who_did_not_create_it` | Over the threshold | The second pair of eyes, end to end |
+| `Creator_cannot_approve_their_own_order` | Who: yourself | Even a manager can't approve their own order (422) |
+| `SalesRep_cannot_approve` | Who: the wrong role | The endpoint's role check (403) |
+| `Rejecting_records_the_reason_and_releases_the_stock` | Across modules | A rejected order gives its stock back |
+| `A_step_out_of_order_is_422` | When | Approving a draft, cancelling twice |
+| `A_rejection_without_a_reason_is_refused` (empty, spaces) | Nothing | "Rejected" with no reason helps nobody; and the order stays pending |
+| `Two_managers_approving_at_once_charge_the_customer_once` | At the same instant | The lost update, closed by `xmin` |
+
+### The flow in a real browser
+
+The browser tests get their first walk through a real business flow: a rep writes and submits a big order, a
+manager approves it. Add a helper for MudBlazor's search boxes, and the test, to `BusinessFlowUiTests`:
+
+```csharp
+private static async Task Pick(IPage page, string label, string search, string option)
+{
+    await page.GetByLabel(label).First.FillAsync(search);
+    await page.GetByText(option).First.ClickAsync();
+}
+
+[UiFact]
+public async Task From_order_to_paid_invoice_through_the_screens()
+{
+    // A rep writes an order over ₱50,000 for Epsilon Retail and submits it.
+    var rep = await SignIn("rep@erp.local");
+    await Shot(rep, "rep-home");
+    await rep.GotoAsync("/sales-orders/new");
+    await Pick(rep, "Customer", "Epsilon", "Epsilon Retail");
+    await Pick(rep, "Item", "Rack", "GEN-003 · Server Rack");
+    await rep.GetByRole(AriaRole.Button, new() { Name = "Save draft" }).ClickAsync();
+    await rep.WaitForURLAsync(new Regex(@"/sales-orders/\d+$"));
+    var orderUrl = new Uri(rep.Url).AbsolutePath;
+    await rep.GetByRole(AriaRole.Button, new() { Name = "Submit" }).ClickAsync();
+    await rep.Locator(".mud-chip").Filter(new() { HasText = "Pending approval" }).WaitForAsync();
+    await Shot(rep, "rep-submitted");
+
+    // The manager approves it.
+    var manager = await SignIn("manager@erp.local");
+    await manager.GotoAsync(orderUrl);
+    await manager.GetByRole(AriaRole.Button, new() { Name = "Approve" }).ClickAsync();
+    await manager.Locator(".mud-chip").Filter(new() { HasText = "Approved" }).WaitForAsync();
+    await Shot(manager, "manager-approved");
+}
+```
+
+The name is a promise about where it's going: [shipping](18-shipping.md), [invoicing](20-invoicing.md) and
+[payments](21-payments.md) each add their steps, until it really walks from a new order to a paid invoice.
 
 ## How a request flows
 
@@ -462,6 +562,7 @@ sequenceDiagram
 - Locking rows for every update "to be safe". Optimistic checks are cheaper, and right whenever clashes are
   rare.
 - An irreversible button with no "are you sure?". Cancel asks first.
+- Asserting one exact status in a race test. Accept every correct outcome (409 or 422 here), and only those.
 
 ## Let's run it!
 
@@ -504,6 +605,14 @@ submit it. As the manager, click the **Waiting for approval** tile on the home p
 click **Reject**. The dialog's Reject button stays grey until you type a reason. Type one and confirm; the
 rep reloads the order and sees your reason in red.
 
+Finally the tests: `dotnet test` for everything, and with the app running, the browser flow:
+
+```bash
+ERP_UI_URL=http://localhost:5264 ERP_UI_SCREENSHOTS=./screens dotnet test tests/Erp.Web.UiTests
+```
+
+Open `screens`: the rep's order, submitted, then the manager's approval, picture by picture.
+
 ## Let's check!
 
 1. Describe a lost update in your own words, using two approvals for the same customer.
@@ -513,6 +622,8 @@ rep reloads the order and sees your reason in red.
 4. "Only managers approve" and "not your own order" live in different places. Where, and why?
 5. Why is the rejection reason checked by both the validator and the domain?
 6. When would you lock a row up front instead of using a version check?
+7. Two managers approve at once. Why does the test accept either 409 or 422 for the loser?
+8. How would you know the `xmin` mapping really protects anything?
 
 And that's where this lesson ends. The full approval workflow works, and two people can no longer quietly
 erase each other's changes. Next time, we let reps edit a draft, and find one more lost update hiding in the
@@ -520,4 +631,4 @@ order lines. Good luck, developer!
 
 ---
 
-← [Lesson 08 — Submit](08-submit.md) · Next: [Lesson 10 — Update an order](10-update-order.md) →
+← [Lesson 09 — Submit](09-submit.md) · Next: [Lesson 11 — Update an order](11-update-order.md) →

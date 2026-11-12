@@ -37,7 +37,7 @@ RUN rid=linux-$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64) \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS migrate
 WORKDIR /migrations
 COPY --from=build /out/migrations/ ./
-COPY deploy/docker/migrate.sh ./
+COPY deploy/compose/migrate.sh ./
 USER $APP_UID
 ENTRYPOINT ["/bin/sh", "/migrations/migrate.sh"]
 

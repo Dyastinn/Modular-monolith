@@ -1,4 +1,4 @@
-# Lesson 16 — Item Catalog and Stock: One Owner, Copies Kept in Step
+# Lesson 17 — Item Catalog and Stock: One Owner, Copies Kept in Step
 
 Good day, developer! Until today, the same five items lived in two seed scripts, Sales' and Inventory's, and
 nothing kept them in step. Add a sixth item and you'd have to add it twice, and hope. Today the warehouse
@@ -16,7 +16,7 @@ the sales manager gets a price list. About two and a half hours. Are you ready? 
 | `POST /api/items/{id}/adjustments` | InventoryClerk, Admin | Correct the count: found, lost, damaged, with a reason |
 | `GET /api/items/{id}/movements` | Anyone signed in | Every change to an item's stock, who made it and why |
 | `PUT /api/price-list/{itemId}` | SalesManager, Admin | Price, category, and whether it's for sale |
-| `GET`/`POST`/`PUT /api/item-categories` | Read: Sales readers; write: managers | The category rules from lesson 03 |
+| `GET`/`POST`/`PUT /api/item-categories` | Read: Sales readers; write: managers | The category rules from lesson 04 |
 
 Plus the first **integration event**, `ItemCatalogChanged`, which travels from Inventory to Sales through the
 outbox, and three screens: Items and stock, Price list, and Categories.
@@ -43,23 +43,23 @@ Sales prints the item's name on every order line and checks its unit on every qu
 through a contract for each of those would tie every Sales screen to Inventory being up and quick. And a
 `JOIN` into `inventory.item` is forbidden: no SQL crosses a schema.
 
-So Sales keeps its own **copy** of the few catalog facts it needs. You built that copy in lesson 03: it's
+So Sales keeps its own **copy** of the few catalog facts it needs. You built that copy in lesson 04: it's
 `SalesItem`, with `FromCatalog` and `ApplyCatalog` waiting for this day.
 
 ### Keeping the copy in step
 
 When the clerk adds or renames an item, Inventory raises an event, `ItemCatalogChanged`, carrying the whole
-catalog record. Sales handles it and writes the same facts into its copy. Lesson 11's outbox delivers it,
+catalog record. Sales handles it and writes the same facts into its copy. Lesson 13's outbox delivers it,
 so a crash can't lose it.
 
 Now, let's be honest about the cost: the copy is **eventually consistent**. For a second or two after the
 clerk saves, Sales still has the old name. For an item's name and unit, that's fine. It would *not* be fine
 for stock levels, which is why stock stays in Inventory and is reserved through a contract, inside the
-order's transaction, exactly as in lesson 08.
+order's transaction, exactly as in lesson 09.
 
 Here's the difference between the two kinds of message:
 
-| | Domain event (lesson 11) | Integration event (today) |
+| | Domain event (lesson 13) | Integration event (today) |
 |---|---|---|
 | Who handles it | The same module | Other modules |
 | Lives in | The module, `internal` | The module's **Contracts** project, `public` |
@@ -72,11 +72,11 @@ plain types, no domain objects from another island.
 
 The outbox writes events *during* `SaveChanges`. But an identity column only gets its value *after* the
 `INSERT`. An event raised in `Item.Create` would carry id 0. So Inventory takes the id from a **sequence**
-first, before creating the item, like lesson 06 did for order numbers.
+first, before creating the item, like lesson 07 did for order numbers.
 
 ## 1. Inventory's item becomes the catalog
 
-Here's lesson 08's item, before:
+Here's lesson 09's item, before:
 
 ```csharp
 // Same id as Sales' item: the two modules talk about one item, each keeping only what it needs.
@@ -213,7 +213,7 @@ internal sealed class StockMovement
 ```
 
 Why does the only kind start at 2? Because two more are coming: receiving a purchase order
-([lesson 18](18-purchasing.md)) will be 1, and shipping ([lesson 17](17-shipping.md)) will be 3. The number
+([lesson 19](19-purchasing.md)) will be 1, and shipping ([lesson 18](18-shipping.md)) will be 3. The number
 is what's stored, so it's decided once and never renumbered.
 
 ## 2. The integration event, in the Contracts
@@ -233,7 +233,7 @@ dotnet add src/Modules/Inventory/Erp.Modules.Inventory.Contracts reference src/S
 ```
 
 That's the one reference a Contracts project may have. It still references no module, so no cycle can form.
-The architecture test from lesson 12 checks exactly that.
+The architecture test from [lesson 09](09-submit.md) checks exactly that.
 
 ## 3. Inventory's database
 
@@ -261,7 +261,7 @@ it turns into parameters, so there's no way to paste a value into SQL by acciden
 b.HasDefaultSchema(Schema);
 b.HasSequence<long>("item_id_seq");
 
-// (the outbox mapping from lesson 11 stays here)
+// (the outbox mapping from lesson 13 stays here)
 
 b.Entity<Item>(e =>
 {
@@ -324,7 +324,7 @@ SELECT setval('inventory.item_id_seq', GREATEST((SELECT MAX(id) FROM inventory.i
 That last line matters. The seed inserts ids 1 to 5 by hand, so the sequence still thinks the next id is 1.
 Without `setval`, the clerk's first new item would collide with the Widget.
 
-Sales' seed keeps its five items, with the comment it has had since lesson 04: "In real use these rows
+Sales' seed keeps its five items, with the comment it has had since lesson 05: "In real use these rows
 arrive through ItemCatalogChanged." From today, that's literally true for every new item.
 
 Create the migration:
@@ -359,7 +359,7 @@ check is not: it's in the same statement that reserves.
 
 ## 5. Maintaining the catalog
 
-Inventory gets endpoints for the first time, so `InventoryModule` learns lesson 02's two registrations. Before:
+Inventory gets endpoints for the first time, so `InventoryModule` learns lesson 03's two registrations. Before:
 
 ```csharp
 services.AddScoped<IModuleDatabase, InventoryDatabase>();
@@ -439,7 +439,7 @@ DbUpdateException { InnerException: Npgsql.PostgresException { SqlState: "23505"
                              => (StatusCodes.Status409Conflict, "That already exists. Reload and try again."),
 ```
 
-The host already has Npgsql's exception type, through lesson 13's `Npgsql.OpenTelemetry` package.
+The host already has Npgsql's exception type, through lesson 14's `Npgsql.OpenTelemetry` package.
 
 ```csharp
 // src/Modules/Inventory/Erp.Modules.Inventory/Features/CreateItem/CreateItemEndpoint.cs
@@ -466,7 +466,7 @@ internal sealed class CreateItemEndpoint : ICarterModule
 }
 ```
 
-The other three writes are short, and look like everything you've written since lesson 09. In
+The other three writes are short, and look like everything you've written since lesson 10. In
 `Features/UpdateItem/`, an `UpdateItemCommand(long ItemId, string Name, string Unit, bool AllowsFractions)`
 with the same validator rules, whose handler loads the item with `FindAsync`, calls `item.Describe(...)` and
 saves; `PUT /items/{id:long}` takes an `UpdateItemRequest(string Name, string Unit, bool AllowsFractions)`.
@@ -516,7 +516,7 @@ item and its movement are saved together, so there's never a count change withou
 
 ## 6. Reading the catalog
 
-Two functions, the pattern from lesson 07:
+Two functions, the pattern from lesson 08:
 
 ```sql
 -- inventory.search_items.v1.sql
@@ -608,7 +608,7 @@ internal sealed class SearchItemsHandler(IDbConnectionFactory connections) : IQu
             SELECT * FROM inventory.search_items(@Search, @ActiveOnly, @Page, @PageSize);
             SELECT inventory.count_items(@Search, @ActiveOnly);
             """,
-            new { Search = string.IsNullOrWhiteSpace(q.Search) ? null : q.Search.Trim(), q.ActiveOnly, q.Page, q.PageSize },
+            new { Search = SearchText.ForLike(q.Search), q.ActiveOnly, q.Page, q.PageSize },
             cancellationToken: ct));
 
         var items = (await multi.ReadAsync<ItemRow>())
@@ -622,7 +622,7 @@ internal sealed class SearchItemsHandler(IDbConnectionFactory connections) : IQu
 `GET /items` (with `search`, `activeOnly`, `page`, `pageSize`) and `GET /items/{id:long}/movements` are open
 to anyone signed in: a rep checks what's in stock, and a buyer will pick items for purchase orders. The
 movements slice, `Features/GetItemMovements/`, maps each row's `kind` number back to its name with
-`((MovementKind)r.Kind).ToString()`, the way lesson 07 did for order statuses.
+`((MovementKind)r.Kind).ToString()`, the way lesson 08 did for order statuses.
 
 ## 7. Sales keeps its copy in step
 
@@ -651,10 +651,10 @@ internal sealed class ItemCatalogChangedHandler(SalesDbContext db) : INotificati
 ```
 
 This is an **upsert**: insert if missing, update if present. Deliver the same event twice and the second
-time just writes the same values again. That's the "idempotent handler" lesson 11 asked for, achieved by
+time just writes the same values again. That's the "idempotent handler" lesson 13 asked for, achieved by
 carrying the full state instead of a change.
 
-A new item arrives unpriced and not for sale (`FromCatalog` from lesson 03), so it can't land on an order by
+A new item arrives unpriced and not for sale (`FromCatalog` from lesson 04), so it can't land on an order by
 accident. It waits for the sales manager.
 
 Now the trap that cost a real afternoon while building this course. Run the app, add an item, and wait.
@@ -675,13 +675,13 @@ options.Assemblies =
 ];
 ```
 
-Lesson 12's `Every_event_has_a_handler` test didn't catch this, because a handler *exists*. What catches it
+[Lesson 13](13-events-outbox.md)'s `Every_event_has_a_handler` test didn't catch this, because a handler *exists*. What catches it
 is a test through the front door: create an item as the clerk, and wait for it to appear in the price list.
 That's the integration test in step 10.
 
 ## 8. The price list and categories
 
-Categories get an `Update`, the same refactor as `Customer` in lesson 14. Before, lesson 03's `Create`
+Categories get an `Update`, the same refactor as `Customer` in lesson 15. Before, lesson 04's `Create`
 checked the rules itself; after:
 
 ```csharp
@@ -746,7 +746,7 @@ Look at the not-found message. Eventual consistency has a visible edge: a manage
 second the clerk saves it might beat the event. The message says exactly that, instead of a bare 404.
 
 `PUT /price-list/{itemId:long}` takes a `SetItemPricingRequest(decimal UnitPrice, long CategoryId, bool
-IsForSale)`, for `SalesRoles.Managers`. Changing a price never changes an existing order: lesson 03's lines
+IsForSale)`, for `SalesRoles.Managers`. Changing a price never changes an existing order: lesson 04's lines
 keep the price as ordered.
 
 The categories slice puts list, create and edit in one feature folder, `Features/ItemCategories/`:
@@ -1066,7 +1066,7 @@ The success message tells the clerk what happens next: Sales still has to price 
 }
 ```
 
-The "By" column is lesson 15's user directory at work again: the movement stores an id, the screen shows
+The "By" column is lesson 16's user directory at work again: the movement stores an id, the screen shows
 "Carlo Bautista".
 
 ### The price list
@@ -1084,7 +1084,7 @@ built from pieces you've used several times now; type them out, and compare with
 [PricingDialog.razor](../course-validation/business/src/Erp.Web/Pages/Sales/PricingDialog.razor) and
 [Categories.razor](../course-validation/business/src/Erp.Web/Pages/Sales/Categories.razor) when you're done,
 skipping their VAT and SC/PWD columns, the "VAT treatment" select, the special-discount switch and the
-Special discounts tab: those arrive in lessons 19 and 21.
+Special discounts tab: those arrive in lessons 20 and 21.
 
 One line deserves a sentence. At the top of the price list:
 
@@ -1120,7 +1120,7 @@ private static readonly string Stock = Join(Roles.InventoryClerk, Roles.Admin, R
 
 ## 10. Tests
 
-A unit test project for Inventory, set up like lesson 15's for Identity, with four tests:
+A unit test project for Inventory, set up like lesson 16's for Identity, with four tests:
 
 ```csharp
 // tests/Erp.Modules.Inventory.UnitTests/ItemTests.cs
@@ -1218,6 +1218,48 @@ seconds: the right way to test something that happens "a moment later". `Create`
 
 In the UI tests, add `"/price-list"` and `"/items"` to `pages`.
 
+## 11. Prove it: two people, one SKU
+
+The unique index on `sku` is what really stops duplicates; the handler's "does it exist?" check is only for
+a friendly message. A check followed by an insert has a gap, and two requests at once can both pass the
+check. So test the gap, in `LaterModuleEdgeCaseTests`:
+
+```csharp
+// Lesson 17: two people adding the same SKU at once; the unique index catches what the check missed.
+[Fact]
+public async Task The_same_sku_twice_is_409()
+{
+    var admin = await factory.ClientFor("admin@erp.local");
+    var item = new { sku = $"DUP-{Guid.NewGuid():N}"[..20], name = "Duplicate", unit = "pc", allowsFractions = false };
+
+    var responses = await Task.WhenAll(admin.PostAsJsonAsync("/api/items", item), admin.PostAsJsonAsync("/api/items", item));
+
+    responses.Select(r => r.StatusCode).Should().BeEquivalentTo([HttpStatusCode.Created, HttpStatusCode.Conflict]);
+}
+```
+
+One 201 and one 409, in either order: that's `23505 → 409` in `GlobalExceptionHandler`, doing its job.
+Without that line, the loser would be a 500.
+
+`ItemCatalogChanged` is the first event whose handler *writes* (Sales' copy of the item). In
+`Delivering_every_event_a_second_time_changes_nothing`, add the tables it touches to the snapshot:
+
+```csharp
+|| '|' || (SELECT COUNT(*) FROM sales.item)::text
+|| '|' || (SELECT COALESCE(SUM(on_hand), 0) FROM inventory.item)::text
+```
+
+Redelivering `ItemCatalogChanged` must update the same copy, never add a second.
+
+| Test | The edge | Why it matters |
+|---|---|---|
+| `The_same_sku_twice_is_409` | At the same instant | Two items with one SKU break every lookup by SKU |
+| `Stock_cannot_be_adjusted_below_zero` | Below zero | Negative stock means the books are wrong |
+| `Whole_unit_items_refuse_fractional_adjustments` | Too precise | Half a server rack |
+| `An_adjustment_needs_a_reason_and_records_a_movement` | Nothing | An unexplained change to stock is what auditors look for |
+| `A_new_catalog_item_reaches_the_price_list_unpriced_and_can_be_priced` | Across modules, through an event | The copy arrives, and can't be sold until priced |
+| The snapshot lines in the redelivery test | Twice | The upsert handler is idempotent |
+
 ## How a request flows
 
 ```mermaid
@@ -1291,4 +1333,4 @@ the building. Good luck, developer!
 
 ---
 
-← [Lesson 15 — Users and email](15-users-email.md) · Next: [Lesson 17 — Shipping](17-shipping.md) →
+← [Lesson 16 — Users and email](16-users-email.md) · Next: [Lesson 18 — Shipping](18-shipping.md) →

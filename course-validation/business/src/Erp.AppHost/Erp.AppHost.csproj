@@ -1,4 +1,4 @@
-<Project Sdk="Aspire.AppHost.Sdk/13.6.4">
+<Project Sdk="Aspire.AppHost.Sdk/13.6.5">
 
   <!-- Development only: runs the API next to the Aspire dashboard (traces, logs, metrics). Never deployed. -->
   <PropertyGroup>

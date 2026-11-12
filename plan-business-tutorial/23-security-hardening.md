@@ -1,4 +1,4 @@
-# Lesson 22 — Security Hardening: Ready for the Outside World
+# Lesson 23 — Security Hardening: Ready for the Outside World
 
 Good day, developer! Our ERP runs the whole business, and we can see what it's doing. But so far it has
 only ever met friendly callers on your own machine. Out on a real network, it will meet password guessers, browsers that can be
@@ -20,7 +20,7 @@ Let's begin!
 ## Why we build it this way
 
 Security works in layers. No single lock stops everything, and each of these assumes the others might fail.
-The account lockout from [lesson 05](05-sign-in.md) protects one account from guessing, but someone trying
+The account lockout from [lesson 06](06-sign-in.md) protects one account from guessing, but someone trying
 one password on a thousand accounts never trips it; a rate limit per IP address does. HTTPS protects tokens
 on the wire, but a browser could still be tricked into embedding our pages; security headers stop that. And
 if, despite everything, someone finds a way to run SQL through our app, a database account that can't `DROP`
@@ -123,7 +123,7 @@ And the defaults in `appsettings.json`:
 "RateLimiting": { "RequestsPerMinute": 300, "AuthRequestsPerMinute": 10 }
 ```
 
-The sign-in page already handles the 429: lesson 15 taught it to say "Too many attempts. Wait a minute and
+The sign-in page already handles the 429: lesson 16 taught it to say "Too many attempts. Wait a minute and
 try again." The test suite signs in dozens of times a minute, so `CustomWebAppFactory` lifts both limits
 for its own runs:
 
@@ -244,7 +244,7 @@ The setting is there for the day a buyer adds a second web front end on another 
 
 ## 5. Why there's no API key
 
-Many tutorials put an "API key" on every request at this point. We don't, and lesson 05 said why: a key
+Many tutorials put an "API key" on every request at this point. We don't, and lesson 06 said why: a key
 that ships inside a browser app is public, so it protects nothing, and it gives a false sense of a lock. Every
 call is protected by who's signed in. If a non-person client ever needs the API (a partner's server, a
 scheduled import), give it what Identity already provides: its own account and bearer tokens. And if you
@@ -342,7 +342,7 @@ rm dp.key
 (In Git Bash, put `MSYS_NO_PATHCONV=1` in front of the first command, or it rewrites `/CN=...` into a
 Windows path.) Keep the `.pfx` and its password together with the database backups' *instructions*, but
 never with the backups themselves. Lose the certificate, and everyone simply signs in again: the keys are
-only for sessions, not for data. [Lesson 23](23-docker.md) shows where the file goes on the server.
+only for sessions, not for data. [Lesson 24](24-deploy-podman.md) shows where the file goes on the server.
 
 ## 7. A database account that can't drop your tables
 
@@ -473,34 +473,134 @@ there. Add it, empty, to `appsettings.json`:
 
 Every module does this, all five of them, so the dispatcher, the migrations and the seeds all follow one rule.
 
-The test suite can now prove the accounts are enough. `CustomWebAppFactory` gets an optional owner
-connection: when `ERP_TEST_DB_OWNER` is set, the suite runs as `erp_app` against a database prepared by the
-script, migrates as `erp_owner`, and doesn't drop that database. Before:
+The test suite can now prove the accounts are enough, and since [lesson 12](12-containers-ci.md) it owns a
+whole PostgreSQL server, so it can set the accounts up the way production does, on every run. Copy the script
+next to the tests, in `Erp.Integration.Tests.csproj`:
+
+```xml
+<ItemGroup>
+  <!-- The same roles script production runs, applied to the test container. -->
+  <None Include="..\..\deploy\postgres\create-roles.sql" Link="create-roles.sql" CopyToOutputDirectory="PreserveNewest" />
+</ItemGroup>
+```
+
+Then the factory runs it inside the container before the app starts, migrates as `erp_owner`, and runs the
+app, and every test, as `erp_app`. Before:
 
 ```csharp
-public CustomWebAppFactory() => DropDatabase(TestConnectionString);
+private readonly PostgreSqlContainer _postgres = TestDatabase.Container().Build();
+
+public string ConnectionString => _postgres.GetConnectionString();
+
+public Task InitializeAsync() => _postgres.StartAsync();
 ```
 
 After:
 
 ```csharp
-// Set to run the suite as the least-privilege erp_app (ERP_TEST_DB) against a database prepared by
-// deploy/postgres/create-roles.sql, with migrations run as erp_owner. That database is not dropped.
-private static readonly string? OwnerConnectionString = Environment.GetEnvironmentVariable("ERP_TEST_DB_OWNER");
+private const string Database = "erp_test", OwnerPassword = "owner-test-only", AppPassword = "app-test-only";
 
-public CustomWebAppFactory()
+private readonly PostgreSqlContainer _postgres = TestDatabase.Container()
+    .WithResourceMapping(new FileInfo(Path.Combine(AppContext.BaseDirectory, "create-roles.sql")), "/erp/")
+    .Build();
+
+public string ConnectionString { get; private set; } = default!;        // erp_app: rows only
+public string OwnerConnectionString { get; private set; } = default!;   // erp_owner: runs the migrations
+
+public async Task InitializeAsync()
 {
-    if (OwnerConnectionString is null)
-        DropDatabase(TestConnectionString);
+    await _postgres.StartAsync();
+    var roles = await _postgres.ExecAsync(["psql", "-U", "postgres", "-v", "ON_ERROR_STOP=1", "-v", $"db={Database}",
+        "-v", $"owner_password={OwnerPassword}", "-v", $"app_password={AppPassword}", "-f", "/erp/create-roles.sql"]);
+    if (roles.ExitCode != 0) throw new InvalidOperationException($"create-roles.sql failed: {roles.Stderr}");
+
+    var server = new NpgsqlConnectionStringBuilder(_postgres.GetConnectionString()) { Database = Database };
+    OwnerConnectionString = new NpgsqlConnectionStringBuilder(server.ConnectionString)
+        { Username = "erp_owner", Password = OwnerPassword }.ConnectionString;
+    ConnectionString = new NpgsqlConnectionStringBuilder(server.ConnectionString)
+        { Username = "erp_app", Password = AppPassword }.ConnectionString;
 }
 ```
 
-and in `ConfigureWebHost`:
+and in `ConfigureWebHost`, one more line:
 
 ```csharp
-if (OwnerConnectionString is not null)
-    builder.UseSetting("ConnectionStrings:ErpDbMigrations", OwnerConnectionString);
+builder.UseSetting("ConnectionStrings:ErpDbMigrations", OwnerConnectionString);
 ```
+
+- **`WithResourceMapping`** copies a file into the container before it starts.
+- **`ExecAsync`** runs a command inside the running container, like `podman exec`: here, `psql` with the
+  script, exactly as an administrator would run it on a real server.
+- **The passwords are made up for the test.** The container lives for one run, then disappears with them.
+
+That's the strongest proof there is: the whole suite, every request, every race, every outbox delivery, runs
+with no more rights than production gives the app. If any code ever needs to `CREATE` or `ALTER` at runtime,
+a test fails.
+
+`DatabaseTests.Seeding_twice_changes_nothing` follows the new signature. Before:
+
+```csharp
+await using (var scope = factory.Services.CreateAsyncScope())
+    foreach (var module in scope.ServiceProvider.GetServices<IModuleDatabase>())
+        await module.SeedDevelopmentDataAsync(default);
+```
+
+After:
+
+```csharp
+await using (var scope = factory.Services.CreateAsyncScope())
+await using (var owner = new NpgsqlConnection(factory.OwnerConnectionString))
+{
+    await owner.OpenAsync();
+    foreach (var module in scope.ServiceProvider.GetServices<IModuleDatabase>())
+        await module.SeedDevelopmentDataAsync(owner, default);
+}
+```
+
+And two tests that prove this lesson's promises directly, in `OperationsTests`:
+
+```csharp
+// tests/Erp.Integration.Tests/OperationsTests.cs (add)
+[Fact]
+public async Task Too_many_sign_in_attempts_get_429()
+{
+    await using var strict = factory.WithWebHostBuilder(b => b.UseSetting("RateLimiting:AuthRequestsPerMinute", "3"));
+    var client = strict.CreateClient();
+
+    var statuses = new List<HttpStatusCode>();
+    for (var i = 0; i < 4; i++)
+        statuses.Add((await client.PostAsJsonAsync("/api/auth/login", new { email = "rep@erp.local", password = "wrong-password!" })).StatusCode);
+
+    statuses.Should().Equal(HttpStatusCode.Unauthorized, HttpStatusCode.Unauthorized, HttpStatusCode.Unauthorized,
+        HttpStatusCode.TooManyRequests);
+}
+
+// The app's own login can change rows, never the schema: a compromised app can't drop a table.
+[Theory]
+[InlineData("CREATE TABLE sales.intruder (id int)")]
+[InlineData("DROP TABLE sales.customer")]
+[InlineData("ALTER TABLE sales.customer ADD COLUMN intruder int")]
+public async Task The_app_role_cannot_change_the_schema(string ddl)
+{
+    await using var conn = factory.OpenDatabase();
+    var act = () => conn.ExecuteAsync(ddl);
+    (await act.Should().ThrowAsync<PostgresException>()).Which.SqlState.Should().BeOneOf("42501", "42P01");
+}
+```
+
+**`WithWebHostBuilder`** makes a second, separate copy of the app with one setting changed: here, a limit of
+three sign-ins a minute instead of the suite's generous one. Three wrong passwords get their 401, and the
+fourth attempt never reaches Identity at all. `42501` is PostgreSQL's "insufficient privilege".
+
+### Edge cases covered in this lesson
+
+| Test | The edge | Why it matters |
+|---|---|---|
+| `Too_many_sign_in_attempts_get_429` | One over the limit | Password guessing slows to a crawl, for every account at once |
+| `The_app_role_cannot_change_the_schema` (3 cases) | Who: the app itself | A compromised app can't drop or alter a table |
+| The whole suite, as `erp_app` | Every request | No feature quietly depends on rights production won't have |
+| `Responses_carry_security_headers_and_a_trace_id` | Every response | Headers set once, on every answer, errors included |
+| `Pages_and_api_get_different_content_security_policies` | Two kinds of address | The app's pages need WebAssembly; the API needs nothing at all |
 
 ## The pipeline, in order
 
@@ -559,36 +659,20 @@ It refuses to start. Make a certificate as in step 6, add `DataProtection__Certi
 then look at the stored key:
 
 ```bash
-PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localhost -U postgres -d erp \
+podman exec -i erp-postgres psql -U postgres -d erp \
   -c "SELECT left(xml, 200) FROM identity.data_protection_keys ORDER BY id DESC LIMIT 1;"
 ```
 
 The XML says `encryptedSecret`, with the certificate's thumbprint: the key itself is unreadable.
 
-And the least-privilege accounts. Create them against a fresh database, and run the whole suite as
-`erp_app`:
+And the least-privilege accounts: you've already seen them work, because every test run now creates them
+in its container and runs the whole suite as `erp_app`:
 
 ```bash
-PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localhost -U postgres \
-  -v db=erp_roles_check -v owner_password=owner_dev_only -v app_password=app_dev_only \
-  -f deploy/postgres/create-roles.sql
-
-ERP_TEST_DB="Host=localhost;Database=erp_roles_check;Username=erp_app;Password=app_dev_only" \
-ERP_TEST_DB_OWNER="Host=localhost;Database=erp_roles_check;Username=erp_owner;Password=owner_dev_only" \
-dotnet test tests/Erp.Integration.Tests
+dotnet test
 ```
 
-Every test passes, with the app never holding more than row-level rights. And as `erp_app`:
-
-```bash
-PGPASSWORD=app_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localhost -U erp_app -d erp_roles_check \
-  -c "DROP TABLE sales.customer;"
-# ERROR:  must be owner of table customer
-```
-
-The integration tests gain two checks in `PlatformTests.cs`: `Responses_carry_security_headers_and_a_trace_id`,
-and `Pages_and_api_get_different_content_security_policies`, which asks for `/` and `/api/auth/me` and
-compares the two policies.
+All green, including `The_app_role_cannot_change_the_schema` and `Too_many_sign_in_attempts_get_429`.
 
 ## Let's check!
 
@@ -606,4 +690,4 @@ time, we put it on a real server, in containers, with HTTPS and nightly backups.
 
 ---
 
-← [Lesson 20 — Payments and receivables](20-payments.md) · Next: [Lesson 23 — Docker](23-docker.md) →
+← [Lesson 21 — Payments and receivables](21-payments.md) · Next: [Lesson 24 — Docker](24-deploy-podman.md) →

@@ -76,8 +76,9 @@ You don't need to understand this table yet. Each tool is explained in the lesso
 | Reacting to events reliably | A **transactional outbox** |
 | Seeing what the app is doing | **OpenTelemetry**, with the **Aspire** dashboard while developing |
 | Invoice PDFs and email | **PDFsharp/MigraDoc** and **MailKit** |
-| Tests | **xUnit**, **AwesomeAssertions** and **Playwright** |
-| Hosting | **Docker Compose** with **Caddy** for HTTPS, on any Linux server |
+| Tests | **xUnit**, **AwesomeAssertions**, **FsCheck** (property-based), **Testcontainers**, **Playwright**, **coverlet** and **Stryker.NET**; **GitHub Actions** runs them on every push |
+| Containers | **Podman** (Docker works too): the development database from lesson 12, the tests' databases, and production |
+| Hosting | **Compose** with **Caddy** for HTTPS, on any Linux server |
 
 Every one of these is free and openly licensed (MIT, Apache-2.0, BSD or the PostgreSQL license). That
 matters: it means you can build this and sell it, and your buyer owes nobody a license fee. The reference
@@ -85,7 +86,7 @@ build's [THIRD-PARTY-NOTICES.md](../course-validation/business/THIRD-PARTY-NOTIC
 
 A few popular tools are left out on purpose: Clean Architecture's four-project split, a generic
 `Repository<T>`, message brokers like RabbitMQ, Redis, microservices and Kubernetes. Each is good somewhere.
-[Lesson 24](24-production-checklist.md) tells you when you'd actually reach for them.
+[Lesson 25](25-production-checklist.md) tells you when you'd actually reach for them.
 
 If you came from WebForms, you'll feel at home faster than you think. Your `.aspx` page with its
 code-behind becomes a Razor page, your `[WebMethod]` becomes a Carter endpoint, your `Button_Click` logic
@@ -99,31 +100,35 @@ Each lesson builds on the one before, and each one ends with something you run a
 | # | Lesson | What you'll build |
 |---|---|---|
 | 01 | [Solution setup](01-solution-setup.md) | The projects, the module walls, and the browser app, served from day one |
-| 02 | [Mediator](02-mediator.md) | Commands, queries, handlers, pipeline behaviors, and a first screen calling the API |
-| 03 | [Domain model](03-domain-model.md) | The sales rules in plain C#, with unit tests from day one |
-| 04 | [Database](04-database.md) | PostgreSQL, EF Core, migrations, seed data |
-| 05 | [Sign-in](05-sign-in.md) | ASP.NET Core Identity, and the sign-in page and account menu |
-| 06 | [Create an order](06-create-order.md) | The first real feature from the form to the database, with proper error responses |
-| 07 | [Find orders](07-find-orders.md) | Dapper and SQL functions; the order list and page; who sees which orders |
-| 08 | [Submit](08-submit.md) | The Inventory module, safe stock reservation, one transaction across two modules |
-| 09 | [Approve, reject, cancel](09-approve-reject-cancel.md) | The approval workflow, and lost updates stopped by `xmin` |
-| 10 | [Update an order](10-update-order.md) | Editing drafts safely |
-| 11 | [Events and the outbox](11-events-outbox.md) | Reacting to what happened, reliably |
-| 12 | [Testing](12-testing.md) | Integration, architecture and browser tests |
-| 13 | [Observability](13-observability.md) | Traces, metrics, logs, health checks, the Aspire dashboard |
-| 14 | [Customers](14-customers.md) | Customer maintenance, and a SQL function's second version |
-| 15 | [Users and email](15-users-email.md) | Staff accounts, six roles, the sign-in log, password-reset email |
-| 16 | [Item catalog and stock](16-item-catalog.md) | Inventory's catalog, audited adjustments, Sales' copy kept in step by events |
-| 17 | [Shipping](17-shipping.md) | Two modules calling each other through their contracts |
-| 18 | [Purchasing](18-purchasing.md) | Suppliers, purchase orders, receiving goods |
-| 19 | [Invoicing](19-invoicing.md) | Invoices from shipments laid out to the BIR's rules, gap-free numbers, void and reissue, the company profile, PDFs |
-| 20 | [Payments and receivables](20-payments.md) | Payments, tax withheld and BIR Forms 2307, the customer's balance kept exactly once, aging |
-| 21 | [Special discounts](21-special-discounts.md) | Senior citizen and PWD discounts, on the order and the invoice alike |
-| 22 | [Security hardening](22-security-hardening.md) | Rate limits, HTTPS, a Content-Security-Policy, encrypted sign-in keys, least privilege |
-| 23 | [Docker](23-docker.md) | The whole ERP on one server: Compose, Caddy, migrations, backups |
-| 24 | [Production checklist](24-production-checklist.md) | What "done" means, a new install's first day, and what's not built yet |
+| 02 | [Testing](02-testing.md) | Why we test, how to set tests up and use them, and the edge-case checklist every lesson after uses |
+| 03 | [Mediator](03-mediator.md) | Commands, queries, handlers, pipeline behaviors, a first screen; the first unit and architecture tests |
+| 04 | [Domain model](04-domain-model.md) | The sales rules in plain C#, with unit tests, edge cases and property-based tests |
+| 05 | [Database](05-database.md) | PostgreSQL, EF Core, migrations, seed data; tests against a real database |
+| 06 | [Sign-in](06-sign-in.md) | ASP.NET Core Identity, the sign-in page and account menu; the first browser tests |
+| 07 | [Create an order](07-create-order.md) | The first real feature from the form to the database, with proper error responses |
+| 08 | [Find orders](08-find-orders.md) | Dapper and SQL functions; the order list and page; who sees which orders |
+| 09 | [Submit](09-submit.md) | The Inventory module, safe stock reservation, one transaction across two modules; race tests |
+| 10 | [Approve, reject, cancel](10-approve-reject-cancel.md) | The approval workflow, and lost updates stopped by `xmin` |
+| 11 | [Update an order](11-update-order.md) | Editing drafts safely; code coverage and mutation testing |
+| 12 | [Containers and CI](12-containers-ci.md) | Podman, the database in a container, tests that bring their own, every test on every push |
+| 13 | [Events and the outbox](13-events-outbox.md) | Reacting to what happened, reliably |
+| 14 | [Observability](14-observability.md) | Traces, metrics, logs, health checks, the Aspire dashboard |
+| 15 | [Customers](15-customers.md) | Customer maintenance, and a SQL function's second version |
+| 16 | [Users and email](16-users-email.md) | Staff accounts, six roles, the sign-in log, password-reset email |
+| 17 | [Item catalog and stock](17-item-catalog.md) | Inventory's catalog, audited adjustments, Sales' copy kept in step by events |
+| 18 | [Shipping](18-shipping.md) | Two modules calling each other through their contracts |
+| 19 | [Purchasing](19-purchasing.md) | Suppliers, purchase orders, receiving goods |
+| 20 | [Invoicing](20-invoicing.md) | Invoices from shipments laid out to the BIR's rules, gap-free numbers, void and reissue, the company profile, PDFs |
+| 21 | [Payments and receivables](21-payments.md) | Payments, tax withheld and BIR Forms 2307, the customer's balance kept exactly once, aging |
+| 22 | [Special discounts](22-special-discounts.md) | Senior citizen and PWD discounts, on the order and the invoice alike |
+| 23 | [Security hardening](23-security-hardening.md) | Rate limits, HTTPS, a Content-Security-Policy, encrypted sign-in keys, least privilege |
+| 24 | [Deploying with Podman](24-deploy-podman.md) | The whole ERP on one server: Compose, Caddy, migrations, backups |
+| 25 | [Production checklist](25-production-checklist.md) | What "done" means, a new install's first day, and what's not built yet |
 
-All together, it's about 55 to 65 hours of focused work. Lessons 03, 05, 07, 08 and 16 are the heaviest, so
+Every lesson from 02 on ends by proving itself: tests for what it built, the edge cases included, and a
+table of which edges they cover and why.
+
+All together, it's about 65 to 75 hours of focused work. Lessons 04, 05, 07, 08, 12 and 16 are the heaviest, so
 start those when you're fresh. If C# itself is new to you, read [00a-FOUNDATIONS.md](00a-FOUNDATIONS.md)
 first, and give yourself half again as much time.
 
@@ -136,8 +141,9 @@ Every lesson walks the same path, so you always know where you are:
 3. **The steps** — the code, with where each file goes, including its screen.
 4. **How a request flows** — following one request through the code.
 5. **Mistakes to avoid.**
-6. **Let's run it!** — you run it, click through it, and see it work.
-7. **Let's check!** — questions to answer from memory. The answers are in [ANSWER-KEY.md](ANSWER-KEY.md),
+6. **Prove it** — the tests for what you built, edge cases included (from lesson 02 on; it's one of the steps).
+7. **Let's run it!** — you run it, run the tests, click through it, and see it work.
+8. **Let's check!** — questions to answer from memory. The answers are in [ANSWER-KEY.md](ANSWER-KEY.md),
    but try first. Pulling the answer out of your own head is what makes it stick.
 
 ## A few tips before we start
@@ -160,11 +166,12 @@ Every lesson walks the same path, so you always know where you are:
 | Tool | How to check |
 |---|---|
 | **.NET 10 SDK** | `dotnet --version` prints `10.x` |
-| **PostgreSQL 16 or newer** | [Lesson 04](04-database.md) walks you through installing it |
+| **PostgreSQL 16 or newer** | [Lesson 05](05-database.md) walks you through installing it; [lesson 12](12-containers-ci.md) moves it into a container |
 | **An editor** | Visual Studio 2022 or 2026, VS Code with C# Dev Kit, or Rider |
 | **Git Bash and `jq`** | `jq --version` (Git Bash comes with Git for Windows) |
-| **A browser** | Edge or Chrome; the browser tests in lesson 12 use the one you have |
-| **Docker** (for lesson 23 only) | `docker --version`. Docker Desktop, or Docker Engine in WSL 2 |
+| **A browser** | Edge or Chrome; the browser tests from [lesson 06](06-sign-in.md) use the one you have |
+| **Podman** (from lesson 12) | `podman --version`. [Lesson 12](12-containers-ci.md) installs it: Podman Desktop on Windows and macOS, the package manager on Linux |
+| **A GitHub account** (from lesson 12) | For CI; free |
 
 And that's the whole plan. Next, we set up the solution, put up the walls between the modules, and open
 the app in the browser for the first time. Good luck, developer!

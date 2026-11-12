@@ -1,4 +1,4 @@
-# Lesson 21 — Special Discounts: Senior Citizens and Persons with Disability
+# Lesson 22 — Special Discounts: Senior Citizens and Persons with Disability
 
 Good day, developer! In the Philippines, a senior citizen or a person with disability who buys medicine, or
 anything else the law covers, for their own use, pays no VAT on it and gets 20% off what's left. Every business
@@ -41,8 +41,8 @@ rate. A person who is both a senior citizen and a PWD still gets one discount, n
 
 ### Where the discount is worked out
 
-The obvious place is the invoice: the PDF prints it, so compute it there. Now follow the money. Since lesson 08,
-the customer's balance is charged with the **order's** total when it's approved, and lesson 20's payments pay
+The obvious place is the invoice: the PDF prints it, so compute it there. Now follow the money. Since lesson 09,
+the customer's balance is charged with the **order's** total when it's approved, and lesson 21's payments pay
 the **invoice's** total. Discount only the invoice, and the customer is charged ₱1,120 and billed ₱800: their
 balance never comes back to zero.
 
@@ -61,7 +61,7 @@ table, seeded with the two every business must know, and each item gets a switch
 
 Now, let's be honest about what's not built: the separate 5% discount seniors get on basic necessities and
 prime commodities, which comes with a weekly purchase cap and a purchase booklet. A business that sells
-groceries needs it; [lesson 24](24-production-checklist.md) lists it.
+groceries needs it; [lesson 25](25-production-checklist.md) lists it.
 
 ## 1. One calculation, in BuildingBlocks
 
@@ -173,7 +173,7 @@ internal sealed class SpecialDiscountProgram
 ```
 
 A program is withdrawn, never deleted: old orders still name it. In `SalesDbContext`, `DbSet<SpecialDiscountProgram>
-SpecialDiscountPrograms` and its mapping, seeded by the migration itself like lesson 19's company profile:
+SpecialDiscountPrograms` and its mapping, seeded by the migration itself like lesson 20's company profile:
 
 ```csharp
 b.Entity<SpecialDiscountProgram>(e =>
@@ -200,7 +200,7 @@ and its endpoint.
 
 ## 3. Items that qualify
 
-`SalesItem` gets one more fact, and lesson 19's `SetPricing` one more parameter. Before:
+`SalesItem` gets one more fact, and lesson 20's `SetPricing` one more parameter. Before:
 
 ```csharp
 public void SetPricing(Money unitPrice, ItemCategory category, bool isForSale, TaxType taxType)
@@ -219,7 +219,7 @@ and the tax type: `SalesOrderLine` gains `SpecialDiscountEligible` and a seventh
 gains `bool discountEligible = false`.
 
 The price list shows it, so `sales.search_price_list.v3.sql` adds `is_special_discount_eligible boolean` at the
-end (lesson 14's recipe, third time), and `PriceListItemDto` gains `bool IsSpecialDiscountEligible`.
+end (lesson 15's recipe, third time), and `PriceListItemDto` gains `bool IsSpecialDiscountEligible`.
 
 ## 4. The order carries the discount
 
@@ -267,7 +267,7 @@ private void EnsureDiscountChangeable()
 `SetLines` ends with `RecalculateSpecialDiscount();`, so editing a discounted order keeps its discount right.
 And notice what *didn't* change: `Submit`, `MarkApproved` and `Cancel` all use `Total`, so the credit check,
 the ₱50,000 approval threshold and the customer's balance see the discounted amount without a line of change.
-That's the payoff of keeping `Total` in one place since lesson 03.
+That's the payoff of keeping `Total` in one place since lesson 04.
 
 Why store the two amounts, when `Total` could compute them? Because three SQL functions add up order totals
 (the order, the order list and the customer's pending total), and SQL can't call C#. Storing them means SQL
@@ -287,7 +287,7 @@ e.OwnsOne(x => x.SpecialDiscount, d =>
 ```
 
 Its columns are named `special_discount_program`, `special_discount_holder_name` and so on, all nullable: no
-discount, all `NULL`. Then the read side, lesson 14's recipe once more:
+discount, all `NULL`. Then the read side, lesson 15's recipe once more:
 
 - `sales.get_sales_order.v3.sql`: the total subtracts `o.special_discount_vat_exemption +
   o.special_discount_amount`; new columns at the end bring `gross_total` and the discount's fields; the lines
@@ -323,8 +323,8 @@ internal sealed class ApplySpecialDiscountHandler(SalesDbContext db, ICurrentUse
 }
 ```
 
-Load, call the domain, save. The tax policy comes through Invoicing's service window, lesson 19's
-`IInvoicingSetup`, which Sales already references since lesson 20. The command's validator checks only that
+Load, call the domain, save. The tax policy comes through Invoicing's service window, lesson 20's
+`IInvoicingSetup`, which Sales already references since lesson 21. The command's validator checks only that
 the program code, the name and the ID number are there. `RemoveSpecialDiscountCommand` is the same, shorter.
 
 ## 6. The invoice bills what was ordered
@@ -402,7 +402,7 @@ Each eligible line gets a `* ` before its description, and the totals gain "Less
 | Screen | What changes |
 |---|---|
 | **Price list → Set price** | A "Qualifies for special discounts" switch; a **SC/PWD** column in the list |
-| **Price list → Special discounts** (new tab) | The programs (code, name, ID asked for, rate, VAT-exempt, offered), with an add/edit form for managers, like lesson 16's Categories |
+| **Price list → Special discounts** (new tab) | The programs (code, name, ID asked for, rate, VAT-exempt, offered), with an add/edit form for managers, like lesson 17's Categories |
 | **One order** | On a draft with an eligible item, a **Special discount** button. Its dialog lists the offered programs, then asks for the holder's name and the ID number. The totals show gross, the VAT exemption, the discount and the total, with eligible lines starred; a card shows the holder and ID; **Remove discount** takes it off |
 | **One invoice** | The same deduction rows, with the holder and ID |
 
@@ -440,8 +440,98 @@ The integration test is the one that matters most, because it crosses every modu
 `A_senior_citizen_discount_is_billed_as_ordered_and_withheld_tax_is_tracked_to_its_2307` marks the Gadget
 eligible, orders 28 Gadgets (₱1,120) and 4 Widgets (₱100), applies the SC discount, and checks the order:
 ₱1,220 gross, ₱900 total. Then it ships, waits for the invoice, and checks that it's ₱900 too. It finishes
-lesson 20's way: paid with ₱8.89 withheld, a balance of zero, and a 2307 that closes the gap. Copy it from
+lesson 21's way: paid with ₱8.89 withheld, a balance of zero, and a 2307 that closes the gap. Copy it from
 [BusinessFlowTests.cs](../course-validation/business/tests/Erp.Integration.Tests/BusinessFlowTests.cs).
+
+### The discount, for any order
+
+The examples above use the BIR's own numbers. Two properties check every other order FsCheck can think of, in
+`tests/Erp.Modules.Sales.UnitTests/PropertyTests.cs`:
+
+```csharp
+public class SpecialDiscountProperties
+{
+    private static readonly TaxPolicy Vat12 = new(TaxRegime.Vat, 0.12m);
+
+    private static List<(Money Gross, TaxType TaxType, bool Eligible)> Lines(PositiveInt[] centavos, bool[] eligible) =>
+        centavos.Take(8).Select((c, i) => (
+            new Money(c.Get % 10_000_000 / 100m),
+            (TaxType)(i % 3),
+            eligible.Length > 0 && eligible[i % eligible.Length])).ToList();
+
+    private static SpecialDiscount Senior() =>
+        SpecialDiscount.Grant("Senior citizen", "OSCA ID No.", 0.20m, vatExempt: true, "Lola Basyang", "OSCA-1", Vat12);
+
+    [Property]
+    public bool The_discount_never_exceeds_what_the_eligible_items_cost(PositiveInt[] centavos, bool[] eligible)
+    {
+        var lines = Lines(centavos, eligible);
+        var amounts = Senior().Apply(lines);
+        var eligibleGross = lines.Where(l => l.Eligible).Sum(l => l.Gross.Amount);
+        return amounts.Total.Amount <= eligibleGross;
+    }
+
+    // The order and the invoice list their lines in their own order; the discount must not care.
+    [Property]
+    public bool The_order_of_the_lines_never_changes_the_discount(PositiveInt[] centavos, bool[] eligible)
+    {
+        var lines = Lines(centavos, eligible);
+        var reversed = Enumerable.Reverse(lines).ToList();
+        return Senior().Apply(lines) == Senior().Apply(reversed);
+    }
+}
+```
+
+The second one is the property the whole design rests on: Sales computes the discount on the order, Invoicing
+computes it again at issue, and the two must agree to the centavo. If the result depended on the order of the
+lines (round each line, then add them, in whatever order a query returned them), the invoice could differ from
+the order the customer was charged for. Computing on the totals, once, makes it impossible, and this proves it
+for a hundred random orders.
+
+In the Invoicing unit tests, one more property, next to lesson 20's:
+
+```csharp
+// With a senior's discount the breakdown shows the sales before the 20%, so it adds back to total + discount.
+[Property]
+public bool With_a_special_discount_the_breakdown_adds_back_to_the_total_plus_the_discount(
+    PositiveInt[] centavos, PositiveInt[] thousandths, bool[] eligible)
+```
+
+(the reference build's `PropertyTests.cs` has it in full: the same `Issue` helper, with eligibility and a
+discount passed in).
+
+And two rules for `RulesFoundByMutationTests`:
+
+```csharp
+[Fact]
+public void A_discount_cannot_be_removed_after_submitting()
+{
+    var customer = Make.Customer();
+    var order = Make.Order(customer, unitPrice: 25);
+    order.Submit(customer, Money.Zero, Make.Now);
+
+    order.Invoking(o => o.RemoveSpecialDiscount()).Should().Throw<DomainException>().WithMessage("*draft*");
+}
+
+[Theory]
+[InlineData("0")]
+[InlineData("1")]
+public void A_program_rate_of_nothing_or_everything_is_refused(string rate) =>
+    FluentActions.Invoking(() => SpecialDiscountProgram.Define("SP", "Solo parent", "ID", decimal.Parse(rate), vatExempt: false))
+        .Should().Throw<DomainException>();
+```
+
+A rate of 0 is no discount; a rate of 1 gives the goods away. Both are typos the screen must refuse.
+
+| Test | The edge | Why it matters |
+|---|---|---|
+| `The_discount_never_exceeds_what_the_eligible_items_cost` | Any order | A discount larger than the sale |
+| `The_order_of_the_lines_never_changes_the_discount` | Any order of lines | The invoice always equals the order |
+| `With_a_special_discount_the_breakdown_adds_back_to_the_total_plus_the_discount` | Any discounted invoice | The B.18 block reconciles |
+| `A_discount_needs_an_ID_an_eligible_item_and_a_draft_order` | Nothing; when | No ID, nothing eligible, or too late |
+| `A_discount_cannot_be_removed_after_submitting` | When | The customer was charged for the discounted total |
+| `A_program_rate_of_nothing_or_everything_is_refused` | 0 and 1 | The two ends that make no sense |
+| `A_senior_citizen_discount_is_billed_as_ordered_and_withheld_tax_is_tracked_to_its_2307` | End to end | Order, invoice, payment and 2307 agree |
 
 ## How a request flows
 
@@ -499,4 +589,4 @@ hardening. Good luck, developer!
 
 ---
 
-← [Lesson 20 — Payments and receivables](20-payments.md) · Next: [Lesson 22 — Security hardening](22-security-hardening.md) →
+← [Lesson 21 — Payments and receivables](21-payments.md) · Next: [Lesson 23 — Security hardening](23-security-hardening.md) →

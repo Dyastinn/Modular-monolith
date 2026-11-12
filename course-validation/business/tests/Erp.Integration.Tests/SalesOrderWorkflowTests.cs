@@ -160,9 +160,9 @@ public class SalesOrderWorkflowTests(CustomWebAppFactory factory)
 
     private sealed record Problem(string Detail, string[] Errors);
 
-    private static async Task<decimal> ReservedRacks()
+    private async Task<decimal> ReservedRacks()
     {
-        await using var conn = new NpgsqlConnection(CustomWebAppFactory.TestConnectionString);
+        await using var conn = factory.OpenDatabase();
         return await conn.ExecuteScalarAsync<decimal>("SELECT reserved FROM inventory.item WHERE id = 4");
     }
 }

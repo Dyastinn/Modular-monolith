@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json.Serialization;
 using Carter;
 using Erp.Api;
@@ -46,7 +47,9 @@ builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database", tag
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 // Enums travel as their names ("Cash"), not numbers, in both directions.
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
-builder.Services.AddProblemDetails();
+// Every problem body, ours or the framework's, carries the trace id that the X-Trace-Id header and the logs carry.
+builder.Services.AddProblemDetails(o => o.CustomizeProblemDetails = c =>
+    c.ProblemDetails.Extensions["traceId"] = Activity.Current?.TraceId.ToString() ?? c.HttpContext.TraceIdentifier);
 builder.Services.AddHsts(o =>
 {
     o.MaxAge = TimeSpan.FromDays(365);
@@ -80,6 +83,7 @@ builder.Services.AddSwaggerGen(options =>
 var app = builder.Build();
 
 app.UseExceptionHandler();
+app.UseStatusCodePages();   // an error with no body (a bare 404, 401, 403) gets a problem+json body too
 if (!app.Environment.IsDevelopment())
     app.UseHsts();
 app.UseHttpsRedirection();

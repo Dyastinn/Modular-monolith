@@ -124,4 +124,31 @@ public class ModuleBoundaryTests
 
         events.Where(e => !handled.Contains(e)).Select(e => e.FullName).Should().BeEmpty("every event needs at least one handler");
     }
+
+    // Vertical slices: a feature's files sit together. Folders named after a technical layer pull them apart again.
+    [Fact]
+    public void Code_is_grouped_by_feature_not_by_technical_layer()
+    {
+        string[] layers = [".Commands", ".Queries", ".Handlers", ".Validators", ".Endpoints", ".Repositories", ".Services"];
+
+        Modules.SelectMany(m => m.GetTypes())
+            .Select(t => t.Namespace ?? "")
+            .Distinct()
+            .Where(ns => layers.Any(ns.EndsWith))
+            .Should().BeEmpty("a feature folder holds its handler and endpoint together");
+    }
+
+    // A rich domain changes state through methods that check the rules. A public setter would let anyone skip them.
+    [Fact]
+    public void Domain_state_changes_only_through_its_methods()
+    {
+        var setters = Modules.SelectMany(m => m.GetTypes())
+            .Where(t => (t.Namespace ?? "").EndsWith(".Domain"))
+            .SelectMany(t => t.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly))
+            .Where(p => p.SetMethod is { IsPublic: true } setter
+                        && !setter.ReturnParameter.GetRequiredCustomModifiers().Contains(typeof(IsExternalInit)))
+            .Select(p => $"{p.DeclaringType!.Name}.{p.Name}");
+
+        setters.Should().BeEmpty("domain properties have private setters; records' init-only properties are fine");
+    }
 }

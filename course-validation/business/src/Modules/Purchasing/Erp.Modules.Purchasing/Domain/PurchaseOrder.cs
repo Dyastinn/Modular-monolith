@@ -33,10 +33,15 @@ internal sealed class PurchaseOrderLine
     public PurchaseOrderLine(ItemId itemId, string sku, string itemName, string unit, Quantity quantity, Money unitCost)
     { ItemId = itemId; Sku = sku; ItemName = itemName; Unit = unit; Quantity = quantity; UnitCost = unitCost; }
 
+    public void EnsureCanReceive(decimal quantity)
+    {
+        if (quantity > Outstanding)
+            throw new DomainException($"Only {Outstanding:0.###} {Unit} of {Sku} is still to come; {quantity:0.###} was entered.");
+    }
+
     public void Receive(Quantity quantity)
     {
-        if (quantity.Value > Outstanding)
-            throw new DomainException($"Only {Outstanding:0.###} {Unit} of {Sku} is still to come; {quantity} was entered.");
+        EnsureCanReceive(quantity.Value);
         ReceivedQuantity += quantity.Value;
     }
 }
@@ -87,14 +92,15 @@ internal sealed class PurchaseOrder : Entity<PurchaseOrderId>
         if (lines.GroupBy(l => l.ItemId).Any(g => g.Count() > 1))
             throw new DomainException("Each item may appear on a purchase order only once.");
 
-        _lines.Clear();
         foreach (var l in lines)
         {
             if (!l.IsActive) throw new DomainException($"Item {l.Sku} is inactive.");
             if (!l.AllowsFractions && !l.Quantity.IsWhole)
                 throw new DomainException($"Item {l.Sku} is counted in whole {l.Unit}; {l.Quantity} is not allowed.");
-            _lines.Add(new PurchaseOrderLine(l.ItemId, l.Sku, l.Name, l.Unit, l.Quantity, l.UnitCost));
         }
+        // Checked first, replaced after: a refused line leaves the order exactly as it was.
+        _lines.Clear();
+        _lines.AddRange(lines.Select(l => new PurchaseOrderLine(l.ItemId, l.Sku, l.Name, l.Unit, l.Quantity, l.UnitCost)));
     }
 
     // Spending needs a second pair of eyes: nobody approves their own purchase order.
@@ -121,11 +127,17 @@ internal sealed class PurchaseOrder : Entity<PurchaseOrderId>
         EnsureStatus(PurchaseOrderStatus.Approved, PurchaseOrderStatus.Sent, PurchaseOrderStatus.PartiallyReceived);
         if (received.Count == 0) throw new DomainException("Enter at least one received quantity.");
 
+        var receipt = received
+            .Select(r => (Line: _lines.SingleOrDefault(l => l.Id == r.LineId)
+                ?? throw new DomainException($"Line {r.LineId} is not on {Number}."), r.Quantity))
+            .ToList();
+        // Every line is checked before any changes, so a refused line leaves the whole order as it was.
+        foreach (var sameLine in receipt.GroupBy(r => r.Line))
+            sameLine.Key.EnsureCanReceive(sameLine.Sum(r => r.Quantity.Value));
+
         var toStock = new List<(ItemId, Quantity)>();
-        foreach (var (lineId, quantity) in received)
+        foreach (var (line, quantity) in receipt)
         {
-            var line = _lines.SingleOrDefault(l => l.Id == lineId)
-                ?? throw new DomainException($"Line {lineId} is not on {Number}.");
             line.Receive(quantity);
             toStock.Add((line.ItemId, quantity));
         }

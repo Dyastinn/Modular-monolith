@@ -60,15 +60,15 @@ public class InventoryReservationTests(CustomWebAppFactory factory)
         return reserved;
     }
 
-    private static async Task<decimal> GetReserved(long itemId)
+    private async Task<decimal> GetReserved(long itemId)
     {
-        await using var conn = new NpgsqlConnection(CustomWebAppFactory.TestConnectionString);
+        await using var conn = factory.OpenDatabase();
         return await conn.ExecuteScalarAsync<decimal>("SELECT reserved FROM inventory.item WHERE id = @itemId", new { itemId });
     }
 
-    private static async Task SetReserved(long itemId, decimal reserved)
+    private async Task SetReserved(long itemId, decimal reserved)
     {
-        await using var conn = new NpgsqlConnection(CustomWebAppFactory.TestConnectionString);
+        await using var conn = factory.OpenDatabase();
         await conn.ExecuteAsync("UPDATE inventory.item SET reserved = @reserved WHERE id = @itemId", new { itemId, reserved });
     }
 }

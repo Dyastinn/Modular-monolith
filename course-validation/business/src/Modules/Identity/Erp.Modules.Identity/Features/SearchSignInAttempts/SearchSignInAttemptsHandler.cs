@@ -24,7 +24,7 @@ internal sealed class SearchSignInAttemptsHandler(IDbConnectionFactory connectio
 {
     public async ValueTask<PagedResult<SignInAttemptDto>> Handle(SearchSignInAttemptsQuery q, CancellationToken ct)
     {
-        var args = new { Email = string.IsNullOrWhiteSpace(q.Email) ? null : q.Email.Trim(), q.FailedOnly, q.Page, q.PageSize };
+        var args = new { Email = SearchText.ForLike(q.Email), q.FailedOnly, q.Page, q.PageSize };
         await using var conn = connections.Create();
         using var multi = await conn.QueryMultipleAsync(new CommandDefinition(
             """

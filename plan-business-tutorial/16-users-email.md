@@ -1,4 +1,4 @@
-# Lesson 15 — Users and Email: Staff Accounts an Admin Runs
+# Lesson 16 — Users and Email: Staff Accounts an Admin Runs
 
 Good day, developer! Our ERP still has exactly three users, and they were born in a seed script. A real
 company hires a warehouse clerk on Monday, loses a password on Tuesday, and has someone leave on Friday.
@@ -24,7 +24,7 @@ screens: Users, Sign-in log, Change password and Forgot password.
 
 ### Self sign-up stays blocked
 
-Lesson 05 blocked `/auth/register`, and it stays blocked. Staff accounts are made by an administrator, who
+Lesson 06 blocked `/auth/register`, and it stays blocked. Staff accounts are made by an administrator, who
 also decides the role. The admin types a **temporary password**, tells it to the person, and the app makes
 them choose their own at first sign-in. That way the admin never knows anyone's real password.
 
@@ -53,7 +53,7 @@ Identity has documented places to extend it. We use exactly two:
 - **`SignInManager.PasswordSignInAsync`** is the password check. We let Identity do it, then write one row
   saying what happened.
 
-Hashing, lockout, cookies and tokens stay entirely Identity's. That's lesson 05's rule: library code for
+Hashing, lockout, cookies and tokens stay entirely Identity's. That's lesson 06's rule: library code for
 security, never our own.
 
 ### When does a change take effect?
@@ -117,7 +117,7 @@ internal sealed class AppUser : IdentityUser<long>
 }
 ```
 
-Lesson 05 said `AppUser` existed "so we have our own type to grow later". This is later. Public setters are
+Lesson 06 said `AppUser` existed "so we have our own type to grow later". This is later. Public setters are
 fine here: `AppUser` isn't a domain aggregate, it's Identity's storage record, and `UserManager` is its
 gatekeeper.
 
@@ -204,7 +204,7 @@ internal static class StaffAccountRules
 It takes plain numbers and strings, not `AppUser`, so it stays pure: no Identity, no database, testable in
 milliseconds. The handler looks the facts up; the rules decide.
 
-A test project for the Identity module, the same way as lesson 03's (delete the template's
+A test project for the Identity module, the same way as lesson 04's (delete the template's
 `<PackageReference>` lines first):
 
 ```bash
@@ -409,7 +409,7 @@ internal sealed class CreateUserHandler(UserManager<AppUser> users) : ICommandHa
 ```
 
 The validator only checks that a password was given. Whether it's long enough is Identity's password
-policy from lesson 05, and `CreateAsync` enforces it; writing the rule twice would let them drift.
+policy from lesson 06, and `CreateAsync` enforces it; writing the rule twice would let them drift.
 
 ```csharp
 // src/Modules/Identity/Erp.Modules.Identity/Features/CreateUser/CreateUserEndpoint.cs
@@ -519,7 +519,7 @@ internal sealed class ResetUserPasswordHandler(UserManager<AppUser> users) : ICo
 }
 ```
 
-**`UpdateSecurityStampAsync`** is the "sign out everywhere" from lesson 05, done to someone else. After a
+**`UpdateSecurityStampAsync`** is the "sign out everywhere" from lesson 06, done to someone else. After a
 role change or a disable, their cookie fails its next one-minute check and they're signed out. A reset
 password also unlocks the account, because "I locked myself out" is the usual reason to ask for one.
 
@@ -759,7 +759,7 @@ $$;
 
 Every user search joins three Identity tables, which is fine: they're all in the `identity` schema. The
 user's role comes from Identity's own tables, so there's no second copy to keep in step. Ship it with an
-empty migration filled in by hand, exactly like lesson 07's:
+empty migration filled in by hand, exactly like lesson 08's:
 
 ```bash
 dotnet ef migrations add AddReadFunctions \
@@ -770,7 +770,7 @@ dotnet ef migrations add AddReadFunctions \
 with `migrationBuilder.Sql(EmbeddedSql.Read(typeof(AddReadFunctions).Assembly, "identity.search_users.v1.sql"));`
 in `Up` and a `DROP FUNCTION IF EXISTS` for each of the five functions in `Down`.
 
-The two read slices are lesson 07's pattern once more. The user directory is the one worth a look: any
+The two read slices are lesson 08's pattern once more. The user directory is the one worth a look: any
 signed-in user may read it, because it holds nothing but names, and the order page needs "approved by
 Manuel Santos" instead of "approved by 2".
 
@@ -802,7 +802,7 @@ internal sealed class SearchUsersHandler(IDbConnectionFactory connections) : IQu
 {
     public async ValueTask<PagedResult<UserDto>> Handle(SearchUsersQuery q, CancellationToken ct)
     {
-        var search = string.IsNullOrWhiteSpace(q.Search) ? null : q.Search.Trim();
+        var search = SearchText.ForLike(q.Search);
         await using var conn = connections.Create();
         using var multi = await conn.QueryMultipleAsync(new CommandDefinition(
             """
@@ -869,7 +869,7 @@ of 50 by default. Write it from the pattern; the reference build has it if you w
 Identity already has the whole flow: `POST /api/auth/forgotPassword` makes a reset code, and
 `POST /api/auth/resetPassword` takes the code and a new password. All it lacks is a way to send the code. It
 asks for an `IEmailSender<AppUser>`; until now, Identity used a built-in one that sends nothing, which is
-the honest gap lesson 05 admitted.
+the honest gap lesson 06 admitted.
 
 **MailKit** (MIT) is the standard .NET library for sending email over SMTP. Microsoft's own docs recommend
 it over the old `SmtpClient`.
@@ -1037,7 +1037,7 @@ if (!response.IsSuccessStatusCode)
 }
 ```
 
-The "too many attempts" line is ready for [lesson 22](22-security-hardening.md)'s rate limit on sign-in.
+The "too many attempts" line is ready for [lesson 23](23-security-hardening.md)'s rate limit on sign-in.
 
 ### A temporary password must be replaced first
 
@@ -1369,7 +1369,7 @@ security-stamp interval from step 4.
 }
 ```
 
-The role list comes from `Roles.All`, the linked file from lesson 06, so a seventh role would appear here by
+The role list comes from `Roles.All`, the linked file from lesson 07, so a seventh role would appear here by
 itself. The email can't change after creation: it's how the person signs in, and changing it quietly would
 lock them out.
 
@@ -1492,6 +1492,87 @@ change it, a disabled user can't sign in, and the sign-in log shows both outcome
 `/api/users`, and an admin gets a 422 for disabling themselves; and a five-letter temporary password is
 refused by Identity's policy with a 422.
 
+## 12. Prove it: who may manage whom
+
+The account rules are unit-tested in `StaffAccountRulesTests` above. Two more promises need the whole app.
+
+Users now have a name, so the factory's throwaway users get one. In `CustomWebAppFactory.CreateUserAsync`:
+
+```csharp
+var user = new AppUser { UserName = email, Email = email, EmailConfirmed = true, FullName = "Test User" };
+```
+
+**Disabling someone ends the sessions they already have.** Disabling only the *next* sign-in would leave a
+fired employee's phone working for days:
+
+```csharp
+// tests/Erp.Integration.Tests/LaterModuleEdgeCaseTests.cs
+using System.Net;
+using System.Net.Http.Json;
+using AwesomeAssertions;
+using Erp.Shared.BuildingBlocks;
+
+namespace Erp.Integration.Tests;
+
+// Edge cases from the lessons that grow the product: users, the item catalog, shipping.
+[Collection("Integration")]
+public class LaterModuleEdgeCaseTests(CustomWebAppFactory factory)
+{
+    private sealed record Created(long Id);
+    private sealed record Me(long Id);
+
+    // Lesson 16: disabling someone must also end the sessions they already have.
+    [Fact]
+    public async Task A_disabled_user_cannot_refresh_their_session()
+    {
+        var email = await factory.CreateUserAsync(Roles.SalesRep);
+        var client = factory.CreateClient();
+        var tokens = await factory.LoginAsync(client, email);
+        client.DefaultRequestHeaders.Authorization = new("Bearer", tokens.AccessToken);
+        var me = await client.GetFromJsonAsync<Me>("/api/auth/me");
+
+        var admin = await factory.ClientFor("admin@erp.local");
+        (await admin.PostAsync($"/api/users/{me!.Id}/disable", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        (await factory.CreateClient().PostAsJsonAsync("/api/auth/refresh", new { tokens.RefreshToken }))
+            .StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+}
+```
+
+Now, let's be honest about what this doesn't cover: the *access token* they already hold still works until
+it expires, up to fifteen minutes. That's the price of tokens the server doesn't look up on every request,
+and why they're short-lived.
+
+**A role without access gets 403, not 401.** With six roles, there's finally a signed-in person who may not
+create orders. In `AuthTests`:
+
+```csharp
+[Fact]
+public async Task A_role_without_access_gets_403_not_401()
+{
+    var clerk = await factory.ClientFor("clerk@erp.local");
+    (await clerk.PostAsJsonAsync("/api/sales-orders", new { customerId = 1, lines = new[] { new { itemId = 1, quantity = 1 } } }))
+        .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+}
+```
+
+401 means "who are you?", 403 means "I know who you are, and no". A browser app that mixes them up sends a
+signed-in clerk back to the sign-in page, forever.
+
+| Test | The edge | Why it matters |
+|---|---|---|
+| `Nobody_disables_their_own_account`, `Nobody_changes_their_own_role` | Who: yourself | An admin can't lock themselves out by accident |
+| `The_last_admin_stays` | The last one | Nobody can ever manage users again |
+| `Only_real_roles_are_accepted` | A made-up role | A typo would create a user nobody can authorize |
+| `A_disabled_user_cannot_refresh_their_session` | After it changed | A disabled account stops working on every device |
+| `A_role_without_access_gets_403_not_401` | Who: the wrong role | The right status, so the app reacts the right way |
+| `A_new_user_must_change_the_temporary_password_and_a_disabled_user_is_refused`, `Only_an_admin_manages_users_and_nobody_disables_themselves`, `A_weak_temporary_password_is_refused_by_the_policy` | Through HTTP | The reference build's `UserAdministrationTests.cs` |
+
+Add `/users` and `/sign-in-log` to `pages` in `Every_page_opens_without_an_error`, and in the browser
+tests, one more: `A_rep_does_not_see_administration`, which signs in as the rep and checks the menu has no
+**Users** link. ([Lesson 19](19-purchasing.md) extends it to purchasing.)
+
 ## How a request flows
 
 ```mermaid
@@ -1559,4 +1640,4 @@ Good luck, developer!
 
 ---
 
-← [Lesson 14 — Customers](14-customers.md) · Next: [Lesson 16 — Item catalog and stock](16-item-catalog.md) →
+← [Lesson 15 — Customers](15-customers.md) · Next: [Lesson 17 — Item catalog and stock](17-item-catalog.md) →
