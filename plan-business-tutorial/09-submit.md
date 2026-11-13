@@ -465,37 +465,36 @@ using Erp.Modules.Inventory.Contracts;
 using Erp.Modules.Sales.Domain;
 using Erp.Modules.Sales.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed record SubmitSalesOrderCommand(long OrderId) : ICommand;
+internal sealed record SubmitSalesOrderCommand(long OrderId);
 
-internal sealed class SubmitSalesOrderHandler(SalesDbContext db, IStockReservation stock, ICurrentUser currentUser, IClock clock)
-    : ICommandHandler<SubmitSalesOrderCommand>
+internal sealed class SubmitSalesOrderHandler(SalesDbContext db, IStockReservation stock, ICurrentUser currentUser, TimeProvider time)
 {
-    public async ValueTask<Unit> Handle(SubmitSalesOrderCommand cmd, CancellationToken ct)
+    public async Task<bool> HandleAsync(SubmitSalesOrderCommand cmd, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
 
         var order = await db.GetVisibleOrderAsync(cmd.OrderId, new UserId(currentUser.UserId), currentUser.Role, ct);
+        if (order is null) return false;
         await db.LockCustomerAsync(order.CustomerId, ct);
         var customer = await db.Customers.SingleAsync(c => c.Id == order.CustomerId, ct);
         var otherPending = await db.PendingTotalAsync(order.CustomerId, order.Id, ct);
 
-        order.Submit(customer, otherPending, clock.UtcNow);   // may approve it on the spot
+        order.Submit(customer, otherPending, time.GetUtcNow().UtcDateTime);   // may approve it on the spot
 
         foreach (var line in order.Lines)
         {
             if (!await stock.TryReserveAsync(line.ItemId.Value, line.Quantity.Value, tx.GetDbTransaction(), ct))
-                throw new DomainException($"Insufficient stock for {line.ItemName}. Submission cancelled.");
+                throw new DomainException(SalesErrors.InsufficientStock, $"Insufficient stock for {line.ItemName}. Submission cancelled.");
         }
 
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
-        return Unit.Value;
+        return true;
     }
 }
 ```
@@ -518,23 +517,22 @@ it into a `DomainException`.
 
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/SubmitSalesOrder/SubmitSalesOrderEndpoint.cs
-using Carter;
-using Mediator;
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed class SubmitSalesOrderEndpoint : ICarterModule
+
+internal static class SubmitSalesOrderEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app) =>
+    public static void Map(IEndpointRouteBuilder app) =>
         app.MapPost("/sales-orders/{id:long}/submit",
-            async (long id, ISender sender, CancellationToken ct) =>
-            {
-                await sender.Send(new SubmitSalesOrderCommand(id), ct);
-                return Results.NoContent();
-            })
+                async Task<Results<NoContent, NotFound>> (long id, SubmitSalesOrderHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new SubmitSalesOrderCommand(id), ct) ? TypedResults.NoContent() : TypedResults.NotFound())
             .RequireAuthorization(p => p.RequireRole(SalesRoles.Sellers));
 }
 ```

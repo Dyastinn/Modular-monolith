@@ -33,7 +33,7 @@ public class AuthTests(CustomWebAppFactory factory)
     public async Task Refresh_issues_a_new_access_token()
     {
         var client = factory.CreateClient();
-        var tokens = await factory.LoginAsync(client, "rep@erp.local");
+        var tokens = await CustomWebAppFactory.LoginAsync(client, "rep@erp.local");
 
         var refreshed = await client.PostAsJsonAsync("/api/auth/refresh", new { tokens.RefreshToken });
 
@@ -66,7 +66,7 @@ public class AuthTests(CustomWebAppFactory factory)
     {
         var email = await CreateUser();
         var client = factory.CreateClient();
-        var tokens = await factory.LoginAsync(client, email);
+        var tokens = await CustomWebAppFactory.LoginAsync(client, email);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
 
         (await client.PostAsync("/api/auth/logout-everywhere", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -108,7 +108,7 @@ public class AuthTests(CustomWebAppFactory factory)
         }
 
         await Fail(4);
-        await factory.LoginAsync(client, email);
+        await CustomWebAppFactory.LoginAsync(client, email);
         await Fail(4);
 
         (await client.PostAsJsonAsync("/api/auth/login", new { email, password = CustomWebAppFactory.Password }))

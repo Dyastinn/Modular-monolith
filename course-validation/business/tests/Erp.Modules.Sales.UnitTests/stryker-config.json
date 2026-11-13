@@ -1,7 +1,8 @@
 {
   "stryker-config": {
     "project": "Erp.Modules.Sales.csproj",
-    "mutate": [ "**/Domain/**/*.cs" ],
+    "test-runner": "mtp",
+    "mutate": [ "**/Domain/**/*.cs", "!**/Domain/SalesErrors.cs" ],
     "reporters": [ "progress", "html", "cleartext" ],
     "thresholds": { "high": 90, "low": 80, "break": 75 }
   }

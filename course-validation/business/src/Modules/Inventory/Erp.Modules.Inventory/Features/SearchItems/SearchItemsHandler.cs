@@ -2,11 +2,10 @@ using Dapper;
 using Erp.Modules.Inventory.Domain;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Inventory.Features;
 
-internal sealed record SearchItemsQuery(string? Search, bool ActiveOnly, int Page, int PageSize) : IQuery<PagedResult<ItemDto>>;
+internal sealed record SearchItemsQuery(string? Search = null, bool ActiveOnly = false, int Page = 1, int PageSize = 20);
 
 internal sealed record ItemDto(
     long Id, string Sku, string Name, string Unit, bool AllowsFractions, bool IsActive,
@@ -23,9 +22,9 @@ internal sealed class SearchItemsValidator : AbstractValidator<SearchItemsQuery>
     }
 }
 
-internal sealed class SearchItemsHandler(IDbConnectionFactory connections) : IQueryHandler<SearchItemsQuery, PagedResult<ItemDto>>
+internal sealed class SearchItemsHandler(IDbConnectionFactory connections)
 {
-    public async ValueTask<PagedResult<ItemDto>> Handle(SearchItemsQuery q, CancellationToken ct)
+    public async Task<PagedResult<ItemDto>> HandleAsync(SearchItemsQuery q, CancellationToken ct)
     {
         await using var conn = connections.Create();
         using var multi = await conn.QueryMultipleAsync(new CommandDefinition(

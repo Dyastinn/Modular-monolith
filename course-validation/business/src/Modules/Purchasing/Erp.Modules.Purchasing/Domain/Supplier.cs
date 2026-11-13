@@ -28,8 +28,8 @@ internal sealed class Supplier : Entity<SupplierId>
 
     public void Update(string name, string? tin, string? address, string? email, string? phone, int paymentTermsDays)
     {
-        if (string.IsNullOrWhiteSpace(name)) throw new DomainException("A supplier needs a name.");
-        if (paymentTermsDays is < 0 or > 365) throw new DomainException("Payment terms must be between 0 and 365 days.");
+        if (string.IsNullOrWhiteSpace(name)) throw new DomainException(PurchasingErrors.SupplierNameRequired, "A supplier needs a name.");
+        if (paymentTermsDays is < 0 or > 365) throw new DomainException(PurchasingErrors.PaymentTermsOutOfRange, "Payment terms must be between 0 and 365 days.");
         Name = name.Trim();
         Tin = Clean(tin); Address = Clean(address); Email = Clean(email); Phone = Clean(phone);
         PaymentTermsDays = paymentTermsDays;
@@ -39,7 +39,7 @@ internal sealed class Supplier : Entity<SupplierId>
 
     public void EnsureCanOrderFrom()
     {
-        if (!IsActive) throw new DomainException($"Supplier '{Name}' is inactive.");
+        if (!IsActive) throw new DomainException(PurchasingErrors.SupplierInactive, $"Supplier '{Name}' is inactive.");
     }
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();

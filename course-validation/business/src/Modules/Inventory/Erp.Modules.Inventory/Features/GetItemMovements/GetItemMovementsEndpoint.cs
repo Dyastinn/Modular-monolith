@@ -1,15 +1,18 @@
-using Carter;
-using Mediator;
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Inventory.Features;
 
-internal sealed class GetItemMovementsEndpoint : ICarterModule
+
+internal static class GetItemMovementsEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app) =>
-        app.MapGet("/items/{id:long}/movements", async (long id, int? page, int? pageSize, ISender sender, CancellationToken ct) =>
-                Results.Ok(await sender.Send(new GetItemMovementsQuery(id, page ?? 1, pageSize ?? 20), ct)))
+    public static void Map(IEndpointRouteBuilder app) =>
+        app.MapGet("/items/{itemId:long}/movements",
+                async ([AsParameters] GetItemMovementsQuery query, GetItemMovementsHandler handler, CancellationToken ct) =>
+                    TypedResults.Ok(await handler.HandleAsync(query, ct)))
             .RequireAuthorization();
 }

@@ -1,15 +1,18 @@
-using Carter;
-using Mediator;
+using Erp.Modules.Invoicing.Domain;
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Invoicing.Features;
 
-internal sealed class ReceivablesAgingEndpoint : ICarterModule
+
+internal static class ReceivablesAgingEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app) =>
-        app.MapGet("/reports/receivables-aging", async (DateOnly? asOf, ISender sender, CancellationToken ct) =>
-                Results.Ok(await sender.Send(new ReceivablesAgingQuery(asOf), ct)))
+    public static void Map(IEndpointRouteBuilder app) =>
+        app.MapGet("/reports/receivables-aging", async ([AsParameters] ReceivablesAgingQuery query, ReceivablesAgingHandler handler, CancellationToken ct) =>
+                TypedResults.Ok(await handler.HandleAsync(query, ct)))
             .RequireAuthorization(p => p.RequireRole(InvoicingRoles.Readers));
 }

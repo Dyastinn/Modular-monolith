@@ -2,11 +2,10 @@ using Dapper;
 using Erp.Modules.Inventory.Domain;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Inventory.Features;
 
-internal sealed record GetItemMovementsQuery(long ItemId, int Page, int PageSize) : IQuery<PagedResult<StockMovementDto>>;
+internal sealed record GetItemMovementsQuery(long ItemId, int Page = 1, int PageSize = 20);
 
 internal sealed record StockMovementDto(long Id, decimal Quantity, string Kind, string? Reference, string? Reason, long UserId, DateTime OccurredUtc);
 
@@ -23,9 +22,8 @@ internal sealed class GetItemMovementsValidator : AbstractValidator<GetItemMovem
 }
 
 internal sealed class GetItemMovementsHandler(IDbConnectionFactory connections)
-    : IQueryHandler<GetItemMovementsQuery, PagedResult<StockMovementDto>>
 {
-    public async ValueTask<PagedResult<StockMovementDto>> Handle(GetItemMovementsQuery q, CancellationToken ct)
+    public async Task<PagedResult<StockMovementDto>> HandleAsync(GetItemMovementsQuery q, CancellationToken ct)
     {
         await using var conn = connections.Create();
         using var multi = await conn.QueryMultipleAsync(new CommandDefinition(

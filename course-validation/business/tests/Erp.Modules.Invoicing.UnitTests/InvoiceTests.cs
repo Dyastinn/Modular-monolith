@@ -1,5 +1,4 @@
 using AwesomeAssertions;
-using Erp.Modules.Invoicing.Contracts;
 using Erp.Modules.Invoicing.Domain;
 using Erp.Shared.BuildingBlocks;
 
@@ -47,7 +46,8 @@ public class InvoiceTests
         Pay(invoice, 2, 480.75m);
         invoice.Status.Should().Be(InvoiceStatus.Paid);
 
-        invoice.DomainEvents.Should().Equal(new PaymentRecorded(1, 7, 500), new PaymentRecorded(2, 7, 480.75m));
+        invoice.DomainEvents.Should().Equal(
+            new InvoicePaymentRecorded(new PaymentId(1), 7, new Money(500)), new InvoicePaymentRecorded(new PaymentId(2), 7, new Money(480.75m)));
     }
 
     [Fact]
@@ -69,7 +69,7 @@ public class InvoiceTests
 
         invoice.Status.Should().Be(InvoiceStatus.Issued);
         invoice.BalanceDue.Should().Be(new Money(980.75m));
-        invoice.DomainEvents.Last().Should().Be(new PaymentVoided(1, 7, 980.75m));
+        invoice.DomainEvents[^1].Should().Be(new InvoicePaymentVoided(new PaymentId(1), 7, new Money(980.75m)));
         invoice.Invoking(i => i.VoidPayment(new PaymentId(1), "again", Now)).Should().Throw<DomainException>();
     }
 
@@ -149,7 +149,7 @@ public class InvoiceTests
         Pay(invoice, 1, 972.00m, withheld: 8.75m);   // 1% of the sales before VAT, certified later on a Form 2307
 
         invoice.Status.Should().Be(InvoiceStatus.Paid);
-        invoice.DomainEvents.OfType<PaymentRecorded>().Single().Amount.Should().Be(980.75m);
+        invoice.DomainEvents.OfType<InvoicePaymentRecorded>().Single().Settled.Should().Be(new Money(980.75m));
 
         invoice.VoidPayment(new PaymentId(1), "Wrong invoice", Now);
         invoice.BalanceDue.Should().Be(new Money(980.75m));

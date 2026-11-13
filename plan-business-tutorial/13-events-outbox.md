@@ -120,21 +120,22 @@ Because both auto-approval and manager approval go through `MarkApproved`, every
 
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Infrastructure/EventHandlers/SalesOrderApprovedAuditHandler.cs
+using System.Globalization;
 using Erp.Modules.Sales.Domain;
-using Mediator;
+using Erp.Shared.BuildingBlocks;
 using Microsoft.Extensions.Logging;
 
 namespace Erp.Modules.Sales.Infrastructure;
 
 // Delivered by the outbox, so it can run more than once for the same approval. Logging twice is harmless.
 internal sealed class SalesOrderApprovedAuditHandler(ILogger<SalesOrderApprovedAuditHandler> log)
-    : INotificationHandler<SalesOrderApproved>
+    : IDomainEventHandler<SalesOrderApproved>
 {
-    public ValueTask Handle(SalesOrderApproved e, CancellationToken ct)
+    public Task HandleAsync(SalesOrderApproved e, CancellationToken ct)
     {
         log.LogInformation("Sales order {OrderId} approved by {Approver} for ₱{Total:N2}",
-            e.Id.Value, e.ApprovedBy?.Value.ToString() ?? "auto-approval", e.Total.Amount);
-        return ValueTask.CompletedTask;
+            e.Id.Value, e.ApprovedBy?.Value.ToString(CultureInfo.InvariantCulture) ?? "auto-approval", e.Total.Amount);
+        return Task.CompletedTask;
     }
 }
 ```
@@ -230,7 +231,7 @@ System.Text.Json.Serialization;` and mark the real constructor:
 public Money(decimal amount) =>
     Amount = amount >= 0
         ? Math.Round(amount, 2, MidpointRounding.AwayFromZero)
-        : throw new DomainException("An amount of money cannot be negative.");
+        : throw new DomainException(CommonErrors.NegativeMoney, "An amount of money cannot be negative.");
 ```
 
 Do the same in `Quantity.cs` (`[JsonConstructor]   // see Money`). Run the tests again: green. And as a
@@ -261,7 +262,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 namespace Erp.Shared.Infrastructure;
 
 // Turns the aggregates' domain events into outbox rows inside the same SaveChanges, so they commit together.
-public sealed class OutboxInterceptor(IClock clock) : SaveChangesInterceptor
+public sealed class OutboxInterceptor(TimeProvider time) : SaveChangesInterceptor
 {
     public override InterceptionResult<int> SavingChanges(DbContextEventData eventData, InterceptionResult<int> result)
     {
@@ -270,10 +271,10 @@ public sealed class OutboxInterceptor(IClock clock) : SaveChangesInterceptor
     }
 
     public override ValueTask<InterceptionResult<int>> SavingChangesAsync(
-        DbContextEventData eventData, InterceptionResult<int> result, CancellationToken ct = default)
+        DbContextEventData eventData, InterceptionResult<int> result, CancellationToken cancellationToken = default)
     {
         MoveEventsToOutbox(eventData.Context);
-        return base.SavingChangesAsync(eventData, result, ct);
+        return base.SavingChangesAsync(eventData, result, cancellationToken);
     }
 
     private void MoveEventsToOutbox(DbContext? db)
@@ -285,7 +286,7 @@ public sealed class OutboxInterceptor(IClock clock) : SaveChangesInterceptor
             .Where(a => a.DomainEvents.Count > 0)
             .ToList();
 
-        var now = clock.UtcNow;
+        var now = time.GetUtcNow().UtcDateTime;
         foreach (var aggregate in aggregates)
         {
             foreach (var domainEvent in aggregate.DomainEvents)

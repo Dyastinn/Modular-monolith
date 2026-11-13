@@ -1,36 +1,23 @@
 using Erp.Modules.Sales.Domain;
 using Erp.Modules.Sales.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Sales.Features;
 
 internal sealed record SetItemPricingCommand(long ItemId, decimal UnitPrice, long CategoryId, bool IsForSale, TaxType TaxType,
-    bool SpecialDiscountEligible) : ICommand;
+    bool SpecialDiscountEligible);
 
-internal sealed class SetItemPricingValidator : AbstractValidator<SetItemPricingCommand>
+internal sealed class SetItemPricingHandler(SalesDbContext db)
 {
-    public SetItemPricingValidator()
+    public async Task<bool> HandleAsync(SetItemPricingCommand cmd, CancellationToken ct)
     {
-        RuleFor(x => x.ItemId).GreaterThan(0);
-        RuleFor(x => x.UnitPrice).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.CategoryId).GreaterThan(0);
-        RuleFor(x => x.TaxType).IsInEnum();
-    }
-}
-
-internal sealed class SetItemPricingHandler(SalesDbContext db) : ICommandHandler<SetItemPricingCommand>
-{
-    public async ValueTask<Unit> Handle(SetItemPricingCommand cmd, CancellationToken ct)
-    {
-        var item = await db.SalesItems.FindAsync([new ItemId(cmd.ItemId)], ct)
-            ?? throw new NotFoundException($"Item {cmd.ItemId} not found. New catalog items appear here within a few seconds.");
+        var item = await db.SalesItems.FindAsync([new ItemId(cmd.ItemId)], ct);
+        if (item is null) return false;
         var category = await db.ItemCategories.FindAsync([new CategoryId(cmd.CategoryId)], ct)
-            ?? throw new NotFoundException($"Category {cmd.CategoryId} not found.");
+            ?? throw new DomainException(SalesErrors.CategoryNotFound, $"Category {cmd.CategoryId} doesn't exist.");
 
         item.SetPricing(new Money(cmd.UnitPrice), category, cmd.IsForSale, cmd.TaxType, cmd.SpecialDiscountEligible);
         await db.SaveChangesAsync(ct);
-        return Unit.Value;
+        return true;
     }
 }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json.Serialization;
 
 namespace Erp.Shared.BuildingBlocks;
@@ -11,8 +12,8 @@ public readonly record struct Quantity
     [JsonConstructor]   // see Money
     public Quantity(decimal value)
     {
-        if (value <= 0) throw new DomainException("Quantity must be greater than zero.");
-        if (decimal.Round(value, 3) != value) throw new DomainException("Quantity allows at most three decimal places.");
+        if (value <= 0) throw new DomainException(CommonErrors.QuantityNotPositive, "Quantity must be greater than zero.");
+        if (decimal.Round(value, 3) != value) throw new DomainException(CommonErrors.QuantityTooPrecise, "Quantity allows at most three decimal places.");
         Value = value;
     }
 
@@ -21,5 +22,5 @@ public readonly record struct Quantity
     public static Quantity operator +(Quantity a, Quantity b) => new(a.Value + b.Value);
     public static bool operator >(Quantity a, Quantity b) => a.Value > b.Value;
     public static bool operator <(Quantity a, Quantity b) => a.Value < b.Value;
-    public override string ToString() => Value.ToString("0.###");
+    public override string ToString() => Value.ToString("0.###", CultureInfo.InvariantCulture);
 }

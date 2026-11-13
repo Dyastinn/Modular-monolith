@@ -10,9 +10,7 @@
     <ProjectReference Include="..\..\Inventory\Erp.Modules.Inventory.Contracts\Erp.Modules.Inventory.Contracts.csproj" />
   </ItemGroup>
 
-  <!-- Erp.Api: the Mediator source generator runs there. Never grant this to another module. -->
   <ItemGroup>
-    <InternalsVisibleTo Include="Erp.Api" />
     <InternalsVisibleTo Include="Erp.Modules.Purchasing.UnitTests" />
     <InternalsVisibleTo Include="Erp.Integration.Tests" />
   </ItemGroup>
@@ -22,7 +20,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Carter" />
     <PackageReference Include="Dapper" />
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />

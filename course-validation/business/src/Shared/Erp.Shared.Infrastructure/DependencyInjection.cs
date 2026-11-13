@@ -26,10 +26,14 @@ public static class DependencyInjection
         // Every module's DbContext picks up the registered interceptors (see each module's AddXModule).
         services.AddSingleton<IInterceptor, OutboxInterceptor>();
         services.AddHostedService<OutboxDispatcher>();
+        services.AddScoped<IIntegrationEventPublisher, IntegrationEventPublisher>();
+
+        services.AddSingleton(ErrorCatalog.From(typeof(CommonErrors)));
 
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, CurrentUser>();
-        services.AddSingleton<IClock, SystemClock>();
+        services.AddSingleton<TimeProvider>(new CompanyTimeProvider(
+            TimeZoneInfo.FindSystemTimeZoneById(config["Company:TimeZone"] ?? "Asia/Manila")));
         return services;
     }
 }

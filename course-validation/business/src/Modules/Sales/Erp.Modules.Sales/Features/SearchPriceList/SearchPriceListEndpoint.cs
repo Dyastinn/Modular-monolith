@@ -1,15 +1,17 @@
-using Carter;
-using Mediator;
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed class SearchPriceListEndpoint : ICarterModule
+
+internal static class SearchPriceListEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app) =>
-        app.MapGet("/price-list", async (string? search, bool? forSaleOnly, int? page, int? pageSize, ISender sender, CancellationToken ct) =>
-                Results.Ok(await sender.Send(new SearchPriceListQuery(search, forSaleOnly ?? false, page ?? 1, pageSize ?? 20), ct)))
+    public static void Map(IEndpointRouteBuilder app) =>
+        app.MapGet("/price-list", async ([AsParameters] SearchPriceListQuery query, SearchPriceListHandler handler, CancellationToken ct) =>
+                TypedResults.Ok(await handler.HandleAsync(query, ct)))
             .RequireAuthorization(p => p.RequireRole(SalesRoles.Readers));
 }

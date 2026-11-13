@@ -49,6 +49,7 @@ public static class RateLimitPolicies
 
 ```csharp
 // src/Erp.Api/Security/RateLimiting.cs
+using System.Globalization;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Erp.Shared.BuildingBlocks;
@@ -70,7 +71,7 @@ internal static class RateLimiting
             o.OnRejected = (ctx, _) =>
             {
                 if (ctx.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
-                    ctx.HttpContext.Response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString();
+                    ctx.HttpContext.Response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString(CultureInfo.InvariantCulture);
                 return ValueTask.CompletedTask;
             };
 
@@ -172,10 +173,11 @@ internal sealed class SecurityHeadersMiddleware(RequestDelegate next)
         headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()";
 
         // JSON never needs scripts, styles or frames. The Blazor app needs its own files, WebAssembly (which
-        // browsers class as eval) and MudBlazor's inline styles; nothing from any other site. Swagger is dev-only.
+        // browsers class as eval) and MudBlazor's inline styles; nothing from any other site. The API browser
+        // (/scalar) is development-only and brings its own scripts.
         if (ctx.Request.Path.StartsWithSegments("/api"))
             headers.ContentSecurityPolicy = "default-src 'none'; frame-ancestors 'none'";
-        else if (!ctx.Request.Path.StartsWithSegments("/swagger"))
+        else if (!ctx.Request.Path.StartsWithSegments("/scalar"))
             headers.ContentSecurityPolicy =
                 "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
                 "img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; " +

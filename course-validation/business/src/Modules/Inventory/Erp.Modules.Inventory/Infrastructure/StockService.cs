@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Erp.Modules.Inventory.Infrastructure;
 
 // Inventory's service window: what other modules may ask of it.
-internal sealed class StockService(InventoryDbContext db, IClock clock) : IStockReservation, IStockReceiving, IItemCatalog
+internal sealed class StockService(InventoryDbContext db, TimeProvider time) : IStockReservation, IStockReceiving, IItemCatalog
 {
     // Check and write in ONE statement, so two orders racing for the last units can't both win.
     public Task<bool> TryReserveAsync(long itemId, decimal quantity, DbTransaction tx, CancellationToken ct) =>
@@ -36,9 +36,10 @@ internal sealed class StockService(InventoryDbContext db, IClock clock) : IStock
             var id = new ItemId(itemId);
             var rows = await db.Items.Where(i => i.Id == id)
                 .ExecuteUpdateAsync(s => s.SetProperty(i => i.OnHand, i => i.OnHand + quantity), ct);
-            if (rows == 0) throw new NotFoundException($"Item {itemId} not found.");
+            // Only items already on a purchase order are received, so a missing one is a bug, not a request to refuse.
+            if (rows == 0) throw new InvalidOperationException($"Item {itemId} doesn't exist.");
 
-            db.StockMovements.Add(StockMovement.Receipt(id, quantity, reference, new UserId(userId), clock.UtcNow));
+            db.StockMovements.Add(StockMovement.Receipt(id, quantity, reference, new UserId(userId), time.GetUtcNow().UtcDateTime));
             await db.SaveChangesAsync(ct);
             return true;
         }, ct);

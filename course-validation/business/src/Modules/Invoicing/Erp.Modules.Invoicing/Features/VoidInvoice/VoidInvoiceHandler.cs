@@ -1,40 +1,34 @@
 using Erp.Modules.Invoicing.Domain;
 using Erp.Modules.Invoicing.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
 using Microsoft.EntityFrameworkCore;
 
 namespace Erp.Modules.Invoicing.Features;
 
-internal sealed record VoidInvoiceCommand(long InvoiceId, string Reason) : ICommand;
+internal sealed record VoidInvoiceCommand(long InvoiceId, string Reason);
 
-internal sealed class VoidInvoiceValidator : AbstractValidator<VoidInvoiceCommand>
+internal sealed class VoidInvoiceHandler(InvoicingDbContext db, ICurrentUser user, TimeProvider time)
 {
-    public VoidInvoiceValidator() => RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
-}
-
-internal sealed class VoidInvoiceHandler(InvoicingDbContext db, ICurrentUser user, IClock clock) : ICommandHandler<VoidInvoiceCommand>
-{
-    public async ValueTask<Unit> Handle(VoidInvoiceCommand cmd, CancellationToken ct)
+    public async Task<bool> HandleAsync(VoidInvoiceCommand cmd, CancellationToken ct)
     {
-        var invoice = await db.Invoices.SingleOrDefaultAsync(i => i.Id == new InvoiceId(cmd.InvoiceId), ct)
-            ?? throw new NotFoundException($"Invoice {cmd.InvoiceId} not found.");
-        invoice.Void(cmd.Reason, new UserId(user.UserId), clock.UtcNow);
+        var invoice = await db.Invoices.SingleOrDefaultAsync(i => i.Id == new InvoiceId(cmd.InvoiceId), ct);
+        if (invoice is null) return false;
+        invoice.Void(cmd.Reason, new UserId(user.UserId), time.GetUtcNow().UtcDateTime);
         await db.SaveChangesAsync(ct);
-        return Unit.Value;
+        return true;
     }
 }
 
 // After voiding a wrong invoice, bill the same shipment again under a new number.
-internal sealed record ReissueInvoiceCommand(long VoidInvoiceId) : ICommand<long>;
+internal sealed record ReissueInvoiceCommand(long VoidInvoiceId);
 
-internal sealed class ReissueInvoiceHandler(InvoicingDbContext db, InvoiceIssuer issuer) : ICommandHandler<ReissueInvoiceCommand, long>
+internal sealed class ReissueInvoiceHandler(InvoicingDbContext db, InvoiceIssuer issuer)
 {
-    public async ValueTask<long> Handle(ReissueInvoiceCommand cmd, CancellationToken ct)
+    // null: there is no such invoice.
+    public async Task<long?> HandleAsync(ReissueInvoiceCommand cmd, CancellationToken ct)
     {
-        var voided = await db.Invoices.AsNoTracking().SingleOrDefaultAsync(i => i.Id == new InvoiceId(cmd.VoidInvoiceId), ct)
-            ?? throw new NotFoundException($"Invoice {cmd.VoidInvoiceId} not found.");
+        var voided = await db.Invoices.AsNoTracking().SingleOrDefaultAsync(i => i.Id == new InvoiceId(cmd.VoidInvoiceId), ct);
+        if (voided is null) return null;
         voided.EnsureCanBeReissued();
         return await issuer.IssueForShipmentAsync(voided.ShipmentId, voided.SalesOrderId, ct);
     }

@@ -12,7 +12,7 @@ You have three ways to run a checkpoint. All of them are fine:
 |---|---|
 | **Git Bash** | Comes with Git for Windows. The lessons' commands work exactly as written. Right-click a folder, *Open Git Bash here* |
 | **PowerShell**, with this page | You already live there |
-| **Swagger** (`/swagger`, development only) | You'd rather click than type. If you're signed in to the app in the same browser, its cookie works there too |
+| **Scalar** (`/scalar`, development only) | You'd rather click than type. If you're signed in to the app in the same browser, its cookie works there too |
 
 One thing to watch out for: don't paste the lessons' bash into PowerShell. It looks as if it should work,
 and it won't. `TOKEN=$(...)` isn't PowerShell, and in Windows PowerShell 5.1, `curl` is a nickname for
@@ -93,19 +93,20 @@ those, it isn't repeated here.
 
 ## Lesson 02 — testing
 
-`dotnet test`, `--filter` and `dotnet watch test` are the same in PowerShell. Quote a filter in single
-quotes, so PowerShell leaves the `~` and `=` alone:
+`dotnet test`, its filters and `dotnet watch test` are the same in PowerShell. Quote a filter in single
+quotes, so PowerShell leaves the `*` alone:
 
 ```powershell
-dotnet test --filter 'FullyQualifiedName~HostTests'
-dotnet test --logger 'console;verbosity=normal'
+dotnet test --filter-class '*HostTests'
+dotnet test --output Detailed
 ```
 
-## Lesson 03 — the mediator
+## Lesson 03 — features
 
 ```powershell
-(Invoke-Api '/api/ping?message=hello').Body     # pong: hello
-(Invoke-Api '/api/ping?message=').Status        # 500, for now; lesson 07 turns it into a 400
+(Invoke-Api '/api/ping?message=hello').Body          # pong: hello
+(Invoke-Api '/api/ping?message=').Status             # 400
+(Invoke-Api '/api/ping?message=').Body.errors        # Message: 'Message' must not be empty.
 ```
 
 ## Lesson 05 — the database
@@ -130,7 +131,7 @@ The browser tests, against a running app:
 ```powershell
 Start-Process dotnet 'run --project src/Erp.Api'      # the app, in its own window
 $env:ERP_UI_URL = 'http://localhost:5264'; $env:ERP_UI_SCREENSHOTS = '.\screens'
-dotnet test tests/Erp.Web.UiTests
+dotnet test --project tests/Erp.Web.UiTests
 Remove-Item Env:ERP_UI_URL, Env:ERP_UI_SCREENSHOTS
 ```
 
@@ -145,14 +146,14 @@ $token = Get-Token 'rep@erp.local'
 
 $tries = @(
     @{ customerId = 1;  lines = @() },                                  # 400, the validator
-    @{ customerId = 99; lines = @(@{ itemId = 1; quantity = 1 }) },     # 404, unknown customer
+    @{ customerId = 99; lines = @(@{ itemId = 1; quantity = 1 }) },     # 422 SALES-0026, unknown customer
     @{ customerId = 3;  lines = @(@{ itemId = 1; quantity = 1 }) },     # 422, Gamma is blocked
     @{ customerId = 2;  lines = @(@{ itemId = 1; quantity = 100 }) },   # 422, over Beta's credit
     @{ customerId = 1;  lines = @(@{ itemId = 3; quantity = 1 }) },     # 422, Controlled needs a manager
     @{ customerId = 1;  lines = @(@{ itemId = 1; quantity = 1.5 }) },   # 422, Widgets are whole pieces
     @{ customerId = 1;  lines = @(@{ itemId = 5; quantity = 2.5 }) }    # 201, 2.5 kg of wire is fine
 )
-foreach ($body in $tries) { Show (Invoke-Api '/api/sales-orders' -Method Post -Token $token -Body $body) }
+foreach ($body in $tries) { Show (Invoke-Api '/api/sales-orders' -Method Post -Token $token -Body $body) }   # each refusal shows its code
 
 & $Psql -h localhost -U postgres -d erp -c "SELECT id, order_number, status FROM sales.sales_order;"
 ```
@@ -279,8 +280,8 @@ $clerk = Get-Token 'clerk@erp.local'
 Show (Invoke-Api '/api/shipments' -Method Post -Token $clerk -Body @{ salesOrderId = 1 })
 
 # 19 and 20: replay an event; nothing changes
-podman exec -i erp-postgres psql -U postgres -d erp -c "UPDATE inventory.outbox_message SET processed_utc = NULL WHERE type LIKE '%ShipmentRecorded%';"
-podman exec -i erp-postgres psql -U postgres -d erp -c "UPDATE invoicing.outbox_message SET processed_utc = NULL WHERE type LIKE '%PaymentRecorded%';"
+podman exec -i erp-postgres psql -U postgres -d erp -c "UPDATE inventory.outbox_message SET processed_utc = NULL WHERE type LIKE '%ShipmentCreated%';"
+podman exec -i erp-postgres psql -U postgres -d erp -c "UPDATE invoicing.outbox_message SET processed_utc = NULL WHERE type LIKE '%InvoicePaymentRecorded%';"
 podman exec -i erp-postgres psql -U postgres -d erp -c "SELECT number, status FROM invoicing.invoice ORDER BY id;" -c "SELECT * FROM sales.applied_payment;"
 ```
 

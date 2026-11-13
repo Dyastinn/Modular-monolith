@@ -2,12 +2,10 @@ using Dapper;
 using Erp.Modules.Purchasing.Domain;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Purchasing.Features;
 
-internal sealed record SearchPurchaseOrdersQuery(long? SupplierId, string? Status, string? Search, int Page, int PageSize)
-    : IQuery<PagedResult<PurchaseOrderSummaryDto>>;
+internal sealed record SearchPurchaseOrdersQuery(long? SupplierId = null, string? Status = null, string? Search = null, int Page = 1, int PageSize = 20);
 
 internal sealed record PurchaseOrderSummaryDto(long Id, string Number, long SupplierId, string SupplierName, string Status,
     decimal Total, DateOnly? ExpectedDate, DateTime CreatedUtc);
@@ -27,9 +25,8 @@ internal sealed class SearchPurchaseOrdersValidator : AbstractValidator<SearchPu
 }
 
 internal sealed class SearchPurchaseOrdersHandler(IDbConnectionFactory connections)
-    : IQueryHandler<SearchPurchaseOrdersQuery, PagedResult<PurchaseOrderSummaryDto>>
 {
-    public async ValueTask<PagedResult<PurchaseOrderSummaryDto>> Handle(SearchPurchaseOrdersQuery q, CancellationToken ct)
+    public async Task<PagedResult<PurchaseOrderSummaryDto>> HandleAsync(SearchPurchaseOrdersQuery q, CancellationToken ct)
     {
         int? status = q.Status is null ? null : (int)Enum.Parse<PurchaseOrderStatus>(q.Status, true);
         var args = new { q.SupplierId, Status = status, Search = SearchText.ForLike(q.Search), q.Page, q.PageSize };
@@ -49,7 +46,7 @@ internal sealed class SearchPurchaseOrdersHandler(IDbConnectionFactory connectio
     }
 }
 
-internal sealed record GetPurchaseOrderQuery(long PurchaseOrderId) : IQuery<PurchaseOrderDetailDto?>;
+internal sealed record GetPurchaseOrderQuery(long PurchaseOrderId);
 
 internal sealed record PurchaseOrderDetailDto(long Id, string Number, long SupplierId, string SupplierName, string Status,
     decimal Total, DateOnly? ExpectedDate, string? Notes, long CreatedBy, DateTime CreatedUtc, long? ApprovedBy,
@@ -65,9 +62,9 @@ internal sealed record PurchaseOrderHeaderRow(long Id, string Number, long Suppl
 internal sealed record PurchaseOrderLineRow(long Id, long ItemId, string Sku, string ItemName, string Unit, decimal Quantity,
     decimal ReceivedQuantity, decimal UnitCost);
 
-internal sealed class GetPurchaseOrderHandler(IDbConnectionFactory connections) : IQueryHandler<GetPurchaseOrderQuery, PurchaseOrderDetailDto?>
+internal sealed class GetPurchaseOrderHandler(IDbConnectionFactory connections)
 {
-    public async ValueTask<PurchaseOrderDetailDto?> Handle(GetPurchaseOrderQuery q, CancellationToken ct)
+    public async Task<PurchaseOrderDetailDto?> HandleAsync(GetPurchaseOrderQuery q, CancellationToken ct)
     {
         await using var conn = connections.Create();
         using var multi = await conn.QueryMultipleAsync(new CommandDefinition(

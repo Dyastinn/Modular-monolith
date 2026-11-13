@@ -35,9 +35,9 @@ internal sealed class SalesItem : Entity<ItemId>
 
     public void SetPricing(Money unitPrice, ItemCategory category, bool isForSale, TaxType taxType, bool specialDiscountEligible)
     {
-        if (!Enum.IsDefined(taxType)) throw new DomainException($"'{taxType}' is not a tax type.");
-        if (isForSale && unitPrice == Money.Zero) throw new DomainException($"Set a price for {Sku} before putting it on sale.");
-        if (isForSale && !IsActive) throw new DomainException($"{Sku} is inactive in the catalog and can't be sold.");
+        if (!Enum.IsDefined(taxType)) throw new DomainException(SalesErrors.UnknownTaxType, $"'{taxType}' is not a tax type.");
+        if (isForSale && unitPrice == Money.Zero) throw new DomainException(SalesErrors.PriceRequiredForSale, $"Set a price for {Sku} before putting it on sale.");
+        if (isForSale && !IsActive) throw new DomainException(SalesErrors.InactiveItemNotSellable, $"{Sku} is inactive in the catalog and can't be sold.");
         UnitPrice = unitPrice;
         CategoryId = category.Id;
         Category = category;
@@ -49,13 +49,13 @@ internal sealed class SalesItem : Entity<ItemId>
     public ItemCategory EnsureSellable()
     {
         if (!IsActive || !IsForSale || Category is null)
-            throw new DomainException($"Item {Sku} is not for sale.");
+            throw new DomainException(SalesErrors.ItemNotForSale, $"Item {Sku} is not for sale.");
         return Category;
     }
 
     public void EnsureQuantityFits(Quantity quantity)
     {
         if (!AllowsFractions && !quantity.IsWhole)
-            throw new DomainException($"Item {Sku} is sold in whole {Unit}; {quantity} is not allowed.");
+            throw new DomainException(SalesErrors.WholeUnitsOnly, $"Item {Sku} is sold in whole {Unit}; {quantity} is not allowed.");
     }
 }

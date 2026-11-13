@@ -1,22 +1,20 @@
 using Dapper;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
 
 namespace Erp.Modules.Invoicing.Features;
 
-internal sealed record ReceivablesAgingQuery(DateOnly? AsOf) : IQuery<ReceivablesAgingDto>;
+internal sealed record ReceivablesAgingQuery(DateOnly? AsOf = null);
 
 internal sealed record AgingRowDto(long CustomerId, string CustomerName, decimal NotYetDue, decimal Days1To30, decimal Days31To60,
     decimal Days61To90, decimal Over90, decimal Total);
 
 internal sealed record ReceivablesAgingDto(DateOnly AsOf, IReadOnlyList<AgingRowDto> Customers, AgingRowDto Totals);
 
-internal sealed class ReceivablesAgingHandler(IDbConnectionFactory connections, IClock clock)
-    : IQueryHandler<ReceivablesAgingQuery, ReceivablesAgingDto>
+internal sealed class ReceivablesAgingHandler(IDbConnectionFactory connections, TimeProvider time)
 {
-    public async ValueTask<ReceivablesAgingDto> Handle(ReceivablesAgingQuery q, CancellationToken ct)
+    public async Task<ReceivablesAgingDto> HandleAsync(ReceivablesAgingQuery q, CancellationToken ct)
     {
-        var asOf = q.AsOf ?? clock.Today;
+        var asOf = q.AsOf ?? time.Today();
         await using var conn = connections.Create();
         var rows = (await conn.QueryAsync<AgingRowDto>(new CommandDefinition(
             "SELECT * FROM invoicing.receivables_aging(@AsOf);", new { AsOf = asOf }, cancellationToken: ct))).ToList();

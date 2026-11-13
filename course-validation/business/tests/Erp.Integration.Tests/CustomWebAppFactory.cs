@@ -24,7 +24,7 @@ public sealed class CustomWebAppFactory : WebApplicationFactory<Program>, IAsync
     public string ConnectionString { get; private set; } = default!;        // erp_app: rows only
     public string OwnerConnectionString { get; private set; } = default!;   // erp_owner: runs the migrations
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         await _postgres.StartAsync();
         var roles = await _postgres.ExecAsync(["psql", "-U", "postgres", "-v", "ON_ERROR_STOP=1", "-v", $"db={Database}",
@@ -38,9 +38,9 @@ public sealed class CustomWebAppFactory : WebApplicationFactory<Program>, IAsync
             { Username = "erp_app", Password = AppPassword }.ConnectionString;
     }
 
-    async Task IAsyncLifetime.DisposeAsync()
+    public override async ValueTask DisposeAsync()
     {
-        await DisposeAsync();
+        await base.DisposeAsync();
         await _postgres.DisposeAsync();
     }
 
@@ -56,7 +56,7 @@ public sealed class CustomWebAppFactory : WebApplicationFactory<Program>, IAsync
 
     public sealed record Tokens(string AccessToken, string RefreshToken);
 
-    public async Task<Tokens> LoginAsync(HttpClient client, string email, string password = Password)
+    public static async Task<Tokens> LoginAsync(HttpClient client, string email, string password = Password)
     {
         var response = await client.PostAsJsonAsync("/api/auth/login", new { email, password });
         response.EnsureSuccessStatusCode();

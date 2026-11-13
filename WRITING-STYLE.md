@@ -14,12 +14,12 @@ textbook, not a blog post, not a chatbot.
   ready? Let's begin!"*
 - **Talk to "you", and walk together as "we" and "let's":** *"Now let's talk about…"*, *"Let's look at…"*,
   *"Here's what happens when…"*
-- **Name a thing, then say what it does:** *"This is the `ValidationBehavior`. It runs every validator
-  before the handler, so a bad request never reaches it."*
+- **Name a thing, then say what it does:** *"This is the validation filter. It runs every validator
+  before the endpoint, so a bad request never reaches the handler."*
 - **Check in after a hard part** — once or twice a lesson, not after every paragraph: *"Easy, right?"*,
   *"Clear so far?"*, *"Not so hard, right?"*
 - **Give a memory aid where one helps**, starting with *"To remember it easily:"* — *"To remember it
-  easily: the endpoint addresses the envelope, the mediator delivers it, the handler opens it."*
+  easily: the aggregate writes the letter, the outbox is the mailbox, the dispatcher is the post office."*
 - **Say costs and caveats in the voice, as a sentence**, never as a box: *"Now, let's be honest about the
   cost here: …"*, *"One thing to watch out for: …"*
 - **For readers coming from WebForms**, say it plainly: *"If you came from WebForms, this is your
@@ -54,7 +54,7 @@ In this order:
 - **Code:** complete files, with the file's path as a comment on the first line. Diagrams in Mermaid.
 - **Links** to other lessons and files as Markdown links, never bare paths.
 - **American spelling** (behavior, license, organize), matching the code.
-- **One analogy per idea, used consistently:** the mediator is a post office; a module is an island with one
+- **One analogy per idea, used consistently:** the outbox dispatcher is a post office; a module is an island with one
   service window; vertical slices are a taco drawer; a value object is any ₱1,000 bill; atomicity is a
   turnstile.
 

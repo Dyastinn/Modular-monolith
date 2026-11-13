@@ -82,8 +82,9 @@ public sealed class SystemClock : IClock   // ": IClock" means "I keep that prom
 ```
 
 Why care? Because code that only knows `IClock` works with *any* clock. In the app, it gets the real one. In
-a test, it gets a clock stopped at 9:00 a.m. on a Monday, so a time-based rule can be tested exactly. When you
-see an `I` in front of a type name (`IClock`, `ICurrentUser`, `IStockReservation`), read it as "a promise".
+a test, it gets a clock stopped at 9:00 a.m. on a Monday, so a time-based rule can be tested exactly. (This
+need is so common that .NET ships its own clock promise, `TimeProvider`; the course uses that one.) When you
+see an `I` in front of a type name (`ICurrentUser`, `IStockReservation`), read it as "a promise".
 
 ## 4. Dependency injection: "hand me what I need"
 
@@ -190,7 +191,7 @@ current work.
 
 ```csharp
 if (Status != SalesOrderStatus.Draft)
-    throw new DomainException("Lines can only be changed on a draft order.");
+    throw new DomainException(SalesErrors.LinesOnlyOnDraft, "Lines can only be changed on a draft order.");
 ```
 
 Code further up can **catch** it and decide what to do. In this course, a broken business rule throws a

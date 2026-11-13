@@ -1,4 +1,3 @@
-using Erp.Modules.Invoicing.Contracts;
 using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Invoicing.Domain;
@@ -124,7 +123,7 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
         string customerName, string? customerTin, string? customerAddress, int paymentTermsDays,
         IReadOnlyList<InvoiceLine> lines, DateOnly issueDate, TaxPolicy taxPolicy, SpecialDiscount? specialDiscount = null)
     {
-        if (lines.Count == 0) throw new DomainException("An invoice needs at least one line.");
+        if (lines.Count == 0) throw new DomainException(InvoicingErrors.InvoiceNeedsLines, "An invoice needs at least one line.");
         var invoice = new Invoice
         {
             Number = number, Seller = seller with { }, ShipmentId = shipmentId, SalesOrderId = salesOrderId, OrderNumber = orderNumber,
@@ -152,41 +151,41 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
     {
         EnsureNotVoid();
         var settled = amount + taxWithheld;
-        if (settled == Money.Zero) throw new DomainException("A payment must be more than zero.");
+        if (settled == Money.Zero) throw new DomainException(InvoicingErrors.PaymentNotPositive, "A payment must be more than zero.");
         if (settled > BalanceDue)
-            throw new DomainException($"{Number} has {BalanceDue} left to pay; {settled} is more than that.");
+            throw new DomainException(InvoicingErrors.PaymentExceedsBalance, $"{Number} has {BalanceDue} left to pay; {settled} is more than that.");
         // Withholding is a few percent of the sale before VAT, so anything near the VAT-inclusive total is a typing mistake.
         if (taxWithheld > Total - VatAmount)
-            throw new DomainException($"Tax withheld can't be more than {Number}'s sales before VAT ({Total - VatAmount}).");
-        if (paidOn < IssueDate) throw new DomainException("A payment can't be dated before the invoice.");
-        if (paidOn > today) throw new DomainException("A payment can't be dated in the future.");
+            throw new DomainException(InvoicingErrors.WithholdingExceedsNetSales, $"Tax withheld can't be more than {Number}'s sales before VAT ({Total - VatAmount}).");
+        if (paidOn < IssueDate) throw new DomainException(InvoicingErrors.PaymentBeforeInvoice, "A payment can't be dated before the invoice.");
+        if (paidOn > today) throw new DomainException(InvoicingErrors.PaymentInFuture, "A payment can't be dated in the future.");
 
         _payments.Add(new Payment(id, amount, taxWithheld, paidOn, method,
             string.IsNullOrWhiteSpace(reference) ? null : reference.Trim(), by, nowUtc));
         AmountPaid += settled;
         RefreshStatus();
-        Raise(new PaymentRecorded(id.Value, CustomerId, settled.Amount));
+        Raise(new InvoicePaymentRecorded(id, CustomerId, settled));
     }
 
     // A payment recorded by mistake, or a check that bounced.
     public void VoidPayment(PaymentId id, string reason, DateTime nowUtc)
     {
         EnsureNotVoid();
-        if (string.IsNullOrWhiteSpace(reason)) throw new DomainException("Voiding a payment needs a reason.");
-        var payment = _payments.SingleOrDefault(p => p.Id == id) ?? throw new DomainException($"Payment {id.Value} is not on {Number}.");
-        if (payment.IsVoid) throw new DomainException("That payment is already void.");
+        if (string.IsNullOrWhiteSpace(reason)) throw new DomainException(InvoicingErrors.VoidReasonRequired, "Voiding a payment needs a reason.");
+        var payment = _payments.SingleOrDefault(p => p.Id == id) ?? throw new DomainException(InvoicingErrors.PaymentNotOnInvoice, $"Payment {id.Value} is not on {Number}.");
+        if (payment.IsVoid) throw new DomainException(InvoicingErrors.PaymentAlreadyVoid, "That payment is already void.");
 
         payment.Void(reason.Trim(), nowUtc);
         AmountPaid -= payment.Settled;
         RefreshStatus();
-        Raise(new PaymentVoided(id.Value, CustomerId, payment.Settled.Amount));
+        Raise(new InvoicePaymentVoided(id, CustomerId, payment.Settled));
     }
 
     public void Void(string reason, UserId by, DateTime nowUtc)
     {
         EnsureNotVoid();
-        if (string.IsNullOrWhiteSpace(reason)) throw new DomainException("Voiding an invoice needs a reason.");
-        if (AmountPaid > Money.Zero) throw new DomainException($"{Number} has payments. Void them first.");
+        if (string.IsNullOrWhiteSpace(reason)) throw new DomainException(InvoicingErrors.VoidReasonRequired, "Voiding an invoice needs a reason.");
+        if (AmountPaid > Money.Zero) throw new DomainException(InvoicingErrors.InvoiceHasPayments, $"{Number} has payments. Void them first.");
         Status = InvoiceStatus.Void;
         VoidReason = reason.Trim();
         VoidedBy = by;
@@ -195,7 +194,7 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
 
     public void EnsureCanBeReissued()
     {
-        if (Status != InvoiceStatus.Void) throw new DomainException($"Only a void invoice can be reissued; {Number} is {Status}.");
+        if (Status != InvoiceStatus.Void) throw new DomainException(InvoicingErrors.OnlyVoidInvoiceReissued, $"Only a void invoice can be reissued; {Number} is {Status}.");
     }
 
     private void RefreshStatus() =>
@@ -205,6 +204,10 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
 
     private void EnsureNotVoid()
     {
-        if (Status == InvoiceStatus.Void) throw new DomainException($"{Number} is void.");
+        if (Status == InvoiceStatus.Void) throw new DomainException(InvoicingErrors.InvoiceIsVoid, $"{Number} is void.");
     }
 }
+
+// Published to other modules as PaymentRecorded / PaymentVoided.
+internal sealed record InvoicePaymentRecorded(PaymentId PaymentId, long CustomerId, Money Settled) : IDomainEvent;
+internal sealed record InvoicePaymentVoided(PaymentId PaymentId, long CustomerId, Money Settled) : IDomainEvent;

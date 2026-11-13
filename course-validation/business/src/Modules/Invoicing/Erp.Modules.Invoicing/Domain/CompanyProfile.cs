@@ -34,14 +34,14 @@ internal sealed partial class CompanyProfile
     public void Update(string registeredName, string? tradeName, string tin, string registeredAddress, TaxPolicy tax,
         string invoiceTitle, string? permitNumber, string? seriesRange, string? permitDateIssued, UserId by, DateTime nowUtc)
     {
-        if (string.IsNullOrWhiteSpace(registeredName)) throw new DomainException("The registered name is required.");
-        if (string.IsNullOrWhiteSpace(registeredAddress)) throw new DomainException("The registered address is required.");
+        if (string.IsNullOrWhiteSpace(registeredName)) throw new DomainException(InvoicingErrors.CompanyFieldRequired, "The registered name is required.");
+        if (string.IsNullOrWhiteSpace(registeredAddress)) throw new DomainException(InvoicingErrors.CompanyFieldRequired, "The registered address is required.");
         if (!TinFormat().IsMatch(tin.Trim()))
-            throw new DomainException("The TIN must include its branch code, like 123-456-789-00000.");
+            throw new DomainException(InvoicingErrors.InvalidTin, "The TIN must include its branch code, like 123-456-789-00000.");
         if (!invoiceTitle.Contains("INVOICE", StringComparison.OrdinalIgnoreCase))
-            throw new DomainException("The invoice title must contain the word \"Invoice\" (RR 7-2024 Sec. 6(A.3)).");
+            throw new DomainException(InvoicingErrors.InvoiceTitleMissingWord, "The invoice title must contain the word \"Invoice\" (RR 7-2024 Sec. 6(A.3)).");
         if (Text(permitDateIssued) is { } date && !PermitDateFormat().IsMatch(date))
-            throw new DomainException("The permit's date issued is written mm/dd/yyyy, as on the BIR permit.");
+            throw new DomainException(InvoicingErrors.InvalidPermitDate, "The permit's date issued is written mm/dd/yyyy, as on the BIR permit.");
 
         RegisteredName = registeredName.Trim();
         TradeName = Text(tradeName);
@@ -57,7 +57,7 @@ internal sealed partial class CompanyProfile
     public void EnsureReadyToInvoice()
     {
         if (!IsComplete)
-            throw new DomainException("Fill in the company's registered name, TIN and address (Invoicing → Company and tax) before shipping.");
+            throw new DomainException(InvoicingErrors.CompanyProfileIncomplete, "Fill in the company's registered name, TIN and address (Invoicing → Company and tax) before shipping.");
     }
 
     public SellerDetails Seller() =>

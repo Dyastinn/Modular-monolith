@@ -55,8 +55,8 @@ A C# keyword: visible inside this project only. Every type in a module is `inter
 class, such as `SalesModule`.
 
 **`InternalsVisibleTo`** (03)
-Lets one named project see another's `internal` types. Granted only to `Erp.Api`, where the mediator's
-generator runs, and to test projects. Never to another module.
+Lets one named project see another's `internal` types. Granted only to test projects: never to another
+module, and not even to the host.
 
 ## Building the solution
 
@@ -73,11 +73,11 @@ Every package version lives once, in `Directory.Packages.props`. Projects name a
 Makes a version in `Directory.Packages.props` win even for packages you didn't reference directly, so a
 patched version is used everywhere.
 
-**Source generator** (03)
-Code that runs during the build and writes more code. The mediator uses one, so there's no reflection at
-runtime.
+**Code analyzers** (01)
+Rules the compiler checks on every build (`AnalysisLevel` in `Directory.Build.props`): a culture-dependent
+`Parse`, a slow string comparison. A rule that doesn't fit is switched off in `.editorconfig`, with its reason.
 
-## Commands, queries and the mediator
+## Commands, queries and handlers
 
 **Command** (03)
 A request to change something: `SubmitSalesOrderCommand`.
@@ -86,29 +86,31 @@ A request to change something: `SubmitSalesOrderCommand`.
 A request to read something, changing nothing: `SearchSalesOrdersQuery`.
 
 **Handler** (03)
-The class that does the work for one command or query.
+The plain class that does the work for one command or query, with one `HandleAsync` method. The endpoint
+asks for it by name and calls it.
 
 **CQRS-lite** (03)
 Treating commands and queries differently, in one database. Here: writes through EF Core, reads through
 Dapper and SQL functions.
 
 **Mediator** (03)
-Delivers each command or query to its handler, so the endpoint never knows which class does the work.
-Picture a post office: the endpoint addresses the envelope, the mediator delivers it, the handler opens it.
-We use `martinothamar/Mediator`.
+A library that delivers each command or query to its handler, wrapped in shared steps. Common in .NET, but
+not used here: our requests only arrive over HTTP, where an endpoint filter does the same job. Lesson 03
+explains when you'd want one.
 
-**Pipeline behavior** (03)
-Code that wraps every handler, like a filter: `TelemetryBehavior` (timing, tracing, logging), then
-`ValidationBehavior`.
+**Endpoint filter** (03)
+Code that runs around an endpoint. Our one validation filter, on the whole `/api` group, checks every
+request before its endpoint runs.
 
 **Validator** (03)
 A FluentValidation class that checks a request's *shape*: positive ids, at least one line. Never business
-rules.
+rules. It checks the type the endpoint receives: a request body, or a query read from the address.
 
 ## The web edge
 
-**Blazor WebAssembly** (01)
-C# running in the browser. Our screens are a Blazor app, downloaded once and served by the API itself.
+**Blazor Web App** (01)
+The current shape of a Blazor app: the server sends the page (`App.razor`), and the screens run where you
+choose. Ours all run in the browser as **WebAssembly**, downloaded once and served by the API itself.
 
 **MudBlazor** (01)
 The free component library for the screens: tables, forms, dialogs, menus.
@@ -122,14 +124,29 @@ The class Blazor asks "who's signed in?". Ours asks the API's `/api/auth/me`.
 **Minimal API** (03)
 ASP.NET Core's lightweight way to map a URL to a function: `app.MapPost("/sales-orders", ...)`.
 
-**Carter** (03)
-A small library that lets each feature keep its endpoints in its own class (`ICarterModule`).
+**`TypedResults`** (03)
+Answers with a real type (`Ok<T>`, `NotFound`, `Created<T>`), so tests can check them and the API description
+lists every answer an endpoint can give. Microsoft prefers them to `Results`.
+
+**OpenAPI** (07)
+A machine-readable description of every endpoint, at `/openapi/v1.json`. Scalar shows it as a page at
+`/scalar`, in development.
 
 **Middleware** (07)
 A step every request passes through, in order: exception handling, HTTPS, headers, sign-in, rate limits.
 
 **Problem Details** (07)
-The standard JSON shape for errors (RFC 9457): `status`, `title`, `detail`, plus our `traceId`.
+The standard JSON shape for errors (RFC 9457): `status`, `title`, `detail`, plus our `code`, `type` and
+`traceId`.
+
+**Error code** (04, 07)
+A stable name for a kind of problem, like a compiler's `CS0122`: `SALES-0003` is always "the order would
+exceed the credit limit". Each module keeps its codes, with a fix for each, in one catalog
+(`Domain/SalesErrors.cs`); the app's Error codes page shows them. A code never changes meaning.
+
+**Trace id** (14)
+The id of *one* request, in every log line and error it produced. The code says what kind of problem; the
+trace id finds this one in the logs.
 
 **Status codes we use** (07)
 400 malformed request, 401 not signed in, 403 not allowed, 404 not found, 409 someone else changed it first,
@@ -157,14 +174,16 @@ A static `Create(...)` that checks the rules before an object exists. The object
 private.
 
 **`DomainException`** (04)
-Thrown when a business rule says no. The API turns it into a 422.
+Thrown when a business rule says no, with the rule's error code. The API turns it into a 422.
 
 **Domain event** (13)
-Something the domain says has happened: `SalesOrderApproved`. Other code can react to it afterwards.
+Something the domain says has happened, in its own module's words: `SalesOrderApproved`. Internal: only its
+own module handles it, in an `IDomainEventHandler<T>`.
 
 **Integration event** (17)
-A domain event other *modules* handle, like `ItemCatalogChanged`. Public, in the Contracts project, with
-plain types.
+What a module tells *other* modules, like `ItemCatalogChanged`. Public, in the Contracts project, with plain
+types. The owning module maps one of its domain events to it, so its domain can change without breaking
+anyone listening.
 
 **Snapshot** (04, 20)
 A copy of facts as they were at a moment: an order line's item name, an invoice's customer address. Later
@@ -319,7 +338,9 @@ lost or sent for something that never happened.
 Code EF Core runs around `SaveChanges`. Ours copies domain events into the outbox.
 
 **Dispatcher** (13)
-A background service that reads the outbox and hands each event to its handlers.
+A background service that reads the outbox and hands each event to its handlers. Picture a post office: the
+aggregate writes the letter, the outbox is the mailbox, the dispatcher delivers it to whoever subscribed, and
+the sender never knows who.
 
 **At-least-once delivery** (13)
 Every event is delivered, possibly more than once.

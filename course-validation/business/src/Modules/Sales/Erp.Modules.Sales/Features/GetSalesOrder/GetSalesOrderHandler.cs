@@ -1,11 +1,10 @@
 using Dapper;
 using Erp.Modules.Sales.Domain;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed record GetSalesOrderQuery(long OrderId) : IQuery<SalesOrderDetailDto?>;
+internal sealed record GetSalesOrderQuery(long OrderId);
 
 internal sealed record SalesOrderDetailDto(
     long Id, string OrderNumber, long CustomerId, string CustomerName, string Status, decimal Total,
@@ -31,9 +30,8 @@ internal sealed record SalesOrderLineRow(long ItemId, string ItemName, string Un
     bool SpecialDiscountEligible);
 
 internal sealed class GetSalesOrderHandler(IDbConnectionFactory connections, ICurrentUser currentUser)
-    : IQueryHandler<GetSalesOrderQuery, SalesOrderDetailDto?>
 {
-    public async ValueTask<SalesOrderDetailDto?> Handle(GetSalesOrderQuery q, CancellationToken ct)
+    public async Task<SalesOrderDetailDto?> HandleAsync(GetSalesOrderQuery q, CancellationToken ct)
     {
         var createdBy = SalesOrder.CreatorFilterFor(new UserId(currentUser.UserId), currentUser.Role)?.Value;
 

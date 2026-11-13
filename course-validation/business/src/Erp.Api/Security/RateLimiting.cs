@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Erp.Shared.BuildingBlocks;
@@ -19,7 +20,7 @@ internal static class RateLimiting
             o.OnRejected = (ctx, _) =>
             {
                 if (ctx.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
-                    ctx.HttpContext.Response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString();
+                    ctx.HttpContext.Response.Headers.RetryAfter = ((int)retryAfter.TotalSeconds).ToString(CultureInfo.InvariantCulture);
                 return ValueTask.CompletedTask;
             };
 

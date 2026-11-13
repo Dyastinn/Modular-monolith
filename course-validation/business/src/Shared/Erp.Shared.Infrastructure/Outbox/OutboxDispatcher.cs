@@ -1,9 +1,9 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using Dapper;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -19,14 +19,14 @@ public sealed class OutboxOptions
     public int MaxAttempts { get; set; } = 10;
 }
 
-// Delivers outbox events after commit. At-least-once: a handler may see an event twice, so handlers must be
+// Delivers outbox events to their module's IDomainEventHandler<T> classes after commit. At-least-once: a handler may see an event twice, so handlers must be
 // idempotent. FOR UPDATE SKIP LOCKED keeps several app instances from taking the same message. After
 // MaxAttempts failures a message is left, with its last_error, for a person to look at.
 public sealed partial class OutboxDispatcher(
     IServiceScopeFactory scopes,
     NpgsqlDataSource dataSource,
     IConfiguration config,
-    IClock clock,
+    TimeProvider time,
     ILogger<OutboxDispatcher> log) : BackgroundService
 {
     private static readonly Counter<long> Dispatched = ErpTelemetry.Meter.CreateCounter<long>("erp.outbox.dispatched");
@@ -87,10 +87,10 @@ public sealed partial class OutboxDispatcher(
             {
                 var domainEvent = OutboxMessage.Deserialize(message.Type, message.Payload);
                 await using var scope = scopes.CreateAsyncScope();
-                await scope.ServiceProvider.GetRequiredService<IPublisher>().Publish(domainEvent, ct);
+                await DeliverAsync(scope.ServiceProvider, domainEvent, ct);
 
                 await conn.ExecuteAsync($"UPDATE {table} SET processed_utc = @Now WHERE id = @Id",
-                    new { Now = clock.UtcNow, message.Id }, tx);
+                    new { Now = time.GetUtcNow().UtcDateTime, message.Id }, tx);
                 Dispatched.Add(1);
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
@@ -105,6 +105,20 @@ public sealed partial class OutboxDispatcher(
 
         await tx.CommitAsync(ct);
         return batch.Count;
+    }
+
+    // The event's type is known only at run time (it was read from a row), so the typed method is picked by reflection.
+    private static readonly MethodInfo DeliverTyped =
+        typeof(OutboxDispatcher).GetMethod(nameof(DeliverToHandlersAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
+
+    private static Task DeliverAsync(IServiceProvider services, IDomainEvent domainEvent, CancellationToken ct) =>
+        (Task)DeliverTyped.MakeGenericMethod(domainEvent.GetType()).Invoke(null, [services, domainEvent, ct])!;
+
+    private static async Task DeliverToHandlersAsync<TEvent>(IServiceProvider services, TEvent domainEvent, CancellationToken ct)
+        where TEvent : IDomainEvent
+    {
+        foreach (var handler in services.GetServices<IDomainEventHandler<TEvent>>())
+            await handler.HandleAsync(domainEvent, ct);
     }
 
     [GeneratedRegex("^[a-z_][a-z0-9_]*$")]

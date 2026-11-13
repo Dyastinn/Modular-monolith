@@ -2,12 +2,11 @@ using Dapper;
 using Erp.Modules.Invoicing.Domain;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Invoicing.Features;
 
-internal sealed record SearchInvoicesQuery(long? CustomerId, string? Status, string? Search, bool OverdueOnly, int Page, int PageSize)
-    : IQuery<PagedResult<InvoiceSummaryDto>>;
+internal sealed record SearchInvoicesQuery(long? CustomerId = null, string? Status = null, string? Search = null, bool OverdueOnly = false,
+    int Page = 1, int PageSize = 20);
 
 internal sealed record InvoiceSummaryDto(long Id, string Number, long CustomerId, string CustomerName, string OrderNumber,
     DateOnly IssueDate, DateOnly DueDate, string Status, decimal Total, decimal AmountPaid, decimal BalanceDue);
@@ -26,17 +25,16 @@ internal sealed class SearchInvoicesValidator : AbstractValidator<SearchInvoices
     }
 }
 
-internal sealed class SearchInvoicesHandler(IDbConnectionFactory connections, IClock clock)
-    : IQueryHandler<SearchInvoicesQuery, PagedResult<InvoiceSummaryDto>>
+internal sealed class SearchInvoicesHandler(IDbConnectionFactory connections, TimeProvider time)
 {
-    public async ValueTask<PagedResult<InvoiceSummaryDto>> Handle(SearchInvoicesQuery q, CancellationToken ct)
+    public async Task<PagedResult<InvoiceSummaryDto>> HandleAsync(SearchInvoicesQuery q, CancellationToken ct)
     {
         var args = new
         {
             q.CustomerId,
             Status = q.Status is null ? (int?)null : (int)Enum.Parse<InvoiceStatus>(q.Status, true),
             Search = SearchText.ForLike(q.Search),
-            OverdueOn = q.OverdueOnly ? clock.Today : (DateOnly?)null,
+            OverdueOn = q.OverdueOnly ? time.Today() : (DateOnly?)null,
             q.Page, q.PageSize
         };
         await using var conn = connections.Create();

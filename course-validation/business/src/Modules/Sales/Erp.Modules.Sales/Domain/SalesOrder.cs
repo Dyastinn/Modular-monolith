@@ -105,7 +105,7 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
     public void SetLines(IReadOnlyList<(SalesItem Item, Quantity Quantity)> lines, string callerRole)
     {
         EnsureDraft();
-        if (lines.Count == 0) throw new DomainException("An order needs at least one line.");
+        if (lines.Count == 0) throw new DomainException(SalesErrors.OrderNeedsLines, "An order needs at least one line.");
 
         // Built aside and swapped in at the end, so a refused line leaves the order exactly as it was.
         var newLines = new List<SalesOrderLine>();
@@ -133,7 +133,7 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
     {
         EnsureDiscountChangeable();
         if (!_lines.Any(l => l.SpecialDiscountEligible))
-            throw new DomainException($"No item on {OrderNumber} qualifies for the {discount.Program} discount.");
+            throw new DomainException(SalesErrors.NoLineQualifiesForDiscount, $"No item on {OrderNumber} qualifies for the {discount.Program} discount.");
         SpecialDiscount = discount;
         RecalculateSpecialDiscount();
     }
@@ -150,7 +150,7 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
     {
         EnsureBelongsTo(customer);
         if (_lines.Count == 0)
-            throw new DomainException("Cannot submit an order with no lines.");
+            throw new DomainException(SalesErrors.OrderNeedsLines, "Cannot submit an order with no lines.");
         customer.EnsureNotBlocked();
         customer.EnsureWithinCreditLimit(Total, otherPendingTotal);
 
@@ -165,7 +165,7 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
     {
         EnsureBelongsTo(customer);
         if (approver == CreatedBy)
-            throw new DomainException("An order can't be approved by the person who created it.");
+            throw new DomainException(SalesErrors.CreatorCannotApprove, "An order can't be approved by the person who created it.");
         MarkApproved(approver, customer, nowUtc);
     }
 
@@ -173,7 +173,7 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
     public IReadOnlyList<SalesOrderLine> Reject(UserId rejectedBy, string reason, DateTime nowUtc)
     {
         if (string.IsNullOrWhiteSpace(reason))
-            throw new DomainException("A rejection needs a reason.");
+            throw new DomainException(SalesErrors.RejectionReasonRequired, "A rejection needs a reason.");
         Transition(SalesOrderStatus.Rejected);
         RejectedBy = rejectedBy;
         RejectedUtc = nowUtc;
@@ -198,7 +198,7 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
     public void EnsureCanShip()
     {
         if (Status != SalesOrderStatus.Approved)
-            throw new DomainException($"Only approved orders can be shipped; {OrderNumber} is {Status}.");
+            throw new DomainException(SalesErrors.OnlyApprovedOrdersShip, $"Only approved orders can be shipped; {OrderNumber} is {Status}.");
     }
 
     public void MarkShipped(DateTime nowUtc)
@@ -227,13 +227,13 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
     private void EnsureDiscountChangeable()
     {
         if (Status != SalesOrderStatus.Draft)
-            throw new DomainException("A special discount can only be changed on a draft order.");
+            throw new DomainException(SalesErrors.DiscountOnlyOnDraft, "A special discount can only be changed on a draft order.");
     }
 
     private void EnsureDraft()
     {
         if (Status != SalesOrderStatus.Draft)
-            throw new DomainException("Lines can only be changed on a draft order.");
+            throw new DomainException(SalesErrors.LinesOnlyOnDraft, "Lines can only be changed on a draft order.");
     }
 
     private void EnsureBelongsTo(Customer customer)
@@ -245,7 +245,7 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
     private void Transition(SalesOrderStatus to)
     {
         if (!Status.CanTransitionTo(to))
-            throw new DomainException($"Cannot move a {Status} order to {to}.");
+            throw new DomainException(SalesErrors.InvalidStatusChange, $"Cannot move a {Status} order to {to}.");
         Status = to;
     }
 }

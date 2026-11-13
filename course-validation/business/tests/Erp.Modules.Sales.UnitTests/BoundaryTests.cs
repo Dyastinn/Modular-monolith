@@ -1,3 +1,4 @@
+using System.Globalization;
 using AwesomeAssertions;
 using Erp.Modules.Sales.Domain;
 using Erp.Shared.BuildingBlocks;
@@ -14,7 +15,7 @@ public class MoneyAndQuantityBoundaryTests
     [InlineData("2.675", "2.68")]   // the classic double-rounding trap; decimal gets it right
     [InlineData("0", "0.00")]
     public void Money_rounds_half_a_centavo_away_from_zero(string amount, string expected) =>
-        new Money(decimal.Parse(amount)).Amount.Should().Be(decimal.Parse(expected));
+        new Money(decimal.Parse(amount, CultureInfo.InvariantCulture)).Amount.Should().Be(decimal.Parse(expected, CultureInfo.InvariantCulture));
 
     [Fact]
     public void Taking_away_more_money_than_there_is_fails() =>
@@ -29,7 +30,7 @@ public class MoneyAndQuantityBoundaryTests
     [InlineData("1")]
     [InlineData("999999.999")]
     public void The_smallest_and_largest_sensible_quantities_are_accepted(string value) =>
-        new Quantity(decimal.Parse(value)).Value.Should().Be(decimal.Parse(value));
+        new Quantity(decimal.Parse(value, CultureInfo.InvariantCulture)).Value.Should().Be(decimal.Parse(value, CultureInfo.InvariantCulture));
 
     [Theory]
     [InlineData("0")]
@@ -38,7 +39,7 @@ public class MoneyAndQuantityBoundaryTests
     [InlineData("0.0001")]
     [InlineData("1.0005")]
     public void A_quantity_that_is_not_positive_or_has_four_decimals_is_refused(string value) =>
-        FluentActions.Invoking(() => new Quantity(decimal.Parse(value))).Should().Throw<DomainException>();
+        FluentActions.Invoking(() => new Quantity(decimal.Parse(value, CultureInfo.InvariantCulture))).Should().Throw<DomainException>();
 
     [Fact]
     public void Trailing_zeros_do_not_count_as_decimals() =>

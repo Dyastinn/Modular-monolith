@@ -26,22 +26,24 @@ Search Microsoft Learn for *"Dependency injection in .NET"*; the introduction an
 To practice, make an `IAnimal` with a `Speak()` method, and a `Dog` and a `Cat` that answer differently.
 Notice that the caller holds an `IAnimal` without knowing which one it got.
 
-**Minimal APIs and Carter** (from [lesson 03](03-mediator.md))
-Search Microsoft Learn for *"Minimal APIs overview"*. For Carter, search *"Carter GitHub"*: the README shows
-the `ICarterModule` pattern. Learn minimal APIs first; Carter is a thin layer over them.
+**Minimal APIs** (from [lesson 03](03-features.md))
+Search Microsoft Learn for *"Minimal APIs overview"*, then *"Route handlers in Minimal API apps"*, the part
+about `MapGroup`: each of our modules maps its endpoints that way.
 
-**`async` and `await`** (from [lesson 03](03-mediator.md))
+**`async` and `await`** (from [lesson 03](03-features.md))
 Search *"Asynchronous programming with async and await"*. Don't go deep: "await means wait for the answer"
 is all the course needs.
 
-**The mediator and FluentValidation** ([lesson 03](03-mediator.md))
-Search *"mediator pattern refactoring guru"* for friendly diagrams, and *"martinothamar Mediator GitHub"* for
-the library we use. For validation, read only the *"Creating your first validator"* page of the
-FluentValidation documentation. Notice that a validator checks shape, never business rules.
+**Handlers, endpoint filters and FluentValidation** ([lesson 03](03-features.md))
+Search Microsoft Learn for *"Filters in Minimal API apps"* (our validation filter is one) and *"Create
+responses in Minimal API applications"* (why `TypedResults`). For validation, read only the *"Creating your
+first validator"* page of the FluentValidation documentation. Notice that a validator checks shape, never
+business rules. Curious about the mediator pattern we chose not to use? Search *"mediator pattern refactoring
+guru"*, then read lesson 03's "What about a mediator?" again.
 
 **Blazor and MudBlazor** (from [lesson 01](01-solution-setup.md))
-Search Microsoft Learn for *"ASP.NET Core Blazor"* and read *"Razor component"* first; the parts about
-WebAssembly hosting are what we use. For components, the MudBlazor site's own docs show every component with
+Search Microsoft Learn for *"ASP.NET Core Blazor"* and read *"Razor component"* first, then *"ASP.NET Core
+Blazor render modes"*: we use a Blazor Web App with interactive WebAssembly everywhere. For components, the MudBlazor site's own docs show every component with
 live examples you can copy.
 
 **Records, structs and enums** ([lesson 04](04-domain-model.md))

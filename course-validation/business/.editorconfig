@@ -1,0 +1,30 @@
+root = true
+
+[*]
+charset = utf-8
+indent_style = space
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{cs,razor}]
+indent_size = 4
+
+[*.{json,yml,yaml,csproj,props,slnx,xml}]
+indent_size = 2
+
+[*.cs]
+# The house style, checked on every build (EnforceCodeStyleInBuild): one namespace line per file.
+csharp_style_namespace_declarations = file_scoped:warning
+
+# Analyzer rules this product switches off on purpose (AnalysisLevel latest-recommended is on in Directory.Build.props).
+# CA1716: "Shared" and "Module" are Visual Basic keywords. This is a C#-only product; no VB code will ever consume it.
+dotnet_diagnostic.CA1716.severity = none
+# CA1711: IDomainEventHandler and IIntegrationEventHandler are the standard names for these interfaces in DDD code.
+dotnet_diagnostic.CA1711.severity = none
+# CA1848, CA1873: source-generated logging pays off on hot paths. Ours log at startup, on failures and once per approval.
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1873.severity = none
+
+# EF Core writes migrations; they're generated code, kept exactly as generated.
+[**/Migrations/*.cs]
+generated_code = true

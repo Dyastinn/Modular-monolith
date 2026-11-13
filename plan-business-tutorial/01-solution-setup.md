@@ -93,10 +93,13 @@ Which kind of front end?
 | Option | What it costs us |
 |---|---|
 | React, Angular or Vue | A second language (TypeScript), a second toolchain (npm), and every data shape written twice |
-| Blazor Server | The screen lives on the server; every click is a message over a live connection, and every open browser holds server memory |
-| **Blazor WebAssembly** | **C# in the browser, talking to our own API.** One language, one toolchain, and the server only answers API calls |
+| Blazor, screens running on the server | The screen lives on the server; every click is a message over a live connection, and every open browser holds server memory |
+| **Blazor, screens running as WebAssembly** | **C# in the browser, talking to our own API.** One language, one toolchain, and the server only answers API calls |
 
-Blazor WebAssembly downloads the .NET runtime and our app into the browser once, then runs there. Now,
+We build a **Blazor Web App** whose screens all run as **WebAssembly**: it downloads the .NET runtime and
+our app into the browser once, then runs there. A Blazor Web App is the shape Microsoft's templates use since
+.NET 8: the server sends the page, and the screens inside it run where you choose. We choose the browser for
+all of them. Now,
 let's be honest about the cost: the first visit downloads a few megabytes, so the app takes a second or two
 to start. After that, the browser caches it. For an ERP that staff open every morning and keep open all day,
 that's a fine trade.
@@ -111,7 +114,7 @@ of this source would inherit that bill.
 
 ### One address for the app and the API
 
-`Erp.Api` serves the app's files itself, from the same address as the API. That makes signing in simple and
+`Erp.Api` serves the app's page and files itself, from the same address as the API. That makes signing in simple and
 safe later ([lesson 06](06-sign-in.md)). But the app wants addresses for its own pages, like
 `/sales-orders`, and the API wants addresses for its data. So the whole API lives under **`/api`**, and
 everything else belongs to the app.
@@ -128,6 +131,9 @@ project underneath it, so no `.csproj` has to repeat these lines:
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Microsoft's recommended code-quality rules, and the style rules in .editorconfig, on every build. -->
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
   </PropertyGroup>
 </Project>
 ```
@@ -137,6 +143,38 @@ project underneath it, so no `.csproj` has to repeat these lines:
 | `TargetFramework` | Every project builds for .NET 10 |
 | `Nullable` | The compiler warns you wherever a `null` could slip through, so you fix it before it crashes |
 | `ImplicitUsings` | The common `using` lines (`System`, `System.Linq`, …) are added for you, so files stay short |
+| `AnalysisLevel` | Turns on the code analyzers Microsoft recommends: a culture-dependent `decimal.Parse`, a string compared the slow way. Each shows as a warning with a link that explains it |
+| `EnforceCodeStyleInBuild` | Checks the style rules written in `.editorconfig` on every build, not only in your editor |
+
+And next to it, `.editorconfig`, which every editor (Visual Studio, VS Code, Rider) and the build both read:
+
+```ini
+# .editorconfig
+root = true
+
+[*]
+charset = utf-8
+indent_style = space
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.{cs,razor}]
+indent_size = 4
+
+[*.{json,yml,yaml,csproj,props,slnx,xml}]
+indent_size = 2
+
+[*.cs]
+# The house style, checked on every build: one namespace line per file.
+csharp_style_namespace_declarations = file_scoped:warning
+
+# Analyzer rules this product switches off on purpose, each with its reason.
+# CA1716: "Shared" and "Module" are Visual Basic keywords. This is a C#-only product; no VB code will ever consume it.
+dotnet_diagnostic.CA1716.severity = none
+```
+
+When a rule doesn't fit this code, we switch it off *here*, with the reason beside it, never silently. You'll
+see the list grow by a line or two in later lessons, each time with its reason.
 
 ## 2. One place for package versions
 
@@ -235,7 +273,7 @@ and next lesson Sales will need it anyway for its endpoints. In `Erp.Modules.Sal
 </ItemGroup>
 ```
 
-From [lesson 03](03-mediator.md) on, every class you write inside a module starts with `internal`.
+From [lesson 03](03-features.md) on, every class you write inside a module starts with `internal`.
 
 ## 5. The host
 
@@ -266,8 +304,11 @@ dotnet new blazorwasm --empty -o src/Erp.Web
 dotnet sln add src/Erp.Web
 ```
 
-The template gives us a project with versions on its packages, which central package management forbids,
-plus a sample page and some files we'll write ourselves. Replace the generated `.csproj` with this:
+This is the browser half of a Blazor Web App: the part that runs as WebAssembly. Microsoft's Blazor Web App
+template makes a server project and a `.Client` project; our server is `Erp.Api`, which we already have, so we
+only need the client. The template gives us a project with versions on its packages, which central package
+management forbids, plus a sample page and some files we'll write ourselves. Replace the generated `.csproj`
+with this:
 
 ```xml
 <!-- src/Erp.Web/Erp.Web.csproj -->
@@ -295,56 +336,64 @@ Notice the comment in the `.csproj`. The app references no module and no shared 
 the API, over HTTP, like any other client. That keeps the browser free of server code, and the modules free
 of browser code.
 
-### The page the browser loads first
+### The page the server sends
 
-```html
-<!-- src/Erp.Web/wwwroot/index.html -->
+Every address of the app gets the same page from the server. It's a Razor component, written once, here in
+the app project:
+
+```razor
+@* src/Erp.Web/App.razor *@
+@* The page the server sends for every address of the app. Only Routes (and the page title) run in the browser, as
+   WebAssembly; prerender is off because every screen needs the signed-in user's data from the API. *@
+
 <!DOCTYPE html>
 <html lang="en">
 
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ERP</title>
     <base href="/" />
-    <link rel="stylesheet" href="_content/MudBlazor/MudBlazor.min.css" />
-    <link rel="stylesheet" href="css/app.css" />
+    <link rel="stylesheet" href="@Assets["_content/MudBlazor/MudBlazor.min.css"]" />
+    <link rel="stylesheet" href="@Assets["css/app.css"]" />
+    <HeadOutlet @rendermode="InBrowser" />
 </head>
 
 <body>
-    <div id="app">
-        <div class="boot">Loading…</div>
-    </div>
+    <Routes @rendermode="InBrowser" />
 
     <div id="blazor-error-ui">
         Something went wrong. <a href="." class="reload">Reload</a>
     </div>
 
-    <!-- No inline scripts anywhere: the Content-Security-Policy forbids them. -->
-    <script src="_framework/blazor.webassembly.js"></script>
-    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    @* No inline scripts anywhere: the Content-Security-Policy forbids them. *@
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script src="@Assets["_content/MudBlazor/MudBlazor.min.js"]"></script>
 </body>
 
 </html>
+
+@code {
+    private static readonly IComponentRenderMode InBrowser = new InteractiveWebAssemblyRenderMode(prerender: false);
+}
 ```
 
-Blazor replaces whatever is inside `<div id="app">` once it has started, so "Loading…" shows for the second
-or two that takes. `blazor-error-ui` is the bar Blazor shows if the app crashes. And notice there's no
-`<script>` with code inside it. [Lesson 23](23-security-hardening.md) adds a Content-Security-Policy that
-forbids inline scripts, the classic way an attacker's script gets onto a page, so we never write one.
+- **`@rendermode="InBrowser"`** is the line that makes this a WebAssembly app. The server writes the page;
+  `Routes`, and every screen under it, runs in the browser.
+- **`prerender: false`**: by default the server would first draw each screen itself, then hand it to the
+  browser. Our screens are almost all data from the API, which the server would have to fetch twice, so we
+  skip that.
+- **`@Assets["css/app.css"]`** writes the file's name with a fingerprint in it (`app.wdx55whw5k.css`). When the
+  file changes, so does the name, so a browser never runs yesterday's copy from its cache.
+- **`blazor-error-ui`** is the bar Blazor shows if the app crashes.
+
+And notice there's no `<script>` with code inside it. [Lesson 23](23-security-hardening.md) adds a
+Content-Security-Policy that forbids inline scripts, the classic way an attacker's script gets onto a page, so
+we never write one.
 
 ```css
 /* src/Erp.Web/wwwroot/css/app.css */
 html, body {
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-}
-
-.boot {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    color: #666;
 }
 
 #blazor-error-ui {
@@ -364,14 +413,11 @@ html, body {
 
 ```csharp
 // src/Erp.Web/Program.cs
-using Erp.Web;
-using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using MudBlazor.Services;
 
+// The browser half of the app. The server sends the page (App.razor); what runs here is Routes and everything below.
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
-builder.RootComponents.Add<App>("#app");
-builder.RootComponents.Add<HeadOutlet>("head::after");
 
 // Same origin as the API, so every call goes back to the server that served the app.
 builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
@@ -381,9 +427,9 @@ builder.Services.AddMudServices();
 await builder.Build().RunAsync();
 ```
 
-It's the same builder shape as the host's `Program.cs`, running in the browser. `App` goes into
-`<div id="app">`. `HeadOutlet` lets each page set the browser tab's title with `<PageTitle>`. In a browser
-app, `Scoped` means "one for as long as the tab is open".
+It's the same builder shape as the host's `Program.cs`, running in the browser. It registers the services the
+screens use; which component to start, `Routes`, was already said by `App.razor`. In a browser app, `Scoped`
+means "one for as long as the tab is open".
 
 ```razor
 @* src/Erp.Web/_Imports.razor *@
@@ -403,8 +449,8 @@ app, `Scoped` means "one for as long as the tab is open".
 ### The router, the layout and the first page
 
 ```razor
-@* src/Erp.Web/App.razor *@
-<Router AppAssembly="typeof(App).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+@* src/Erp.Web/Routes.razor *@
+<Router AppAssembly="typeof(Routes).Assembly" NotFoundPage="typeof(Pages.NotFound)">
     <Found Context="routeData">
         <RouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)" />
         <FocusOnNavigate RouteData="routeData" Selector="h1" />
@@ -482,51 +528,87 @@ One link for now. Every feature lesson adds its own.
 
 ## 7. The host serves the app
 
-`Erp.Api` needs the app's files, and one package that knows how to serve them:
+`Erp.Api` needs the app's files, and one package that knows how to run its screens in the browser:
 
 ```bash
 dotnet add src/Erp.Api package Microsoft.AspNetCore.Components.WebAssembly.Server --version 10.0.14
 ```
 
-And a reference to the app project, in `Erp.Api.csproj`:
+And a reference to the app project, plus one setting, in `Erp.Api.csproj`:
 
 ```xml
-<!-- The browser app, served by this host from the same address as the API. -->
-<ProjectReference Include="..\Erp.Web\Erp.Web.csproj" />
+<!-- Serve the framework's blazor.web.js. The SDK turns this on by itself only when the project has .razor files;
+     here they all live in Erp.Web, so it's said explicitly. -->
+<PropertyGroup>
+  <RequiresAspNetWebAssets>true</RequiresAspNetWebAssets>
+</PropertyGroup>
+
+<ItemGroup>
+  <!-- The browser app, served by this host from the same address as the API. -->
+  <ProjectReference Include="..\Erp.Web\Erp.Web.csproj" />
+</ItemGroup>
 ```
 
-The host never calls the app's code; it only hands its files to the browser. Still, it's a normal reference, and
-that matters: the app's packages bring files of their own (MudBlazor's stylesheet and script, under
-`_content/MudBlazor/`), and the host only learns about a package's files through a normal reference. Tempted to
-add `ReferenceOutputAssembly="false"`, "build it, but don't give me its classes"? Don't: the app would open,
-unstyled, with MudBlazor's files answering 404.
+The host never calls the app's screens; it sends the page and hands the browser its files. Still, it's a
+normal reference, and that matters: the app's packages bring files of their own (MudBlazor's stylesheet and
+script, under `_content/MudBlazor/`), and the host only learns about a package's files through a normal
+reference. Tempted to add `ReferenceOutputAssembly="false"`, "build it, but don't give me its classes"? Don't:
+the app would open, unstyled, with MudBlazor's files answering 404.
+
+And `RequiresAspNetWebAssets`? Without it, the browser asks for `_framework/blazor.web.js` and gets a 404, and
+the page stays blank. The SDK adds that file only to a project that has `.razor` files itself, and all ours
+live in `Erp.Web`.
 
 Now `Program.cs` again. Before:
 
 ```csharp
+builder.Services.AddSalesModule();
+
+var app = builder.Build();
+
 app.MapGet("/", () => "Erp API");
 ```
 
 After:
 
 ```csharp
+builder.Services.AddSalesModule();
+// The browser app: the server sends its page, the screens run in the browser as WebAssembly.
+builder.Services.AddRazorComponents().AddInteractiveWebAssemblyComponents();
+
+var app = builder.Build();
+
+// An address that is no page of the app shows the app's own "not found" page (with a 404).
+app.UseWhen(ctx => !ctx.Request.Path.StartsWithSegments("/api"),
+    pages => pages.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true));
+// Explicit, and after the status-code pages: a re-executed request ("/not-found") must be routed again.
+app.UseRouting();
+app.UseAntiforgery();
+
 // The browser app is served from the same host, so the API gets a prefix of its own.
 var api = app.MapGroup("/api");
 api.MapFallback(() => Results.NotFound());   // an unknown API address is a 404, never the app's page
 
 app.MapStaticAssets();
-app.MapFallbackToFile("index.html");          // any other address is a page of the app: let it route
+app.MapRazorComponents<Erp.Web.App>()
+    .AddInteractiveWebAssemblyRenderMode();
 ```
 
-- **`MapGroup("/api")`** makes a group of routes that all start with `/api`. It's empty today; next lesson,
+- **`MapGroup("/api")`** makes a group of routes that all start with `/api`. It's empty today; in two lessons,
   every module's endpoints go into it.
 - **`MapStaticAssets`** serves the app's files: the `.wasm` runtime, our compiled app, MudBlazor's CSS. It
   compresses them at build time and gives them cache headers, so a returning user downloads nothing.
-- **`MapFallbackToFile`** answers every other address with `index.html`. Type `http://localhost:5264/sales-orders`
-  into the address bar, and the server has no such file, so it sends the app, and the app's router shows the
-  right page (today, "There's nothing at this address").
-- **The API's own fallback comes first**, so `/api/anything-unknown` gets an honest 404, not a page of HTML
-  that would confuse every API client.
+- **`MapRazorComponents<App>()`** answers every page address with `App.razor`. Type
+  `http://localhost:5264/sales-orders` into the address bar: the server sends the page, and the router running
+  in the browser shows the right screen. `AddInteractiveWebAssemblyRenderMode` is what lets the screens run
+  in the browser.
+- **`UseStatusCodePagesWithReExecute`** handles an address that's no page at all (`/no-such-page`): the
+  server quietly runs the request again as `/not-found`, so the person sees the app's own "not found" screen,
+  with an honest 404. Not for `/api`, though: an API client wants a short error, not a page of HTML.
+- **`UseRouting`** usually happens on its own, first. Here it must come after the status-code pages, or the
+  re-run `/not-found` request would never find its page.
+- **`UseAntiforgery`** is required by `MapRazorComponents`: it protects forms the server renders against
+  cross-site posts. We have none yet, but the framework insists, and it costs nothing.
 
 ## How a request flows
 
@@ -535,7 +617,7 @@ sequenceDiagram
   participant B as Browser
   participant H as Erp.Api
   B->>H: GET /
-  H-->>B: index.html (fallback)
+  H-->>B: the page (App.razor, written by the server)
   B->>H: GET /_framework/... (cached after the first visit)
   Note over B: the app starts; the router shows Home
   B->>H: GET /api/nothing
@@ -553,8 +635,11 @@ Every lesson adds a stop to this trip.
   that knocks the wall down.
 - Writing `public class` inside a module. Before you do, ask whether another module truly needs it. Usually
   the answer is a contract ([lesson 09](09-submit.md)).
-- Calling `UseBlazorFrameworkFiles()` from older tutorials as well as `MapStaticAssets()`. In .NET 10 they
-  serve the same files twice and `/_framework` breaks with a 500. `MapStaticAssets` alone is right.
+- Following an older tutorial's "hosted Blazor WebAssembly" setup: an `index.html`, `blazor.webassembly.js`,
+  `UseBlazorFrameworkFiles()` and `MapFallbackToFile`. Microsoft folded that template into the Blazor Web App in
+  .NET 8; `App.razor` plus `MapRazorComponents` is the current shape. Mixing the two serves the same files twice.
+- Leaving out `RequiresAspNetWebAssets`. The page arrives, `blazor.web.js` answers 404, and the screen stays
+  blank with no error on the server.
 - Forgetting `api.MapFallback`. A typo in an API address then returns the app's HTML with a 200, and the
   client fails somewhere confusing.
 
@@ -565,8 +650,8 @@ dotnet build
 dotnet run --project src/Erp.Api
 ```
 
-Open **http://localhost:5264** (the port `dotnet run` printed) in your browser. After a moment of
-"Loading…", you see the ERP's blue top bar, a menu with Home, and "Good day! The ERP is running." Click the
+Open **http://localhost:5264** (the port `dotnet run` printed) in your browser. After a moment, you see the
+ERP's blue top bar, a menu with Home, and "Good day! The ERP is running." Click the
 menu button: the drawer closes and opens. Type `/no-such-page` after the address: the app says there's
 nothing there.
 
@@ -575,6 +660,7 @@ Now check that the API and the pages each answer their own way, in a second term
 ```bash
 curl -i http://localhost:5264/api/nothing     # 404: an API address that doesn't exist
 curl -i http://localhost:5264/sales-orders    # 200 and HTML: an address for the app to route
+curl -i http://localhost:5264/no-such-page    # 404, with the app's "not found" page
 ```
 
 The build should show **0 warnings and 0 errors**. If you see `NU1008`, a `.csproj` still has a version on a
@@ -588,12 +674,11 @@ package reference.
 3. Later, a teammate wants to upgrade a package the whole solution uses. With central package management,
    how many files change?
 4. Why use vertical slices instead of `Controllers`, `Services` and `Repositories` folders?
-5. Why did we choose Blazor WebAssembly, and what does it cost on the first visit?
+5. Why do our screens run as WebAssembly, and what does that cost on the first visit?
 6. Why does the API live under `/api`, and what does `GET /api/typo` answer?
 
-And that's where this lesson ends. The walls are up, and the app opens in your browser. Next time, we give
-our endpoints a proper way to hand their work to a handler, the mediator, and call our first one from a
-screen. Good luck, developer!
+And that's where this lesson ends. The walls are up, and the app opens in your browser. Next time, we learn to prove
+that what we build works, with tests. Good luck, developer!
 
 ---
 

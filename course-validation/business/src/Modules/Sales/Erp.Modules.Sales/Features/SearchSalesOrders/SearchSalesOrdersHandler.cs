@@ -2,12 +2,10 @@ using Dapper;
 using Erp.Modules.Sales.Domain;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed record SearchSalesOrdersQuery(long? CustomerId, string? Status, string? Search, int Page = 1, int PageSize = 20)
-    : IQuery<PagedResult<SalesOrderSummaryDto>>;
+internal sealed record SearchSalesOrdersQuery(long? CustomerId = null, string? Status = null, string? Search = null, int Page = 1, int PageSize = 20);
 
 internal sealed record SalesOrderSummaryDto(
     long Id, string OrderNumber, long CustomerId, string CustomerName, string Status, decimal Total, long CreatedBy, DateTime CreatedUtc);
@@ -28,9 +26,8 @@ internal sealed class SearchSalesOrdersValidator : AbstractValidator<SearchSales
 }
 
 internal sealed class SearchSalesOrdersHandler(IDbConnectionFactory connections, ICurrentUser currentUser)
-    : IQueryHandler<SearchSalesOrdersQuery, PagedResult<SalesOrderSummaryDto>>
 {
-    public async ValueTask<PagedResult<SalesOrderSummaryDto>> Handle(SearchSalesOrdersQuery q, CancellationToken ct)
+    public async Task<PagedResult<SalesOrderSummaryDto>> HandleAsync(SearchSalesOrdersQuery q, CancellationToken ct)
     {
         int? status = q.Status is null ? null : (int)Enum.Parse<SalesOrderStatus>(q.Status, ignoreCase: true);
         var args = new

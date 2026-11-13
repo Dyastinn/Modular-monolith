@@ -155,10 +155,11 @@ public class SalesOrderWorkflowTests(CustomWebAppFactory factory)
         create.Content.Headers.ContentType!.ToString().Should().Be("application/problem+json; charset=utf-8");
         var problem = await create.Content.ReadFromJsonAsync<Problem>();
         problem!.Detail.Should().Be("An order needs at least one line.");
-        problem.Errors.Should().Equal("An order needs at least one line.");
+        problem.Code.Should().Be("ERP-0001");
+        problem.Errors["Lines"].Should().Equal("An order needs at least one line.");   // keyed by field, so a form can mark it
     }
 
-    private sealed record Problem(string Detail, string[] Errors);
+    private sealed record Problem(string Detail, string Code, Dictionary<string, string[]> Errors);
 
     private async Task<decimal> ReservedRacks()
     {

@@ -1,21 +1,29 @@
-using Carter;
-using Mediator;
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
+
 internal sealed record UpdateSalesOrderRequest(IReadOnlyList<OrderLineInput> Lines);
 
-internal sealed class UpdateSalesOrderEndpoint : ICarterModule
+internal sealed class UpdateSalesOrderRequestValidator : AbstractValidator<UpdateSalesOrderRequest>
 {
-    public void AddRoutes(IEndpointRouteBuilder app) =>
+    public UpdateSalesOrderRequestValidator()
+    {
+        RuleFor(x => x.Lines).NotEmpty().WithMessage("An order needs at least one line.");
+        RuleForEach(x => x.Lines).SetValidator(new OrderLineInputValidator());
+    }
+}
+
+internal static class UpdateSalesOrderEndpoint
+{
+    public static void Map(IEndpointRouteBuilder app) =>
         app.MapPut("/sales-orders/{id:long}",
-            async (long id, UpdateSalesOrderRequest body, ISender sender, CancellationToken ct) =>
-            {
-                await sender.Send(new UpdateSalesOrderCommand(id, body.Lines), ct);
-                return Results.NoContent();
-            })
+                async Task<Results<NoContent, NotFound>> (long id, UpdateSalesOrderRequest body, UpdateSalesOrderHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new UpdateSalesOrderCommand(id, body.Lines), ct) ? TypedResults.NoContent() : TypedResults.NotFound())
             .RequireAuthorization(p => p.RequireRole(SalesRoles.Sellers));
 }

@@ -228,9 +228,9 @@ After, with `public TaxType TaxType { get; private set; }` next to `IsForSale`:
 ```csharp
 public void SetPricing(Money unitPrice, ItemCategory category, bool isForSale, TaxType taxType)
 {
-    if (!Enum.IsDefined(taxType)) throw new DomainException($"'{taxType}' is not a tax type.");
-    if (isForSale && unitPrice == Money.Zero) throw new DomainException($"Set a price for {Sku} before putting it on sale.");
-    if (isForSale && !IsActive) throw new DomainException($"{Sku} is inactive in the catalog and can't be sold.");
+    if (!Enum.IsDefined(taxType)) throw new DomainException(SalesErrors.UnknownTaxType, $"'{taxType}' is not a tax type.");
+    if (isForSale && unitPrice == Money.Zero) throw new DomainException(SalesErrors.PriceRequiredForSale, $"Set a price for {Sku} before putting it on sale.");
+    if (isForSale && !IsActive) throw new DomainException(SalesErrors.InactiveItemNotSellable, $"{Sku} is inactive in the catalog and can't be sold.");
     UnitPrice = unitPrice;
     CategoryId = category.Id;
     Category = category;
@@ -356,8 +356,8 @@ internal readonly record struct TaxPolicy
 
     public TaxPolicy(TaxRegime regime, decimal vatRate)
     {
-        if (!Enum.IsDefined(regime)) throw new DomainException($"'{regime}' is not a tax regime.");
-        if (vatRate is < 0 or >= 1) throw new DomainException("The VAT rate must be a fraction between 0 and 1, such as 0.12.");
+        if (!Enum.IsDefined(regime)) throw new DomainException(CommonErrors.UnknownTaxRegime, $"'{regime}' is not a tax regime.");
+        if (vatRate is < 0 or >= 1) throw new DomainException(CommonErrors.InvalidVatRate, "The VAT rate must be a fraction between 0 and 1, such as 0.12.");
         Regime = regime;
         VatRate = regime == TaxRegime.Vat ? vatRate : 0;
     }
@@ -434,7 +434,7 @@ internal sealed class Invoice : Entity<InvoiceId>
         string customerName, string? customerTin, string? customerAddress, int paymentTermsDays,
         IReadOnlyList<InvoiceLine> lines, DateOnly issueDate, TaxPolicy taxPolicy)
     {
-        if (lines.Count == 0) throw new DomainException("An invoice needs at least one line.");
+        if (lines.Count == 0) throw new DomainException(InvoicingErrors.InvoiceNeedsLines, "An invoice needs at least one line.");
         var invoice = new Invoice
         {
             Number = number, Seller = seller with { }, ShipmentId = shipmentId, SalesOrderId = salesOrderId, OrderNumber = orderNumber,
@@ -453,7 +453,7 @@ internal sealed class Invoice : Entity<InvoiceId>
     public void Void(string reason, UserId by, DateTime nowUtc)
     {
         EnsureNotVoid();
-        if (string.IsNullOrWhiteSpace(reason)) throw new DomainException("Voiding an invoice needs a reason.");
+        if (string.IsNullOrWhiteSpace(reason)) throw new DomainException(InvoicingErrors.VoidReasonRequired, "Voiding an invoice needs a reason.");
         Status = InvoiceStatus.Void;
         VoidReason = reason.Trim();
         VoidedBy = by;
@@ -462,12 +462,12 @@ internal sealed class Invoice : Entity<InvoiceId>
 
     public void EnsureCanBeReissued()
     {
-        if (Status != InvoiceStatus.Void) throw new DomainException($"Only a void invoice can be reissued; {Number} is {Status}.");
+        if (Status != InvoiceStatus.Void) throw new DomainException(InvoicingErrors.OnlyVoidInvoiceReissued, $"Only a void invoice can be reissued; {Number} is {Status}.");
     }
 
     private void EnsureNotVoid()
     {
-        if (Status == InvoiceStatus.Void) throw new DomainException($"{Number} is void.");
+        if (Status == InvoiceStatus.Void) throw new DomainException(InvoicingErrors.InvoiceIsVoid, $"{Number} is void.");
     }
 }
 ```
@@ -536,14 +536,14 @@ internal sealed partial class CompanyProfile
     public void Update(string registeredName, string? tradeName, string tin, string registeredAddress, TaxPolicy tax,
         string invoiceTitle, string? permitNumber, string? seriesRange, string? permitDateIssued, UserId by, DateTime nowUtc)
     {
-        if (string.IsNullOrWhiteSpace(registeredName)) throw new DomainException("The registered name is required.");
-        if (string.IsNullOrWhiteSpace(registeredAddress)) throw new DomainException("The registered address is required.");
+        if (string.IsNullOrWhiteSpace(registeredName)) throw new DomainException(InvoicingErrors.CompanyFieldRequired, "The registered name is required.");
+        if (string.IsNullOrWhiteSpace(registeredAddress)) throw new DomainException(InvoicingErrors.CompanyFieldRequired, "The registered address is required.");
         if (!TinFormat().IsMatch(tin.Trim()))
-            throw new DomainException("The TIN must include its branch code, like 123-456-789-00000.");
+            throw new DomainException(InvoicingErrors.InvalidTin, "The TIN must include its branch code, like 123-456-789-00000.");
         if (!invoiceTitle.Contains("INVOICE", StringComparison.OrdinalIgnoreCase))
-            throw new DomainException("The invoice title must contain the word \"Invoice\" (RR 7-2024 Sec. 6(A.3)).");
+            throw new DomainException(InvoicingErrors.InvoiceTitleMissingWord, "The invoice title must contain the word \"Invoice\" (RR 7-2024 Sec. 6(A.3)).");
         if (Text(permitDateIssued) is { } date && !PermitDateFormat().IsMatch(date))
-            throw new DomainException("The permit's date issued is written mm/dd/yyyy, as on the BIR permit.");
+            throw new DomainException(InvoicingErrors.InvalidPermitDate, "The permit's date issued is written mm/dd/yyyy, as on the BIR permit.");
 
         RegisteredName = registeredName.Trim();
         TradeName = Text(tradeName);
@@ -559,7 +559,7 @@ internal sealed partial class CompanyProfile
     public void EnsureReadyToInvoice()
     {
         if (!IsComplete)
-            throw new DomainException("Fill in the company's registered name, TIN and address (Invoicing → Company and tax) before shipping.");
+            throw new DomainException(InvoicingErrors.CompanyProfileIncomplete, "Fill in the company's registered name, TIN and address (Invoicing → Company and tax) before shipping.");
     }
 
     public SellerDetails Seller() =>
@@ -868,40 +868,34 @@ Register the issuer in `InvoicingModule` with `services.AddScoped<InvoiceIssuer>
 using Erp.Modules.Invoicing.Domain;
 using Erp.Modules.Invoicing.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
 using Microsoft.EntityFrameworkCore;
 
 namespace Erp.Modules.Invoicing.Features;
 
-internal sealed record VoidInvoiceCommand(long InvoiceId, string Reason) : ICommand;
+internal sealed record VoidInvoiceCommand(long InvoiceId, string Reason);
 
-internal sealed class VoidInvoiceValidator : AbstractValidator<VoidInvoiceCommand>
+internal sealed class VoidInvoiceHandler(InvoicingDbContext db, ICurrentUser user, TimeProvider time)
 {
-    public VoidInvoiceValidator() => RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
-}
-
-internal sealed class VoidInvoiceHandler(InvoicingDbContext db, ICurrentUser user, IClock clock) : ICommandHandler<VoidInvoiceCommand>
-{
-    public async ValueTask<Unit> Handle(VoidInvoiceCommand cmd, CancellationToken ct)
+    public async Task<bool> HandleAsync(VoidInvoiceCommand cmd, CancellationToken ct)
     {
-        var invoice = await db.Invoices.SingleOrDefaultAsync(i => i.Id == new InvoiceId(cmd.InvoiceId), ct)
-            ?? throw new NotFoundException($"Invoice {cmd.InvoiceId} not found.");
-        invoice.Void(cmd.Reason, new UserId(user.UserId), clock.UtcNow);
+        var invoice = await db.Invoices.SingleOrDefaultAsync(i => i.Id == new InvoiceId(cmd.InvoiceId), ct);
+        if (invoice is null) return false;
+        invoice.Void(cmd.Reason, new UserId(user.UserId), time.GetUtcNow().UtcDateTime);
         await db.SaveChangesAsync(ct);
-        return Unit.Value;
+        return true;
     }
 }
 
 // After voiding a wrong invoice, bill the same shipment again under a new number.
-internal sealed record ReissueInvoiceCommand(long VoidInvoiceId) : ICommand<long>;
+internal sealed record ReissueInvoiceCommand(long VoidInvoiceId);
 
-internal sealed class ReissueInvoiceHandler(InvoicingDbContext db, InvoiceIssuer issuer) : ICommandHandler<ReissueInvoiceCommand, long>
+internal sealed class ReissueInvoiceHandler(InvoicingDbContext db, InvoiceIssuer issuer)
 {
-    public async ValueTask<long> Handle(ReissueInvoiceCommand cmd, CancellationToken ct)
+    // null: there is no such invoice.
+    public async Task<long?> HandleAsync(ReissueInvoiceCommand cmd, CancellationToken ct)
     {
-        var voided = await db.Invoices.AsNoTracking().SingleOrDefaultAsync(i => i.Id == new InvoiceId(cmd.VoidInvoiceId), ct)
-            ?? throw new NotFoundException($"Invoice {cmd.VoidInvoiceId} not found.");
+        var voided = await db.Invoices.AsNoTracking().SingleOrDefaultAsync(i => i.Id == new InvoiceId(cmd.VoidInvoiceId), ct);
+        if (voided is null) return null;
         voided.EnsureCanBeReissued();
         return await issuer.IssueForShipmentAsync(voided.ShipmentId, voided.SalesOrderId, ct);
     }

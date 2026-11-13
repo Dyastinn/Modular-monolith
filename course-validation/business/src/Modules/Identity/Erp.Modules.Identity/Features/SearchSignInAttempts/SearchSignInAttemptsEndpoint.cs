@@ -1,16 +1,17 @@
-using Carter;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Identity.Features;
 
-internal sealed class SearchSignInAttemptsEndpoint : ICarterModule
+
+internal static class SearchSignInAttemptsEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app) =>
-        app.MapGet("/sign-in-attempts", async (string? email, bool? failedOnly, int? page, int? pageSize, ISender sender, CancellationToken ct) =>
-                Results.Ok(await sender.Send(new SearchSignInAttemptsQuery(email, failedOnly ?? false, page ?? 1, pageSize ?? 50), ct)))
+    public static void Map(IEndpointRouteBuilder app) =>
+        app.MapGet("/sign-in-attempts", async ([AsParameters] SearchSignInAttemptsQuery query, SearchSignInAttemptsHandler handler, CancellationToken ct) =>
+                TypedResults.Ok(await handler.HandleAsync(query, ct)))
             .RequireAuthorization(p => p.RequireRole(Roles.Admin));
 }

@@ -8,9 +8,7 @@
     <ProjectReference Include="..\..\..\Shared\Erp.Shared.BuildingBlocks\Erp.Shared.BuildingBlocks.csproj" />
   </ItemGroup>
 
-  <!-- Erp.Api: the Mediator source generator runs there. Never grant this to another module. -->
   <ItemGroup>
-    <InternalsVisibleTo Include="Erp.Api" />
     <InternalsVisibleTo Include="Erp.Integration.Tests" />
     <InternalsVisibleTo Include="Erp.Modules.Identity.UnitTests" />
   </ItemGroup>
@@ -20,7 +18,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Carter" />
     <PackageReference Include="Dapper" />
     <PackageReference Include="FluentValidation" />
     <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />

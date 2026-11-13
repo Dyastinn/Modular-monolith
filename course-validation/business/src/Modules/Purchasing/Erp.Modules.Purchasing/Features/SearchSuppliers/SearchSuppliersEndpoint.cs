@@ -1,21 +1,24 @@
-using Carter;
-using Mediator;
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Purchasing.Features;
 
-internal sealed class SearchSuppliersEndpoint : ICarterModule
+
+internal static class SearchSuppliersEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app)
+    public static void Map(IEndpointRouteBuilder app)
     {
-        app.MapGet("/suppliers", async (string? search, bool? activeOnly, int? page, int? pageSize, ISender sender, CancellationToken ct) =>
-                Results.Ok(await sender.Send(new SearchSuppliersQuery(search, activeOnly ?? false, page ?? 1, pageSize ?? 20), ct)))
+        app.MapGet("/suppliers", async ([AsParameters] SearchSuppliersQuery query, SearchSuppliersHandler handler, CancellationToken ct) =>
+                TypedResults.Ok(await handler.HandleAsync(query, ct)))
             .RequireAuthorization(p => p.RequireRole(PurchasingRoles.Readers));
 
-        app.MapGet("/suppliers/{id:long}", async (long id, ISender sender, CancellationToken ct) =>
-                await sender.Send(new GetSupplierQuery(id), ct) is { } s ? Results.Ok(s) : Results.NotFound())
+        app.MapGet("/suppliers/{id:long}",
+                async Task<Results<Ok<SupplierDto>, NotFound>> (long id, SearchSuppliersHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new GetSupplierQuery(id), ct) is { } s ? TypedResults.Ok(s) : TypedResults.NotFound())
             .RequireAuthorization(p => p.RequireRole(PurchasingRoles.Readers));
     }
 }

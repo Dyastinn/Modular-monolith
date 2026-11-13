@@ -36,7 +36,7 @@ internal sealed class PurchaseOrderLine
     public void EnsureCanReceive(decimal quantity)
     {
         if (quantity > Outstanding)
-            throw new DomainException($"Only {Outstanding:0.###} {Unit} of {Sku} is still to come; {quantity:0.###} was entered.");
+            throw new DomainException(PurchasingErrors.ReceiptExceedsOutstanding, $"Only {Outstanding:0.###} {Unit} of {Sku} is still to come; {quantity:0.###} was entered.");
     }
 
     public void Receive(Quantity quantity)
@@ -88,15 +88,15 @@ internal sealed class PurchaseOrder : Entity<PurchaseOrderId>
     public void SetLines(IReadOnlyList<OrderLineSpec> lines)
     {
         EnsureStatus(PurchaseOrderStatus.Draft);
-        if (lines.Count == 0) throw new DomainException("A purchase order needs at least one line.");
+        if (lines.Count == 0) throw new DomainException(PurchasingErrors.OrderNeedsLines, "A purchase order needs at least one line.");
         if (lines.GroupBy(l => l.ItemId).Any(g => g.Count() > 1))
-            throw new DomainException("Each item may appear on a purchase order only once.");
+            throw new DomainException(PurchasingErrors.DuplicateItem, "Each item may appear on a purchase order only once.");
 
         foreach (var l in lines)
         {
-            if (!l.IsActive) throw new DomainException($"Item {l.Sku} is inactive.");
+            if (!l.IsActive) throw new DomainException(PurchasingErrors.InactiveItem, $"Item {l.Sku} is inactive.");
             if (!l.AllowsFractions && !l.Quantity.IsWhole)
-                throw new DomainException($"Item {l.Sku} is counted in whole {l.Unit}; {l.Quantity} is not allowed.");
+                throw new DomainException(PurchasingErrors.WholeUnitsOnly, $"Item {l.Sku} is counted in whole {l.Unit}; {l.Quantity} is not allowed.");
         }
         // Checked first, replaced after: a refused line leaves the order exactly as it was.
         _lines.Clear();
@@ -107,8 +107,8 @@ internal sealed class PurchaseOrder : Entity<PurchaseOrderId>
     public void Approve(UserId approver, DateTime nowUtc)
     {
         EnsureStatus(PurchaseOrderStatus.Draft);
-        if (_lines.Count == 0) throw new DomainException("A purchase order needs at least one line.");
-        if (approver == CreatedBy) throw new DomainException("A purchase order can't be approved by the person who created it.");
+        if (_lines.Count == 0) throw new DomainException(PurchasingErrors.OrderNeedsLines, "A purchase order needs at least one line.");
+        if (approver == CreatedBy) throw new DomainException(PurchasingErrors.CreatorCannotApprove, "A purchase order can't be approved by the person who created it.");
         Status = PurchaseOrderStatus.Approved;
         ApprovedBy = approver;
         ApprovedUtc = nowUtc;
@@ -125,11 +125,11 @@ internal sealed class PurchaseOrder : Entity<PurchaseOrderId>
     public IReadOnlyList<(ItemId ItemId, Quantity Quantity)> Receive(IReadOnlyList<(long LineId, Quantity Quantity)> received)
     {
         EnsureStatus(PurchaseOrderStatus.Approved, PurchaseOrderStatus.Sent, PurchaseOrderStatus.PartiallyReceived);
-        if (received.Count == 0) throw new DomainException("Enter at least one received quantity.");
+        if (received.Count == 0) throw new DomainException(PurchasingErrors.NothingReceived, "Enter at least one received quantity.");
 
         var receipt = received
             .Select(r => (Line: _lines.SingleOrDefault(l => l.Id == r.LineId)
-                ?? throw new DomainException($"Line {r.LineId} is not on {Number}."), r.Quantity))
+                ?? throw new DomainException(PurchasingErrors.LineNotOnOrder, $"Line {r.LineId} is not on {Number}."), r.Quantity))
             .ToList();
         // Every line is checked before any changes, so a refused line leaves the whole order as it was.
         foreach (var sameLine in receipt.GroupBy(r => r.Line))
@@ -161,6 +161,6 @@ internal sealed class PurchaseOrder : Entity<PurchaseOrderId>
     private void EnsureStatus(params PurchaseOrderStatus[] allowed)
     {
         if (!allowed.Contains(Status))
-            throw new DomainException($"{Number} is {Status}; that can't be done now.");
+            throw new DomainException(PurchasingErrors.InvalidStatusChange, $"{Number} is {Status}; that can't be done now.");
     }
 }

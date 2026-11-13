@@ -2,8 +2,6 @@ using Erp.Modules.Inventory.Contracts;
 using Erp.Modules.Purchasing.Domain;
 using Erp.Modules.Purchasing.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
 using Microsoft.EntityFrameworkCore;
 
 namespace Erp.Modules.Purchasing.Features;
@@ -12,42 +10,26 @@ internal sealed record PurchaseLineInput(long ItemId, decimal Quantity, decimal 
 
 // One command for a new draft (no id) and for editing a draft (id).
 internal sealed record SavePurchaseOrderCommand(
-    long? PurchaseOrderId, long SupplierId, DateOnly? ExpectedDate, string? Notes, IReadOnlyList<PurchaseLineInput> Lines)
-    : ICommand<long>;
+    long? PurchaseOrderId, long SupplierId, DateOnly? ExpectedDate, string? Notes, IReadOnlyList<PurchaseLineInput> Lines);
 
-internal sealed class SavePurchaseOrderValidator : AbstractValidator<SavePurchaseOrderCommand>
+internal sealed class SavePurchaseOrderHandler(PurchasingDbContext db, IItemCatalog catalog, ICurrentUser user, TimeProvider time)
 {
-    public SavePurchaseOrderValidator()
-    {
-        RuleFor(x => x.SupplierId).GreaterThan(0);
-        RuleFor(x => x.Notes).MaximumLength(1000);
-        RuleFor(x => x.Lines).NotEmpty().WithMessage("A purchase order needs at least one line.");
-        RuleForEach(x => x.Lines).ChildRules(l =>
-        {
-            l.RuleFor(x => x.ItemId).GreaterThan(0);
-            l.RuleFor(x => x.Quantity).ValidQuantity();
-            l.RuleFor(x => x.UnitCost).GreaterThanOrEqualTo(0);
-        });
-    }
-}
-
-internal sealed class SavePurchaseOrderHandler(PurchasingDbContext db, IItemCatalog catalog, ICurrentUser user, IClock clock)
-    : ICommandHandler<SavePurchaseOrderCommand, long>
-{
-    public async ValueTask<long> Handle(SavePurchaseOrderCommand cmd, CancellationToken ct)
+    // null: the purchase order to update doesn't exist.
+    public async Task<long?> HandleAsync(SavePurchaseOrderCommand cmd, CancellationToken ct)
     {
         var supplier = await db.Suppliers.FindAsync([new SupplierId(cmd.SupplierId)], ct)
-            ?? throw new NotFoundException($"Supplier {cmd.SupplierId} not found.");
+            ?? throw new DomainException(PurchasingErrors.SupplierNotFound, $"Supplier {cmd.SupplierId} doesn't exist.");
 
         PurchaseOrder po;
         if (cmd.PurchaseOrderId is { } id)
         {
-            po = await db.PurchaseOrders.SingleOrDefaultAsync(p => p.Id == new PurchaseOrderId(id), ct)
-                ?? throw new NotFoundException($"Purchase order {id} not found.");
+            var existing = await db.PurchaseOrders.SingleOrDefaultAsync(p => p.Id == new PurchaseOrderId(id), ct);
+            if (existing is null) return null;
+            po = existing;
         }
         else
         {
-            var now = clock.UtcNow;
+            var now = time.GetUtcNow().UtcDateTime;
             po = PurchaseOrder.Create(await db.NextOrderNumberAsync(now, ct), supplier, new UserId(user.UserId), now);
             db.PurchaseOrders.Add(po);
         }
@@ -56,7 +38,7 @@ internal sealed class SavePurchaseOrderHandler(PurchasingDbContext db, IItemCata
         var lines = cmd.Lines.Select(l => items.TryGetValue(l.ItemId, out var i)
                 ? new OrderLineSpec(new ItemId(i.Id), i.Sku, i.Name, i.Unit, i.AllowsFractions, i.IsActive,
                     new Quantity(l.Quantity), new Money(l.UnitCost))
-                : throw new NotFoundException($"Item {l.ItemId} not found."))
+                : throw new DomainException(PurchasingErrors.ItemNotFound, $"Item {l.ItemId} doesn't exist."))
             .ToList();
 
         po.Describe(cmd.ExpectedDate, cmd.Notes);

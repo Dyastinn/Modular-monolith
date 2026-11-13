@@ -1,16 +1,18 @@
-using Carter;
-using Mediator;
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Identity.Features;
 
+
 // Identity's own /auth/manage/info has no role; a client needs it to decide what to show.
-internal sealed class GetCurrentUserEndpoint : ICarterModule
+internal static class GetCurrentUserEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app) =>
-        app.MapGet("/auth/me", async (ISender sender, CancellationToken ct) =>
-            Results.Ok(await sender.Send(new GetCurrentUserQuery(), ct)))
-        .RequireAuthorization();
+    public static void Map(IEndpointRouteBuilder app) =>
+        app.MapGet("/auth/me", async (GetCurrentUserHandler handler, CancellationToken ct) =>
+                TypedResults.Ok(await handler.HandleAsync(ct)))
+            .RequireAuthorization();
 }

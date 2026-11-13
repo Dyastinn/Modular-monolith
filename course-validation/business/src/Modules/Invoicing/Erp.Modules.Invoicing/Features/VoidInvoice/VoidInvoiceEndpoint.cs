@@ -1,27 +1,28 @@
-using Carter;
-using Mediator;
+using Erp.Modules.Invoicing.Domain;
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Invoicing.Features;
 
-internal sealed class VoidInvoiceEndpoint : ICarterModule
+
+internal static class VoidInvoiceEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app)
+    public static void Map(IEndpointRouteBuilder app)
     {
-        app.MapPost("/invoices/{id:long}/void", async (long id, VoidRequest body, ISender sender, CancellationToken ct) =>
-            {
-                await sender.Send(new VoidInvoiceCommand(id, body.Reason), ct);
-                return Results.NoContent();
-            })
+        app.MapPost("/invoices/{id:long}/void",
+                async Task<Results<NoContent, NotFound>> (long id, VoidRequest body, VoidInvoiceHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new VoidInvoiceCommand(id, body.Reason), ct) ? TypedResults.NoContent() : TypedResults.NotFound())
             .RequireAuthorization(p => p.RequireRole(InvoicingRoles.Accountants));
 
-        app.MapPost("/invoices/{id:long}/reissue", async (long id, ISender sender, CancellationToken ct) =>
-            {
-                var newId = await sender.Send(new ReissueInvoiceCommand(id), ct);
-                return Results.Created($"/api/invoices/{newId}", new { id = newId });
-            })
+        app.MapPost("/invoices/{id:long}/reissue",
+                async Task<Results<Created<CreatedId>, NotFound>> (long id, ReissueInvoiceHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new ReissueInvoiceCommand(id), ct) is { } newId
+                        ? TypedResults.Created($"/api/invoices/{newId}", new CreatedId(newId))
+                        : TypedResults.NotFound())
             .RequireAuthorization(p => p.RequireRole(InvoicingRoles.Accountants));
     }
 }

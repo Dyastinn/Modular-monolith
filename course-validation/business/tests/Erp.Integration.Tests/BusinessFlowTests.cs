@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using AwesomeAssertions;
@@ -167,7 +168,7 @@ public class BusinessFlowTests(CustomWebAppFactory factory)
     {
         await using var conn = factory.OpenDatabase();
         var numbers = (await conn.QueryAsync<string>("SELECT number FROM invoicing.invoice ORDER BY id")).ToList();
-        var counters = numbers.Select(n => int.Parse(n[^6..])).ToList();
+        var counters = numbers.Select(n => int.Parse(n[^6..], CultureInfo.InvariantCulture)).ToList();
 
         counters.Should().Equal(Enumerable.Range(1, counters.Count));
     }

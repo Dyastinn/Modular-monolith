@@ -2,11 +2,10 @@ using Dapper;
 using Erp.Modules.Invoicing.Domain;
 using Erp.Modules.Invoicing.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
 
 namespace Erp.Modules.Invoicing.Features;
 
-internal sealed record GetInvoiceQuery(long InvoiceId) : IQuery<InvoiceDetailDto?>;
+internal sealed record GetInvoiceQuery(long InvoiceId);
 
 internal sealed record InvoiceDetailDto(
     long Id, string Number, InvoiceSellerDto Seller, long ShipmentId, long SalesOrderId, string OrderNumber, long CustomerId, string CustomerName,
@@ -47,9 +46,9 @@ internal sealed record InvoiceLineRow(string Description, string Unit, decimal Q
 internal sealed record PaymentRow(long Id, decimal Amount, decimal TaxWithheld, DateOnly PaidOn, int Method, string? Reference, long RecordedBy,
     DateTime RecordedUtc, DateTime? VoidedUtc, string? VoidReason);
 
-internal sealed class GetInvoiceHandler(IDbConnectionFactory connections) : IQueryHandler<GetInvoiceQuery, InvoiceDetailDto?>
+internal sealed class GetInvoiceHandler(IDbConnectionFactory connections)
 {
-    public async ValueTask<InvoiceDetailDto?> Handle(GetInvoiceQuery q, CancellationToken ct)
+    public async Task<InvoiceDetailDto?> HandleAsync(GetInvoiceQuery q, CancellationToken ct)
     {
         await using var conn = connections.Create();
         using var multi = await conn.QueryMultipleAsync(new CommandDefinition(
@@ -87,15 +86,16 @@ internal sealed class GetInvoiceHandler(IDbConnectionFactory connections) : IQue
 }
 
 // Printing is recorded, because every copy after the first must say "REPRINT" (RR 7-2024 Sec. 6(B.21)).
-internal sealed record PrintInvoiceCommand(long InvoiceId) : ICommand<(string FileName, byte[] Content)?>;
+internal sealed record PrintInvoiceCommand(long InvoiceId);
 
-internal sealed class PrintInvoiceHandler(InvoicingDbContext db, ISender sender)
-    : ICommandHandler<PrintInvoiceCommand, (string, byte[])?>
+internal sealed record InvoicePdfFile(string FileName, byte[] Content);
+
+internal sealed class PrintInvoiceHandler(InvoicingDbContext db, GetInvoiceHandler invoices)
 {
-    public async ValueTask<(string, byte[])?> Handle(PrintInvoiceCommand cmd, CancellationToken ct)
+    public async Task<InvoicePdfFile?> HandleAsync(PrintInvoiceCommand cmd, CancellationToken ct)
     {
         if (await db.RecordPrintAsync(cmd.InvoiceId, ct) is not { } printCount) return null;
-        if (await sender.Send(new GetInvoiceQuery(cmd.InvoiceId), ct) is not { } invoice) return null;
-        return ($"{invoice.Number}.pdf", InvoicePdf.Render(invoice, reprint: printCount > 1));
+        if (await invoices.HandleAsync(new GetInvoiceQuery(cmd.InvoiceId), ct) is not { } invoice) return null;
+        return new InvoicePdfFile($"{invoice.Number}.pdf", InvoicePdf.Render(invoice, reprint: printCount > 1));
     }
 }

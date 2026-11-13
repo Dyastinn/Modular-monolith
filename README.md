@@ -10,13 +10,14 @@ the product: it installs with Compose on Podman (or Docker) and runs.
 |---|---|
 | Architecture | Modular monolith; each module is `internal` behind one public Contracts project; vertical slices inside |
 | Modules | Identity, Sales, Inventory, Purchasing, Invoicing |
-| Stack | .NET 10, Carter, `martinothamar/Mediator`, FluentValidation, EF Core (writes), Dapper + SQL functions (reads), PostgreSQL |
-| Screens | Blazor WebAssembly + MudBlazor, served by the API itself; the API lives under `/api` |
+| Stack | .NET 10 minimal APIs (`TypedResults`, no mediator: endpoints call their handler), FluentValidation, EF Core (writes), Dapper + SQL functions (reads), PostgreSQL |
+| Screens | Blazor Web App + MudBlazor running as WebAssembly, served by the API itself; the API lives under `/api` |
+| Errors | Every error carries a stable code (`SALES-0003`) and a trace id; the app's **Error codes** page explains each code and its fix |
 | Sign-in | ASP.NET Core Identity: cookies for the browser, bearer and refresh tokens for programs, lockout, six roles, admin-managed staff accounts |
 | Production | Transactional outbox, OpenTelemetry, health checks, rate limits, HTTPS/HSTS, a Content-Security-Policy, certificate-encrypted sign-in keys, least-privilege database roles |
 | Invoicing and tax | The company's registered details, tax regime, VAT rate and BIR permit kept on a screen; VATable, zero-rated and VAT-exempt items; senior citizen and PWD discounts; tax withheld and BIR Form 2307 tracking; the BIR's required fields, REPRINT marking and permit footer on every PDF |
 | Deployment | Compose on rootless Podman (Docker runs the same files), Caddy for HTTPS, nightly backups, on any Linux server |
-| Tests | Taught from lesson 02, in every lesson, edge cases included: xUnit + AwesomeAssertions unit tests, FsCheck property tests, integration tests on a throwaway PostgreSQL (Testcontainers) run as the least-privilege role, architecture tests, race tests, Playwright browser tests; coverlet coverage and Stryker.NET mutation testing; GitHub Actions CI |
+| Tests | Taught from lesson 02, in every lesson, edge cases included: xUnit v3 + AwesomeAssertions unit tests, FsCheck property tests, integration tests on a throwaway PostgreSQL (Testcontainers) run as the least-privilege role, architecture tests, race tests, Playwright browser tests; coverlet coverage and Stryker.NET mutation testing; GitHub Actions CI |
 | Licenses | Permissive open source only; see [THIRD-PARTY-NOTICES.md](course-validation/business/THIRD-PARTY-NOTICES.md) |
 
 ## Where to start
@@ -112,8 +113,8 @@ data on start. Open **http://localhost:5264** and sign in. The seeded users all 
 | `buyer@erp.local` | Purchaser |
 | `accountant@erp.local` | Accountant |
 
-Also there: **`/swagger`** (the API, clickable; the sign-in cookie works there too), and **`/health/live`**
-and **`/health/ready`**.
+Also there: **`/scalar`** (the API, clickable; the sign-in cookie works there too), **`/openapi/v1.json`** (its
+description), **`/errors`** (every error code), and **`/health/live`** and **`/health/ready`**.
 
 To see logs, traces and metrics while you work, run the Aspire AppHost instead. It needs no containers:
 
@@ -125,10 +126,10 @@ And the tests. The integration tests start their own PostgreSQL with Testcontain
 Docker) running; on Linux, enable the Podman socket and point `DOCKER_HOST` at it (lesson 12):
 
 ```bash
-dotnet test     # 159 unit + 9 architecture + 103 integration; the 6 browser tests skip without ERP_UI_URL
-ERP_UI_URL=http://localhost:5264 dotnet test tests/Erp.Web.UiTests     # with the app running
-dotnet test --collect "XPlat Code Coverage"                            # coverage (lesson 11)
-cd tests/Erp.Modules.Sales.UnitTests && dotnet stryker                 # mutation testing, ~2 minutes
+dotnet test     # 161 unit + 14 architecture + 113 integration; the 8 browser tests skip without ERP_UI_URL
+ERP_UI_URL=http://localhost:5264 dotnet test --project tests/Erp.Web.UiTests   # with the app running
+dotnet test --coverlet --coverlet-output-format cobertura                    # coverage (lesson 11)
+cd tests/Erp.Modules.Sales.UnitTests && dotnet stryker                       # mutation testing, under a minute
 ```
 
 CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the build and every test on each push.

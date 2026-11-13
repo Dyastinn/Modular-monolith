@@ -9,15 +9,15 @@ namespace Erp.Modules.Sales.Infrastructure;
 // Sales' service window for the modules that ship and bill its orders.
 internal sealed class SalesOrdersService(SalesDbContext db) : ISalesOrders
 {
-    public Task<ShippableOrder> GetForShipmentAsync(long orderId, DbTransaction tx, CancellationToken ct) =>
+    public Task<ShippableOrder?> GetForShipmentAsync(long orderId, DbTransaction tx, CancellationToken ct) =>
         InTransaction(tx, async () =>
         {
             var id = new SalesOrderId(orderId);
             await db.LockOrderAsync(id, ct);   // two clerks shipping the same order: the second waits, then sees Shipped
-            var order = await db.SalesOrders.SingleOrDefaultAsync(o => o.Id == id, ct)
-                ?? throw new NotFoundException($"Sales order {orderId} not found.");
+            var order = await db.SalesOrders.SingleOrDefaultAsync(o => o.Id == id, ct);
+            if (order is null) return null;
             order.EnsureCanShip();
-            return new ShippableOrder(order.Id.Value, order.OrderNumber,
+            return (ShippableOrder?)new ShippableOrder(order.Id.Value, order.OrderNumber,
                 order.Lines.Select(l => new ShippableLine(l.ItemId.Value, l.Quantity.Value)).ToList());
         }, ct);
 
@@ -34,8 +34,9 @@ internal sealed class SalesOrdersService(SalesDbContext db) : ISalesOrders
     public async Task<OrderForInvoice> GetForInvoiceAsync(long orderId, CancellationToken ct)
     {
         var id = new SalesOrderId(orderId);
+        // The order shipped, so it exists: a missing one is a bug, not a request to refuse. The outbox retries, then parks it.
         var order = await db.SalesOrders.AsNoTracking().SingleOrDefaultAsync(o => o.Id == id, ct)
-            ?? throw new NotFoundException($"Sales order {orderId} not found.");
+            ?? throw new InvalidOperationException($"Sales order {orderId} was shipped but doesn't exist.");
         var customer = await db.Customers.AsNoTracking().SingleAsync(c => c.Id == order.CustomerId, ct);
 
         return new OrderForInvoice(order.Id.Value, order.OrderNumber, customer.Id.Value, customer.Name, customer.Tin,

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Data;
 using Dapper;
 
@@ -16,6 +17,6 @@ public sealed class DateOnlyTypeHandler : SqlMapper.TypeHandler<DateOnly>
     {
         DateOnly d => d,
         DateTime dt => DateOnly.FromDateTime(dt),
-        _ => DateOnly.Parse(value.ToString()!)
+        _ => DateOnly.Parse(value.ToString()!, CultureInfo.InvariantCulture)
     };
 }

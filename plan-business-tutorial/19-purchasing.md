@@ -118,8 +118,8 @@ internal sealed class Supplier : Entity<SupplierId>
 
     public void Update(string name, string? tin, string? address, string? email, string? phone, int paymentTermsDays)
     {
-        if (string.IsNullOrWhiteSpace(name)) throw new DomainException("A supplier needs a name.");
-        if (paymentTermsDays is < 0 or > 365) throw new DomainException("Payment terms must be between 0 and 365 days.");
+        if (string.IsNullOrWhiteSpace(name)) throw new DomainException(PurchasingErrors.SupplierNameRequired, "A supplier needs a name.");
+        if (paymentTermsDays is < 0 or > 365) throw new DomainException(PurchasingErrors.PaymentTermsOutOfRange, "Payment terms must be between 0 and 365 days.");
         Name = name.Trim();
         Tin = Clean(tin); Address = Clean(address); Email = Clean(email); Phone = Clean(phone);
         PaymentTermsDays = paymentTermsDays;
@@ -129,7 +129,7 @@ internal sealed class Supplier : Entity<SupplierId>
 
     public void EnsureCanOrderFrom()
     {
-        if (!IsActive) throw new DomainException($"Supplier '{Name}' is inactive.");
+        if (!IsActive) throw new DomainException(PurchasingErrors.SupplierInactive, $"Supplier '{Name}' is inactive.");
     }
 
     private static string? Clean(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -179,7 +179,7 @@ internal sealed class PurchaseOrderLine
     public void EnsureCanReceive(decimal quantity)
     {
         if (quantity > Outstanding)
-            throw new DomainException($"Only {Outstanding:0.###} {Unit} of {Sku} is still to come; {quantity:0.###} was entered.");
+            throw new DomainException(PurchasingErrors.ReceiptExceedsOutstanding, $"Only {Outstanding:0.###} {Unit} of {Sku} is still to come; {quantity:0.###} was entered.");
     }
 
     public void Receive(Quantity quantity)
@@ -231,15 +231,15 @@ internal sealed class PurchaseOrder : Entity<PurchaseOrderId>
     public void SetLines(IReadOnlyList<OrderLineSpec> lines)
     {
         EnsureStatus(PurchaseOrderStatus.Draft);
-        if (lines.Count == 0) throw new DomainException("A purchase order needs at least one line.");
+        if (lines.Count == 0) throw new DomainException(PurchasingErrors.OrderNeedsLines, "A purchase order needs at least one line.");
         if (lines.GroupBy(l => l.ItemId).Any(g => g.Count() > 1))
-            throw new DomainException("Each item may appear on a purchase order only once.");
+            throw new DomainException(PurchasingErrors.DuplicateItem, "Each item may appear on a purchase order only once.");
 
         foreach (var l in lines)
         {
-            if (!l.IsActive) throw new DomainException($"Item {l.Sku} is inactive.");
+            if (!l.IsActive) throw new DomainException(PurchasingErrors.InactiveItem, $"Item {l.Sku} is inactive.");
             if (!l.AllowsFractions && !l.Quantity.IsWhole)
-                throw new DomainException($"Item {l.Sku} is counted in whole {l.Unit}; {l.Quantity} is not allowed.");
+                throw new DomainException(PurchasingErrors.WholeUnitsOnly, $"Item {l.Sku} is counted in whole {l.Unit}; {l.Quantity} is not allowed.");
         }
         // Checked first, replaced after: a refused line leaves the order exactly as it was.
         _lines.Clear();
@@ -250,8 +250,8 @@ internal sealed class PurchaseOrder : Entity<PurchaseOrderId>
     public void Approve(UserId approver, DateTime nowUtc)
     {
         EnsureStatus(PurchaseOrderStatus.Draft);
-        if (_lines.Count == 0) throw new DomainException("A purchase order needs at least one line.");
-        if (approver == CreatedBy) throw new DomainException("A purchase order can't be approved by the person who created it.");
+        if (_lines.Count == 0) throw new DomainException(PurchasingErrors.OrderNeedsLines, "A purchase order needs at least one line.");
+        if (approver == CreatedBy) throw new DomainException(PurchasingErrors.CreatorCannotApprove, "A purchase order can't be approved by the person who created it.");
         Status = PurchaseOrderStatus.Approved;
         ApprovedBy = approver;
         ApprovedUtc = nowUtc;
@@ -268,11 +268,11 @@ internal sealed class PurchaseOrder : Entity<PurchaseOrderId>
     public IReadOnlyList<(ItemId ItemId, Quantity Quantity)> Receive(IReadOnlyList<(long LineId, Quantity Quantity)> received)
     {
         EnsureStatus(PurchaseOrderStatus.Approved, PurchaseOrderStatus.Sent, PurchaseOrderStatus.PartiallyReceived);
-        if (received.Count == 0) throw new DomainException("Enter at least one received quantity.");
+        if (received.Count == 0) throw new DomainException(PurchasingErrors.NothingReceived, "Enter at least one received quantity.");
 
         var receipt = received
             .Select(r => (Line: _lines.SingleOrDefault(l => l.Id == r.LineId)
-                ?? throw new DomainException($"Line {r.LineId} is not on {Number}."), r.Quantity))
+                ?? throw new DomainException(PurchasingErrors.LineNotOnOrder, $"Line {r.LineId} is not on {Number}."), r.Quantity))
             .ToList();
         // Every line is checked before any changes, so a refused line leaves the whole order as it was.
         foreach (var sameLine in receipt.GroupBy(r => r.Line))
@@ -304,7 +304,7 @@ internal sealed class PurchaseOrder : Entity<PurchaseOrderId>
     private void EnsureStatus(params PurchaseOrderStatus[] allowed)
     {
         if (!allowed.Contains(Status))
-            throw new DomainException($"{Number} is {Status}; that can't be done now.");
+            throw new DomainException(PurchasingErrors.InvalidStatusChange, $"{Number} is {Status}; that can't be done now.");
     }
 }
 ```
@@ -484,8 +484,6 @@ using Erp.Modules.Inventory.Contracts;
 using Erp.Modules.Purchasing.Domain;
 using Erp.Modules.Purchasing.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
 using Microsoft.EntityFrameworkCore;
 
 namespace Erp.Modules.Purchasing.Features;
@@ -494,42 +492,26 @@ internal sealed record PurchaseLineInput(long ItemId, decimal Quantity, decimal 
 
 // One command for a new draft (no id) and for editing a draft (id).
 internal sealed record SavePurchaseOrderCommand(
-    long? PurchaseOrderId, long SupplierId, DateOnly? ExpectedDate, string? Notes, IReadOnlyList<PurchaseLineInput> Lines)
-    : ICommand<long>;
+    long? PurchaseOrderId, long SupplierId, DateOnly? ExpectedDate, string? Notes, IReadOnlyList<PurchaseLineInput> Lines);
 
-internal sealed class SavePurchaseOrderValidator : AbstractValidator<SavePurchaseOrderCommand>
+internal sealed class SavePurchaseOrderHandler(PurchasingDbContext db, IItemCatalog catalog, ICurrentUser user, TimeProvider time)
 {
-    public SavePurchaseOrderValidator()
-    {
-        RuleFor(x => x.SupplierId).GreaterThan(0);
-        RuleFor(x => x.Notes).MaximumLength(1000);
-        RuleFor(x => x.Lines).NotEmpty().WithMessage("A purchase order needs at least one line.");
-        RuleForEach(x => x.Lines).ChildRules(l =>
-        {
-            l.RuleFor(x => x.ItemId).GreaterThan(0);
-            l.RuleFor(x => x.Quantity).ValidQuantity();
-            l.RuleFor(x => x.UnitCost).GreaterThanOrEqualTo(0);
-        });
-    }
-}
-
-internal sealed class SavePurchaseOrderHandler(PurchasingDbContext db, IItemCatalog catalog, ICurrentUser user, IClock clock)
-    : ICommandHandler<SavePurchaseOrderCommand, long>
-{
-    public async ValueTask<long> Handle(SavePurchaseOrderCommand cmd, CancellationToken ct)
+    // null: the purchase order to update doesn't exist.
+    public async Task<long?> HandleAsync(SavePurchaseOrderCommand cmd, CancellationToken ct)
     {
         var supplier = await db.Suppliers.FindAsync([new SupplierId(cmd.SupplierId)], ct)
-            ?? throw new NotFoundException($"Supplier {cmd.SupplierId} not found.");
+            ?? throw new DomainException(PurchasingErrors.SupplierNotFound, $"Supplier {cmd.SupplierId} doesn't exist.");
 
         PurchaseOrder po;
         if (cmd.PurchaseOrderId is { } id)
         {
-            po = await db.PurchaseOrders.SingleOrDefaultAsync(p => p.Id == new PurchaseOrderId(id), ct)
-                ?? throw new NotFoundException($"Purchase order {id} not found.");
+            var existing = await db.PurchaseOrders.SingleOrDefaultAsync(p => p.Id == new PurchaseOrderId(id), ct);
+            if (existing is null) return null;
+            po = existing;
         }
         else
         {
-            var now = clock.UtcNow;
+            var now = time.GetUtcNow().UtcDateTime;
             po = PurchaseOrder.Create(await db.NextOrderNumberAsync(now, ct), supplier, new UserId(user.UserId), now);
             db.PurchaseOrders.Add(po);
         }
@@ -538,7 +520,7 @@ internal sealed class SavePurchaseOrderHandler(PurchasingDbContext db, IItemCata
         var lines = cmd.Lines.Select(l => items.TryGetValue(l.ItemId, out var i)
                 ? new OrderLineSpec(new ItemId(i.Id), i.Sku, i.Name, i.Unit, i.AllowsFractions, i.IsActive,
                     new Quantity(l.Quantity), new Money(l.UnitCost))
-                : throw new NotFoundException($"Item {l.ItemId} not found."))
+                : throw new DomainException(PurchasingErrors.ItemNotFound, $"Item {l.ItemId} doesn't exist."))
             .ToList();
 
         po.Describe(cmd.ExpectedDate, cmd.Notes);
@@ -561,7 +543,6 @@ command and one handler:
 using Erp.Modules.Purchasing.Domain;
 using Erp.Modules.Purchasing.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
 using Microsoft.EntityFrameworkCore;
 
 namespace Erp.Modules.Purchasing.Features;
@@ -569,43 +550,44 @@ namespace Erp.Modules.Purchasing.Features;
 internal enum PurchaseOrderAction { Approve, Send, Close, Cancel }
 
 // The status changes that touch nothing but the order itself.
-internal sealed record ChangePurchaseOrderStatusCommand(long PurchaseOrderId, PurchaseOrderAction Action) : ICommand;
+internal sealed record ChangePurchaseOrderStatusCommand(long PurchaseOrderId, PurchaseOrderAction Action);
 
-internal sealed class ChangePurchaseOrderStatusHandler(PurchasingDbContext db, ICurrentUser user, IClock clock)
-    : ICommandHandler<ChangePurchaseOrderStatusCommand>
+internal sealed class ChangePurchaseOrderStatusHandler(PurchasingDbContext db, ICurrentUser user, TimeProvider time)
 {
-    public async ValueTask<Unit> Handle(ChangePurchaseOrderStatusCommand cmd, CancellationToken ct)
+    public async Task<bool> HandleAsync(ChangePurchaseOrderStatusCommand cmd, CancellationToken ct)
     {
-        var po = await db.PurchaseOrders.SingleOrDefaultAsync(p => p.Id == new PurchaseOrderId(cmd.PurchaseOrderId), ct)
-            ?? throw new NotFoundException($"Purchase order {cmd.PurchaseOrderId} not found.");
+        var po = await db.PurchaseOrders.SingleOrDefaultAsync(p => p.Id == new PurchaseOrderId(cmd.PurchaseOrderId), ct);
+        if (po is null) return false;
 
         switch (cmd.Action)
         {
-            case PurchaseOrderAction.Approve: po.Approve(new UserId(user.UserId), clock.UtcNow); break;
-            case PurchaseOrderAction.Send: po.MarkSent(clock.UtcNow); break;
+            case PurchaseOrderAction.Approve: po.Approve(new UserId(user.UserId), time.GetUtcNow().UtcDateTime); break;
+            case PurchaseOrderAction.Send: po.MarkSent(time.GetUtcNow().UtcDateTime); break;
             case PurchaseOrderAction.Close: po.Close(); break;
             case PurchaseOrderAction.Cancel: po.Cancel(); break;
         }
 
         await db.SaveChangesAsync(ct);
-        return Unit.Value;
+        return true;
     }
 }
 ```
 
 ```csharp
 // src/Modules/Purchasing/Erp.Modules.Purchasing/Features/ChangePurchaseOrderStatus/ChangePurchaseOrderStatusEndpoint.cs
-using Carter;
-using Mediator;
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Purchasing.Features;
 
-internal sealed class ChangePurchaseOrderStatusEndpoint : ICarterModule
+
+internal static class ChangePurchaseOrderStatusEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app)
+    public static void Map(IEndpointRouteBuilder app)
     {
         Map(app, "approve", PurchaseOrderAction.Approve, PurchasingRoles.Approvers);
         Map(app, "send", PurchaseOrderAction.Send, PurchasingRoles.Buyers);
@@ -614,11 +596,9 @@ internal sealed class ChangePurchaseOrderStatusEndpoint : ICarterModule
     }
 
     private static void Map(IEndpointRouteBuilder app, string verb, PurchaseOrderAction action, string[] roles) =>
-        app.MapPost($"/purchase-orders/{{id:long}}/{verb}", async (long id, ISender sender, CancellationToken ct) =>
-            {
-                await sender.Send(new ChangePurchaseOrderStatusCommand(id, action), ct);
-                return Results.NoContent();
-            })
+        app.MapPost($"/purchase-orders/{{id:long}}/{verb}",
+                async Task<Results<NoContent, NotFound>> (long id, ChangePurchaseOrderStatusHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new ChangePurchaseOrderStatusCommand(id, action), ct) ? TypedResults.NoContent() : TypedResults.NotFound())
             .RequireAuthorization(p => p.RequireRole(roles));
 }
 ```
@@ -636,8 +616,6 @@ using Erp.Modules.Inventory.Contracts;
 using Erp.Modules.Purchasing.Domain;
 using Erp.Modules.Purchasing.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
@@ -645,29 +623,15 @@ namespace Erp.Modules.Purchasing.Features;
 
 internal sealed record ReceivedLineInput(long LineId, decimal Quantity);
 
-internal sealed record ReceivePurchaseOrderCommand(long PurchaseOrderId, IReadOnlyList<ReceivedLineInput> Lines) : ICommand;
-
-internal sealed class ReceivePurchaseOrderValidator : AbstractValidator<ReceivePurchaseOrderCommand>
-{
-    public ReceivePurchaseOrderValidator()
-    {
-        RuleFor(x => x.Lines).NotEmpty().WithMessage("Enter at least one received quantity.");
-        RuleForEach(x => x.Lines).ChildRules(l =>
-        {
-            l.RuleFor(x => x.LineId).GreaterThan(0);
-            l.RuleFor(x => x.Quantity).ValidQuantity();
-        });
-    }
-}
+internal sealed record ReceivePurchaseOrderCommand(long PurchaseOrderId, IReadOnlyList<ReceivedLineInput> Lines);
 
 // Goods in: the order records what arrived and Inventory's stock goes up, in one transaction.
 internal sealed class ReceivePurchaseOrderHandler(PurchasingDbContext db, IStockReceiving stock, ICurrentUser user)
-    : ICommandHandler<ReceivePurchaseOrderCommand>
 {
-    public async ValueTask<Unit> Handle(ReceivePurchaseOrderCommand cmd, CancellationToken ct)
+    public async Task<bool> HandleAsync(ReceivePurchaseOrderCommand cmd, CancellationToken ct)
     {
-        var po = await db.PurchaseOrders.SingleOrDefaultAsync(p => p.Id == new PurchaseOrderId(cmd.PurchaseOrderId), ct)
-            ?? throw new NotFoundException($"Purchase order {cmd.PurchaseOrderId} not found.");
+        var po = await db.PurchaseOrders.SingleOrDefaultAsync(p => p.Id == new PurchaseOrderId(cmd.PurchaseOrderId), ct);
+        if (po is null) return false;
 
         var toStock = po.Receive(cmd.Lines.Select(l => (l.LineId, new Quantity(l.Quantity))).ToList());
 
@@ -676,7 +640,7 @@ internal sealed class ReceivePurchaseOrderHandler(PurchasingDbContext db, IStock
             await stock.ReceiveAsync(itemId.Value, quantity.Value, po.Number, user.UserId, tx.GetDbTransaction(), ct);
         await db.SaveChangesAsync(ct);   // xmin: two clerks receiving the same order at once can't both count
         await tx.CommitAsync(ct);
-        return Unit.Value;
+        return true;
     }
 }
 ```
@@ -700,6 +664,7 @@ handler**:
 
 ```csharp
 // src/Shared/Erp.Shared.Infrastructure/Data/DateOnlyTypeHandler.cs
+using System.Globalization;
 using System.Data;
 using Dapper;
 
@@ -718,7 +683,7 @@ public sealed class DateOnlyTypeHandler : SqlMapper.TypeHandler<DateOnly>
     {
         DateOnly d => d,
         DateTime dt => DateOnly.FromDateTime(dt),
-        _ => DateOnly.Parse(value.ToString()!)
+        _ => DateOnly.Parse(value.ToString()!, CultureInfo.InvariantCulture)
     };
 }
 ```

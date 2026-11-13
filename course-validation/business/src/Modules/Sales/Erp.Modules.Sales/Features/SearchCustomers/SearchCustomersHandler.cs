@@ -1,13 +1,12 @@
 using Dapper;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed record SearchCustomersQuery(string? Search, int Page, int PageSize) : IQuery<PagedResult<CustomerDto>>;
+internal sealed record SearchCustomersQuery(string? Search = null, int Page = 1, int PageSize = 20);
 
-internal sealed record GetCustomerQuery(long CustomerId) : IQuery<CustomerDto?>;
+internal sealed record GetCustomerQuery(long CustomerId);
 
 // Available credit is what the next order may use: the limit, minus what they owe, minus what's awaiting approval.
 internal sealed record CustomerDto(
@@ -24,9 +23,8 @@ internal sealed class SearchCustomersValidator : AbstractValidator<SearchCustome
 }
 
 internal sealed class SearchCustomersHandler(IDbConnectionFactory connections)
-    : IQueryHandler<SearchCustomersQuery, PagedResult<CustomerDto>>, IQueryHandler<GetCustomerQuery, CustomerDto?>
 {
-    public async ValueTask<PagedResult<CustomerDto>> Handle(SearchCustomersQuery q, CancellationToken ct)
+    public async Task<PagedResult<CustomerDto>> HandleAsync(SearchCustomersQuery q, CancellationToken ct)
     {
         var search = SearchText.ForLike(q.Search);
         await using var conn = connections.Create();
@@ -40,7 +38,7 @@ internal sealed class SearchCustomersHandler(IDbConnectionFactory connections)
         return new PagedResult<CustomerDto>(rows, q.Page, q.PageSize, (int)await multi.ReadSingleAsync<long>());
     }
 
-    public async ValueTask<CustomerDto?> Handle(GetCustomerQuery q, CancellationToken ct)
+    public async Task<CustomerDto?> HandleAsync(GetCustomerQuery q, CancellationToken ct)
     {
         await using var conn = connections.Create();
         return await conn.QuerySingleOrDefaultAsync<CustomerDto>(new CommandDefinition(

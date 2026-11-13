@@ -1,21 +1,34 @@
-@* Every page needs a signed-in user (the [Authorize] in _Imports), unless it says [AllowAnonymous]. *@
-<Router AppAssembly="typeof(App).Assembly" NotFoundPage="typeof(Pages.NotFound)">
-    <Found Context="routeData">
-        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)">
-            <NotAuthorized>
-                @if (context.User.Identity?.IsAuthenticated == true)
-                {
-                    <MudAlert Severity="Severity.Warning" Class="ma-6">You don't have access to this page.</MudAlert>
-                }
-                else
-                {
-                    <RedirectToLogin />
-                }
-            </NotAuthorized>
-            <Authorizing>
-                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
-            </Authorizing>
-        </AuthorizeRouteView>
-        <FocusOnNavigate RouteData="routeData" Selector="h1" />
-    </Found>
-</Router>
+@* The page the server sends for every address of the app. Only Routes (and the page title) run in the browser, as
+   WebAssembly; prerender is off because every screen needs the signed-in user's data from the API. *@
+@attribute [AllowAnonymous]
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="icon" type="image/png" href="@Assets["icon-192.png"]" />
+    <link rel="stylesheet" href="@Assets["_content/MudBlazor/MudBlazor.min.css"]" />
+    <link rel="stylesheet" href="@Assets["css/app.css"]" />
+    <HeadOutlet @rendermode="InBrowser" />
+</head>
+
+<body>
+    <Routes @rendermode="InBrowser" />
+
+    <div id="blazor-error-ui">
+        Something went wrong. <a href="." class="reload">Reload</a>
+    </div>
+
+    @* No inline scripts anywhere: the Content-Security-Policy forbids them. *@
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script src="@Assets["_content/MudBlazor/MudBlazor.min.js"]"></script>
+</body>
+
+</html>
+
+@code {
+    private static readonly IComponentRenderMode InBrowser = new InteractiveWebAssemblyRenderMode(prerender: false);
+}

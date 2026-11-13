@@ -1,22 +1,23 @@
-using Carter;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Identity.Features;
 
-internal sealed class SearchUsersEndpoint : ICarterModule
+
+internal static class SearchUsersEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app)
+    public static void Map(IEndpointRouteBuilder app)
     {
-        app.MapGet("/users", async (string? search, int? page, int? pageSize, ISender sender, CancellationToken ct) =>
-                Results.Ok(await sender.Send(new SearchUsersQuery(search, page ?? 1, pageSize ?? 20), ct)))
+        app.MapGet("/users", async ([AsParameters] SearchUsersQuery query, SearchUsersHandler handler, CancellationToken ct) =>
+                TypedResults.Ok(await handler.HandleAsync(query, ct)))
             .RequireAuthorization(p => p.RequireRole(Roles.Admin));
 
-        app.MapGet("/users/directory", async (ISender sender, CancellationToken ct) =>
-                Results.Ok(await sender.Send(new GetUserDirectoryQuery(), ct)))
+        app.MapGet("/users/directory", async (GetUserDirectoryHandler handler, CancellationToken ct) =>
+                TypedResults.Ok(await handler.HandleAsync(ct)))
             .RequireAuthorization();
     }
 }

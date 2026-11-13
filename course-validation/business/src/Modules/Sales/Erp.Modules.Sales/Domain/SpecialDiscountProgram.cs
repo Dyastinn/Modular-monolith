@@ -24,14 +24,14 @@ internal sealed class SpecialDiscountProgram
 
     public void Update(string name, string idLabel, decimal rate, bool vatExempt, bool isActive)
     {
-        if (rate is <= 0 or >= 1) throw new DomainException("A discount rate must be a fraction between 0 and 1, such as 0.20.");
+        if (rate is <= 0 or >= 1) throw new DomainException(CommonErrors.InvalidDiscountRate, "A discount rate must be a fraction between 0 and 1, such as 0.20.");
         (Name, IdLabel, Rate, VatExempt, IsActive) = (name.Trim(), idLabel.Trim(), rate, vatExempt, isActive);
     }
 
     // Copied onto the order, with the VAT rate it removes, so later changes here never touch an order already discounted.
     public SpecialDiscount Grant(string holderName, string idNumber, TaxPolicy tax)
     {
-        if (!IsActive) throw new DomainException($"The {Name} discount is no longer offered.");
+        if (!IsActive) throw new DomainException(SalesErrors.DiscountProgramEnded, $"The {Name} discount is no longer offered.");
         return SpecialDiscount.Grant(Name, IdLabel, Rate, VatExempt, holderName, idNumber, tax);
     }
 }

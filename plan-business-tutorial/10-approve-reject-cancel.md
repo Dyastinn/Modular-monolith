@@ -151,23 +151,22 @@ hand when another module has to join it, like Inventory did at submit.
 
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/ApproveSalesOrder/ApproveSalesOrderEndpoint.cs
-using Carter;
-using Mediator;
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed class ApproveSalesOrderEndpoint : ICarterModule
+
+internal static class ApproveSalesOrderEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app) =>
+    public static void Map(IEndpointRouteBuilder app) =>
         app.MapPost("/sales-orders/{id:long}/approve",
-            async (long id, ISender sender, CancellationToken ct) =>
-            {
-                await sender.Send(new ApproveSalesOrderCommand(id), ct);
-                return Results.NoContent();
-            })
+                async Task<Results<NoContent, NotFound>> (long id, ApproveSalesOrderHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new ApproveSalesOrderCommand(id), ct) ? TypedResults.NoContent() : TypedResults.NotFound())
             .RequireAuthorization(p => p.RequireRole(SalesRoles.Managers));
 }
 ```
@@ -187,39 +186,28 @@ using Erp.Modules.Inventory.Contracts;
 using Erp.Modules.Sales.Domain;
 using Erp.Modules.Sales.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed record RejectSalesOrderCommand(long OrderId, string Reason) : ICommand;
+internal sealed record RejectSalesOrderCommand(long OrderId, string Reason);
 
-internal sealed class RejectSalesOrderValidator : AbstractValidator<RejectSalesOrderCommand>
+internal sealed class RejectSalesOrderHandler(SalesDbContext db, IStockReservation stock, ICurrentUser currentUser, TimeProvider time)
 {
-    public RejectSalesOrderValidator()
-    {
-        RuleFor(x => x.OrderId).GreaterThan(0);
-        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
-    }
-}
-
-internal sealed class RejectSalesOrderHandler(SalesDbContext db, IStockReservation stock, ICurrentUser currentUser, IClock clock)
-    : ICommandHandler<RejectSalesOrderCommand>
-{
-    public async ValueTask<Unit> Handle(RejectSalesOrderCommand cmd, CancellationToken ct)
+    public async Task<bool> HandleAsync(RejectSalesOrderCommand cmd, CancellationToken ct)
     {
         var manager = new UserId(currentUser.UserId);
         var order = await db.GetVisibleOrderAsync(cmd.OrderId, manager, currentUser.Role, ct);
+        if (order is null) return false;
 
-        var toRelease = order.Reject(manager, cmd.Reason, clock.UtcNow);
+        var toRelease = order.Reject(manager, cmd.Reason, time.GetUtcNow().UtcDateTime);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         foreach (var line in toRelease)
             await stock.ReleaseAsync(line.ItemId.Value, line.Quantity.Value, tx.GetDbTransaction(), ct);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
-        return Unit.Value;
+        return true;
     }
 }
 ```
@@ -230,25 +218,29 @@ won't do. Releasing stock is Inventory's job again, so we're back to a transacti
 
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/RejectSalesOrder/RejectSalesOrderEndpoint.cs
-using Carter;
-using Mediator;
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
+
 internal sealed record RejectSalesOrderRequest(string Reason);
 
-internal sealed class RejectSalesOrderEndpoint : ICarterModule
+internal sealed class RejectSalesOrderRequestValidator : AbstractValidator<RejectSalesOrderRequest>
 {
-    public void AddRoutes(IEndpointRouteBuilder app) =>
+    public RejectSalesOrderRequestValidator() => RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+}
+
+internal static class RejectSalesOrderEndpoint
+{
+    public static void Map(IEndpointRouteBuilder app) =>
         app.MapPost("/sales-orders/{id:long}/reject",
-            async (long id, RejectSalesOrderRequest body, ISender sender, CancellationToken ct) =>
-            {
-                await sender.Send(new RejectSalesOrderCommand(id, body.Reason), ct);
-                return Results.NoContent();
-            })
+                async Task<Results<NoContent, NotFound>> (long id, RejectSalesOrderRequest body, RejectSalesOrderHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new RejectSalesOrderCommand(id, body.Reason), ct) ? TypedResults.NoContent() : TypedResults.NotFound())
             .RequireAuthorization(p => p.RequireRole(SalesRoles.Managers));
 }
 ```
@@ -261,20 +253,19 @@ using Erp.Modules.Inventory.Contracts;
 using Erp.Modules.Sales.Domain;
 using Erp.Modules.Sales.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed record CancelSalesOrderCommand(long OrderId) : ICommand;
+internal sealed record CancelSalesOrderCommand(long OrderId);
 
 internal sealed class CancelSalesOrderHandler(SalesDbContext db, IStockReservation stock, ICurrentUser currentUser)
-    : ICommandHandler<CancelSalesOrderCommand>
 {
-    public async ValueTask<Unit> Handle(CancelSalesOrderCommand cmd, CancellationToken ct)
+    public async Task<bool> HandleAsync(CancelSalesOrderCommand cmd, CancellationToken ct)
     {
         var order = await db.GetVisibleOrderAsync(cmd.OrderId, new UserId(currentUser.UserId), currentUser.Role, ct);
+        if (order is null) return false;
         var customer = await db.Customers.SingleAsync(c => c.Id == order.CustomerId, ct);
 
         var toRelease = order.Cancel(customer);
@@ -284,7 +275,7 @@ internal sealed class CancelSalesOrderHandler(SalesDbContext db, IStockReservati
             await stock.ReleaseAsync(line.ItemId.Value, line.Quantity.Value, tx.GetDbTransaction(), ct);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
-        return Unit.Value;
+        return true;
     }
 }
 ```
@@ -295,23 +286,22 @@ handed, and saves.
 
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/CancelSalesOrder/CancelSalesOrderEndpoint.cs
-using Carter;
-using Mediator;
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed class CancelSalesOrderEndpoint : ICarterModule
+
+internal static class CancelSalesOrderEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app) =>
+    public static void Map(IEndpointRouteBuilder app) =>
         app.MapPost("/sales-orders/{id:long}/cancel",
-            async (long id, ISender sender, CancellationToken ct) =>
-            {
-                await sender.Send(new CancelSalesOrderCommand(id), ct);
-                return Results.NoContent();
-            })
+                async Task<Results<NoContent, NotFound>> (long id, CancelSalesOrderHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new CancelSalesOrderCommand(id), ct) ? TypedResults.NoContent() : TypedResults.NotFound())
             .RequireAuthorization(p => p.RequireRole(SalesRoles.Sellers));
 }
 ```

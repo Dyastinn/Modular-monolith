@@ -3,5 +3,11 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Microsoft's recommended code-quality rules, and the style rules in .editorconfig, on every build. -->
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <!-- On the build server (CI sets CI=true) a warning fails the build, so none slips into main. Locally they stay
+         warnings, so a half-finished change still runs. -->
+    <TreatWarningsAsErrors Condition="'$(CI)' == 'true'">true</TreatWarningsAsErrors>
   </PropertyGroup>
 </Project>

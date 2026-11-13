@@ -1,22 +1,25 @@
-using Carter;
-using Mediator;
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Purchasing.Features;
 
-internal sealed class SearchPurchaseOrdersEndpoint : ICarterModule
+
+internal static class SearchPurchaseOrdersEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app)
+    public static void Map(IEndpointRouteBuilder app)
     {
         app.MapGet("/purchase-orders",
-                async (long? supplierId, string? status, string? search, int? page, int? pageSize, ISender sender, CancellationToken ct) =>
-                    Results.Ok(await sender.Send(new SearchPurchaseOrdersQuery(supplierId, status, search, page ?? 1, pageSize ?? 20), ct)))
+                async ([AsParameters] SearchPurchaseOrdersQuery query, SearchPurchaseOrdersHandler handler, CancellationToken ct) =>
+                    TypedResults.Ok(await handler.HandleAsync(query, ct)))
             .RequireAuthorization(p => p.RequireRole(PurchasingRoles.Readers));
 
-        app.MapGet("/purchase-orders/{id:long}", async (long id, ISender sender, CancellationToken ct) =>
-                await sender.Send(new GetPurchaseOrderQuery(id), ct) is { } po ? Results.Ok(po) : Results.NotFound())
+        app.MapGet("/purchase-orders/{id:long}",
+                async Task<Results<Ok<PurchaseOrderDetailDto>, NotFound>> (long id, GetPurchaseOrderHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new GetPurchaseOrderQuery(id), ct) is { } po ? TypedResults.Ok(po) : TypedResults.NotFound())
             .RequireAuthorization(p => p.RequireRole(PurchasingRoles.Readers));
     }
 }

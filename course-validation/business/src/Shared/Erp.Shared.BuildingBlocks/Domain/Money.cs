@@ -13,7 +13,7 @@ public readonly record struct Money
     public Money(decimal amount) =>
         Amount = amount >= 0
             ? Math.Round(amount, 2, MidpointRounding.AwayFromZero)
-            : throw new DomainException("An amount of money cannot be negative.");
+            : throw new DomainException(CommonErrors.NegativeMoney, "An amount of money cannot be negative.");
 
     public static Money operator +(Money a, Money b) => new(a.Amount + b.Amount);
     public static Money operator -(Money a, Money b) => new(a.Amount - b.Amount);

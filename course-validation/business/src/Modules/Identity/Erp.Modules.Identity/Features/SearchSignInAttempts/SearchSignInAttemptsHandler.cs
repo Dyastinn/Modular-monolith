@@ -1,12 +1,10 @@
 using Dapper;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Identity.Features;
 
-internal sealed record SearchSignInAttemptsQuery(string? Email, bool FailedOnly, int Page, int PageSize)
-    : IQuery<PagedResult<SignInAttemptDto>>;
+internal sealed record SearchSignInAttemptsQuery(string? Email = null, bool FailedOnly = false, int Page = 1, int PageSize = 50);
 
 internal sealed record SignInAttemptDto(long Id, string Email, long? UserId, string Outcome, string? IpAddress, DateTime OccurredUtc);
 
@@ -20,9 +18,8 @@ internal sealed class SearchSignInAttemptsValidator : AbstractValidator<SearchSi
 }
 
 internal sealed class SearchSignInAttemptsHandler(IDbConnectionFactory connections)
-    : IQueryHandler<SearchSignInAttemptsQuery, PagedResult<SignInAttemptDto>>
 {
-    public async ValueTask<PagedResult<SignInAttemptDto>> Handle(SearchSignInAttemptsQuery q, CancellationToken ct)
+    public async Task<PagedResult<SignInAttemptDto>> HandleAsync(SearchSignInAttemptsQuery q, CancellationToken ct)
     {
         var args = new { Email = SearchText.ForLike(q.Email), q.FailedOnly, q.Page, q.PageSize };
         await using var conn = connections.Create();

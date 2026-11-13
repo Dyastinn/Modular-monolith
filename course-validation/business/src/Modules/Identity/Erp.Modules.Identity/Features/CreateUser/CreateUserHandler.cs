@@ -1,28 +1,15 @@
 using Erp.Modules.Identity.Domain;
 using Erp.Modules.Identity.Infrastructure;
-using FluentValidation;
-using Mediator;
 using Microsoft.AspNetCore.Identity;
 
 namespace Erp.Modules.Identity.Features;
 
-internal sealed record CreateUserCommand(string Email, string FullName, string Role, string TemporaryPassword) : ICommand<long>;
-
-internal sealed class CreateUserValidator : AbstractValidator<CreateUserCommand>
-{
-    public CreateUserValidator()
-    {
-        RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(256);
-        RuleFor(x => x.FullName).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Role).NotEmpty();
-        RuleFor(x => x.TemporaryPassword).NotEmpty();
-    }
-}
+internal sealed record CreateUserCommand(string Email, string FullName, string Role, string TemporaryPassword);
 
 // Staff accounts are made by an admin, with a temporary password the person must change at first sign-in.
-internal sealed class CreateUserHandler(UserManager<AppUser> users) : ICommandHandler<CreateUserCommand, long>
+internal sealed class CreateUserHandler(UserManager<AppUser> users)
 {
-    public async ValueTask<long> Handle(CreateUserCommand cmd, CancellationToken ct)
+    public async Task<long> HandleAsync(CreateUserCommand cmd, CancellationToken ct)
     {
         StaffAccountRules.EnsureRoleExists(cmd.Role);
 

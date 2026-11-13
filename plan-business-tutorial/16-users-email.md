@@ -176,27 +176,27 @@ internal static class StaffAccountRules
 {
     public static void EnsureRoleExists(string role)
     {
-        if (!Roles.All.Contains(role)) throw new DomainException($"'{role}' is not a role.");
+        if (!Roles.All.Contains(role)) throw new DomainException(IdentityErrors.UnknownRole, $"'{role}' is not a role.");
     }
 
     public static void EnsureCanChangeRole(long actorId, long targetId, string currentRole, string newRole, int activeAdmins)
     {
         EnsureRoleExists(newRole);
         if (currentRole == newRole) return;
-        if (actorId == targetId) throw new DomainException("You can't change your own role. Ask another admin.");
+        if (actorId == targetId) throw new DomainException(IdentityErrors.CannotChangeOwnRole, "You can't change your own role. Ask another admin.");
         EnsureNotLastAdmin(currentRole, activeAdmins);
     }
 
     public static void EnsureCanDisable(long actorId, long targetId, string targetRole, int activeAdmins)
     {
-        if (actorId == targetId) throw new DomainException("You can't disable your own account.");
+        if (actorId == targetId) throw new DomainException(IdentityErrors.CannotDisableSelf, "You can't disable your own account.");
         EnsureNotLastAdmin(targetRole, activeAdmins);
     }
 
     private static void EnsureNotLastAdmin(string role, int activeAdmins)
     {
         if (role == Roles.Admin && activeAdmins <= 1)
-            throw new DomainException("This is the last active admin. Make someone else an admin first.");
+            throw new DomainException(IdentityErrors.LastAdmin, "This is the last active admin. Make someone else an admin first.");
     }
 }
 ```
@@ -282,7 +282,7 @@ internal sealed class ErpSignInManager(
     IAuthenticationSchemeProvider schemes,
     IUserConfirmation<AppUser> confirmation,
     ErpIdentityDbContext db,
-    IClock clock)
+    TimeProvider time)
     : SignInManager<AppUser>(users, context, claims, options, logger, schemes, confirmation)
 {
     public override async Task<bool> CanSignInAsync(AppUser user) =>
@@ -301,7 +301,7 @@ internal sealed class ErpSignInManager(
             : result.RequiresTwoFactor ? "RequiresTwoFactor"
             : "InvalidCredentials";
         db.SignInAttempts.Add(new SignInAttempt(userName, user?.Id, outcome,
-            Context.Connection.RemoteIpAddress?.ToString(), clock.UtcNow));
+            Context.Connection.RemoteIpAddress?.ToString(), time.GetUtcNow().UtcDateTime));
         await db.SaveChangesAsync();
         return result;
     }
@@ -342,6 +342,7 @@ exception. Three small helpers turn that into our usual 422, and answer two ques
 ```csharp
 // src/Modules/Identity/Erp.Modules.Identity/Infrastructure/IdentityResults.cs
 using Erp.Shared.BuildingBlocks;
+using Erp.Modules.Identity.Domain;
 using Microsoft.AspNetCore.Identity;
 
 namespace Erp.Modules.Identity.Infrastructure;
@@ -352,7 +353,7 @@ internal static class IdentityResults
     public static void ThrowIfFailed(this IdentityResult result)
     {
         if (!result.Succeeded)
-            throw new DomainException(string.Join(" ", result.Errors.Select(e => e.Description)));
+            throw new DomainException(IdentityErrors.AccountChangeRefused, string.Join(" ", result.Errors.Select(e => e.Description)));
     }
 
     public static async Task<int> CountActiveAdminsAsync(this UserManager<AppUser> users) =>
@@ -370,29 +371,16 @@ stamp and the password hash right.
 // src/Modules/Identity/Erp.Modules.Identity/Features/CreateUser/CreateUserHandler.cs
 using Erp.Modules.Identity.Domain;
 using Erp.Modules.Identity.Infrastructure;
-using FluentValidation;
-using Mediator;
 using Microsoft.AspNetCore.Identity;
 
 namespace Erp.Modules.Identity.Features;
 
-internal sealed record CreateUserCommand(string Email, string FullName, string Role, string TemporaryPassword) : ICommand<long>;
-
-internal sealed class CreateUserValidator : AbstractValidator<CreateUserCommand>
-{
-    public CreateUserValidator()
-    {
-        RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(256);
-        RuleFor(x => x.FullName).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Role).NotEmpty();
-        RuleFor(x => x.TemporaryPassword).NotEmpty();
-    }
-}
+internal sealed record CreateUserCommand(string Email, string FullName, string Role, string TemporaryPassword);
 
 // Staff accounts are made by an admin, with a temporary password the person must change at first sign-in.
-internal sealed class CreateUserHandler(UserManager<AppUser> users) : ICommandHandler<CreateUserCommand, long>
+internal sealed class CreateUserHandler(UserManager<AppUser> users)
 {
-    public async ValueTask<long> Handle(CreateUserCommand cmd, CancellationToken ct)
+    public async Task<long> HandleAsync(CreateUserCommand cmd, CancellationToken ct)
     {
         StaffAccountRules.EnsureRoleExists(cmd.Role);
 
@@ -413,22 +401,36 @@ policy from lesson 06, and `CreateAsync` enforces it; writing the rule twice wou
 
 ```csharp
 // src/Modules/Identity/Erp.Modules.Identity/Features/CreateUser/CreateUserEndpoint.cs
-using Carter;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Identity.Features;
 
-internal sealed class CreateUserEndpoint : ICarterModule
+
+internal sealed record CreateUserRequest(string Email, string FullName, string Role, string TemporaryPassword);
+
+internal sealed class CreateUserRequestValidator : AbstractValidator<CreateUserRequest>
 {
-    public void AddRoutes(IEndpointRouteBuilder app) =>
-        app.MapPost("/users", async (CreateUserCommand body, ISender sender, CancellationToken ct) =>
+    public CreateUserRequestValidator()
+    {
+        RuleFor(x => x.Email).NotEmpty().EmailAddress().MaximumLength(256);
+        RuleFor(x => x.FullName).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Role).NotEmpty();
+        RuleFor(x => x.TemporaryPassword).NotEmpty();
+    }
+}
+
+internal static class CreateUserEndpoint
+{
+    public static void Map(IEndpointRouteBuilder app) =>
+        app.MapPost("/users", async Task<Created<CreatedId>> (CreateUserRequest body, CreateUserHandler handler, CancellationToken ct) =>
             {
-                var id = await sender.Send(body, ct);
-                return Results.Created($"/api/users/{id}", new { id });
+                var id = await handler.HandleAsync(new CreateUserCommand(body.Email, body.FullName, body.Role, body.TemporaryPassword), ct);
+                return TypedResults.Created($"/api/users/{id}", new CreatedId(id));
             })
             .RequireAuthorization(p => p.RequireRole(Roles.Admin));
 }
@@ -439,32 +441,22 @@ account":
 
 ```csharp
 // src/Modules/Identity/Erp.Modules.Identity/Features/UpdateUser/UpdateUserHandler.cs
+using System.Globalization;
 using Erp.Modules.Identity.Domain;
 using Erp.Modules.Identity.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
 using Microsoft.AspNetCore.Identity;
 
 namespace Erp.Modules.Identity.Features;
 
-internal sealed record UpdateUserCommand(long UserId, string FullName, string Role) : ICommand;
+internal sealed record UpdateUserCommand(long UserId, string FullName, string Role);
 
-internal sealed class UpdateUserValidator : AbstractValidator<UpdateUserCommand>
+internal sealed class UpdateUserHandler(UserManager<AppUser> users, ICurrentUser current)
 {
-    public UpdateUserValidator()
+    public async Task<bool> HandleAsync(UpdateUserCommand cmd, CancellationToken ct)
     {
-        RuleFor(x => x.UserId).GreaterThan(0);
-        RuleFor(x => x.FullName).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.Role).NotEmpty();
-    }
-}
-
-internal sealed class UpdateUserHandler(UserManager<AppUser> users, ICurrentUser current) : ICommandHandler<UpdateUserCommand>
-{
-    public async ValueTask<Unit> Handle(UpdateUserCommand cmd, CancellationToken ct)
-    {
-        var user = await users.FindByIdAsync(cmd.UserId.ToString()) ?? throw new NotFoundException($"User {cmd.UserId} not found.");
+        var user = await users.FindByIdAsync(cmd.UserId.ToString(CultureInfo.InvariantCulture));
+        if (user is null) return false;
         var currentRole = await users.GetRoleAsync(user);
         StaffAccountRules.EnsureCanChangeRole(current.UserId, user.Id, currentRole, cmd.Role, await users.CountActiveAdminsAsync());
 
@@ -476,45 +468,42 @@ internal sealed class UpdateUserHandler(UserManager<AppUser> users, ICurrentUser
             (await users.AddToRoleAsync(user, cmd.Role)).ThrowIfFailed();
             (await users.UpdateSecurityStampAsync(user)).ThrowIfFailed();   // their sessions carry the old role: end them
         }
-        return Unit.Value;
+        return true;
     }
 }
 
-internal sealed record SetUserDisabledCommand(long UserId, bool Disabled) : ICommand;
+internal sealed record SetUserDisabledCommand(long UserId, bool Disabled);
 
-internal sealed class SetUserDisabledHandler(UserManager<AppUser> users, ICurrentUser current) : ICommandHandler<SetUserDisabledCommand>
+internal sealed class SetUserDisabledHandler(UserManager<AppUser> users, ICurrentUser current)
 {
-    public async ValueTask<Unit> Handle(SetUserDisabledCommand cmd, CancellationToken ct)
+    public async Task<bool> HandleAsync(SetUserDisabledCommand cmd, CancellationToken ct)
     {
-        var user = await users.FindByIdAsync(cmd.UserId.ToString()) ?? throw new NotFoundException($"User {cmd.UserId} not found.");
+        var user = await users.FindByIdAsync(cmd.UserId.ToString(CultureInfo.InvariantCulture));
+        if (user is null) return false;
         if (cmd.Disabled)
             StaffAccountRules.EnsureCanDisable(current.UserId, user.Id, await users.GetRoleAsync(user), await users.CountActiveAdminsAsync());
 
         user.IsDisabled = cmd.Disabled;
         (await users.UpdateAsync(user)).ThrowIfFailed();
         (await users.UpdateSecurityStampAsync(user)).ThrowIfFailed();   // ends every session they have
-        return Unit.Value;
+        return true;
     }
 }
 
-internal sealed record ResetUserPasswordCommand(long UserId, string TemporaryPassword) : ICommand;
+internal sealed record ResetUserPasswordCommand(long UserId, string TemporaryPassword);
 
-internal sealed class ResetUserPasswordValidator : AbstractValidator<ResetUserPasswordCommand>
+internal sealed class ResetUserPasswordHandler(UserManager<AppUser> users)
 {
-    public ResetUserPasswordValidator() => RuleFor(x => x.TemporaryPassword).NotEmpty();
-}
-
-internal sealed class ResetUserPasswordHandler(UserManager<AppUser> users) : ICommandHandler<ResetUserPasswordCommand>
-{
-    public async ValueTask<Unit> Handle(ResetUserPasswordCommand cmd, CancellationToken ct)
+    public async Task<bool> HandleAsync(ResetUserPasswordCommand cmd, CancellationToken ct)
     {
-        var user = await users.FindByIdAsync(cmd.UserId.ToString()) ?? throw new NotFoundException($"User {cmd.UserId} not found.");
+        var user = await users.FindByIdAsync(cmd.UserId.ToString(CultureInfo.InvariantCulture));
+        if (user is null) return false;
         var token = await users.GeneratePasswordResetTokenAsync(user);
         (await users.ResetPasswordAsync(user, token, cmd.TemporaryPassword)).ThrowIfFailed();
         (await users.SetLockoutEndDateAsync(user, null)).ThrowIfFailed();
         user.MustChangePassword = true;
         (await users.UpdateAsync(user)).ThrowIfFailed();
-        return Unit.Value;
+        return true;
     }
 }
 ```
@@ -527,48 +516,55 @@ The endpoints follow the pattern you know:
 
 ```csharp
 // src/Modules/Identity/Erp.Modules.Identity/Features/UpdateUser/UpdateUserEndpoint.cs
-using Carter;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Identity.Features;
 
+
 internal sealed record UpdateUserRequest(string FullName, string Role);
 internal sealed record ResetUserPasswordRequest(string TemporaryPassword);
 
-internal sealed class UpdateUserEndpoint : ICarterModule
+internal sealed class UpdateUserRequestValidator : AbstractValidator<UpdateUserRequest>
 {
-    public void AddRoutes(IEndpointRouteBuilder app)
+    public UpdateUserRequestValidator()
     {
-        app.MapPut("/users/{id:long}", async (long id, UpdateUserRequest body, ISender sender, CancellationToken ct) =>
-            {
-                await sender.Send(new UpdateUserCommand(id, body.FullName, body.Role), ct);
-                return Results.NoContent();
-            })
+        RuleFor(x => x.FullName).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Role).NotEmpty();
+    }
+}
+
+internal sealed class ResetUserPasswordRequestValidator : AbstractValidator<ResetUserPasswordRequest>
+{
+    public ResetUserPasswordRequestValidator() => RuleFor(x => x.TemporaryPassword).NotEmpty();
+}
+
+internal static class UpdateUserEndpoint
+{
+    public static void Map(IEndpointRouteBuilder app)
+    {
+        app.MapPut("/users/{id:long}",
+                async Task<Results<NoContent, NotFound>> (long id, UpdateUserRequest body, UpdateUserHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new UpdateUserCommand(id, body.FullName, body.Role), ct) ? TypedResults.NoContent() : TypedResults.NotFound())
             .RequireAuthorization(p => p.RequireRole(Roles.Admin));
 
-        app.MapPost("/users/{id:long}/disable", async (long id, ISender sender, CancellationToken ct) =>
-            {
-                await sender.Send(new SetUserDisabledCommand(id, true), ct);
-                return Results.NoContent();
-            })
+        app.MapPost("/users/{id:long}/disable",
+                async Task<Results<NoContent, NotFound>> (long id, SetUserDisabledHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new SetUserDisabledCommand(id, true), ct) ? TypedResults.NoContent() : TypedResults.NotFound())
             .RequireAuthorization(p => p.RequireRole(Roles.Admin));
 
-        app.MapPost("/users/{id:long}/enable", async (long id, ISender sender, CancellationToken ct) =>
-            {
-                await sender.Send(new SetUserDisabledCommand(id, false), ct);
-                return Results.NoContent();
-            })
+        app.MapPost("/users/{id:long}/enable",
+                async Task<Results<NoContent, NotFound>> (long id, SetUserDisabledHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new SetUserDisabledCommand(id, false), ct) ? TypedResults.NoContent() : TypedResults.NotFound())
             .RequireAuthorization(p => p.RequireRole(Roles.Admin));
 
-        app.MapPost("/users/{id:long}/reset-password", async (long id, ResetUserPasswordRequest body, ISender sender, CancellationToken ct) =>
-            {
-                await sender.Send(new ResetUserPasswordCommand(id, body.TemporaryPassword), ct);
-                return Results.NoContent();
-            })
+        app.MapPost("/users/{id:long}/reset-password",
+                async Task<Results<NoContent, NotFound>> (long id, ResetUserPasswordRequest body, ResetUserPasswordHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new ResetUserPasswordCommand(id, body.TemporaryPassword), ct) ? TypedResults.NoContent() : TypedResults.NotFound())
             .RequireAuthorization(p => p.RequireRole(Roles.Admin));
     }
 }
@@ -579,19 +575,48 @@ but it doesn't know about `MustChangePassword`. So we add our own:
 
 ```csharp
 // src/Modules/Identity/Erp.Modules.Identity/Features/ChangePassword/ChangePasswordHandler.cs
+using System.Globalization;
 using Erp.Modules.Identity.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
 using Microsoft.AspNetCore.Identity;
 
 namespace Erp.Modules.Identity.Features;
 
-internal sealed record ChangePasswordCommand(string CurrentPassword, string NewPassword) : ICommand;
+internal sealed record ChangePasswordCommand(string CurrentPassword, string NewPassword);
 
-internal sealed class ChangePasswordValidator : AbstractValidator<ChangePasswordCommand>
+// Like Identity's /manage/info, but it also clears "must change password" after a temporary password.
+internal sealed class ChangePasswordHandler(UserManager<AppUser> users, SignInManager<AppUser> signIn, ICurrentUser current)
 {
-    public ChangePasswordValidator()
+    public async Task HandleAsync(ChangePasswordCommand cmd, CancellationToken ct)
+    {
+        var user = await users.FindByIdAsync(current.UserId.ToString(CultureInfo.InvariantCulture))
+            ?? throw new InvalidOperationException("The signed-in user no longer exists.");
+
+        (await users.ChangePasswordAsync(user, cmd.CurrentPassword, cmd.NewPassword)).ThrowIfFailed();
+        user.MustChangePassword = false;
+        (await users.UpdateAsync(user)).ThrowIfFailed();
+        await signIn.RefreshSignInAsync(user);   // the new security stamp would end this session too; re-issue it
+    }
+}
+```
+
+```csharp
+// src/Modules/Identity/Erp.Modules.Identity/Features/ChangePassword/ChangePasswordEndpoint.cs
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Routing;
+
+namespace Erp.Modules.Identity.Features;
+
+
+internal sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
+
+internal sealed class ChangePasswordRequestValidator : AbstractValidator<ChangePasswordRequest>
+{
+    public ChangePasswordRequestValidator()
     {
         RuleFor(x => x.CurrentPassword).NotEmpty();
         RuleFor(x => x.NewPassword).NotEmpty().NotEqual(x => x.CurrentPassword)
@@ -599,41 +624,13 @@ internal sealed class ChangePasswordValidator : AbstractValidator<ChangePassword
     }
 }
 
-// Like Identity's /manage/info, but it also clears "must change password" after a temporary password.
-internal sealed class ChangePasswordHandler(UserManager<AppUser> users, SignInManager<AppUser> signIn, ICurrentUser current)
-    : ICommandHandler<ChangePasswordCommand>
+internal static class ChangePasswordEndpoint
 {
-    public async ValueTask<Unit> Handle(ChangePasswordCommand cmd, CancellationToken ct)
-    {
-        var user = await users.FindByIdAsync(current.UserId.ToString())
-            ?? throw new NotFoundException("The signed-in user no longer exists.");
-
-        (await users.ChangePasswordAsync(user, cmd.CurrentPassword, cmd.NewPassword)).ThrowIfFailed();
-        user.MustChangePassword = false;
-        (await users.UpdateAsync(user)).ThrowIfFailed();
-        await signIn.RefreshSignInAsync(user);   // the new security stamp would end this session too; re-issue it
-        return Unit.Value;
-    }
-}
-```
-
-```csharp
-// src/Modules/Identity/Erp.Modules.Identity/Features/ChangePassword/ChangePasswordEndpoint.cs
-using Carter;
-using Mediator;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Routing;
-
-namespace Erp.Modules.Identity.Features;
-
-internal sealed class ChangePasswordEndpoint : ICarterModule
-{
-    public void AddRoutes(IEndpointRouteBuilder app) =>
-        app.MapPost("/auth/change-password", async (ChangePasswordCommand body, ISender sender, CancellationToken ct) =>
+    public static void Map(IEndpointRouteBuilder app) =>
+        app.MapPost("/auth/change-password", async Task<NoContent> (ChangePasswordRequest body, ChangePasswordHandler handler, CancellationToken ct) =>
             {
-                await sender.Send(body, ct);
-                return Results.NoContent();
+                await handler.HandleAsync(new ChangePasswordCommand(body.CurrentPassword, body.NewPassword), ct);
+                return TypedResults.NoContent();
             })
             .RequireAuthorization();
 }
@@ -779,11 +776,10 @@ Manuel Santos" instead of "approved by 2".
 using Dapper;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Identity.Features;
 
-internal sealed record SearchUsersQuery(string? Search, int Page, int PageSize) : IQuery<PagedResult<UserDto>>;
+internal sealed record SearchUsersQuery(string? Search = null, int Page = 1, int PageSize = 20);
 
 internal sealed record UserDto(
     long Id, string Email, string FullName, string Role, bool IsDisabled, bool MustChangePassword,
@@ -798,9 +794,9 @@ internal sealed class SearchUsersValidator : AbstractValidator<SearchUsersQuery>
     }
 }
 
-internal sealed class SearchUsersHandler(IDbConnectionFactory connections) : IQueryHandler<SearchUsersQuery, PagedResult<UserDto>>
+internal sealed class SearchUsersHandler(IDbConnectionFactory connections)
 {
-    public async ValueTask<PagedResult<UserDto>> Handle(SearchUsersQuery q, CancellationToken ct)
+    public async Task<PagedResult<UserDto>> HandleAsync(SearchUsersQuery q, CancellationToken ct)
     {
         var search = SearchText.ForLike(q.Search);
         await using var conn = connections.Create();
@@ -816,14 +812,11 @@ internal sealed class SearchUsersHandler(IDbConnectionFactory connections) : IQu
 }
 
 // Names for "approved by", "shipped by" and the like. Every signed-in user may read it; it holds no secrets.
-internal sealed record GetUserDirectoryQuery : IQuery<IReadOnlyList<UserNameDto>>;
-
 internal sealed record UserNameDto(long Id, string FullName);
 
 internal sealed class GetUserDirectoryHandler(IDbConnectionFactory connections)
-    : IQueryHandler<GetUserDirectoryQuery, IReadOnlyList<UserNameDto>>
 {
-    public async ValueTask<IReadOnlyList<UserNameDto>> Handle(GetUserDirectoryQuery q, CancellationToken ct)
+    public async Task<IReadOnlyList<UserNameDto>> HandleAsync(CancellationToken ct)
     {
         await using var conn = connections.Create();
         return (await conn.QueryAsync<UserNameDto>(new CommandDefinition(
@@ -834,25 +827,26 @@ internal sealed class GetUserDirectoryHandler(IDbConnectionFactory connections)
 
 ```csharp
 // src/Modules/Identity/Erp.Modules.Identity/Features/SearchUsers/SearchUsersEndpoint.cs
-using Carter;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Identity.Features;
 
-internal sealed class SearchUsersEndpoint : ICarterModule
+
+internal static class SearchUsersEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app)
+    public static void Map(IEndpointRouteBuilder app)
     {
-        app.MapGet("/users", async (string? search, int? page, int? pageSize, ISender sender, CancellationToken ct) =>
-                Results.Ok(await sender.Send(new SearchUsersQuery(search, page ?? 1, pageSize ?? 20), ct)))
+        app.MapGet("/users", async ([AsParameters] SearchUsersQuery query, SearchUsersHandler handler, CancellationToken ct) =>
+                TypedResults.Ok(await handler.HandleAsync(query, ct)))
             .RequireAuthorization(p => p.RequireRole(Roles.Admin));
 
-        app.MapGet("/users/directory", async (ISender sender, CancellationToken ct) =>
-                Results.Ok(await sender.Send(new GetUserDirectoryQuery(), ct)))
+        app.MapGet("/users/directory", async (GetUserDirectoryHandler handler, CancellationToken ct) =>
+                TypedResults.Ok(await handler.HandleAsync(ct)))
             .RequireAuthorization();
     }
 }

@@ -27,7 +27,7 @@ public class UserAdministrationTests(CustomWebAppFactory factory)
         var id = (await created.Content.ReadFromJsonAsync<Created>())!.Id;
 
         var user = factory.CreateClient();
-        var tokens = await factory.LoginAsync(user, email, Temporary);
+        var tokens = await CustomWebAppFactory.LoginAsync(user, email, Temporary);
         user.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
         (await user.GetFromJsonAsync<Me>("/api/auth/me"))!.MustChangePassword.Should().BeTrue();
 

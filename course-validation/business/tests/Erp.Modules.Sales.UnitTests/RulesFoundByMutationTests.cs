@@ -1,3 +1,4 @@
+using System.Globalization;
 using AwesomeAssertions;
 using Erp.Modules.Sales.Domain;
 using Erp.Shared.BuildingBlocks;
@@ -124,7 +125,7 @@ public class RulesFoundByMutationTests
     [InlineData("0")]
     [InlineData("1")]
     public void A_program_rate_of_nothing_or_everything_is_refused(string rate) =>
-        FluentActions.Invoking(() => SpecialDiscountProgram.Define("SP", "Solo parent", "ID", decimal.Parse(rate), vatExempt: false))
+        FluentActions.Invoking(() => SpecialDiscountProgram.Define("SP", "Solo parent", "ID", decimal.Parse(rate, CultureInfo.InvariantCulture), vatExempt: false))
             .Should().Throw<DomainException>();
 
     [Fact]

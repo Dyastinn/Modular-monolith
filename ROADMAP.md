@@ -317,6 +317,40 @@ adds its screen. Every lesson from 02 proves itself with tests.
 `search_customers.v2`); the reference squashes each module to `InitialCreate` + `AddReadFunctions` with each
 function at its final shape as `v1`. The resulting schema is identical.
 
+### M9 — Best-practices alignment ⬜ code · ⬜ lessons (decided 2026-11-13)
+
+Every locked decision was checked against what Microsoft and established .NET practitioners actually do, with
+sources: [BEST-PRACTICES-REVIEW.md](BEST-PRACTICES-REVIEW.md). User decisions: every **Change** item is accepted;
+reads keep Dapper + SQL functions; domain and integration events are split; the front end becomes a Blazor Web
+App; errors gain stable, documented codes.
+
+- [x] Spike (2026-11-13, scratch copy): FluentValidation endpoint filter with internal validators → standard
+      400 problem, no exception; `Microsoft.AspNetCore.OpenApi` describes internal types, and `TypedResults`
+      unions list their status codes (Microsoft: "`TypedResults` is preferred"); .NET 10 `AddValidation()`
+      validates only public models in the host and **silently skips** internal ones and module endpoints;
+      xUnit v3 4.0.3 + FsCheck.Xunit.v3 3.6.0 + Stryker.NET 5.1.0 (`--test-runner mtp`, preview) +
+      `coverlet.MTP` 10.1.0 all work, given `global.json` opts into Microsoft.Testing.Platform
+- [ ] `IClock` → `TimeProvider` (+ `FakeTimeProvider` in tests)
+- [ ] Error codes: `ErrorCode`, one catalog per module, `DomainException(ErrorCode)`, `code` and `type` in every
+      problem response; tests that codes are unique, documented and used
+- [ ] Domain events stay in the module; integration events in Contracts are mapped from them; the outbox delivers
+      to `IIntegrationEventHandler<T>` registered by each module (no Mediator)
+- [ ] Mediator removed: handlers injected into endpoints, `ValidationFilter<T>` (no exception for a bad request),
+      `TelemetryBehavior` removed (ASP.NET Core instrumentation covers it)
+- [ ] Carter removed: each module exposes `MapXxxEndpoints()` beside `AddXxxModule()`, with `MapGroup`
+- [ ] `NotFoundException` removed: handlers return `null`, endpoints return `TypedResults`
+- [ ] `InternalsVisibleTo Erp.Api` removed; architecture tests allow test projects only, check `Erp.Api` uses
+      only public module types, and enforce the CQRS split (no DbContext in a query handler, no Dapper in a
+      command handler)
+- [ ] Swashbuckle → `Microsoft.AspNetCore.OpenApi`
+- [ ] xUnit v3 + FsCheck.Xunit.v3 + `coverlet.MTP`; `global.json` opts into Microsoft.Testing.Platform
+- [ ] Build hygiene: analyzers, warnings as errors in CI, `.editorconfig`
+- [ ] Blazor Web App with interactive WebAssembly; `/errors/{code}` catalog page
+- [ ] Lessons: 03 rewritten (features, handlers, validation filter, error codes); post-office analogy moves to
+      the dispatcher in 13; every feature lesson's endpoint and handler code; 01, 02, 06, 13, 14, 22 for their
+      specific changes; GLOSSARY, ANSWER-KEY
+- [ ] Rules: CLAUDE.md §3–5, README, THIRD-PARTY-NOTICES
+
 ---
 
 ## Risks to retire early

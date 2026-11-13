@@ -412,21 +412,23 @@ internal sealed class GetCurrentUserHandler(ICurrentUser user) : IQueryHandler<G
 
 ```csharp
 // src/Modules/Identity/Erp.Modules.Identity/Features/Me/GetCurrentUserEndpoint.cs
-using Carter;
-using Mediator;
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Identity.Features;
 
+
 // Identity's own /auth/manage/info has no role; a client needs it to decide what to show.
-internal sealed class GetCurrentUserEndpoint : ICarterModule
+internal static class GetCurrentUserEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app) =>
-        app.MapGet("/auth/me", async (ISender sender, CancellationToken ct) =>
-            Results.Ok(await sender.Send(new GetCurrentUserQuery(), ct)))
-        .RequireAuthorization();
+    public static void Map(IEndpointRouteBuilder app) =>
+        app.MapGet("/auth/me", async (GetCurrentUserHandler handler, CancellationToken ct) =>
+                TypedResults.Ok(await handler.HandleAsync(ct)))
+            .RequireAuthorization();
 }
 ```
 
@@ -438,66 +440,63 @@ longer match.
 
 ```csharp
 // src/Modules/Identity/Erp.Modules.Identity/Features/SignOut/SignOutHandler.cs
+using System.Globalization;
 using Erp.Modules.Identity.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
 using Microsoft.AspNetCore.Identity;
 
 namespace Erp.Modules.Identity.Features;
 
-internal sealed record SignOutCommand : ICommand;
-
-internal sealed class SignOutHandler(SignInManager<AppUser> signIn) : ICommandHandler<SignOutCommand>
+internal sealed class SignOutHandler(SignInManager<AppUser> signIn)
 {
-    public async ValueTask<Unit> Handle(SignOutCommand cmd, CancellationToken ct)
+    public async Task HandleAsync(CancellationToken ct)
     {
         await signIn.SignOutAsync();   // clears the browser's sign-in cookie
-        return Unit.Value;
     }
 }
 
 // A new security stamp invalidates every cookie and refresh token the user holds, on every device.
-internal sealed record SignOutEverywhereCommand : ICommand;
-
 internal sealed class SignOutEverywhereHandler(UserManager<AppUser> users, SignInManager<AppUser> signIn, ICurrentUser currentUser)
-    : ICommandHandler<SignOutEverywhereCommand>
 {
-    public async ValueTask<Unit> Handle(SignOutEverywhereCommand cmd, CancellationToken ct)
+    public async Task HandleAsync(CancellationToken ct)
     {
-        var user = await users.FindByIdAsync(currentUser.UserId.ToString())
+        var user = await users.FindByIdAsync(currentUser.UserId.ToString(CultureInfo.InvariantCulture))
             ?? throw new InvalidOperationException("The signed-in user no longer exists.");
         await users.UpdateSecurityStampAsync(user);
         await signIn.SignOutAsync();
-        return Unit.Value;
     }
 }
 ```
 
 ```csharp
 // src/Modules/Identity/Erp.Modules.Identity/Features/SignOut/SignOutEndpoint.cs
-using Carter;
-using Mediator;
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Identity.Features;
 
-internal sealed class SignOutEndpoint : ICarterModule
-{
-    public void AddRoutes(IEndpointRouteBuilder app)
-    {
-        app.MapPost("/auth/logout", async (ISender sender, CancellationToken ct) =>
-        {
-            await sender.Send(new SignOutCommand(), ct);
-            return Results.NoContent();
-        }).RequireAuthorization();
 
-        app.MapPost("/auth/logout-everywhere", async (ISender sender, CancellationToken ct) =>
-        {
-            await sender.Send(new SignOutEverywhereCommand(), ct);
-            return Results.NoContent();
-        }).RequireAuthorization();
+internal static class SignOutEndpoint
+{
+    public static void Map(IEndpointRouteBuilder app)
+    {
+        app.MapPost("/auth/logout", async Task<NoContent> (SignOutHandler handler, CancellationToken ct) =>
+            {
+                await handler.HandleAsync(ct);
+                return TypedResults.NoContent();
+            })
+            .RequireAuthorization();
+
+        app.MapPost("/auth/logout-everywhere", async Task<NoContent> (SignOutEverywhereHandler handler, CancellationToken ct) =>
+            {
+                await handler.HandleAsync(ct);
+                return TypedResults.NoContent();
+            })
+            .RequireAuthorization();
     }
 }
 ```
@@ -670,27 +669,40 @@ The router learns to check it. In `App.razor`, `RouteView` becomes `AuthorizeRou
 
 ```razor
 @* src/Erp.Web/App.razor *@
-@* Every page needs a signed-in user (the [Authorize] in _Imports), unless it says [AllowAnonymous]. *@
-<Router AppAssembly="typeof(App).Assembly" NotFoundPage="typeof(Pages.NotFound)">
-    <Found Context="routeData">
-        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)">
-            <NotAuthorized>
-                @if (context.User.Identity?.IsAuthenticated == true)
-                {
-                    <MudAlert Severity="Severity.Warning" Class="ma-6">You don't have access to this page.</MudAlert>
-                }
-                else
-                {
-                    <RedirectToLogin />
-                }
-            </NotAuthorized>
-            <Authorizing>
-                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
-            </Authorizing>
-        </AuthorizeRouteView>
-        <FocusOnNavigate RouteData="routeData" Selector="h1" />
-    </Found>
-</Router>
+@* The page the server sends for every address of the app. Only Routes (and the page title) run in the browser, as
+   WebAssembly; prerender is off because every screen needs the signed-in user's data from the API. *@
+@attribute [AllowAnonymous]
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="icon" type="image/png" href="@Assets["icon-192.png"]" />
+    <link rel="stylesheet" href="@Assets["_content/MudBlazor/MudBlazor.min.css"]" />
+    <link rel="stylesheet" href="@Assets["css/app.css"]" />
+    <HeadOutlet @rendermode="InBrowser" />
+</head>
+
+<body>
+    <Routes @rendermode="InBrowser" />
+
+    <div id="blazor-error-ui">
+        Something went wrong. <a href="." class="reload">Reload</a>
+    </div>
+
+    @* No inline scripts anywhere: the Content-Security-Policy forbids them. *@
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+    <script src="@Assets["_content/MudBlazor/MudBlazor.min.js"]"></script>
+</body>
+
+</html>
+
+@code {
+    private static readonly IComponentRenderMode InBrowser = new InteractiveWebAssemblyRenderMode(prerender: false);
+}
 ```
 
 Not signed in? Off to the sign-in page. Signed in but the wrong role? A polite "no access" message.

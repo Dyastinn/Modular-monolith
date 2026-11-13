@@ -20,10 +20,10 @@ internal sealed class ItemCategory : Entity<CategoryId>
 
     public void Update(string name, decimal maxQuantityPerOrder, string? requiredRole)
     {
-        if (string.IsNullOrWhiteSpace(name)) throw new DomainException("A category needs a name.");
-        if (maxQuantityPerOrder <= 0) throw new DomainException("The maximum quantity per order must be greater than zero.");
+        if (string.IsNullOrWhiteSpace(name)) throw new DomainException(SalesErrors.CategoryNameRequired, "A category needs a name.");
+        if (maxQuantityPerOrder <= 0) throw new DomainException(SalesErrors.CategoryMaxQuantityInvalid, "The maximum quantity per order must be greater than zero.");
         if (requiredRole is not null && !Roles.All.Contains(requiredRole))
-            throw new DomainException($"'{requiredRole}' is not a role.");
+            throw new DomainException(SalesErrors.UnknownRole, $"'{requiredRole}' is not a role.");
         Name = name.Trim();
         MaxQuantityPerOrder = maxQuantityPerOrder;
         RequiredRole = requiredRole;
@@ -32,13 +32,13 @@ internal sealed class ItemCategory : Entity<CategoryId>
     public void EnsureRoleAllowed(string callerRole)
     {
         if (RequiredRole is not null && callerRole != RequiredRole && callerRole != Roles.Admin)
-            throw new DomainException($"Category '{Name}' requires role '{RequiredRole}'.");
+            throw new DomainException(SalesErrors.CategoryRoleRequired, $"Category '{Name}' requires role '{RequiredRole}'.");
     }
 
     public void EnsureQuantityAllowed(decimal quantityOnOrder)
     {
         if (quantityOnOrder > MaxQuantityPerOrder)
-            throw new DomainException(
+            throw new DomainException(SalesErrors.CategoryQuantityExceeded,
                 $"Category '{Name}' allows at most {MaxQuantityPerOrder:0.###} per order (requested {quantityOnOrder:0.###}).");
     }
 }

@@ -1,11 +1,10 @@
 using Dapper;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed record SearchPriceListQuery(string? Search, bool ForSaleOnly, int Page, int PageSize) : IQuery<PagedResult<PriceListItemDto>>;
+internal sealed record SearchPriceListQuery(string? Search = null, bool ForSaleOnly = false, int Page = 1, int PageSize = 20);
 
 internal sealed record PriceListItemDto(
     long Id, string Sku, string Name, string Unit, bool AllowsFractions, bool IsActive,
@@ -22,9 +21,8 @@ internal sealed class SearchPriceListValidator : AbstractValidator<SearchPriceLi
 }
 
 internal sealed class SearchPriceListHandler(IDbConnectionFactory connections)
-    : IQueryHandler<SearchPriceListQuery, PagedResult<PriceListItemDto>>
 {
-    public async ValueTask<PagedResult<PriceListItemDto>> Handle(SearchPriceListQuery q, CancellationToken ct)
+    public async Task<PagedResult<PriceListItemDto>> HandleAsync(SearchPriceListQuery q, CancellationToken ct)
     {
         var args = new { Search = SearchText.ForLike(q.Search), q.ForSaleOnly, q.Page, q.PageSize };
         await using var conn = connections.Create();

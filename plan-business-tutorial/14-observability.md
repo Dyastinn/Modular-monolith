@@ -45,7 +45,7 @@ data at a real monitoring system. Same code, one setting.
 
 ## 1. Refactor: from a logging behavior to a telemetry behavior
 
-Back in [lesson 03](03-mediator.md), we wrote a `LoggingBehavior`: it logged each request and how long it
+Back in [lesson 03](03-features.md), we wrote a `LoggingBehavior`: it logged each request and how long it
 took. That was enough then. Now it falls short in two ways: it can't tell a slow request's *parts* apart (no
 spans), and you can't chart it (no metrics). Let's replace it with a behavior that does all three.
 
@@ -314,12 +314,12 @@ namespace Erp.Shared.Infrastructure;
 
 public sealed class DatabaseHealthCheck(NpgsqlDataSource dataSource) : IHealthCheck
 {
-    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken ct = default)
+    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
         try
         {
             await using var command = dataSource.CreateCommand("SELECT 1");
-            await command.ExecuteScalarAsync(ct);
+            await command.ExecuteScalarAsync(cancellationToken);
             return HealthCheckResult.Healthy();
         }
         catch (Exception ex)

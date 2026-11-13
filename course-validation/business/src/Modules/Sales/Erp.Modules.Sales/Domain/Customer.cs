@@ -23,8 +23,8 @@ internal sealed class Customer : Entity<CustomerId>
 
     public void Update(string name, string? tin, string? address, Money creditLimit, int paymentTermsDays)
     {
-        if (string.IsNullOrWhiteSpace(name)) throw new DomainException("A customer needs a name.");
-        if (paymentTermsDays is < 0 or > 365) throw new DomainException("Payment terms must be between 0 and 365 days.");
+        if (string.IsNullOrWhiteSpace(name)) throw new DomainException(SalesErrors.CustomerNameRequired, "A customer needs a name.");
+        if (paymentTermsDays is < 0 or > 365) throw new DomainException(SalesErrors.PaymentTermsOutOfRange, "Payment terms must be between 0 and 365 days.");
         Name = name.Trim();
         Tin = string.IsNullOrWhiteSpace(tin) ? null : tin.Trim();
         Address = string.IsNullOrWhiteSpace(address) ? null : address.Trim();
@@ -38,7 +38,7 @@ internal sealed class Customer : Entity<CustomerId>
     public void EnsureNotBlocked()
     {
         if (IsBlocked)
-            throw new DomainException($"Customer '{Name}' is blocked and cannot place orders.");
+            throw new DomainException(SalesErrors.CustomerBlocked, $"Customer '{Name}' is blocked and cannot place orders.");
     }
 
     // Exposure = what they owe + what's awaiting approval + this order.
@@ -47,7 +47,7 @@ internal sealed class Customer : Entity<CustomerId>
         if (OutstandingBalance + otherPendingTotal + orderTotal <= CreditLimit) return;
 
         var available = Math.Max(0, CreditLimit.Amount - OutstandingBalance.Amount - otherPendingTotal.Amount);
-        throw new DomainException(
+        throw new DomainException(SalesErrors.CreditLimitExceeded,
             $"Order total ₱{orderTotal.Amount:N2} would exceed the credit limit. Available credit: ₱{available:N2}.");
     }
 

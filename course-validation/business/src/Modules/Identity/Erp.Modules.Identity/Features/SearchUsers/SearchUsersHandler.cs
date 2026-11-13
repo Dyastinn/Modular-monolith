@@ -1,11 +1,10 @@
 using Dapper;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Identity.Features;
 
-internal sealed record SearchUsersQuery(string? Search, int Page, int PageSize) : IQuery<PagedResult<UserDto>>;
+internal sealed record SearchUsersQuery(string? Search = null, int Page = 1, int PageSize = 20);
 
 internal sealed record UserDto(
     long Id, string Email, string FullName, string Role, bool IsDisabled, bool MustChangePassword,
@@ -20,9 +19,9 @@ internal sealed class SearchUsersValidator : AbstractValidator<SearchUsersQuery>
     }
 }
 
-internal sealed class SearchUsersHandler(IDbConnectionFactory connections) : IQueryHandler<SearchUsersQuery, PagedResult<UserDto>>
+internal sealed class SearchUsersHandler(IDbConnectionFactory connections)
 {
-    public async ValueTask<PagedResult<UserDto>> Handle(SearchUsersQuery q, CancellationToken ct)
+    public async Task<PagedResult<UserDto>> HandleAsync(SearchUsersQuery q, CancellationToken ct)
     {
         var search = SearchText.ForLike(q.Search);
         await using var conn = connections.Create();
@@ -38,14 +37,11 @@ internal sealed class SearchUsersHandler(IDbConnectionFactory connections) : IQu
 }
 
 // Names for "approved by", "shipped by" and the like. Every signed-in user may read it; it holds no secrets.
-internal sealed record GetUserDirectoryQuery : IQuery<IReadOnlyList<UserNameDto>>;
-
 internal sealed record UserNameDto(long Id, string FullName);
 
 internal sealed class GetUserDirectoryHandler(IDbConnectionFactory connections)
-    : IQueryHandler<GetUserDirectoryQuery, IReadOnlyList<UserNameDto>>
 {
-    public async ValueTask<IReadOnlyList<UserNameDto>> Handle(GetUserDirectoryQuery q, CancellationToken ct)
+    public async Task<IReadOnlyList<UserNameDto>> HandleAsync(CancellationToken ct)
     {
         await using var conn = connections.Create();
         return (await conn.QueryAsync<UserNameDto>(new CommandDefinition(

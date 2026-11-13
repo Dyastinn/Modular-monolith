@@ -90,7 +90,7 @@ public DateTime? ShippedUtc { get; private set; }
 public void EnsureCanShip()
 {
     if (Status != SalesOrderStatus.Approved)
-        throw new DomainException($"Only approved orders can be shipped; {OrderNumber} is {Status}.");
+        throw new DomainException(SalesErrors.OnlyApprovedOrdersShip, $"Only approved orders can be shipped; {OrderNumber} is {Status}.");
 }
 
 public void MarkShipped(DateTime nowUtc)
@@ -265,7 +265,7 @@ internal sealed class Shipment : AggregateRoot<ShipmentId>
             Id = id, Number = number, SalesOrderId = salesOrderId, OrderNumber = orderNumber, ShippedBy = by, ShippedUtc = nowUtc
         };
         shipment._lines.AddRange(lines);
-        if (shipment._lines.Count == 0) throw new DomainException("A shipment needs at least one line.");
+        if (shipment._lines.Count == 0) throw new DomainException(InventoryErrors.ShipmentNeedsLines, "A shipment needs at least one line.");
         return shipment;
     }
 }
@@ -374,7 +374,7 @@ internal sealed class ShipSalesOrderHandler(InventoryDbContext db, ISalesOrders 
                     .SetProperty(i => i.OnHand, i => i.OnHand - line.Quantity)
                     .SetProperty(i => i.Reserved, i => i.Reserved - line.Quantity), ct);
             if (rows != 1)
-                throw new DomainException($"Item {line.ItemId} no longer has {line.Quantity:0.###} reserved for {order.OrderNumber}.");
+                throw new DomainException(InventoryErrors.ReservationMissing, $"Item {line.ItemId} no longer has {line.Quantity:0.###} reserved for {order.OrderNumber}.");
 
             db.StockMovements.Add(StockMovement.Shipment(itemId, line.Quantity, number, by, now));
             lines.Add(new ShipmentLine(itemId, line.Quantity));
@@ -405,24 +405,30 @@ where it's atomic.
 
 ```csharp
 // src/Modules/Inventory/Erp.Modules.Inventory/Features/ShipSalesOrder/ShipSalesOrderEndpoint.cs
-using Carter;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Inventory.Features;
 
+
 internal sealed record ShipSalesOrderRequest(long SalesOrderId);
 
-internal sealed class ShipSalesOrderEndpoint : ICarterModule
+internal sealed class ShipSalesOrderRequestValidator : AbstractValidator<ShipSalesOrderRequest>
 {
-    public void AddRoutes(IEndpointRouteBuilder app) =>
-        app.MapPost("/shipments", async (ShipSalesOrderRequest body, ISender sender, CancellationToken ct) =>
+    public ShipSalesOrderRequestValidator() => RuleFor(x => x.SalesOrderId).GreaterThan(0);
+}
+
+internal static class ShipSalesOrderEndpoint
+{
+    public static void Map(IEndpointRouteBuilder app) =>
+        app.MapPost("/shipments", async Task<Created<CreatedId>> (ShipSalesOrderRequest body, ShipSalesOrderHandler handler, CancellationToken ct) =>
             {
-                var id = await sender.Send(new ShipSalesOrderCommand(body.SalesOrderId), ct);
-                return Results.Created($"/api/shipments/{id}", new { id });
+                var id = await handler.HandleAsync(new ShipSalesOrderCommand(body.SalesOrderId), ct);
+                return TypedResults.Created($"/api/shipments/{id}", new CreatedId(id));
             })
             .RequireAuthorization(p => p.RequireRole(Roles.InventoryClerk, Roles.Admin));
 }

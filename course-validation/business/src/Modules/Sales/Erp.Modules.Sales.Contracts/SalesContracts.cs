@@ -14,8 +14,9 @@ public sealed record InvoiceableLine(long ItemId, string Description, string Uni
 
 public interface ISalesOrders
 {
-    // Both join the caller's transaction. GetForShipment throws a DomainException unless the order is approved.
-    Task<ShippableOrder> GetForShipmentAsync(long orderId, DbTransaction tx, CancellationToken ct);
+    // Both join the caller's transaction. GetForShipment returns null when there is no such order, and throws a
+    // DomainException unless the order is approved.
+    Task<ShippableOrder?> GetForShipmentAsync(long orderId, DbTransaction tx, CancellationToken ct);
     Task MarkShippedAsync(long orderId, DateTime shippedUtc, DbTransaction tx, CancellationToken ct);
 
     Task<OrderForInvoice> GetForInvoiceAsync(long orderId, CancellationToken ct);

@@ -16,11 +16,11 @@ public sealed class FirstRunFactory : WebApplicationFactory<Program>, IAsyncLife
 
     private readonly PostgreSqlContainer _postgres = TestDatabase.Container().Build();
 
-    public Task InitializeAsync() => _postgres.StartAsync();
+    public async ValueTask InitializeAsync() => await _postgres.StartAsync();
 
-    async Task IAsyncLifetime.DisposeAsync()
+    public override async ValueTask DisposeAsync()
     {
-        await DisposeAsync();
+        await base.DisposeAsync();
         await _postgres.DisposeAsync();
     }
 

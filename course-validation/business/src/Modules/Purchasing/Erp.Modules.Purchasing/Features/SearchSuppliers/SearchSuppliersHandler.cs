@@ -1,12 +1,11 @@
 using Dapper;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Purchasing.Features;
 
-internal sealed record SearchSuppliersQuery(string? Search, bool ActiveOnly, int Page, int PageSize) : IQuery<PagedResult<SupplierDto>>;
-internal sealed record GetSupplierQuery(long SupplierId) : IQuery<SupplierDto?>;
+internal sealed record SearchSuppliersQuery(string? Search = null, bool ActiveOnly = false, int Page = 1, int PageSize = 20);
+internal sealed record GetSupplierQuery(long SupplierId);
 
 internal sealed record SupplierDto(long Id, string Name, string? Tin, string? Address, string? Email, string? Phone,
     int PaymentTermsDays, bool IsActive);
@@ -21,9 +20,8 @@ internal sealed class SearchSuppliersValidator : AbstractValidator<SearchSupplie
 }
 
 internal sealed class SearchSuppliersHandler(IDbConnectionFactory connections)
-    : IQueryHandler<SearchSuppliersQuery, PagedResult<SupplierDto>>, IQueryHandler<GetSupplierQuery, SupplierDto?>
 {
-    public async ValueTask<PagedResult<SupplierDto>> Handle(SearchSuppliersQuery q, CancellationToken ct)
+    public async Task<PagedResult<SupplierDto>> HandleAsync(SearchSuppliersQuery q, CancellationToken ct)
     {
         var args = new { Search = SearchText.ForLike(q.Search), q.ActiveOnly, q.Page, q.PageSize };
         await using var conn = connections.Create();
@@ -37,7 +35,7 @@ internal sealed class SearchSuppliersHandler(IDbConnectionFactory connections)
         return new PagedResult<SupplierDto>(rows, q.Page, q.PageSize, (int)await multi.ReadSingleAsync<long>());
     }
 
-    public async ValueTask<SupplierDto?> Handle(GetSupplierQuery q, CancellationToken ct)
+    public async Task<SupplierDto?> HandleAsync(GetSupplierQuery q, CancellationToken ct)
     {
         await using var conn = connections.Create();
         return await conn.QuerySingleOrDefaultAsync<SupplierDto>(new CommandDefinition(

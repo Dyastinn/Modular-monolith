@@ -1,18 +1,18 @@
-using Carter;
-using Mediator;
+using Erp.Modules.Invoicing.Domain;
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Invoicing.Features;
 
-internal sealed class SearchInvoicesEndpoint : ICarterModule
+
+internal static class SearchInvoicesEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app) =>
-        app.MapGet("/invoices",
-                async (long? customerId, string? status, string? search, bool? overdueOnly, int? page, int? pageSize,
-                       ISender sender, CancellationToken ct) =>
-                    Results.Ok(await sender.Send(
-                        new SearchInvoicesQuery(customerId, status, search, overdueOnly ?? false, page ?? 1, pageSize ?? 20), ct)))
+    public static void Map(IEndpointRouteBuilder app) =>
+        app.MapGet("/invoices", async ([AsParameters] SearchInvoicesQuery query, SearchInvoicesHandler handler, CancellationToken ct) =>
+                TypedResults.Ok(await handler.HandleAsync(query, ct)))
             .RequireAuthorization(p => p.RequireRole(InvoicingRoles.Readers));
 }

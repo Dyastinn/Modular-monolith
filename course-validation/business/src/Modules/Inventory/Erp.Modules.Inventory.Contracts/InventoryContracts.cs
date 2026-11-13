@@ -24,9 +24,10 @@ public interface IItemCatalog
     Task<IReadOnlyList<CatalogItem>> GetAsync(IReadOnlyCollection<long> itemIds, CancellationToken ct);
 }
 
-// Integration events: public, because other modules handle them. Raised through the Inventory outbox.
+// Integration events: public, because other modules handle them. Inventory publishes them from its own domain events,
+// so they leave through its outbox and arrive at least once.
 public sealed record ItemCatalogChanged(long ItemId, string Sku, string Name, string Unit, bool AllowsFractions, bool IsActive)
-    : IDomainEvent;
+    : IIntegrationEvent;
 
 public sealed record ShipmentRecorded(long ShipmentId, string ShipmentNumber, long SalesOrderId, DateTime ShippedUtc)
-    : IDomainEvent;
+    : IIntegrationEvent;

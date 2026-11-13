@@ -18,7 +18,7 @@ public class LaterModuleEdgeCaseTests(CustomWebAppFactory factory)
     {
         var email = await factory.CreateUserAsync(Roles.SalesRep);
         var client = factory.CreateClient();
-        var tokens = await factory.LoginAsync(client, email);
+        var tokens = await CustomWebAppFactory.LoginAsync(client, email);
         client.DefaultRequestHeaders.Authorization = new("Bearer", tokens.AccessToken);
         var me = await client.GetFromJsonAsync<Me>("/api/auth/me");
 

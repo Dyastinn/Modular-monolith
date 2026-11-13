@@ -3,34 +3,27 @@ using Erp.Modules.Inventory.Infrastructure;
 using Erp.Modules.Invoicing.Contracts;
 using Erp.Modules.Sales.Contracts;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Erp.Modules.Inventory.Features;
 
-internal sealed record ShipSalesOrderCommand(long SalesOrderId) : ICommand<long>;
-
-internal sealed class ShipSalesOrderValidator : AbstractValidator<ShipSalesOrderCommand>
-{
-    public ShipSalesOrderValidator() => RuleFor(x => x.SalesOrderId).GreaterThan(0);
-}
+internal sealed record ShipSalesOrderCommand(long SalesOrderId);
 
 // Stock leaves, the reservation is used up, and the order becomes Shipped: one transaction across two modules.
 internal sealed class ShipSalesOrderHandler(InventoryDbContext db, ISalesOrders orders, IInvoicingSetup invoicing, ICurrentUser user,
-    IClock clock)
-    : ICommandHandler<ShipSalesOrderCommand, long>
+    TimeProvider time)
 {
-    public async ValueTask<long> Handle(ShipSalesOrderCommand cmd, CancellationToken ct)
+    public async Task<long> HandleAsync(ShipSalesOrderCommand cmd, CancellationToken ct)
     {
         // The BIR expects the invoice with the goods; refuse now rather than ship something that can't be billed.
         await invoicing.EnsureReadyToInvoiceAsync(ct);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        var order = await orders.GetForShipmentAsync(cmd.SalesOrderId, tx.GetDbTransaction(), ct);
+        var order = await orders.GetForShipmentAsync(cmd.SalesOrderId, tx.GetDbTransaction(), ct)
+            ?? throw new DomainException(InventoryErrors.SalesOrderNotFound, $"Sales order {cmd.SalesOrderId} doesn't exist.");
 
-        var now = clock.UtcNow;
+        var now = time.GetUtcNow().UtcDateTime;
         var by = new UserId(user.UserId);
         var id = new ShipmentId(await db.NextShipmentIdAsync(ct));
         var number = DocumentNumber.Format("SH", id.Value, now);
@@ -45,7 +38,7 @@ internal sealed class ShipSalesOrderHandler(InventoryDbContext db, ISalesOrders 
                     .SetProperty(i => i.OnHand, i => i.OnHand - line.Quantity)
                     .SetProperty(i => i.Reserved, i => i.Reserved - line.Quantity), ct);
             if (rows != 1)
-                throw new DomainException($"Item {line.ItemId} no longer has {line.Quantity:0.###} reserved for {order.OrderNumber}.");
+                throw new DomainException(InventoryErrors.ReservationMissing, $"Item {line.ItemId} no longer has {line.Quantity:0.###} reserved for {order.OrderNumber}.");
 
             db.StockMovements.Add(StockMovement.Shipment(itemId, line.Quantity, number, by, now));
             lines.Add(new ShipmentLine(itemId, line.Quantity));

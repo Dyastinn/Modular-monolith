@@ -15,10 +15,10 @@ public sealed record SpecialDiscount
 
     public SpecialDiscount(string program, string idLabel, string holderName, string idNumber, decimal rate, decimal vatRateRemoved)
     {
-        if (string.IsNullOrWhiteSpace(holderName)) throw new DomainException("A special discount needs the holder's name.");
-        if (string.IsNullOrWhiteSpace(idNumber)) throw new DomainException($"A {program} discount needs the {idLabel}.");
-        if (rate is <= 0 or >= 1) throw new DomainException("A discount rate must be a fraction between 0 and 1, such as 0.20.");
-        if (vatRateRemoved is < 0 or >= 1) throw new DomainException("The VAT rate must be a fraction between 0 and 1, such as 0.12.");
+        if (string.IsNullOrWhiteSpace(holderName)) throw new DomainException(CommonErrors.SpecialDiscountHolderMissing, "A special discount needs the holder's name.");
+        if (string.IsNullOrWhiteSpace(idNumber)) throw new DomainException(CommonErrors.SpecialDiscountHolderMissing, $"A {program} discount needs the {idLabel}.");
+        if (rate is <= 0 or >= 1) throw new DomainException(CommonErrors.InvalidDiscountRate, "A discount rate must be a fraction between 0 and 1, such as 0.20.");
+        if (vatRateRemoved is < 0 or >= 1) throw new DomainException(CommonErrors.InvalidVatRate, "The VAT rate must be a fraction between 0 and 1, such as 0.12.");
         (Program, IdLabel, HolderName, IdNumber) = (program.Trim(), idLabel.Trim(), holderName.Trim(), idNumber.Trim());
         (Rate, VatRateRemoved) = (rate, vatRateRemoved);
     }

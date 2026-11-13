@@ -10,7 +10,7 @@ hours. Are you ready? Let's begin!
 
 | Piece | What it is |
 |---|---|
-| **Base types** | `Entity`, `AggregateRoot`, `DomainException`, `Roles`: shared by every module |
+| **Base types** | `Entity`, `AggregateRoot`, `DomainException`, `ErrorCode`, `Roles`: shared by every module |
 | **Value objects** | `Money` and `Quantity`, also shared, plus typed ids like `SalesOrderId` |
 | **Sales' entities** | `Customer`, `ItemCategory`, `SalesItem` |
 | **The aggregate** | `SalesOrder` with its lines, a status state machine, and the approval workflow |
@@ -81,17 +81,57 @@ public abstract class Entity<TId> where TId : struct
 
 public abstract class AggregateRoot<TId> : Entity<TId> where TId : struct;
 
-// A business rule said no. Becomes HTTP 422.
-public class DomainException(string message) : Exception(message);
+// A business rule said no. Maps to HTTP 422, with the error's code. The message adds the specifics ("₱5,000 available").
+public class DomainException(ErrorCode error, string? message = null) : Exception(message ?? error.Title)
+{
+    public ErrorCode Error { get; } = error;
+}
 ```
 
 - **`Entity<TId>`** is anything with an identity. `TId` is a small struct like `SalesOrderId`, never a
   plain `long`; you'll see why in a moment.
 - **`AggregateRoot<TId>`** marks the one entity the outside world talks to. It's empty for now. In
   [lesson 13](13-events-outbox.md) it learns to record events.
-- **`DomainException`** is how a business rule says no.
+- **`DomainException`** is how a business rule says no. It always carries an **error code**, below.
 - **`where TId : struct`** appears on both classes. Leave it off `AggregateRoot` and the compiler stops you
   with `CS0453`: a derived generic class must repeat its base class's constraints.
+
+### Every refusal has a code
+
+When a compiler refuses your code, it says `CS0122` along with the message. You can look `CS0122` up and
+learn what causes it and how to fix it, and so can the colleague you ask for help. Our business rules will
+refuse things all day ("Customer 'Gamma Traders' is blocked"), so we give them the same courtesy: every kind
+of refusal gets a stable **error code**, with a title and a fix, written once.
+
+```csharp
+// src/Shared/Erp.Shared.BuildingBlocks/Abstractions/ErrorCode.cs
+namespace Erp.Shared.BuildingBlocks;
+
+// One kind of failure with a stable ID, like the compiler's CS0122: the code names the problem, the catalog says how
+// to fix it. A published code never changes meaning, and its number is never reused.
+public sealed record ErrorCode(string Code, string Title, string Fix);
+
+// Codes that belong to no module: the value objects every module shares.
+public static class CommonErrors
+{
+    public static readonly ErrorCode NegativeMoney = new("ERP-0101", "An amount can't be negative",
+        "Enter zero or a positive amount.");
+    public static readonly ErrorCode QuantityNotPositive = new("ERP-0102", "Quantity must be greater than zero",
+        "Enter a quantity above zero.");
+    public static readonly ErrorCode QuantityTooPrecise = new("ERP-0103", "Too many decimal places in a quantity",
+        "Quantities allow at most three decimal places, such as 2.125.");
+}
+```
+
+- **`Code`** is what people say and search for: `ERP-0101`. A module's own codes start with its name
+  (`SALES-0003`), so you know at a glance where to look.
+- **`Title`** names the problem in a few words. **`Fix`** says what to do about it. The exception's message
+  still carries the specifics of *this* time ("₱500.00 available").
+- **The promise:** a code never changes meaning, and a number is never reused, even if its rule is deleted.
+  Someone may have written `SALES-0003` in a support ticket two years ago. New codes go at the end.
+
+[Lesson 07](07-create-order.md) puts the code into every error the API sends, and gives the app a page that
+explains each one.
 
 Pesos and quantities will appear in every module that touches an order, a purchase or an invoice, so they
 live here too:
@@ -110,7 +150,7 @@ public readonly record struct Money
     public Money(decimal amount) =>
         Amount = amount >= 0
             ? Math.Round(amount, 2, MidpointRounding.AwayFromZero)
-            : throw new DomainException("An amount of money cannot be negative.");
+            : throw new DomainException(CommonErrors.NegativeMoney, "An amount of money cannot be negative.");
 
     public static Money operator +(Money a, Money b) => new(a.Amount + b.Amount);
     public static Money operator -(Money a, Money b) => new(a.Amount - b.Amount);
@@ -127,6 +167,8 @@ public readonly record struct Money
 
 ```csharp
 // src/Shared/Erp.Shared.BuildingBlocks/Domain/Quantity.cs
+using System.Globalization;
+
 namespace Erp.Shared.BuildingBlocks;
 
 // Greater than zero, at most three decimal places (2.5 kg). Whether fractions are allowed at all depends on the
@@ -137,8 +179,8 @@ public readonly record struct Quantity
 
     public Quantity(decimal value)
     {
-        if (value <= 0) throw new DomainException("Quantity must be greater than zero.");
-        if (decimal.Round(value, 3) != value) throw new DomainException("Quantity allows at most three decimal places.");
+        if (value <= 0) throw new DomainException(CommonErrors.QuantityNotPositive, "Quantity must be greater than zero.");
+        if (decimal.Round(value, 3) != value) throw new DomainException(CommonErrors.QuantityTooPrecise, "Quantity allows at most three decimal places.");
         Value = value;
     }
 
@@ -147,7 +189,7 @@ public readonly record struct Quantity
     public static Quantity operator +(Quantity a, Quantity b) => new(a.Value + b.Value);
     public static bool operator >(Quantity a, Quantity b) => a.Value > b.Value;
     public static bool operator <(Quantity a, Quantity b) => a.Value < b.Value;
-    public override string ToString() => Value.ToString("0.###");
+    public override string ToString() => Value.ToString("0.###", CultureInfo.InvariantCulture);
 }
 ```
 
@@ -157,6 +199,7 @@ public readonly record struct Quantity
 | The constructor throws | An invalid `Money` or `Quantity` can't exist, so nothing downstream has to check |
 | `Money` rounds to centavos | ₱620.50 × 1.5 kg is ₱930.75, not ₱930.750; every total adds up the same way everywhere |
 | `Quantity` is a `decimal` | A business sells 2.5 kg of wire as well as 2 pieces. Whether *this* item allows fractions is a rule on the item |
+| `CultureInfo.InvariantCulture` | The analyzers from lesson 01 ask for it: without it, a server set to German would write 2,5 instead of 2.5 |
 
 And the role names, written once so nobody ever types one:
 
@@ -180,6 +223,58 @@ accounting roles, when their screens arrive.
 
 You might wonder why all of BuildingBlocks shares one namespace, whatever the folder. Folders like
 `Domain/` are for people browsing the project; one namespace means one `using` line in every module.
+
+Finally, Sales' own codes, one for each rule this lesson writes, in one catalog next to the domain:
+
+```csharp
+// src/Modules/Sales/Erp.Modules.Sales/Domain/SalesErrors.cs
+using Erp.Shared.BuildingBlocks;
+
+namespace Erp.Modules.Sales.Domain;
+
+// Every business rule Sales can refuse with. Add new codes at the end; never renumber or reuse one.
+internal static class SalesErrors
+{
+    public static readonly ErrorCode CustomerNameRequired = new("SALES-0001", "A customer needs a name",
+        "Enter the customer's registered or trade name.");
+    public static readonly ErrorCode CustomerBlocked = new("SALES-0002", "The customer is blocked",
+        "A blocked customer can't place orders. A sales manager can unblock them on the Customers page once the reason is settled.");
+    public static readonly ErrorCode CreditLimitExceeded = new("SALES-0003", "The order would exceed the credit limit",
+        "Reduce the order, wait for the customer's payments, or ask a sales manager to raise the credit limit. Orders awaiting approval count against the limit too.");
+    public static readonly ErrorCode CategoryNameRequired = new("SALES-0004", "A category needs a name",
+        "Enter a name for the category.");
+    public static readonly ErrorCode CategoryMaxQuantityInvalid = new("SALES-0005", "Invalid maximum quantity per order",
+        "Enter a maximum greater than zero.");
+    public static readonly ErrorCode UnknownRole = new("SALES-0006", "Unknown role",
+        "Choose one of the roles in the list.");
+    public static readonly ErrorCode CategoryRoleRequired = new("SALES-0007", "Your role can't order items in this category",
+        "Ask someone with the category's required role to place the order, or ask an admin to change the category.");
+    public static readonly ErrorCode CategoryQuantityExceeded = new("SALES-0008", "Too much of one category on one order",
+        "Lower the quantity, or ask an admin to raise the category's maximum per order.");
+    public static readonly ErrorCode PriceRequiredForSale = new("SALES-0009", "The item has no price",
+        "Set a price above zero before putting the item on sale.");
+    public static readonly ErrorCode InactiveItemNotSellable = new("SALES-0010", "The item is inactive in the catalog",
+        "Reactivate the item under Inventory → Items first.");
+    public static readonly ErrorCode ItemNotForSale = new("SALES-0011", "The item is not for sale",
+        "Choose another item, or put this one on sale in the price list.");
+    public static readonly ErrorCode WholeUnitsOnly = new("SALES-0012", "The item is sold in whole units",
+        "Enter a whole number: this item's unit can't be split.");
+    public static readonly ErrorCode OrderNeedsLines = new("SALES-0013", "The order has no lines",
+        "Add at least one item to the order.");
+    public static readonly ErrorCode CreatorCannotApprove = new("SALES-0014", "You can't approve your own order",
+        "Another sales manager must approve it.");
+    public static readonly ErrorCode RejectionReasonRequired = new("SALES-0015", "A rejection needs a reason",
+        "Write why the order is rejected, so the sales rep can fix it.");
+    public static readonly ErrorCode LinesOnlyOnDraft = new("SALES-0016", "Lines can only change on a draft order",
+        "Cancel the order and create a new one if the lines must change.");
+    public static readonly ErrorCode InvalidStatusChange = new("SALES-0017", "The order can't move to that status",
+        "Reload the order: someone may have changed it. The status shown lists the actions still possible.");
+}
+```
+
+Read the fixes: they're written for the person at the screen, not for us. "Ask a sales manager to raise the
+credit limit" helps; "credit check failed" doesn't. Later lessons add codes at the end of this list as they
+add rules.
 
 ## 2. Typed ids
 
@@ -225,7 +320,7 @@ internal sealed class Customer : Entity<CustomerId>
 
     public static Customer Create(string name, Money creditLimit)
     {
-        if (string.IsNullOrWhiteSpace(name)) throw new DomainException("A customer needs a name.");
+        if (string.IsNullOrWhiteSpace(name)) throw new DomainException(SalesErrors.CustomerNameRequired, "A customer needs a name.");
         return new Customer { Name = name.Trim(), CreditLimit = creditLimit };
     }
 
@@ -235,7 +330,7 @@ internal sealed class Customer : Entity<CustomerId>
     public void EnsureNotBlocked()
     {
         if (IsBlocked)
-            throw new DomainException($"Customer '{Name}' is blocked and cannot place orders.");
+            throw new DomainException(SalesErrors.CustomerBlocked, $"Customer '{Name}' is blocked and cannot place orders.");
     }
 
     // Exposure = what they owe + what's awaiting approval + this order.
@@ -244,7 +339,7 @@ internal sealed class Customer : Entity<CustomerId>
         if (OutstandingBalance + otherPendingTotal + orderTotal <= CreditLimit) return;
 
         var available = Math.Max(0, CreditLimit.Amount - OutstandingBalance.Amount - otherPendingTotal.Amount);
-        throw new DomainException(
+        throw new DomainException(SalesErrors.CreditLimitExceeded,
             $"Order total ₱{orderTotal.Amount:N2} would exceed the credit limit. Available credit: ₱{available:N2}.");
     }
 
@@ -287,23 +382,23 @@ internal sealed class ItemCategory : Entity<CategoryId>
 
     public static ItemCategory Create(string name, decimal maxQuantityPerOrder, string? requiredRole)
     {
-        if (string.IsNullOrWhiteSpace(name)) throw new DomainException("A category needs a name.");
-        if (maxQuantityPerOrder <= 0) throw new DomainException("The maximum quantity per order must be greater than zero.");
+        if (string.IsNullOrWhiteSpace(name)) throw new DomainException(SalesErrors.CategoryNameRequired, "A category needs a name.");
+        if (maxQuantityPerOrder <= 0) throw new DomainException(SalesErrors.CategoryMaxQuantityInvalid, "The maximum quantity per order must be greater than zero.");
         if (requiredRole is not null && !Roles.All.Contains(requiredRole))
-            throw new DomainException($"'{requiredRole}' is not a role.");
+            throw new DomainException(SalesErrors.UnknownRole, $"'{requiredRole}' is not a role.");
         return new ItemCategory { Name = name.Trim(), MaxQuantityPerOrder = maxQuantityPerOrder, RequiredRole = requiredRole };
     }
 
     public void EnsureRoleAllowed(string callerRole)
     {
         if (RequiredRole is not null && callerRole != RequiredRole && callerRole != Roles.Admin)
-            throw new DomainException($"Category '{Name}' requires role '{RequiredRole}'.");
+            throw new DomainException(SalesErrors.CategoryRoleRequired, $"Category '{Name}' requires role '{RequiredRole}'.");
     }
 
     public void EnsureQuantityAllowed(decimal quantityOnOrder)
     {
         if (quantityOnOrder > MaxQuantityPerOrder)
-            throw new DomainException(
+            throw new DomainException(SalesErrors.CategoryQuantityExceeded,
                 $"Category '{Name}' allows at most {MaxQuantityPerOrder:0.###} per order (requested {quantityOnOrder:0.###}).");
     }
 }
@@ -351,8 +446,8 @@ internal sealed class SalesItem : Entity<ItemId>
 
     public void SetPricing(Money unitPrice, ItemCategory category, bool isForSale)
     {
-        if (isForSale && unitPrice == Money.Zero) throw new DomainException($"Set a price for {Sku} before putting it on sale.");
-        if (isForSale && !IsActive) throw new DomainException($"{Sku} is inactive in the catalog and can't be sold.");
+        if (isForSale && unitPrice == Money.Zero) throw new DomainException(SalesErrors.PriceRequiredForSale, $"Set a price for {Sku} before putting it on sale.");
+        if (isForSale && !IsActive) throw new DomainException(SalesErrors.InactiveItemNotSellable, $"{Sku} is inactive in the catalog and can't be sold.");
         UnitPrice = unitPrice;
         CategoryId = category.Id;
         Category = category;
@@ -362,14 +457,14 @@ internal sealed class SalesItem : Entity<ItemId>
     public ItemCategory EnsureSellable()
     {
         if (!IsActive || !IsForSale || Category is null)
-            throw new DomainException($"Item {Sku} is not for sale.");
+            throw new DomainException(SalesErrors.ItemNotForSale, $"Item {Sku} is not for sale.");
         return Category;
     }
 
     public void EnsureQuantityFits(Quantity quantity)
     {
         if (!AllowsFractions && !quantity.IsWhole)
-            throw new DomainException($"Item {Sku} is sold in whole {Unit}; {quantity} is not allowed.");
+            throw new DomainException(SalesErrors.WholeUnitsOnly, $"Item {Sku} is sold in whole {Unit}; {quantity} is not allowed.");
     }
 }
 ```
@@ -482,7 +577,7 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
     public void SetLines(IReadOnlyList<(SalesItem Item, Quantity Quantity)> lines, string callerRole)
     {
         EnsureDraft();
-        if (lines.Count == 0) throw new DomainException("An order needs at least one line.");
+        if (lines.Count == 0) throw new DomainException(SalesErrors.OrderNeedsLines, "An order needs at least one line.");
 
         // Built aside and swapped in at the end, so a refused line leaves the order exactly as it was.
         var newLines = new List<SalesOrderLine>();
@@ -508,7 +603,7 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
     {
         EnsureBelongsTo(customer);
         if (_lines.Count == 0)
-            throw new DomainException("Cannot submit an order with no lines.");
+            throw new DomainException(SalesErrors.OrderNeedsLines, "Cannot submit an order with no lines.");
         customer.EnsureNotBlocked();
         customer.EnsureWithinCreditLimit(Total, otherPendingTotal);
 
@@ -523,7 +618,7 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
     {
         EnsureBelongsTo(customer);
         if (approver == CreatedBy)
-            throw new DomainException("An order can't be approved by the person who created it.");
+            throw new DomainException(SalesErrors.CreatorCannotApprove, "An order can't be approved by the person who created it.");
         MarkApproved(approver, customer, nowUtc);
     }
 
@@ -531,7 +626,7 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
     public IReadOnlyList<SalesOrderLine> Reject(UserId rejectedBy, string reason, DateTime nowUtc)
     {
         if (string.IsNullOrWhiteSpace(reason))
-            throw new DomainException("A rejection needs a reason.");
+            throw new DomainException(SalesErrors.RejectionReasonRequired, "A rejection needs a reason.");
         Transition(SalesOrderStatus.Rejected);
         RejectedBy = rejectedBy;
         RejectedUtc = nowUtc;
@@ -564,7 +659,7 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
     private void EnsureDraft()
     {
         if (Status != SalesOrderStatus.Draft)
-            throw new DomainException("Lines can only be changed on a draft order.");
+            throw new DomainException(SalesErrors.LinesOnlyOnDraft, "Lines can only be changed on a draft order.");
     }
 
     private void EnsureBelongsTo(Customer customer)
@@ -576,7 +671,7 @@ internal sealed class SalesOrder : AggregateRoot<SalesOrderId>
     private void Transition(SalesOrderStatus to)
     {
         if (!Status.CanTransitionTo(to))
-            throw new DomainException($"Cannot move a {Status} order to {to}.");
+            throw new DomainException(SalesErrors.InvalidStatusChange, $"Cannot move a {Status} order to {to}.");
         Status = to;
     }
 }
@@ -607,7 +702,7 @@ Clear so far? Good. Now let's prove all of it.
 
 ## 6. The unit tests
 
-The test project has been waiting since [lesson 03](03-mediator.md), and it can already see Sales' internals.
+The test project has been waiting since [lesson 03](03-features.md), and it can already see Sales' internals.
 The domain is exactly what unit tests are for: plain classes, no database, no web. Let's prove every rule
 we just wrote.
 
@@ -656,7 +751,8 @@ public class CustomerRuleTests
     [Fact]
     public void Blocked_customer_cannot_order() =>
         Make.Customer(blocked: true).Invoking(c => c.EnsureNotBlocked())
-            .Should().Throw<DomainException>().WithMessage("*blocked*");
+            .Should().Throw<DomainException>().WithMessage("*blocked*")
+            .Which.Error.Should().Be(SalesErrors.CustomerBlocked);   // the code a person can look up
 
     [Fact]
     public void Order_over_available_credit_is_rejected() =>
@@ -1140,23 +1236,25 @@ Now, let's be honest about the cost here: a property is harder to write than an 
 squeezed generator can test nothing interesting a hundred times. Use properties for math and rules over
 many values (money, tax, totals), and examples for everything else.
 
-## 9. Two more walls to test
+## 9. Three more walls to test
 
-Two rules from this lesson are about how the code is built, so they get architecture tests:
+Three rules from this lesson are about how the code is built, so they get architecture tests:
 
 - **The domain stays pure.** No EF Core, no SQL, no web types in `Domain/`. If one sneaks in, the domain can't
   be unit-tested without a database any more.
 - **State changes only through methods.** A public setter lets any handler write `order.Status = Approved`,
   and the whole state machine becomes decoration.
+- **The error catalog keeps its promise.** Every code unique, written the module's way, with a title and a
+  fix; and no dead entries.
 
-Add both to `ModuleBoundaryTests`:
+Add the first two to `ModuleBoundaryTests`:
 
 ```csharp
 // tests/Erp.Architecture.Tests/ModuleBoundaryTests.cs (two more tests)
 [Fact]
 public void The_domain_does_not_depend_on_data_access_or_web()
 {
-    string[] forbidden = ["Microsoft.EntityFrameworkCore", "Npgsql", "Dapper", "Microsoft.AspNetCore", "Carter"];
+    string[] forbidden = ["Microsoft.EntityFrameworkCore", "Npgsql", "Dapper", "Microsoft.AspNetCore"];
 
     foreach (var module in Modules)
     {
@@ -1203,6 +1301,82 @@ Expected setters to be empty because domain properties have private setters; rec
 are fine, but found at least one item {"SalesOrder.OrderNumber"}.
 ```
 
+The third gets a file of its own:
+
+```csharp
+// tests/Erp.Architecture.Tests/ErrorCatalogTests.cs
+using System.Reflection;
+using System.Text.RegularExpressions;
+using AwesomeAssertions;
+using Erp.Modules.Sales;
+using Erp.Shared.BuildingBlocks;
+
+namespace Erp.Architecture.Tests;
+
+// The error catalog is a promise to the people who look codes up: unique, documented, and never a dead entry.
+public class ErrorCatalogTests
+{
+    // Every new module's catalog joins this list, with its prefix.
+    private static readonly Dictionary<Type, string> Catalogs = new[]
+    {
+        (typeof(CommonErrors), "ERP"), (CatalogIn(typeof(SalesModule)), "SALES")
+    }.ToDictionary(c => c.Item1, c => c.Item2);
+
+    private static Type CatalogIn(Type moduleEntry) =>
+        moduleEntry.Assembly.GetTypes().Single(t => t.Name.EndsWith("Errors", StringComparison.Ordinal)
+                                                    && t.Namespace!.EndsWith(".Domain", StringComparison.Ordinal));
+
+    private static IEnumerable<(Type Catalog, FieldInfo Field, ErrorCode Error)> AllCodes() =>
+        Catalogs.Keys.SelectMany(c => c.GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Where(f => f.FieldType == typeof(ErrorCode))
+            .Select(f => (c, f, (ErrorCode)f.GetValue(null)!)));
+
+    [Fact]
+    public void Every_code_is_unique_well_formed_and_documented()
+    {
+        var codes = AllCodes().ToList();
+
+        codes.Select(c => c.Error.Code).Should().OnlyHaveUniqueItems("a code names one problem, forever");
+        foreach (var (catalog, field, error) in codes)
+        {
+            error.Code.Should().MatchRegex($"^{Catalogs[catalog]}-[0-9]{{4}}$", $"{catalog.Name}.{field.Name} uses its module's prefix");
+            error.Title.Should().NotBeNullOrWhiteSpace($"{error.Code} needs a title");
+            error.Fix.Should().NotBeNullOrWhiteSpace($"{error.Code} needs a fix: the catalog exists to say what to do");
+        }
+    }
+
+    // A code nobody throws is a promise nobody keeps: someone would look it up for an error that can't happen.
+    [Fact]
+    public void Every_code_is_used_somewhere()
+    {
+        var source = Directory.EnumerateFiles(Path.Combine(RepositoryRoot(), "src"), "*.cs", SearchOption.AllDirectories)
+            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
+            .Where(f => !Catalogs.Keys.Any(c => Path.GetFileNameWithoutExtension(f) == c.Name))
+            .Select(File.ReadAllText)
+            .Aggregate(new System.Text.StringBuilder(), (all, text) => all.AppendLine(text))
+            .ToString();
+
+        AllCodes().Where(c => !Regex.IsMatch(source, $@"\b{c.Catalog.Name}\.{c.Field.Name}\b"))
+            .Select(c => $"{c.Error.Code} ({c.Catalog.Name}.{c.Field.Name})")
+            .Should().BeEmpty("every code in the catalog must be thrown or returned somewhere");
+    }
+
+    private static string RepositoryRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Erp.slnx"))) dir = dir.Parent;
+        return dir?.FullName ?? throw new InvalidOperationException("Erp.slnx not found above the test output folder.");
+    }
+}
+```
+
+The first reads every `ErrorCode` field by reflection. The second does something unusual for a test: it reads
+the source code itself, and checks that each code's name appears somewhere outside its catalog. A catalog entry
+for a rule that was deleted would send someone looking up an error that can never happen.
+
+Make each fail once: copy `SalesErrors.CustomerBlocked`'s line and give the copy another name. Both tests go
+red: the code is now a duplicate, and the copy is used nowhere.
+
 ## Mistakes to avoid
 
 - Public setters "for convenience". One `order.Status = Approved` anywhere, and the state machine is just
@@ -1225,8 +1399,8 @@ dotnet test
 
 ```
 Passed!  - Failed: 0, Passed: 52, ... Erp.Modules.Sales.UnitTests.dll
-Passed!  - Failed: 0, Passed:  5, ... Erp.Architecture.Tests.dll
-Passed!  - Failed: 0, Passed: 15, ... Erp.Integration.Tests.dll
+Passed!  - Failed: 0, Passed:  7, ... Erp.Architecture.Tests.dll
+Passed!  - Failed: 0, Passed: 16, ... Erp.Integration.Tests.dll
 ```
 
 Every business rule, its edges, and four properties tried a hundred times each, proven in about a second,
@@ -1250,4 +1424,4 @@ prove them. Next time, we give the module its memory: a PostgreSQL database. Goo
 
 ---
 
-← [Lesson 03 — Mediator](03-mediator.md) · Next: [Lesson 05 — Database](05-database.md) →
+← [Lesson 03 — Features](03-features.md) · Next: [Lesson 05 — Database](05-database.md) →

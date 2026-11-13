@@ -134,6 +134,9 @@ public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSi
 {
     public int TotalPages => (int)Math.Ceiling(TotalCount / (double)PageSize);
 }
+
+// The body of a 201 Created: the new thing's id. Its address is in the Location header.
+public sealed record CreatedId(long Id);
 ```
 
 And every list validates its paging the same way, so add two rules next to `ValidQuantity` in

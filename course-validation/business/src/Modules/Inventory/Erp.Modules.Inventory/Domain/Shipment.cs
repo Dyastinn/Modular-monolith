@@ -1,4 +1,3 @@
-using Erp.Modules.Inventory.Contracts;
 using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Inventory.Domain;
@@ -29,8 +28,11 @@ internal sealed class Shipment : AggregateRoot<ShipmentId>
             Id = id, Number = number, SalesOrderId = salesOrderId, OrderNumber = orderNumber, ShippedBy = by, ShippedUtc = nowUtc
         };
         shipment._lines.AddRange(lines);
-        if (shipment._lines.Count == 0) throw new DomainException("A shipment needs at least one line.");
-        shipment.Raise(new ShipmentRecorded(id.Value, number, salesOrderId, nowUtc));
+        if (shipment._lines.Count == 0) throw new DomainException(InventoryErrors.ShipmentNeedsLines, "A shipment needs at least one line.");
+        shipment.Raise(new ShipmentCreated(id, number, salesOrderId, nowUtc));
         return shipment;
     }
 }
+
+// Published to other modules as ShipmentRecorded.
+internal sealed record ShipmentCreated(ShipmentId ShipmentId, string Number, long SalesOrderId, DateTime ShippedUtc) : IDomainEvent;

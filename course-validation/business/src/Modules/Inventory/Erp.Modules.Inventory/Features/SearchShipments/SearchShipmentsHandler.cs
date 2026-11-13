@@ -1,11 +1,10 @@
 using Dapper;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Inventory.Features;
 
-internal sealed record SearchShipmentsQuery(long? SalesOrderId, int Page, int PageSize) : IQuery<PagedResult<ShipmentDto>>;
+internal sealed record SearchShipmentsQuery(long? SalesOrderId = null, int Page = 1, int PageSize = 20);
 
 internal sealed record ShipmentDto(long Id, string Number, long SalesOrderId, string OrderNumber, long ShippedBy, DateTime ShippedUtc, int LineCount);
 
@@ -18,9 +17,9 @@ internal sealed class SearchShipmentsValidator : AbstractValidator<SearchShipmen
     }
 }
 
-internal sealed class SearchShipmentsHandler(IDbConnectionFactory connections) : IQueryHandler<SearchShipmentsQuery, PagedResult<ShipmentDto>>
+internal sealed class SearchShipmentsHandler(IDbConnectionFactory connections)
 {
-    public async ValueTask<PagedResult<ShipmentDto>> Handle(SearchShipmentsQuery q, CancellationToken ct)
+    public async Task<PagedResult<ShipmentDto>> HandleAsync(SearchShipmentsQuery q, CancellationToken ct)
     {
         await using var conn = connections.Create();
         using var multi = await conn.QueryMultipleAsync(new CommandDefinition(

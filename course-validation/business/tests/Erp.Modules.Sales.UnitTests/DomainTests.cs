@@ -42,7 +42,8 @@ public class CustomerRuleTests
     [Fact]
     public void Blocked_customer_cannot_order() =>
         Make.Customer(blocked: true).Invoking(c => c.EnsureNotBlocked())
-            .Should().Throw<DomainException>().WithMessage("*blocked*");
+            .Should().Throw<DomainException>().WithMessage("*blocked*")
+            .Which.Error.Should().Be(SalesErrors.CustomerBlocked);   // the code a person can look up
 
     [Fact]
     public void Order_over_available_credit_is_rejected() =>

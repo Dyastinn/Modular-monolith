@@ -14,5 +14,5 @@ public static class Format
 
     // "PendingApproval" -> "Pending approval"
     public static string Words(string pascal) =>
-        string.Concat(pascal.Select((c, i) => i > 0 && char.IsUpper(c) ? " " + char.ToLower(c) : c.ToString()));
+        string.Concat(pascal.Select((c, i) => i > 0 && char.IsUpper(c) ? " " + char.ToLowerInvariant(c) : c.ToString()));
 }

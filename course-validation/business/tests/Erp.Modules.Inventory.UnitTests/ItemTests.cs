@@ -1,5 +1,4 @@
 using AwesomeAssertions;
-using Erp.Modules.Inventory.Contracts;
 using Erp.Modules.Inventory.Domain;
 using Erp.Shared.BuildingBlocks;
 
@@ -20,7 +19,7 @@ public class ItemTests
         item.Sku.Should().Be("GEN-001");
         item.Unit.Should().Be("pc");
         item.IsActive.Should().BeTrue();
-        item.DomainEvents.Should().ContainSingle().Which.Should().BeOfType<ItemCatalogChanged>()
+        item.DomainEvents.Should().ContainSingle().Which.Should().BeOfType<ItemChanged>()
             .Which.Name.Should().Be("Widget");
     }
 
@@ -60,6 +59,6 @@ public class ItemTests
             .Should().Throw<DomainException>();
 
         var shipment = Shipment.Record(new ShipmentId(1), "SH-1", 7, "SO-7", [new ShipmentLine(new ItemId(1), 2)], Clerk, Now);
-        shipment.DomainEvents.Should().ContainSingle().Which.Should().Be(new ShipmentRecorded(1, "SH-1", 7, Now));
+        shipment.DomainEvents.Should().ContainSingle().Which.Should().Be(new ShipmentCreated(new ShipmentId(1), "SH-1", 7, Now));
     }
 }

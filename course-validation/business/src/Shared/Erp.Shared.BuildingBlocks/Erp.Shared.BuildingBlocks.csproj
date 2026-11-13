@@ -3,7 +3,6 @@
   <!-- Keep this free of EF Core, SQL clients and ASP.NET: every module and domain depends on it. -->
   <ItemGroup>
     <PackageReference Include="FluentValidation" />
-    <PackageReference Include="Mediator.Abstractions" />
   </ItemGroup>
 
 </Project>

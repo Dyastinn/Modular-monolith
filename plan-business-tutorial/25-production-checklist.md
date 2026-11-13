@@ -158,8 +158,8 @@ development tool: it keeps everything in memory, forgets it on restart, and can'
 ## 6. When you'd add the tools we left out
 
 Every tool below solves a real problem. Each one also adds something to run, secure and learn. So the rule
-is the one this course has followed since the mediator in [lesson 03](03-mediator.md): add a tool when you
-feel the pain it solves, not before.
+is the one this course has followed since it chose no mediator in [lesson 03](03-features.md): add a tool
+when you feel the pain it solves, not before.
 
 | Tool | Add it when | Until then |
 |---|---|---|

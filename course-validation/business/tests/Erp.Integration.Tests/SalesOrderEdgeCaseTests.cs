@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.Json;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
@@ -58,12 +60,20 @@ public class SalesOrderEdgeCaseTests(CustomWebAppFactory factory)
 
     // ---- Lesson 07: creating an order ----
 
+    // 404 means the address (POST /api/sales-orders) doesn't exist. It does: what's wrong is an id inside the body,
+    // so the request is understood but can't be processed: 422, with a code that says which id.
     [Fact]
-    public async Task An_unknown_customer_or_item_is_404()
+    public async Task An_unknown_customer_or_item_is_422_with_its_code()
     {
         var rep = await factory.ClientFor(Rep);
-        (await PostOrder(rep, customerId: 999_999, itemId: 1, quantity: 1)).StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await PostOrder(rep, await NewCustomer(), itemId: 999_999, quantity: 1)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var noCustomer = await PostOrder(rep, customerId: 999_999, itemId: 1, quantity: 1);
+        noCustomer.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await noCustomer.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString().Should().Be("SALES-0018");
+
+        var noItem = await PostOrder(rep, await NewCustomer(), itemId: 999_999, quantity: 1);
+        noItem.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await noItem.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString().Should().Be("SALES-0019");
     }
 
     [Theory]
@@ -73,7 +83,7 @@ public class SalesOrderEdgeCaseTests(CustomWebAppFactory factory)
     public async Task A_quantity_that_is_zero_negative_or_too_precise_is_400(string quantity)
     {
         var rep = await factory.ClientFor(Rep);
-        (await PostOrder(rep, await NewCustomer(), 1, decimal.Parse(quantity))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await PostOrder(rep, await NewCustomer(), 1, decimal.Parse(quantity, CultureInfo.InvariantCulture))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     // Shape is fine (400 rules pass), but widgets are counted in whole pieces: that's the item's rule, so 422.

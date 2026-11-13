@@ -84,10 +84,10 @@ public sealed record SpecialDiscount
 
     public SpecialDiscount(string program, string idLabel, string holderName, string idNumber, decimal rate, decimal vatRateRemoved)
     {
-        if (string.IsNullOrWhiteSpace(holderName)) throw new DomainException("A special discount needs the holder's name.");
-        if (string.IsNullOrWhiteSpace(idNumber)) throw new DomainException($"A {program} discount needs the {idLabel}.");
-        if (rate is <= 0 or >= 1) throw new DomainException("A discount rate must be a fraction between 0 and 1, such as 0.20.");
-        if (vatRateRemoved is < 0 or >= 1) throw new DomainException("The VAT rate must be a fraction between 0 and 1, such as 0.12.");
+        if (string.IsNullOrWhiteSpace(holderName)) throw new DomainException(CommonErrors.SpecialDiscountHolderMissing, "A special discount needs the holder's name.");
+        if (string.IsNullOrWhiteSpace(idNumber)) throw new DomainException(CommonErrors.SpecialDiscountHolderMissing, $"A {program} discount needs the {idLabel}.");
+        if (rate is <= 0 or >= 1) throw new DomainException(CommonErrors.InvalidDiscountRate, "A discount rate must be a fraction between 0 and 1, such as 0.20.");
+        if (vatRateRemoved is < 0 or >= 1) throw new DomainException(CommonErrors.InvalidVatRate, "The VAT rate must be a fraction between 0 and 1, such as 0.12.");
         (Program, IdLabel, HolderName, IdNumber) = (program.Trim(), idLabel.Trim(), holderName.Trim(), idNumber.Trim());
         (Rate, VatRateRemoved) = (rate, vatRateRemoved);
     }
@@ -159,14 +159,14 @@ internal sealed class SpecialDiscountProgram
 
     public void Update(string name, string idLabel, decimal rate, bool vatExempt, bool isActive)
     {
-        if (rate is <= 0 or >= 1) throw new DomainException("A discount rate must be a fraction between 0 and 1, such as 0.20.");
+        if (rate is <= 0 or >= 1) throw new DomainException(CommonErrors.InvalidDiscountRate, "A discount rate must be a fraction between 0 and 1, such as 0.20.");
         (Name, IdLabel, Rate, VatExempt, IsActive) = (name.Trim(), idLabel.Trim(), rate, vatExempt, isActive);
     }
 
     // Copied onto the order, with the VAT rate it removes, so later changes here never touch an order already discounted.
     public SpecialDiscount Grant(string holderName, string idNumber, TaxPolicy tax)
     {
-        if (!IsActive) throw new DomainException($"The {Name} discount is no longer offered.");
+        if (!IsActive) throw new DomainException(SalesErrors.DiscountProgramEnded, $"The {Name} discount is no longer offered.");
         return SpecialDiscount.Grant(Name, IdLabel, Rate, VatExempt, holderName, idNumber, tax);
     }
 }
@@ -238,7 +238,7 @@ public void ApplySpecialDiscount(SpecialDiscount discount)
 {
     EnsureDiscountChangeable();
     if (!_lines.Any(l => l.SpecialDiscountEligible))
-        throw new DomainException($"No item on {OrderNumber} qualifies for the {discount.Program} discount.");
+        throw new DomainException(SalesErrors.NoLineQualifiesForDiscount, $"No item on {OrderNumber} qualifies for the {discount.Program} discount.");
     SpecialDiscount = discount;
     RecalculateSpecialDiscount();
 }
@@ -260,7 +260,7 @@ private void RecalculateSpecialDiscount()
 private void EnsureDiscountChangeable()
 {
     if (Status != SalesOrderStatus.Draft)
-        throw new DomainException("A special discount can only be changed on a draft order.");
+        throw new DomainException(SalesErrors.DiscountOnlyOnDraft, "A special discount can only be changed on a draft order.");
 }
 ```
 

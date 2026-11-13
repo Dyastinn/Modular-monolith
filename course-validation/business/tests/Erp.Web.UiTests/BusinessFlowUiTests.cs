@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using AwesomeAssertions;
 using Microsoft.Playwright;
@@ -10,14 +11,16 @@ namespace Erp.Web.UiTests;
 // `playwright install chromium` downloads, on a machine with neither.
 public sealed class UiFactAttribute : FactAttribute
 {
-    public UiFactAttribute()
+    // xUnit v3 records where each test is written; an attribute built on Fact passes that location on.
+    public UiFactAttribute([CallerFilePath] string? sourceFilePath = null, [CallerLineNumber] int sourceLineNumber = -1)
+        : base(sourceFilePath, sourceLineNumber)
     {
         if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ERP_UI_URL")))
             Skip = "Set ERP_UI_URL to a running ERP to run browser tests.";
     }
 }
 
-public class BusinessFlowUiTests : IAsyncLifetime
+public sealed class BusinessFlowUiTests : IAsyncLifetime
 {
     private static readonly string BaseUrl = Environment.GetEnvironmentVariable("ERP_UI_URL")?.TrimEnd('/') ?? "";
     private static readonly string? Screenshots = Environment.GetEnvironmentVariable("ERP_UI_SCREENSHOTS");
@@ -25,7 +28,7 @@ public class BusinessFlowUiTests : IAsyncLifetime
     private IBrowser _browser = default!;
     private int _shot;
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         if (BaseUrl.Length == 0) return;
         _playwright = await Playwright.CreateAsync();
@@ -34,7 +37,7 @@ public class BusinessFlowUiTests : IAsyncLifetime
         _browser = await _playwright.Chromium.LaunchAsync(new() { Channel = channel == "chromium" ? null : channel });
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (BaseUrl.Length == 0) return;
         await _browser.DisposeAsync();
@@ -183,5 +186,37 @@ public class BusinessFlowUiTests : IAsyncLifetime
         await admin.GotoAsync("/users");
         await admin.GetByText("rep@erp.local").WaitForAsync();
         await Shot(admin, "admin-users");
+    }
+
+    // A refusal names its code, and one click explains it: the way a compiler error's CS number does.
+    [UiFact]
+    public async Task A_refusal_shows_its_code_and_one_click_explains_it()
+    {
+        var admin = await SignIn("admin@erp.local");
+        await admin.GotoAsync("/users");
+        var own = admin.GetByRole(AriaRole.Row).Filter(new() { HasText = "admin@erp.local" });
+        await own.GetByLabel("Actions").ClickAsync();
+        await admin.GetByText("Disable").ClickAsync();
+
+        await admin.GetByText("(IDENTITY-0003)").WaitForAsync();
+        await Shot(admin, "error-with-code");
+        await admin.GetByRole(AriaRole.Button, new() { Name = "What does this mean?" }).ClickAsync();
+
+        await admin.GetByText("You can't disable your own account").First.WaitForAsync();
+        await admin.GetByText("What to do:").WaitForAsync();
+        await Shot(admin, "error-explained");
+    }
+
+    // The link in an error message must open even when the session has ended.
+    [UiFact]
+    public async Task The_error_catalog_opens_without_signing_in()
+    {
+        var context = await _browser.NewContextAsync(new() { BaseURL = BaseUrl });
+        var page = await context.NewPageAsync();
+
+        await page.GotoAsync("/errors/SALES-0003");
+
+        await page.GetByText("The order would exceed the credit limit").First.WaitForAsync();
+        page.Url.Should().EndWith("/errors/SALES-0003", "the catalog doesn't send anyone to sign in");
     }
 }

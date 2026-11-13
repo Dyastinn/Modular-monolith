@@ -144,14 +144,14 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
     {
         EnsureNotVoid();
         var settled = amount + taxWithheld;
-        if (settled == Money.Zero) throw new DomainException("A payment must be more than zero.");
+        if (settled == Money.Zero) throw new DomainException(InvoicingErrors.PaymentNotPositive, "A payment must be more than zero.");
         if (settled > BalanceDue)
-            throw new DomainException($"{Number} has {BalanceDue} left to pay; {settled} is more than that.");
+            throw new DomainException(InvoicingErrors.PaymentExceedsBalance, $"{Number} has {BalanceDue} left to pay; {settled} is more than that.");
         // Withholding is a few percent of the sale before VAT, so anything near the VAT-inclusive total is a typing mistake.
         if (taxWithheld > Total - VatAmount)
-            throw new DomainException($"Tax withheld can't be more than {Number}'s sales before VAT ({Total - VatAmount}).");
-        if (paidOn < IssueDate) throw new DomainException("A payment can't be dated before the invoice.");
-        if (paidOn > today) throw new DomainException("A payment can't be dated in the future.");
+            throw new DomainException(InvoicingErrors.WithholdingExceedsNetSales, $"Tax withheld can't be more than {Number}'s sales before VAT ({Total - VatAmount}).");
+        if (paidOn < IssueDate) throw new DomainException(InvoicingErrors.PaymentBeforeInvoice, "A payment can't be dated before the invoice.");
+        if (paidOn > today) throw new DomainException(InvoicingErrors.PaymentInFuture, "A payment can't be dated in the future.");
 
         _payments.Add(new Payment(id, amount, taxWithheld, paidOn, method,
             string.IsNullOrWhiteSpace(reference) ? null : reference.Trim(), by, nowUtc));
@@ -164,9 +164,9 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
     public void VoidPayment(PaymentId id, string reason, DateTime nowUtc)
     {
         EnsureNotVoid();
-        if (string.IsNullOrWhiteSpace(reason)) throw new DomainException("Voiding a payment needs a reason.");
-        var payment = _payments.SingleOrDefault(p => p.Id == id) ?? throw new DomainException($"Payment {id.Value} is not on {Number}.");
-        if (payment.IsVoid) throw new DomainException("That payment is already void.");
+        if (string.IsNullOrWhiteSpace(reason)) throw new DomainException(InvoicingErrors.VoidReasonRequired, "Voiding a payment needs a reason.");
+        var payment = _payments.SingleOrDefault(p => p.Id == id) ?? throw new DomainException(InvoicingErrors.PaymentNotOnInvoice, $"Payment {id.Value} is not on {Number}.");
+        if (payment.IsVoid) throw new DomainException(InvoicingErrors.PaymentAlreadyVoid, "That payment is already void.");
 
         payment.Void(reason.Trim(), nowUtc);
         AmountPaid -= payment.Settled;
@@ -184,7 +184,7 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
 And voiding the invoice itself learns one more rule, in `Void`, after the reason check:
 
 ```csharp
-if (AmountPaid > Money.Zero) throw new DomainException($"{Number} has payments. Void them first.");
+if (AmountPaid > Money.Zero) throw new DomainException(InvoicingErrors.InvoiceHasPayments, $"{Number} has payments. Void them first.");
 ```
 
 What each rule protects:
@@ -215,8 +215,8 @@ namespace Erp.Modules.Invoicing.Contracts;
 
 // Sales lowers the customer's balance when money comes in, and raises it again if the payment is voided.
 // Delivered at least once: handlers must apply each PaymentId once.
-public sealed record PaymentRecorded(long PaymentId, long CustomerId, decimal Amount) : IDomainEvent;
-public sealed record PaymentVoided(long PaymentId, long CustomerId, decimal Amount) : IDomainEvent;
+public sealed record PaymentRecorded(long PaymentId, long CustomerId, decimal Amount) : IIntegrationEvent;
+public sealed record PaymentVoided(long PaymentId, long CustomerId, decimal Amount) : IIntegrationEvent;
 ```
 
 And lesson 17's trap, avoided this time on purpose: now that it holds events, the Contracts assembly goes into
@@ -280,60 +280,41 @@ dotnet ef migrations add AddPayments \
 using Erp.Modules.Invoicing.Domain;
 using Erp.Modules.Invoicing.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
 using Microsoft.EntityFrameworkCore;
 
 namespace Erp.Modules.Invoicing.Features;
 
 internal sealed record RecordPaymentCommand(long InvoiceId, decimal Amount, decimal TaxWithheld, DateOnly PaidOn, PaymentMethod Method,
-    string? Reference) : ICommand<long>;
-
-internal sealed class RecordPaymentValidator : AbstractValidator<RecordPaymentCommand>
-{
-    public RecordPaymentValidator()
-    {
-        RuleFor(x => x.Amount).GreaterThanOrEqualTo(0).Must(a => decimal.Round(a, 2) == a).WithMessage("Amounts are in pesos and centavos.");
-        RuleFor(x => x.TaxWithheld).GreaterThanOrEqualTo(0).Must(a => decimal.Round(a, 2) == a).WithMessage("Amounts are in pesos and centavos.");
-        RuleFor(x => x.Amount + x.TaxWithheld).GreaterThan(0).WithName("Amount").WithMessage("Enter the amount received, the tax withheld, or both.");
-        RuleFor(x => x.Method).IsInEnum();
-        RuleFor(x => x.Reference).MaximumLength(100);
-    }
-}
+    string? Reference);
 
 // Saving the payment also writes PaymentRecorded to the outbox; Sales lowers the customer's balance from it.
-internal sealed class RecordPaymentHandler(InvoicingDbContext db, ICurrentUser user, IClock clock)
-    : ICommandHandler<RecordPaymentCommand, long>
+internal sealed class RecordPaymentHandler(InvoicingDbContext db, ICurrentUser user, TimeProvider time)
 {
-    public async ValueTask<long> Handle(RecordPaymentCommand cmd, CancellationToken ct)
+    // null: there is no such invoice.
+    public async Task<long?> HandleAsync(RecordPaymentCommand cmd, CancellationToken ct)
     {
-        var invoice = await db.Invoices.SingleOrDefaultAsync(i => i.Id == new InvoiceId(cmd.InvoiceId), ct)
-            ?? throw new NotFoundException($"Invoice {cmd.InvoiceId} not found.");
+        var invoice = await db.Invoices.SingleOrDefaultAsync(i => i.Id == new InvoiceId(cmd.InvoiceId), ct);
+        if (invoice is null) return null;
 
         var paymentId = await db.NextPaymentIdAsync(ct);
-        invoice.RecordPayment(paymentId, new Money(cmd.Amount), new Money(cmd.TaxWithheld), cmd.PaidOn, cmd.Method, cmd.Reference,
-            new UserId(user.UserId), clock.Today, clock.UtcNow);
+        invoice.RecordPayment(paymentId, new Money(cmd.Amount), new Money(cmd.TaxWithheld), cmd.PaidOn, cmd.Method, cmd.Reference, new UserId(user.UserId),
+            time.Today(), time.GetUtcNow().UtcDateTime);
         await db.SaveChangesAsync(ct);
         return paymentId.Value;
     }
 }
 
-internal sealed record VoidPaymentCommand(long InvoiceId, long PaymentId, string Reason) : ICommand;
+internal sealed record VoidPaymentCommand(long InvoiceId, long PaymentId, string Reason);
 
-internal sealed class VoidPaymentValidator : AbstractValidator<VoidPaymentCommand>
+internal sealed class VoidPaymentHandler(InvoicingDbContext db, TimeProvider time)
 {
-    public VoidPaymentValidator() => RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
-}
-
-internal sealed class VoidPaymentHandler(InvoicingDbContext db, IClock clock) : ICommandHandler<VoidPaymentCommand>
-{
-    public async ValueTask<Unit> Handle(VoidPaymentCommand cmd, CancellationToken ct)
+    public async Task<bool> HandleAsync(VoidPaymentCommand cmd, CancellationToken ct)
     {
-        var invoice = await db.Invoices.SingleOrDefaultAsync(i => i.Id == new InvoiceId(cmd.InvoiceId), ct)
-            ?? throw new NotFoundException($"Invoice {cmd.InvoiceId} not found.");
-        invoice.VoidPayment(new PaymentId(cmd.PaymentId), cmd.Reason, clock.UtcNow);
+        var invoice = await db.Invoices.SingleOrDefaultAsync(i => i.Id == new InvoiceId(cmd.InvoiceId), ct);
+        if (invoice is null) return false;
+        invoice.VoidPayment(new PaymentId(cmd.PaymentId), cmd.Reason, time.GetUtcNow().UtcDateTime);
         await db.SaveChangesAsync(ct);
-        return Unit.Value;
+        return true;
     }
 }
 ```
@@ -405,34 +386,33 @@ then a Sales migration, `AddAppliedPayments`.
 using Erp.Modules.Invoicing.Contracts;
 using Erp.Modules.Sales.Domain;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
 using Microsoft.EntityFrameworkCore;
 
 namespace Erp.Modules.Sales.Infrastructure;
 
 // Money in lowers what the customer owes, so their next order has room again. The applied_payment row makes a
 // second delivery of the same event a no-op.
-internal sealed class PaymentRecordedHandler(SalesDbContext db, IClock clock) : INotificationHandler<PaymentRecorded>
+internal sealed class PaymentRecordedHandler(SalesDbContext db, TimeProvider time) : IIntegrationEventHandler<PaymentRecorded>
 {
-    public async ValueTask Handle(PaymentRecorded e, CancellationToken ct)
+    public async Task HandleAsync(PaymentRecorded e, CancellationToken ct)
     {
         if (await db.AppliedPayments.AnyAsync(p => p.PaymentId == e.PaymentId, ct)) return;
 
         var customer = await db.Customers.SingleAsync(c => c.Id == new CustomerId(e.CustomerId), ct);
-        db.AppliedPayments.Add(AppliedPayment.Apply(e.PaymentId, customer, new Money(e.Amount), clock.UtcNow));
+        db.AppliedPayments.Add(AppliedPayment.Apply(e.PaymentId, customer, new Money(e.Amount), time.GetUtcNow().UtcDateTime));
         await db.SaveChangesAsync(ct);   // a racing duplicate fails on the primary key, and the outbox retries it
     }
 }
 
-internal sealed class PaymentVoidedHandler(SalesDbContext db, IClock clock) : INotificationHandler<PaymentVoided>
+internal sealed class PaymentVoidedHandler(SalesDbContext db, TimeProvider time) : IIntegrationEventHandler<PaymentVoided>
 {
-    public async ValueTask Handle(PaymentVoided e, CancellationToken ct)
+    public async Task HandleAsync(PaymentVoided e, CancellationToken ct)
     {
         var applied = await db.AppliedPayments.SingleOrDefaultAsync(p => p.PaymentId == e.PaymentId, ct);
         if (applied is null) return;   // never applied, so nothing to undo
 
         var customer = await db.Customers.SingleAsync(c => c.Id == applied.CustomerId, ct);
-        applied.Reverse(customer, clock.UtcNow);
+        applied.Reverse(customer, time.GetUtcNow().UtcDateTime);
         await db.SaveChangesAsync(ct);
     }
 }
@@ -535,23 +515,21 @@ Ship both files in one migration, `AddPaymentReads`, with the old functions put 
 // src/Modules/Invoicing/Erp.Modules.Invoicing/Features/ReceivablesAging/ReceivablesAgingHandler.cs
 using Dapper;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
 
 namespace Erp.Modules.Invoicing.Features;
 
-internal sealed record ReceivablesAgingQuery(DateOnly? AsOf) : IQuery<ReceivablesAgingDto>;
+internal sealed record ReceivablesAgingQuery(DateOnly? AsOf = null);
 
 internal sealed record AgingRowDto(long CustomerId, string CustomerName, decimal NotYetDue, decimal Days1To30, decimal Days31To60,
     decimal Days61To90, decimal Over90, decimal Total);
 
 internal sealed record ReceivablesAgingDto(DateOnly AsOf, IReadOnlyList<AgingRowDto> Customers, AgingRowDto Totals);
 
-internal sealed class ReceivablesAgingHandler(IDbConnectionFactory connections, IClock clock)
-    : IQueryHandler<ReceivablesAgingQuery, ReceivablesAgingDto>
+internal sealed class ReceivablesAgingHandler(IDbConnectionFactory connections, TimeProvider time)
 {
-    public async ValueTask<ReceivablesAgingDto> Handle(ReceivablesAgingQuery q, CancellationToken ct)
+    public async Task<ReceivablesAgingDto> HandleAsync(ReceivablesAgingQuery q, CancellationToken ct)
     {
-        var asOf = q.AsOf ?? clock.Today;
+        var asOf = q.AsOf ?? time.Today();
         await using var conn = connections.Create();
         var rows = (await conn.QueryAsync<AgingRowDto>(new CommandDefinition(
             "SELECT * FROM invoicing.receivables_aging(@AsOf);", new { AsOf = asOf }, cancellationToken: ct))).ToList();
@@ -612,10 +590,10 @@ internal sealed class WithholdingCertificate : Entity<WithholdingCertificateId>
     public static WithholdingCertificate Record(long customerId, string customerName, int year, int quarter, Money amount,
         string? reference, DateOnly receivedOn, UserId by, DateOnly today, DateTime nowUtc)
     {
-        if (quarter is < 1 or > 4) throw new DomainException("A quarter is 1, 2, 3 or 4.");
-        if (year < 2000 || year > today.Year) throw new DomainException($"{year} is not a year a certificate can cover.");
-        if (amount == Money.Zero) throw new DomainException("A certificate must show some tax withheld.");
-        if (receivedOn > today) throw new DomainException("A certificate can't be received in the future.");
+        if (quarter is < 1 or > 4) throw new DomainException(InvoicingErrors.InvalidQuarter, "A quarter is 1, 2, 3 or 4.");
+        if (year < 2000 || year > today.Year) throw new DomainException(InvoicingErrors.InvalidCertificateYear, $"{year} is not a year a certificate can cover.");
+        if (amount == Money.Zero) throw new DomainException(InvoicingErrors.CertificateAmountZero, "A certificate must show some tax withheld.");
+        if (receivedOn > today) throw new DomainException(InvoicingErrors.CertificateReceivedInFuture, "A certificate can't be received in the future.");
         return new WithholdingCertificate
         {
             CustomerId = customerId, CustomerName = customerName, Year = year, Quarter = quarter, Amount = amount,
@@ -626,8 +604,8 @@ internal sealed class WithholdingCertificate : Entity<WithholdingCertificateId>
 
     public void Void(string reason, DateTime nowUtc)
     {
-        if (VoidedUtc is not null) throw new DomainException("That certificate is already void.");
-        if (string.IsNullOrWhiteSpace(reason)) throw new DomainException("Voiding a certificate needs a reason.");
+        if (VoidedUtc is not null) throw new DomainException(InvoicingErrors.CertificateAlreadyVoid, "That certificate is already void.");
+        if (string.IsNullOrWhiteSpace(reason)) throw new DomainException(InvoicingErrors.VoidReasonRequired, "Voiding a certificate needs a reason.");
         VoidedUtc = nowUtc;
         VoidReason = reason.Trim();
     }

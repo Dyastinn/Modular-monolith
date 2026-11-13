@@ -65,18 +65,18 @@ You don't need to understand this table yet. Each tool is explained in the lesso
 |---|---|
 | Language and runtime | **.NET 10**, C# |
 | How the code is organized | A **modular monolith** (one app, walled-off modules) with **vertical slices** (one folder per feature) |
-| The screens | **Blazor WebAssembly** with **MudBlazor**, served by the API itself |
-| Endpoints | **Carter**, on top of ASP.NET Core minimal APIs, all under `/api` |
+| The screens | A **Blazor Web App** running as WebAssembly, with **MudBlazor**, served by the API itself |
+| Endpoints | ASP.NET Core **minimal APIs**, all under `/api`; each endpoint calls its handler directly |
 | Database | **PostgreSQL**, one schema per module |
 | Saving data | **EF Core** |
 | Reading data for screens | **Dapper**, calling SQL functions |
-| Sending requests to handlers | **Mediator** (`martinothamar/Mediator`) |
-| Checking requests | **FluentValidation** |
+| Checking requests | **FluentValidation**, run by one filter for the whole API |
+| When something is refused | A stable **error code** on every error (`SALES-0003`), and a page that explains each one |
 | Sign-in | **ASP.NET Core Identity**, cookies for the browser |
 | Reacting to events reliably | A **transactional outbox** |
 | Seeing what the app is doing | **OpenTelemetry**, with the **Aspire** dashboard while developing |
 | Invoice PDFs and email | **PDFsharp/MigraDoc** and **MailKit** |
-| Tests | **xUnit**, **AwesomeAssertions**, **FsCheck** (property-based), **Testcontainers**, **Playwright**, **coverlet** and **Stryker.NET**; **GitHub Actions** runs them on every push |
+| Tests | **xUnit v3**, **AwesomeAssertions**, **FsCheck** (property-based), **Testcontainers**, **Playwright**, **coverlet** and **Stryker.NET**; **GitHub Actions** runs them on every push |
 | Containers | **Podman** (Docker works too): the development database from lesson 12, the tests' databases, and production |
 | Hosting | **Compose** with **Caddy** for HTTPS, on any Linux server |
 
@@ -89,7 +89,7 @@ A few popular tools are left out on purpose: Clean Architecture's four-project s
 [Lesson 25](25-production-checklist.md) tells you when you'd actually reach for them.
 
 If you came from WebForms, you'll feel at home faster than you think. Your `.aspx` page with its
-code-behind becomes a Razor page, your `[WebMethod]` becomes a Carter endpoint, your `Button_Click` logic
+code-behind becomes a Razor page, your `[WebMethod]` becomes a minimal API endpoint, your `Button_Click` logic
 becomes a handler, and your `SqlCommand` and `DataSet` become EF Core for saving and Dapper for reading. The
 business rules you used to scatter across pages move into one place: the domain model.
 
@@ -101,7 +101,7 @@ Each lesson builds on the one before, and each one ends with something you run a
 |---|---|---|
 | 01 | [Solution setup](01-solution-setup.md) | The projects, the module walls, and the browser app, served from day one |
 | 02 | [Testing](02-testing.md) | Why we test, how to set tests up and use them, and the edge-case checklist every lesson after uses |
-| 03 | [Mediator](03-mediator.md) | Commands, queries, handlers, pipeline behaviors, a first screen; the first unit and architecture tests |
+| 03 | [Features](03-features.md) | Commands, queries, handlers, one validation filter for the whole API, a first screen; the first unit and architecture tests |
 | 04 | [Domain model](04-domain-model.md) | The sales rules in plain C#, with unit tests, edge cases and property-based tests |
 | 05 | [Database](05-database.md) | PostgreSQL, EF Core, migrations, seed data; tests against a real database |
 | 06 | [Sign-in](06-sign-in.md) | ASP.NET Core Identity, the sign-in page and account menu; the first browser tests |

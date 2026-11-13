@@ -135,7 +135,7 @@ internal sealed class Item : AggregateRoot<ItemId>
     public void SetActive(bool active)
     {
         if (!active && Reserved > 0)
-            throw new DomainException($"Item {Sku} has {Reserved:0.###} {Unit} reserved for orders and can't be deactivated.");
+            throw new DomainException(InventoryErrors.ItemHasReservations, $"Item {Sku} has {Reserved:0.###} {Unit} reserved for orders and can't be deactivated.");
         IsActive = active;
         RaiseChanged();
     }
@@ -143,18 +143,18 @@ internal sealed class Item : AggregateRoot<ItemId>
     public void EnsureQuantityFits(decimal quantity)
     {
         if (!AllowsFractions && decimal.Truncate(quantity) != quantity)
-            throw new DomainException($"Item {Sku} is counted in whole {Unit}; {quantity:0.###} is not allowed.");
+            throw new DomainException(InventoryErrors.WholeUnitsOnly, $"Item {Sku} is counted in whole {Unit}; {quantity:0.###} is not allowed.");
     }
 
     // A count correction: found, lost, damaged. Never below what's already promised to orders.
     public StockMovement Adjust(decimal delta, string reason, UserId by, DateTime nowUtc)
     {
         // Every check first: a refused adjustment must leave the item exactly as it was.
-        if (delta == 0) throw new DomainException("An adjustment must change the quantity.");
+        if (delta == 0) throw new DomainException(InventoryErrors.AdjustmentMustChangeQuantity, "An adjustment must change the quantity.");
         var why = Required(reason, "Reason");
         EnsureQuantityFits(Math.Abs(delta));
         if (OnHand + delta < Reserved)
-            throw new DomainException(
+            throw new DomainException(InventoryErrors.AdjustmentBelowReserved,
                 $"Adjusting {Sku} by {delta:0.###} would leave {OnHand + delta:0.###} {Unit} on hand, " +
                 $"less than the {Reserved:0.###} reserved for orders.");
         OnHand += delta;
@@ -165,7 +165,7 @@ internal sealed class Item : AggregateRoot<ItemId>
         Raise(new ItemCatalogChanged(Id.Value, Sku, Name, Unit, AllowsFractions, IsActive));
 
     private static string Required(string value, string field) =>
-        string.IsNullOrWhiteSpace(value) ? throw new DomainException($"{field} is required.") : value.Trim();
+        string.IsNullOrWhiteSpace(value) ? throw new DomainException(InventoryErrors.FieldRequired, $"{field} is required.") : value.Trim();
 }
 ```
 
@@ -394,31 +394,19 @@ dotnet add src/Modules/Inventory/Erp.Modules.Inventory package Dapper --version 
 using Erp.Modules.Inventory.Domain;
 using Erp.Modules.Inventory.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
 using Microsoft.EntityFrameworkCore;
 
 namespace Erp.Modules.Inventory.Features;
 
-internal sealed record CreateItemCommand(string Sku, string Name, string Unit, bool AllowsFractions) : ICommand<long>;
+internal sealed record CreateItemCommand(string Sku, string Name, string Unit, bool AllowsFractions);
 
-internal sealed class CreateItemValidator : AbstractValidator<CreateItemCommand>
+internal sealed class CreateItemHandler(InventoryDbContext db)
 {
-    public CreateItemValidator()
-    {
-        RuleFor(x => x.Sku).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
-        RuleFor(x => x.Unit).NotEmpty().MaximumLength(10);
-    }
-}
-
-internal sealed class CreateItemHandler(InventoryDbContext db) : ICommandHandler<CreateItemCommand, long>
-{
-    public async ValueTask<long> Handle(CreateItemCommand cmd, CancellationToken ct)
+    public async Task<long> HandleAsync(CreateItemCommand cmd, CancellationToken ct)
     {
         var sku = cmd.Sku.Trim().ToUpperInvariant();
         if (await db.Items.AnyAsync(i => i.Sku == sku, ct))
-            throw new DomainException($"An item with SKU {sku} already exists.");
+            throw new DomainException(InventoryErrors.SkuTaken, $"An item with SKU {sku} already exists.");
 
         var id = new ItemId(await db.NextItemIdAsync(ct));
         db.Items.Add(Item.Create(id, sku, cmd.Name, cmd.Unit, cmd.AllowsFractions));
@@ -443,24 +431,35 @@ The host already has Npgsql's exception type, through lesson 14's `Npgsql.OpenTe
 
 ```csharp
 // src/Modules/Inventory/Erp.Modules.Inventory/Features/CreateItem/CreateItemEndpoint.cs
-using Carter;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Inventory.Features;
 
+
 internal sealed record CreateItemRequest(string Sku, string Name, string Unit, bool AllowsFractions);
 
-internal sealed class CreateItemEndpoint : ICarterModule
+internal sealed class CreateItemRequestValidator : AbstractValidator<CreateItemRequest>
 {
-    public void AddRoutes(IEndpointRouteBuilder app) =>
-        app.MapPost("/items", async (CreateItemRequest body, ISender sender, CancellationToken ct) =>
+    public CreateItemRequestValidator()
+    {
+        RuleFor(x => x.Sku).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.Unit).NotEmpty().MaximumLength(10);
+    }
+}
+
+internal static class CreateItemEndpoint
+{
+    public static void Map(IEndpointRouteBuilder app) =>
+        app.MapPost("/items", async Task<Created<CreatedId>> (CreateItemRequest body, CreateItemHandler handler, CancellationToken ct) =>
             {
-                var id = await sender.Send(new CreateItemCommand(body.Sku, body.Name, body.Unit, body.AllowsFractions), ct);
-                return Results.Created($"/api/items/{id}", new { id });
+                var id = await handler.HandleAsync(new CreateItemCommand(body.Sku, body.Name, body.Unit, body.AllowsFractions), ct);
+                return TypedResults.Created($"/api/items/{id}", new CreatedId(id));
             })
             .RequireAuthorization(p => p.RequireRole(Roles.InventoryClerk, Roles.Admin));
 }
@@ -479,34 +478,21 @@ In `Features/SetItemActive/`, a `SetItemActiveCommand(long ItemId, bool Active)`
 using Erp.Modules.Inventory.Domain;
 using Erp.Modules.Inventory.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
 using Microsoft.EntityFrameworkCore;
 
 namespace Erp.Modules.Inventory.Features;
 
-internal sealed record AdjustStockCommand(long ItemId, decimal Quantity, string Reason) : ICommand;
+internal sealed record AdjustStockCommand(long ItemId, decimal Quantity, string Reason);
 
-internal sealed class AdjustStockValidator : AbstractValidator<AdjustStockCommand>
+internal sealed class AdjustStockHandler(InventoryDbContext db, ICurrentUser user, TimeProvider time)
 {
-    public AdjustStockValidator()
+    public async Task<bool> HandleAsync(AdjustStockCommand cmd, CancellationToken ct)
     {
-        RuleFor(x => x.ItemId).GreaterThan(0);
-        RuleFor(x => x.Quantity).NotEqual(0).Must(q => decimal.Round(q, 3) == q)
-            .WithMessage("Quantity must be non-zero, with at most three decimal places.");
-        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
-    }
-}
-
-internal sealed class AdjustStockHandler(InventoryDbContext db, ICurrentUser user, IClock clock) : ICommandHandler<AdjustStockCommand>
-{
-    public async ValueTask<Unit> Handle(AdjustStockCommand cmd, CancellationToken ct)
-    {
-        var item = await db.Items.FindAsync([new ItemId(cmd.ItemId)], ct)
-            ?? throw new NotFoundException($"Item {cmd.ItemId} not found.");
-        db.StockMovements.Add(item.Adjust(cmd.Quantity, cmd.Reason, new UserId(user.UserId), clock.UtcNow));
+        var item = await db.Items.FindAsync([new ItemId(cmd.ItemId)], ct);
+        if (item is null) return false;
+        db.StockMovements.Add(item.Adjust(cmd.Quantity, cmd.Reason, new UserId(user.UserId), time.GetUtcNow().UtcDateTime));
         await db.SaveChangesAsync(ct);   // xmin: a reservation that landed meanwhile makes this a 409
-        return Unit.Value;
+        return true;
     }
 }
 ```
@@ -577,11 +563,10 @@ using Dapper;
 using Erp.Modules.Inventory.Domain;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Inventory.Features;
 
-internal sealed record SearchItemsQuery(string? Search, bool ActiveOnly, int Page, int PageSize) : IQuery<PagedResult<ItemDto>>;
+internal sealed record SearchItemsQuery(string? Search = null, bool ActiveOnly = false, int Page = 1, int PageSize = 20);
 
 internal sealed record ItemDto(
     long Id, string Sku, string Name, string Unit, bool AllowsFractions, bool IsActive,
@@ -598,9 +583,9 @@ internal sealed class SearchItemsValidator : AbstractValidator<SearchItemsQuery>
     }
 }
 
-internal sealed class SearchItemsHandler(IDbConnectionFactory connections) : IQueryHandler<SearchItemsQuery, PagedResult<ItemDto>>
+internal sealed class SearchItemsHandler(IDbConnectionFactory connections)
 {
-    public async ValueTask<PagedResult<ItemDto>> Handle(SearchItemsQuery q, CancellationToken ct)
+    public async Task<PagedResult<ItemDto>> HandleAsync(SearchItemsQuery q, CancellationToken ct)
     {
         await using var conn = connections.Create();
         using var multi = await conn.QueryMultipleAsync(new CommandDefinition(
@@ -630,15 +615,15 @@ movements slice, `Features/GetItemMovements/`, maps each row's `kind` number bac
 // src/Modules/Sales/Erp.Modules.Sales/Infrastructure/EventHandlers/ItemCatalogChangedHandler.cs
 using Erp.Modules.Inventory.Contracts;
 using Erp.Modules.Sales.Domain;
-using Mediator;
+using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.Infrastructure;
 
 // Keeps Sales' copy of the catalog in step with Inventory. It writes the full state each time, so a repeated or
 // late delivery leaves the same result: idempotent.
-internal sealed class ItemCatalogChangedHandler(SalesDbContext db) : INotificationHandler<ItemCatalogChanged>
+internal sealed class ItemCatalogChangedHandler(SalesDbContext db) : IIntegrationEventHandler<ItemCatalogChanged>
 {
-    public async ValueTask Handle(ItemCatalogChanged e, CancellationToken ct)
+    public async Task HandleAsync(ItemCatalogChanged e, CancellationToken ct)
     {
         var item = await db.SalesItems.FindAsync([new ItemId(e.ItemId)], ct);
         if (item is null)
@@ -694,10 +679,10 @@ public static ItemCategory Create(string name, decimal maxQuantityPerOrder, stri
 
 public void Update(string name, decimal maxQuantityPerOrder, string? requiredRole)
 {
-    if (string.IsNullOrWhiteSpace(name)) throw new DomainException("A category needs a name.");
-    if (maxQuantityPerOrder <= 0) throw new DomainException("The maximum quantity per order must be greater than zero.");
+    if (string.IsNullOrWhiteSpace(name)) throw new DomainException(SalesErrors.CategoryNameRequired, "A category needs a name.");
+    if (maxQuantityPerOrder <= 0) throw new DomainException(SalesErrors.CategoryMaxQuantityInvalid, "The maximum quantity per order must be greater than zero.");
     if (requiredRole is not null && !Roles.All.Contains(requiredRole))
-        throw new DomainException($"'{requiredRole}' is not a role.");
+        throw new DomainException(SalesErrors.UnknownRole, $"'{requiredRole}' is not a role.");
     Name = name.Trim();
     MaxQuantityPerOrder = maxQuantityPerOrder;
     RequiredRole = requiredRole;
@@ -757,20 +742,15 @@ using Dapper;
 using Erp.Modules.Sales.Domain;
 using Erp.Modules.Sales.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
 using Microsoft.EntityFrameworkCore;
 
 namespace Erp.Modules.Sales.Features;
 
 internal sealed record ItemCategoryDto(long Id, string Name, decimal MaxQuantityPerOrder, string? RequiredRole);
 
-internal sealed record ListItemCategoriesQuery : IQuery<IReadOnlyList<ItemCategoryDto>>;
-
 internal sealed class ListItemCategoriesHandler(IDbConnectionFactory connections)
-    : IQueryHandler<ListItemCategoriesQuery, IReadOnlyList<ItemCategoryDto>>
 {
-    public async ValueTask<IReadOnlyList<ItemCategoryDto>> Handle(ListItemCategoriesQuery q, CancellationToken ct)
+    public async Task<IReadOnlyList<ItemCategoryDto>> HandleAsync(CancellationToken ct)
     {
         await using var conn = connections.Create();
         return (await conn.QueryAsync<ItemCategoryDto>(new CommandDefinition(
@@ -778,33 +758,25 @@ internal sealed class ListItemCategoriesHandler(IDbConnectionFactory connections
     }
 }
 
-internal sealed record SaveItemCategoryCommand(long? CategoryId, string Name, decimal MaxQuantityPerOrder, string? RequiredRole)
-    : ICommand<long>;
-
-internal sealed class SaveItemCategoryValidator : AbstractValidator<SaveItemCategoryCommand>
-{
-    public SaveItemCategoryValidator()
-    {
-        RuleFor(x => x.Name).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.MaxQuantityPerOrder).GreaterThan(0);
-    }
-}
+internal sealed record SaveItemCategoryCommand(long? CategoryId, string Name, decimal MaxQuantityPerOrder, string? RequiredRole);
 
 // One command for create (no id) and edit (id): a category has nothing else to its life.
-internal sealed class SaveItemCategoryHandler(SalesDbContext db) : ICommandHandler<SaveItemCategoryCommand, long>
+internal sealed class SaveItemCategoryHandler(SalesDbContext db)
 {
-    public async ValueTask<long> Handle(SaveItemCategoryCommand cmd, CancellationToken ct)
+    // null: the category to update doesn't exist.
+    public async Task<long?> HandleAsync(SaveItemCategoryCommand cmd, CancellationToken ct)
     {
         var role = string.IsNullOrWhiteSpace(cmd.RequiredRole) ? null : cmd.RequiredRole;
         var name = cmd.Name.Trim();
         if (await db.ItemCategories.AnyAsync(c => c.Name == name && c.Id != new CategoryId(cmd.CategoryId ?? 0), ct))
-            throw new DomainException($"A category named '{name}' already exists.");
+            throw new DomainException(SalesErrors.CategoryNameTaken, $"A category named '{name}' already exists.");
 
         ItemCategory category;
         if (cmd.CategoryId is { } id)
         {
-            category = await db.ItemCategories.FindAsync([new CategoryId(id)], ct)
-                ?? throw new NotFoundException($"Category {id} not found.");
+            var existing = await db.ItemCategories.FindAsync([new CategoryId(id)], ct);
+            if (existing is null) return null;
+            category = existing;
             category.Update(name, cmd.MaxQuantityPerOrder, role);
         }
         else

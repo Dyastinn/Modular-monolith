@@ -1,5 +1,3 @@
-using Mediator;
-
 namespace Erp.Shared.BuildingBlocks;
 
 // Base types every module's domain reuses. `where TId : struct` must be repeated on derived classes (CS0453).
@@ -23,9 +21,13 @@ public abstract class AggregateRoot<TId> : Entity<TId>, IAggregateRoot where TId
     public void ClearEvents() => _events.Clear();
 }
 
-// A fact the domain records ("order approved"). Saved to the outbox in the same transaction as the change, then
-// delivered to INotificationHandler<T> classes by the outbox dispatcher after the commit.
-public interface IDomainEvent : INotification { }
+// A fact the domain records ("order approved"), in its own module's words. Saved to the outbox in the same transaction
+// as the change, then delivered to that module's IDomainEventHandler<T> classes after the commit. Never public: other
+// modules hear about it only through an integration event (IIntegrationEvent) the module chooses to publish.
+public interface IDomainEvent;
 
-// A business rule said no. Maps to HTTP 422.
-public class DomainException(string message) : Exception(message);
+// A business rule said no. Maps to HTTP 422, with the error's code. The message adds the specifics ("₱5,000 available").
+public class DomainException(ErrorCode error, string? message = null) : Exception(message ?? error.Title)
+{
+    public ErrorCode Error { get; } = error;
+}

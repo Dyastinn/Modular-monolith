@@ -1,0 +1,67 @@
+@page "/errors"
+@page "/errors/{Code}"
+@attribute [AllowAnonymous]
+@inject HttpClient Http
+
+@* Every error the app shows carries a code, like a compiler's CS0122. This page says what each one means and what to
+   do about it. Open to anyone: the link in an error message must work even after the session has ended. *@
+
+<PageTitle>@(Code is null ? "Error codes" : Code) · ERP</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="py-6">
+    <MudText Typo="Typo.h4" GutterBottom="true">Error codes</MudText>
+
+    @if (_codes is null)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+    }
+    else
+    {
+        if (Selected is { } selected)
+        {
+            <MudPaper Class="pa-4 mb-6" Elevation="2">
+                <MudText Typo="Typo.overline">@selected.Code</MudText>
+                <MudText Typo="Typo.h6" GutterBottom="true">@selected.Title</MudText>
+                <MudText Typo="Typo.body1"><strong>What to do:</strong> @selected.Fix</MudText>
+                <MudText Typo="Typo.body2" Class="mt-3">
+                    If this doesn't solve it, send support the code and the trace id from the message.
+                </MudText>
+            </MudPaper>
+        }
+        else if (Code is not null)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-6">There is no error code @Code.</MudAlert>
+        }
+
+        <MudTextField @bind-Value="_search" Label="Search" Immediate="true" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" Class="mb-4" />
+        <MudSimpleTable Dense="true" Hover="true">
+            <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+            <tbody>
+                @foreach (var error in Filtered)
+                {
+                    <tr>
+                        <td><MudLink Href="@($"errors/{error.Code}")">@error.Code</MudLink></td>
+                        <td>@error.Title</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    }
+</MudContainer>
+
+@code {
+    [Parameter] public string? Code { get; set; }
+
+    private sealed record ErrorCode(string Code, string Title, string Fix);
+
+    private List<ErrorCode>? _codes;
+    private string _search = "";
+
+    private ErrorCode? Selected => _codes?.FirstOrDefault(c => string.Equals(c.Code, Code, StringComparison.OrdinalIgnoreCase));
+
+    private IEnumerable<ErrorCode> Filtered => (_codes ?? []).Where(c =>
+        c.Code.Contains(_search, StringComparison.OrdinalIgnoreCase) || c.Title.Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync() => _codes = await Http.GetFromJsonAsync<List<ErrorCode>>("api/errors");
+}

@@ -11,7 +11,7 @@ hour and a half. Are you ready? Let's begin!
 | What | Why |
 |---|---|
 | `Erp.Integration.Tests`, a test project that starts the whole app in memory | So a test can send real requests, without a browser or a port |
-| Thirteen checks of lesson 01's promises | The home page, page addresses, unknown API addresses, missing files, MudBlazor's files |
+| Twelve checks of lesson 01's promises | The home page, unknown page and API addresses, missing files, MudBlazor's files |
 | The everyday habits: run, filter, watch, debug, read a failure | Tests you don't run don't protect anything |
 | An edge-case checklist | You'll use it in every lesson after this one |
 
@@ -56,8 +56,8 @@ it:
 | Kind | What it proves | Speed | First in |
 |---|---|---|---|
 | **Integration test** | The whole app answers a real request correctly | Milliseconds to seconds | Today |
-| **Unit test** | One class or rule, alone | Under a millisecond | [Lesson 03](03-mediator.md) |
-| **Architecture test** | The module walls stand: who may reference whom, what may be public | Milliseconds | [Lesson 03](03-mediator.md) |
+| **Unit test** | One class or rule, alone | Under a millisecond | [Lesson 03](03-features.md) |
+| **Architecture test** | The module walls stand: who may reference whom, what may be public | Milliseconds | [Lesson 03](03-features.md) |
 | **Property-based test** | A rule holds for hundreds of generated inputs, not just the ones we thought of | Milliseconds | [Lesson 04](04-domain-model.md) |
 | **Database test** | Migrations, SQL functions and saved values are right | Seconds | [Lesson 05](05-database.md) |
 | **Browser test** | A real browser can click through the real screens | Seconds | [Lesson 06](06-sign-in.md) |
@@ -99,9 +99,7 @@ rm tests/Erp.Integration.Tests/Class1.cs
 dotnet sln add tests/Erp.Integration.Tests
 dotnet add tests/Erp.Integration.Tests reference src/Erp.Api
 
-dotnet add tests/Erp.Integration.Tests package Microsoft.NET.Test.Sdk --version 17.14.1
-dotnet add tests/Erp.Integration.Tests package xunit --version 2.9.3
-dotnet add tests/Erp.Integration.Tests package xunit.runner.visualstudio --version 3.1.4
+dotnet add tests/Erp.Integration.Tests package xunit.v3 --version 4.0.2
 dotnet add tests/Erp.Integration.Tests package AwesomeAssertions --version 9.6.0
 dotnet add tests/Erp.Integration.Tests package Microsoft.AspNetCore.Mvc.Testing --version 10.0.14
 ```
@@ -111,9 +109,7 @@ line, and central package management refuses that.
 
 | Package | What it's for | License |
 |---|---|---|
-| `xunit` | The test framework: `[Fact]`, `[Theory]`, fixtures | Apache-2.0 |
-| `xunit.runner.visualstudio` | Lets `dotnet test` and your editor find and run xUnit tests | Apache-2.0 |
-| `Microsoft.NET.Test.Sdk` | The plumbing between `dotnet test` and the framework | MIT |
+| `xunit.v3` | The test framework, version 3: `[Fact]`, `[Theory]`, fixtures, and the runner, all in one package | Apache-2.0 |
 | `AwesomeAssertions` | Readable checks with clear failure messages: `status.Should().Be(...)`. A free fork of FluentAssertions, whose version 8 needs a paid license | Apache-2.0 |
 | `Microsoft.AspNetCore.Mvc.Testing` | `WebApplicationFactory`: our app, started in memory | MIT |
 
@@ -122,6 +118,7 @@ Open `Erp.Integration.Tests.csproj`, delete its `<PropertyGroup>` as in lesson 0
 ```xml
 <PropertyGroup>
   <IsPackable>false</IsPackable>
+  <OutputType>Exe</OutputType>
 </PropertyGroup>
 
 <ItemGroup>
@@ -129,8 +126,42 @@ Open `Erp.Integration.Tests.csproj`, delete its `<PropertyGroup>` as in lesson 0
 </ItemGroup>
 ```
 
-`IsPackable` stops anyone from accidentally publishing the tests as a NuGet package. The `Using` line saves an
-`using Xunit;` at the top of every test file.
+`IsPackable` stops anyone from accidentally publishing the tests as a NuGet package. `OutputType Exe` is new in
+xUnit v3: a test project is a small program that runs its own tests. The `Using` line saves an `using Xunit;`
+at the top of every test file.
+
+That program runs on **Microsoft.Testing.Platform**, the test runner Microsoft ships with .NET 10, instead of
+the older VSTest. `dotnet test` needs to be told, once, for the whole solution. Create `global.json` next to
+`Erp.slnx`:
+
+```json
+{
+  "test": {
+    "runner": "Microsoft.Testing.Platform"
+  }
+}
+```
+
+Leave it out and `dotnet test` stops with "Testing with VSTest target is no longer supported by
+Microsoft.Testing.Platform on .NET 10 SDK and later". If you meet older tutorials with `Microsoft.NET.Test.Sdk`
+and `xunit.runner.visualstudio`, that's the VSTest way; xUnit v3 doesn't need either.
+
+Two of the code-quality rules from lesson 01 don't fit test code, so a small `.editorconfig` in the `tests`
+folder switches them off there, with the reason written next to each:
+
+```ini
+# tests/.editorconfig
+[*.cs]
+# Test names are sentences (An_order_without_lines_is_refused): the xUnit convention, so underscores are wanted here.
+dotnet_diagnostic.CA1707.severity = none
+# xUnit1051 asks every call to pass TestContext.Current.CancellationToken, so a cancelled run stops a little sooner.
+# These tests finish in milliseconds against an in-memory server; a token on every line would bury what each one checks.
+dotnet_diagnostic.xUnit1051.severity = none
+```
+
+Now, let's be honest about that second one: xUnit recommends passing the token, and in a slow test (one that
+waits on a real network, say) you should. Ours are fast, and you'll read hundreds of them in this course, so we
+choose readable.
 
 One more line, in `Erp.Api.csproj`. The tests reference the host, and by default everything the host
 references flows on to them, the browser app included. The tests talk to the host over HTTP; the browser
@@ -210,26 +241,29 @@ dotnet test
 ```
 
 ```
-Passed!  - Failed: 0, Passed: 1, Skipped: 0, Total: 1, Duration: 312 ms - Erp.Integration.Tests.dll (net10.0)
+Test run summary: Passed!
+  total: 1
+  failed: 0
+  succeeded: 1
+  skipped: 0
 ```
 
 ## 5. Make it fail once
 
 A test that has never failed proves nothing: maybe it can't fail. So break the code it guards, on purpose,
-and watch. In `Program.cs`, comment out the fallback:
+and watch. In `Program.cs`, comment out the line that serves the app's page:
 
 ```csharp
-// app.MapFallbackToFile("index.html");
+// app.MapRazorComponents<Erp.Web.App>()
+//     .AddInteractiveWebAssemblyRenderMode();
 ```
 
 Run `dotnet test` again:
 
 ```
-Failed Erp.Integration.Tests.HostTests.The_home_page_is_the_app [41 ms]
-  Error Message:
-   Expected response.StatusCode to be HttpStatusCode.OK {value: 200}, but found HttpStatusCode.NotFound {value: 404}.
-  Stack Trace:
-     at Erp.Integration.Tests.HostTests.The_home_page_is_the_app() in .../HostTests.cs:line 15
+failed Erp.Integration.Tests.HostTests.The_home_page_is_the_app (41ms)
+  Expected response.StatusCode to be HttpStatusCode.OK {value: 200}, but found HttpStatusCode.NotFound {value: 404}.
+  at Erp.Integration.Tests.HostTests.The_home_page_is_the_app() in .../HostTests.cs:15
 ```
 
 Here's how to read a failure, top to bottom: **which test** failed, **what it expected and what it found**,
@@ -280,7 +314,7 @@ the limit, the second click, two people at once. Here's the checklist we'll come
 
 Let's use it on lesson 01's promises. *Odd characters*: does `/API/no-such-thing`, in capitals, still count as
 the API? *Nothing*: what about `/api` itself, with nothing after it? And a file that doesn't exist, like
-`/missing-script.js`: the server mustn't answer with the app's page, or the browser will try to run HTML as
+`/missing-script.js`: the server must answer 404, not 200, or the browser will try to run whatever came back as
 JavaScript.
 
 And one more, from this course's own history. Lesson 01 warns against `ReferenceOutputAssembly="false"` on the
@@ -309,15 +343,13 @@ public class HostTests(CustomWebAppFactory factory) : IClassFixture<CustomWebApp
         response.Content.Headers.ContentType!.MediaType.Should().Be("text/html");
     }
 
-    // The server has no file called /sales-orders/42: it sends the app, and the app's router shows that page.
-    [Theory]
-    [InlineData("/sales-orders")]
-    [InlineData("/sales-orders/42")]
-    public async Task A_page_address_is_the_app_too(string path)
+    // An address that is no page of the app is an honest 404, but a person still sees the app's own "not found" page.
+    [Fact]
+    public async Task An_unknown_page_is_a_404_with_the_apps_own_page()
     {
-        var response = await factory.CreateClient().GetAsync(path);
+        var response = await factory.CreateClient().GetAsync("/no-such-page");
 
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         response.Content.Headers.ContentType!.MediaType.Should().Be("text/html");
     }
 
@@ -341,9 +373,9 @@ public class HostTests(CustomWebAppFactory factory) : IClassFixture<CustomWebApp
     public async Task The_api_prefix_itself_is_never_the_app(string path) =>
         (await factory.CreateClient().GetAsync(path)).StatusCode.Should().Be(HttpStatusCode.NotFound);
 
-    // A path with a file extension is a file. If it's missing, say so; the app's page would be a confusing answer.
+    // A missing file is a 404, whatever page comes with it: a 200 would make the browser try to run the page as a script.
     [Fact]
-    public async Task A_missing_file_is_404_not_the_app() =>
+    public async Task A_missing_file_is_a_404() =>
         (await factory.CreateClient().GetAsync("/missing-script.js")).StatusCode.Should().Be(HttpStatusCode.NotFound);
 
     // Regression guard: a ReferenceOutputAssembly="false" reference once left the app without MudBlazor's styles.
@@ -361,7 +393,8 @@ public class HostTests(CustomWebAppFactory factory) : IClassFixture<CustomWebApp
 ```
 
 Make each new one fail once: add `ReferenceOutputAssembly="false"` to the app's reference and watch the
-MudBlazor tests go red; remove `api.MapFallback` and watch the API tests go red. Then undo both.
+MudBlazor tests go red; remove `api.MapFallback` and watch the API tests go red; remove the
+`UseStatusCodePagesWithReExecute` line and watch the unknown page lose its HTML. Then undo all three.
 
 ## 8. Using tests every day
 
@@ -370,10 +403,10 @@ MudBlazor tests go red; remove `api.MapFallback` and watch the API tests go red.
 | You want to | Type |
 |---|---|
 | Run everything | `dotnet test` |
-| Run one project | `dotnet test tests/Erp.Integration.Tests` |
-| Run one class | `dotnet test --filter "FullyQualifiedName~HostTests"` |
-| Run tests whose name contains a word | `dotnet test --filter "DisplayName~unknown_api"` |
-| See every test's name as it runs | `dotnet test --logger "console;verbosity=normal"` |
+| Run one project | `dotnet test --project tests/Erp.Integration.Tests` |
+| Run one class | `dotnet test --filter-class "*HostTests"` |
+| Run tests whose name contains a word | `dotnet test --filter-method "*unknown_api*"` |
+| See every test's name and result | `dotnet test --output Detailed` |
 | Rerun on every save | `dotnet watch test --project tests/Erp.Integration.Tests` |
 
 `dotnet watch test` is the one to leave open in a second terminal while you work: save a file, and a moment
@@ -416,23 +449,28 @@ sequenceDiagram
 - Testing *how* the code works instead of *what* it does. That test breaks on every refactor.
 - Starting from the `xunit` template and keeping its package versions. Central package management refuses
   them (`NU1008`).
+- Forgetting `global.json`. `dotnet test` then refuses to run xUnit v3 projects at all.
 - Forgetting `UseEnvironment("Development")`. Then the app's files aren't found, and the page tests fail
   for a reason that has nothing to do with your code.
 
 ## Let's run it!
 
 ```bash
-dotnet test --logger "console;verbosity=normal"
+dotnet test --output Detailed
 ```
 
 ```
-  Passed Erp.Integration.Tests.HostTests.The_home_page_is_the_app [312 ms]
-  Passed Erp.Integration.Tests.HostTests.A_page_address_is_the_app_too(path: "/sales-orders") [4 ms]
-  ...
-Passed!  - Failed: 0, Passed: 13, Skipped: 0, Total: 13, Duration: 1 s - Erp.Integration.Tests.dll (net10.0)
+passed Erp.Integration.Tests.HostTests.The_home_page_is_the_app (312ms)
+passed Erp.Integration.Tests.HostTests.An_unknown_page_is_a_404_with_the_apps_own_page (6ms)
+...
+Test run summary: Passed!
+  total: 12
+  failed: 0
+  succeeded: 12
+  skipped: 0
 ```
 
-Thirteen checks, about a second. The four things you checked by hand last lesson are now thirteen things the
+Twelve checks, about a second. The four things you checked by hand last lesson are now twelve things the
 computer checks for you, every time.
 
 ## Let's check!
@@ -446,10 +484,11 @@ computer checks for you, every time.
 7. Why should most tests be unit tests, and only a few drive a browser?
 
 And that's where this lesson ends. Your app now checks itself in a second, and you have a checklist for
-finding the bugs that hide at the edges. Next time, we give our endpoints a proper way to hand their work to
-a handler, the mediator, and we write our first unit tests and our first test of the module walls. Good
+finding the bugs that hide at the edges. Next time, we write our first feature the way every feature will
+be written: an endpoint, a handler and a validator, and we write our first unit tests and our first test of
+the module walls. Good
 luck, developer!
 
 ---
 
-← [Lesson 01 — Solution setup](01-solution-setup.md) · Next: [Lesson 03 — Mediator](03-mediator.md) →
+← [Lesson 01 — Solution setup](01-solution-setup.md) · Next: [Lesson 03 — Features](03-features.md) →

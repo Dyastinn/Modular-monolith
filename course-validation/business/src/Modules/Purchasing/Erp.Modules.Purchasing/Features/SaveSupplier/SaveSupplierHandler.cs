@@ -1,38 +1,26 @@
 using Erp.Modules.Purchasing.Domain;
 using Erp.Modules.Purchasing.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Purchasing.Features;
 
 internal sealed record SupplierInput(string Name, string? Tin, string? Address, string? Email, string? Phone, int PaymentTermsDays);
 
 // One command for create (no id) and edit (id).
-internal sealed record SaveSupplierCommand(long? SupplierId, SupplierInput Supplier) : ICommand<long>;
+internal sealed record SaveSupplierCommand(long? SupplierId, SupplierInput Supplier);
 
-internal sealed class SaveSupplierValidator : AbstractValidator<SaveSupplierCommand>
+internal sealed class SaveSupplierHandler(PurchasingDbContext db)
 {
-    public SaveSupplierValidator()
-    {
-        RuleFor(x => x.Supplier.Name).NotEmpty().MaximumLength(200);
-        RuleFor(x => x.Supplier.Tin).MaximumLength(20);
-        RuleFor(x => x.Supplier.Address).MaximumLength(500);
-        RuleFor(x => x.Supplier.Email).EmailAddress().When(x => !string.IsNullOrWhiteSpace(x.Supplier.Email));
-        RuleFor(x => x.Supplier.Phone).MaximumLength(50);
-        RuleFor(x => x.Supplier.PaymentTermsDays).InclusiveBetween(0, 365);
-    }
-}
-
-internal sealed class SaveSupplierHandler(PurchasingDbContext db) : ICommandHandler<SaveSupplierCommand, long>
-{
-    public async ValueTask<long> Handle(SaveSupplierCommand cmd, CancellationToken ct)
+    // null: the supplier to update doesn't exist.
+    public async Task<long?> HandleAsync(SaveSupplierCommand cmd, CancellationToken ct)
     {
         var s = cmd.Supplier;
         Supplier supplier;
         if (cmd.SupplierId is { } id)
         {
-            supplier = await db.Suppliers.FindAsync([new SupplierId(id)], ct) ?? throw new NotFoundException($"Supplier {id} not found.");
+            var existing = await db.Suppliers.FindAsync([new SupplierId(id)], ct);
+            if (existing is null) return null;
+            supplier = existing;
             supplier.Update(s.Name, s.Tin, s.Address, s.Email, s.Phone, s.PaymentTermsDays);
         }
         else
@@ -45,16 +33,16 @@ internal sealed class SaveSupplierHandler(PurchasingDbContext db) : ICommandHand
     }
 }
 
-internal sealed record SetSupplierActiveCommand(long SupplierId, bool Active) : ICommand;
+internal sealed record SetSupplierActiveCommand(long SupplierId, bool Active);
 
-internal sealed class SetSupplierActiveHandler(PurchasingDbContext db) : ICommandHandler<SetSupplierActiveCommand>
+internal sealed class SetSupplierActiveHandler(PurchasingDbContext db)
 {
-    public async ValueTask<Unit> Handle(SetSupplierActiveCommand cmd, CancellationToken ct)
+    public async Task<bool> HandleAsync(SetSupplierActiveCommand cmd, CancellationToken ct)
     {
-        var supplier = await db.Suppliers.FindAsync([new SupplierId(cmd.SupplierId)], ct)
-            ?? throw new NotFoundException($"Supplier {cmd.SupplierId} not found.");
+        var supplier = await db.Suppliers.FindAsync([new SupplierId(cmd.SupplierId)], ct);
+        if (supplier is null) return false;
         supplier.SetActive(cmd.Active);
         await db.SaveChangesAsync(ct);
-        return Unit.Value;
+        return true;
     }
 }

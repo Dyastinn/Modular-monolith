@@ -1,14 +1,15 @@
+using System.Globalization;
 using AwesomeAssertions;
 using Erp.Modules.Sales.Features;
 
 namespace Erp.Modules.Sales.UnitTests;
 
 // Validators are plain classes: test the shape rules directly, no HTTP, no database.
-public class CreateSalesOrderValidatorTests
+public class CreateSalesOrderRequestValidatorTests
 {
-    private static readonly CreateSalesOrderValidator Validator = new();
+    private static readonly CreateSalesOrderRequestValidator Validator = new();
 
-    private static CreateSalesOrderCommand Order(long customerId = 1, long itemId = 1, decimal quantity = 1) =>
+    private static CreateSalesOrderRequest Order(long customerId = 1, long itemId = 1, decimal quantity = 1) =>
         new(customerId, [new OrderLineInput(itemId, quantity)]);
 
     [Fact]
@@ -23,17 +24,17 @@ public class CreateSalesOrderValidatorTests
     [InlineData(1, 1, "-1")]
     [InlineData(1, 1, "1.2345")]
     public void A_bad_id_or_quantity_is_refused(long customerId, long itemId, string quantity) =>
-        Validator.Validate(Order(customerId, itemId, decimal.Parse(quantity))).IsValid.Should().BeFalse();
+        Validator.Validate(Order(customerId, itemId, decimal.Parse(quantity, CultureInfo.InvariantCulture))).IsValid.Should().BeFalse();
 
     [Fact]
     public void An_order_without_lines_is_refused_with_a_readable_message() =>
-        Validator.Validate(new CreateSalesOrderCommand(1, [])).Errors
+        Validator.Validate(new CreateSalesOrderRequest(1, [])).Errors
             .Should().ContainSingle().Which.ErrorMessage.Should().Be("An order needs at least one line.");
 
     [Fact]
     public void Every_bad_line_is_reported_not_just_the_first()
     {
-        var result = Validator.Validate(new CreateSalesOrderCommand(1, [new(0, 1), new(1, 0), new(1, 1)]));
+        var result = Validator.Validate(new CreateSalesOrderRequest(1, [new(0, 1), new(1, 0), new(1, 1)]));
         result.Errors.Should().HaveCount(2);
     }
 }

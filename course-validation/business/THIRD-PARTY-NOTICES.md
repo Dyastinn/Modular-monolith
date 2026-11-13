@@ -14,15 +14,13 @@ the same change.
 | Component | License | Used for |
 |---|---|---|
 | .NET runtime and ASP.NET Core (`Microsoft.*`, `System.*`) | MIT | Platform, web host, authentication |
-| Blazor WebAssembly (Microsoft.AspNetCore.Components.WebAssembly, .Server, .Authorization) | MIT | The browser app and its hosting |
+| Blazor (Microsoft.AspNetCore.Components.WebAssembly, .Server, .Authorization) | MIT | The browser app (a Blazor Web App running as WebAssembly) and its hosting |
 | MudBlazor 9.12.0 | MIT | Screen components |
 | Microsoft.EntityFrameworkCore (+ Relational) | MIT | Writes and transactions |
 | Npgsql | PostgreSQL | PostgreSQL driver |
 | Npgsql.EntityFrameworkCore.PostgreSQL | PostgreSQL | EF Core provider for PostgreSQL |
 | EFCore.NamingConventions | Apache-2.0 | snake_case table and column names |
 | Dapper | Apache-2.0 | Read queries |
-| Mediator.Abstractions / Mediator.SourceGenerator (martinothamar) | MIT | Command/query dispatch (source-generated) |
-| Carter | MIT | Endpoint modules over minimal APIs |
 | FluentValidation (+ DependencyInjectionExtensions) | Apache-2.0 | Request validation |
 | ASP.NET Core Identity (Microsoft.AspNetCore.Identity.EntityFrameworkCore) | MIT | Sign-in, cookies, bearer + refresh tokens, lockout, password hashing |
 | Microsoft.AspNetCore.DataProtection.EntityFrameworkCore | MIT | Persisting (certificate-encrypted) the keys that protect cookies and tokens |
@@ -32,20 +30,21 @@ the same change.
 | System.Security.Cryptography.Pkcs (pinned 10.0.14) | MIT | Pulled in by PDFsharp; pinned past a vulnerable version |
 | OpenTelemetry (.Extensions.Hosting, .Instrumentation.AspNetCore/Http/Runtime, .Exporter.OpenTelemetryProtocol) | Apache-2.0 | Traces, metrics and logs |
 | Npgsql.OpenTelemetry | PostgreSQL | Database spans and metrics |
-| Swashbuckle.AspNetCore | MIT | API documentation (development) |
+| Microsoft.AspNetCore.OpenApi | MIT | The API description (/openapi/v1.json) |
+| Scalar.AspNetCore 2.18.7 | MIT | A page to browse and try the API (development only) |
 
 ## Used only to build and test (not shipped)
 
 | Component | License |
 |---|---|
 | Microsoft.EntityFrameworkCore.Design, dotnet-ef | MIT |
-| xUnit, xunit.runner.visualstudio | Apache-2.0 |
+| xUnit v3 (xunit.v3), running on Microsoft.Testing.Platform | Apache-2.0 |
 | AwesomeAssertions | Apache-2.0 |
-| Microsoft.NET.Test.Sdk, Microsoft.AspNetCore.Mvc.Testing | MIT |
+| Microsoft.AspNetCore.Mvc.Testing, Microsoft.Extensions.TimeProvider.Testing (FakeTimeProvider) | MIT |
 | Microsoft.Playwright (browser tests; drives the browser already installed) | MIT |
-| FsCheck, FsCheck.Xunit (property-based tests) | BSD-3-Clause |
+| FsCheck, FsCheck.Xunit.v3 (property-based tests) | BSD-3-Clause |
 | Testcontainers, Testcontainers.PostgreSql (a throwaway PostgreSQL per test run) | MIT |
-| coverlet.collector (code coverage) | MIT |
+| coverlet.MTP (code coverage) | MIT |
 | dotnet-reportgenerator-globaltool (coverage report) | Apache-2.0 |
 | dotnet-stryker (mutation testing) | Apache-2.0 |
 | Podman (containers on developer machines and in CI-like runs) | Apache-2.0 |
@@ -67,7 +66,7 @@ the same change.
 
 | Package | Why |
 |---|---|
-| MediatR | Commercial license required for larger organizations since 2025 |
+| MediatR | Commercial license required for larger organizations since 2025. (No mediator is used at all: endpoints call their handlers directly.) |
 | FluentAssertions ≥ 8 | Paid license required for commercial use |
 | AutoMapper | Commercial license since 2025 |
 | QuestPDF | Free tier is revenue-gated, which would bind each buyer |

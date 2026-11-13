@@ -32,17 +32,16 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
         return DocumentNumber.Format("SO", next, nowUtc);
     }
 
-    // An order the caller may not see is "not found": a rep can't even learn that someone else's order exists.
-    public async Task<SalesOrder> GetVisibleOrderAsync(long orderId, UserId user, string role, CancellationToken ct)
+    // null when there is no such order, and when the caller may not see it: a rep can't even learn that someone
+    // else's order exists.
+    public async Task<SalesOrder?> GetVisibleOrderAsync(long orderId, UserId user, string role, CancellationToken ct)
     {
         var id = new SalesOrderId(orderId);
         var order = await SalesOrders.SingleOrDefaultAsync(o => o.Id == id, ct);
-        return order is not null && order.IsVisibleTo(user, role)
-            ? order
-            : throw new NotFoundException($"Sales order {orderId} not found.");
+        return order is not null && order.IsVisibleTo(user, role) ? order : null;
     }
 
-    // Pairs each requested line with its item. An unknown item is a 404; whether it may be sold is the order's call.
+    // Pairs each requested line with its item. An unknown item is refused with its code; whether it may be sold is the order's call.
     public async Task<IReadOnlyList<(SalesItem Item, Quantity Quantity)>> ResolveLinesAsync(
         IEnumerable<(long ItemId, decimal Quantity)> lines, CancellationToken ct)
     {
@@ -50,7 +49,7 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
         var ids = requested.Select(l => new ItemId(l.ItemId)).Distinct().ToList();
         var items = await SalesItems.Include(i => i.Category).Where(i => ids.Contains(i.Id)).ToDictionaryAsync(i => i.Id.Value, ct);
         return requested
-            .Select(l => (items.TryGetValue(l.ItemId, out var item) ? item : throw new NotFoundException($"Item {l.ItemId} not found."),
+            .Select(l => (items.TryGetValue(l.ItemId, out var item) ? item : throw new DomainException(SalesErrors.ItemNotFound, $"Item {l.ItemId} doesn't exist."),
                           new Quantity(l.Quantity)))
             .ToList();
     }

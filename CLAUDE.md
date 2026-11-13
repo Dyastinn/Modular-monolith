@@ -56,8 +56,8 @@ every piece of it — and no more words than that took.
 4. **Pain first, solution second** — but briefly. Show the naive version and why it hurts in a few
    lines, then the fix. Don't stage a long drama for a small point.
 5. **Explain the reasoning, not just the mechanics** — one or two sentences of *why* per decision.
-6. **Be honest about costs.** Name each pattern's downsides (mediator indirection, EF change-tracking
-   overhead, two data-access tools, best-effort vs. outbox), in the voice: *"Now, let's be honest about the
+6. **Be honest about costs.** Name each pattern's downsides (EF change-tracking overhead, two data-access
+   tools, a hand-written registration per handler, best-effort vs. outbox), in the voice: *"Now, let's be honest about the
    cost here: …"*
 7. **Every lesson proves itself with tests (user decision, 2026-11-12).** From lesson 02 (Testing) on, each
    lesson ends with tests for what it built: the ones that teach something new in full, then a table of every
@@ -81,7 +81,8 @@ the section order, and a sample.
   leveraging," or "In conclusion," and don't end a section by summarising it.
 - **Do** use concrete numbers and real names from this domain (`SalesOrder`, `SalesManager`, ₱).
 - **Cut ruthlessly.** If a paragraph can lose half its words and keep its meaning, it should.
-- **Consistent analogies** — mediator = *post office*; atomicity = *turnstile*; modules = *islands with one
+- **Consistent analogies** — the outbox dispatcher = *post office* (it delivers each event to whoever
+  subscribed; the sender never knows who); atomicity = *turnstile*; modules = *islands with one
   service window* (the contracts project); VSA = *taco drawer*; value object = *any ₱1,000 bill is as good
   as any other*. Don't invent competing ones.
 - **Diagrams:** Mermaid blocks. An image (in `plan-business-tutorial/images/`) only when Mermaid can't
@@ -92,18 +93,23 @@ the section order, and a sample.
 
 ## 3. The locked stack
 
-.NET 10 · C# · **Modular Monolith + VSA** · **Carter** over minimal APIs · **PostgreSQL** (16+; developed on
+.NET 10 · C# · **Modular Monolith + VSA** · **minimal APIs** (`MapGroup`, `TypedResults`; each module maps its own
+endpoints) · **PostgreSQL** (16+; developed on
 18), schema-per-module, snake_case names (`EFCore.NamingConventions`) · **EF Core (Npgsql) for every write and
 every transaction** · **Dapper + schema-qualified SQL functions for reads (SELECTs only)** — PostgreSQL
 procedures can't return result sets, so the read side is `RETURNS TABLE` functions — **shipped through EF Core
-migrations** · **`martinothamar/Mediator`** (source-generated, MIT) · **CQRS-lite** · **FluentValidation** ·
+migrations** · **no mediator library**: endpoints call their handler directly (decided 2026-11-13, see
+[BEST-PRACTICES-REVIEW.md](BEST-PRACTICES-REVIEW.md)) · **CQRS-lite** · **FluentValidation**, run by one endpoint
+filter on `/api` · **stable error codes** on every problem response, with a catalog page ·
 **ASP.NET Core Identity** (`AddIdentityApiEndpoints` / `MapIdentityApi`): cookies for the browser, bearer +
 refresh tokens for other clients, lockout, password policy, role-based authorization; keys persisted to
-PostgreSQL · **Blazor WebAssembly + MudBlazor**, hosted by `Erp.Api`, built along the way (every feature lesson
+PostgreSQL · **Blazor Web App + MudBlazor**, global interactive WebAssembly (prerender off), served by `Erp.Api`, built along the way (every feature lesson
 adds its screen) · the API lives under **`/api`** · **OpenTelemetry** (traces, metrics, logs, OTLP export) +
-health checks; **Aspire AppHost** as the dev-only dashboard · **transactional outbox** · **xUnit 2.9.3 +
-AwesomeAssertions**, **FsCheck.Xunit** (property-based), **Testcontainers.PostgreSql** (from lesson 12),
-**coverlet**, **Stryker.NET**, **GitHub Actions** CI · **PdfSharp/MigraDoc 6.2.4** for invoices · **MailKit** for
+health checks; **Aspire AppHost** as the dev-only dashboard · **`Microsoft.AspNetCore.OpenApi`** + **Scalar**
+(dev-only API page) · `TimeProvider` (tests: `FakeTimeProvider`) · **transactional outbox** · **xUnit v3 on
+Microsoft.Testing.Platform + AwesomeAssertions**, **FsCheck.Xunit.v3** (property-based), **Testcontainers.PostgreSql**
+(from lesson 12), **coverlet.MTP**, **Stryker.NET** (`test-runner: mtp`), **GitHub Actions** CI · analyzers at
+`latest-recommended`, warnings fail the CI build · **PdfSharp/MigraDoc 6.2.4** for invoices · **MailKit** for
 email · containers: **Podman** (user decision 2026-11-12) for the dev database (from lesson 12), tests and
 deployment (Linux containers, **Compose** files run with `podman compose`, Caddy for HTTPS). Keep every container
 file **Docker-compatible** (plain Compose spec, OCI `Dockerfile`, no Quadlet or other Podman-only format) and say
@@ -157,17 +163,18 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
    other in both directions.
 2. **No cross-schema SQL.** No `JOIN` or FK across module schemas (not even to `identity.users` for a
    "created by" column — store the id, no FK); no DbContext mapping another module's tables. Cross-module data goes through a contract call or an integration event.
-3. **`internal` has framework consequences — keep the fixes.** Carter's `AddCarter()` only scans public
-   types, so each module **hand-registers** its `ICarterModule`s; `AddValidatorsFromAssembly` **must** pass
-   `includeInternalTypes: true`; EF configurations and the Mediator source generator must be checked
-   against internal types. `InternalsVisibleTo` is granted **only to test assemblies and to `Erp.Api`** —
-   the Mediator source generator runs in the host and emits code that names each module's internal
-   commands and handlers (verified 2026-11-05: without it, `CS0122`). **Never to another module**, and
-   `Erp.Api` uses that access only for composition, never for business code. Keep the regression tests that
-   prove each of these (e.g. `Order_with_no_lines_is_rejected_by_the_internal_validator`) and the
-   architecture test that fails if a module grants `InternalsVisibleTo` to another module.
+3. **`internal` has framework consequences — keep the fixes.** A module's public surface is exactly two
+   methods: `AddXModule()` (registers its DbContext, handlers, validators, event handlers and error catalog) and
+   `MapXEndpoints()` (maps its endpoints). Handlers are registered **by hand**, one line each, and a test proves
+   every one is registered; `AddValidatorsFromAssembly` **must** pass `includeInternalTypes: true`. .NET 10's
+   built-in `AddValidation()` silently skips internal models (spike, 2026-11-13), which is why validation is
+   FluentValidation. `InternalsVisibleTo` is granted **only to test assemblies** — not even to `Erp.Api`, so the
+   compiler keeps the host away from a module's internals (the old Mediator generator needed that grant; it's
+   gone). Keep the regression tests that prove each of these (e.g.
+   `Order_with_no_lines_is_rejected_by_the_internal_validator`, `Every_feature_handler_is_registered`) and the
+   architecture test that fails if a module grants `InternalsVisibleTo` to anything but a test project.
 4. **Keep the Domain pure.** `Domain/` depends only on `Erp.Shared.BuildingBlocks`. No EF Core attributes,
-   SQL, Carter, Dapper, or `HttpContext` in the domain. EF mapping lives in `Infrastructure/` as
+   SQL, ASP.NET Core, Dapper, or `HttpContext` in the domain. EF mapping lives in `Infrastructure/` as
    `IEntityTypeConfiguration<T>` (fluent API only).
 5. **`Shared/` is exactly two projects.** `Erp.Shared.BuildingBlocks` (one flat namespace; folders
    `Domain/`, `Abstractions/`, `Messaging/`) depends on nothing heavy and holds what every module may use.
@@ -178,13 +185,15 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
 
    | Concern | Home |
    |---|---|
-   | "Is the request well-formed?" (shape: positive ids, ≥1 line) | **Validator** (FluentValidation, in the handler file) |
-   | "Is this operation allowed?" (blocked customer, credit limit, status transition, approval threshold) | **Domain** — a method on the entity/value object |
+   | "Is the request well-formed?" (shape: positive ids, ≥1 line) | **Validator** (FluentValidation) on the type the endpoint binds: a request in the endpoint file, or a query record in the handler file. Run by the `/api` filter; answered 400 with `ERP-0001`, no exception |
+   | "Is this operation allowed?" (blocked customer, credit limit, status transition, approval threshold) | **Domain** — a method on the entity/value object, throwing `DomainException(XErrors.Code, detail)` → 422 with the code |
+   | "Does the thing in the URL exist?" | **Handler** returns `null`/`false`; the **endpoint** answers `TypedResults.NotFound()`. An unknown id *inside the body* is a coded 422 |
    | "Load → do → save" coordination | **Command handler** (EF Core, no business `if`s) |
    | Reading data for a screen or report | **Query handler** → Dapper → SQL function |
    | Safety when two people act at once (reserve stock, lost-update guard) | **EF Core** — the `xmin` row version as a concurrency token, or one atomic `ExecuteUpdate` with a guard in the `WHERE` |
    | One module needs another (must be same transaction) | **Synchronous contract** in the other module's `.Contracts` |
-   | Something reacts afterward | **Domain event** raised by the aggregate → `OutboxInterceptor` writes it in the same `SaveChanges` → `OutboxDispatcher` delivers it to `INotificationHandler<T>` after commit. At-least-once: **handlers must be idempotent** |
+   | Something reacts afterward, in the same module | **Domain event** (internal) raised by the aggregate → `OutboxInterceptor` writes it in the same `SaveChanges` → `OutboxDispatcher` delivers it to the module's `IDomainEventHandler<T>` after commit. At-least-once: **handlers must be idempotent** |
+   | Another module reacts afterward | The owning module's domain event handler maps it to a public **integration event** (`.Contracts`) and calls `IIntegrationEventPublisher`, which hands it to every `IIntegrationEventHandler<T>` inside the same outbox delivery |
    | "This endpoint is role-X only, full stop" | **Endpoint** (`RequireAuthorization` / role policy) |
    | Auth that depends on the data ("your own customers only") | **Handler/domain** via `ICurrentUser` |
 
@@ -195,13 +204,22 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
 
 ## 5. Conventions to preserve
 
-- **Two files per feature:** `XxxHandler.cs` (Command/Query + Result/DTOs + Validator + Handler) and
-  `XxxEndpoint.cs` (Request/Response + Carter module). Closely related actions on one thing may share a
+- **Two files per feature:** `XxxHandler.cs` (Command/Query + Result/DTOs + Handler, plus the validator of a query
+  bound with `[AsParameters]`) and `XxxEndpoint.cs` (Request + its validator + a static `Map` method). Closely related actions on one thing may share a
   feature folder (`UpdateCustomer` also holds block/unblock; `ItemCategories` holds list and save). **Never**
   technical-layer folders (`Commands/`, `Handlers/`, `Validators/`, `Endpoints/`).
-- **Mediator:** `martinothamar/Mediator` — `ICommand<T>`/`ICommandHandler<,>`, `IQuery<T>`/`IQueryHandler<,>`;
-  pipeline = `TelemetryBehavior` (span + duration metric + log, outermost) then `ValidationBehavior`.
-  Handlers return `ValueTask`. Handlers never publish events themselves — the outbox does.
+- **Handlers:** plain `internal sealed class XxxHandler` with `Task<T> HandleAsync(XxxCommand|XxxQuery, CancellationToken)`,
+  registered `AddScoped` in the module and injected into the endpoint. Commands and queries stay separate records
+  (CQRS-lite): a query handler never takes a DbContext, a command handler never uses Dapper (architecture test).
+  A command on a resource named in the URL returns `bool`/`T?` (false/null = not found). Endpoints return
+  `TypedResults` with declared `Results<…>` unions, so OpenAPI lists every answer. Handlers never publish events
+  themselves — the outbox does. Tracing per request comes from ASP.NET Core's OpenTelemetry instrumentation.
+- **Error codes:** every `DomainException` carries an `ErrorCode` from its module's internal catalog
+  (`Domain/SalesErrors.cs`: `SALES-0001`…, Title, Fix), registered with `ErrorCatalog.From`. Codes are never
+  renumbered or reused; tests prove they are unique, documented and used. Every problem response has `code`,
+  `type: /errors/{code}` and `traceId`; `/api/errors` serves the catalog and the app's `/errors/{code}` page shows it.
+- **Time:** inject `TimeProvider` (the host registers `CompanyTimeProvider`, whose local zone is the company's);
+  `time.GetUtcNow().UtcDateTime` and `time.Today()`. Tests use `FakeTimeProvider`.
 - **Value objects that appear in domain events** need `[JsonConstructor]` on their validating constructor, or
   the outbox round-trip silently zeroes them (caught by `An_event_survives_the_round_trip_through_the_outbox`).
 - **Base types** in `Erp.Shared.BuildingBlocks`: `Entity<TId>`, `AggregateRoot<TId>` (`where TId : struct`,
@@ -233,10 +251,9 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
   via `migrationBuilder.Sql`. **A shipped migration or script is never edited** — a changed function gets a
   `.v2` file and a new migration. Dapper maps snake_case columns to PascalCase records
   (`MatchNamesWithUnderscores`, set once in `AddSharedInfrastructure`).
-- **Domain events:** raise an event only in the same change that adds its first handler. Integration
-  events live in a module's `.Contracts` project, and **every Contracts assembly that holds events must be
-  listed in the Mediator's `options.Assemblies`**, or publishing reaches no handler, silently. The Mediator
-  generator's MSG0005 ("no handler") stays ON — never suppress it globally.
+- **Domain events:** raise an event only in the same change that adds its first handler. Domain events are
+  `internal`; integration events live in a module's `.Contracts` project and are plain data. Each module registers
+  its own event handlers; tests prove every event has a handler and every handler is registered.
 - **Dev seed data** lives in each module's `Infrastructure/Sql/DevSeed.sql`, runs only when
   `Database:SeedDevelopmentData` is true (Development/tests), and is idempotent.
 - **Roles** live once in `Erp.Shared.BuildingBlocks.Roles` (`SalesRep`, `SalesManager`, `Admin`; later
@@ -261,7 +278,9 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
   including (B.18); a change to its layout must keep every field on that list.
 - **The host references `Erp.Web` normally, with `Aliases="ErpWeb" PrivateAssets="all"`.** Never
   `ReferenceOutputAssembly="false"`: the host would stop serving the app's package files (MudBlazor's CSS and
-  JS), and the app would run unstyled.
+  JS), and the app would run unstyled. `App.razor` (the page) and `Routes.razor` both live in `Erp.Web`; the host
+  maps `MapRazorComponents<ErpWeb::Erp.Web.App>().AddInteractiveWebAssemblyRenderMode().AllowAnonymous()` and sets
+  `RequiresAspNetWebAssets` (it has no `.razor` files of its own, so the SDK wouldn't serve `blazor.web.js`).
 - **Every dependency is permissively licensed and free** (see §3) and listed in the third-party notices file.
 - **Code comments are minimal.** None on self-explanatory code. Where one is needed, one short line with the
   important, non-obvious *why* (a trap, a constraint). The lessons carry the explanations, not the code.

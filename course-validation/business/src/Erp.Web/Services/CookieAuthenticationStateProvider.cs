@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Claims;
@@ -60,7 +61,7 @@ public sealed class CookieAuthenticationStateProvider(HttpClient http) : Authent
 
     private static ClaimsPrincipal Principal(CurrentUser user) => new(new ClaimsIdentity(
     [
-        new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+        new Claim(ClaimTypes.NameIdentifier, user.Id.ToString(CultureInfo.InvariantCulture)),
         new Claim(ClaimTypes.Name, user.FullName),
         new Claim(ClaimTypes.Email, user.Username),
         new Claim(ClaimTypes.Role, user.Role),

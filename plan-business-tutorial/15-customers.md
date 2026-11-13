@@ -51,7 +51,7 @@ Here's lesson 04's `Create`, before:
 ```csharp
 public static Customer Create(string name, Money creditLimit)
 {
-    if (string.IsNullOrWhiteSpace(name)) throw new DomainException("A customer needs a name.");
+    if (string.IsNullOrWhiteSpace(name)) throw new DomainException(SalesErrors.CustomerNameRequired, "A customer needs a name.");
     return new Customer { Name = name.Trim(), CreditLimit = creditLimit };
 }
 ```
@@ -73,8 +73,8 @@ public static Customer Create(string name, string? tin, string? address, Money c
 
 public void Update(string name, string? tin, string? address, Money creditLimit, int paymentTermsDays)
 {
-    if (string.IsNullOrWhiteSpace(name)) throw new DomainException("A customer needs a name.");
-    if (paymentTermsDays is < 0 or > 365) throw new DomainException("Payment terms must be between 0 and 365 days.");
+    if (string.IsNullOrWhiteSpace(name)) throw new DomainException(SalesErrors.CustomerNameRequired, "A customer needs a name.");
+    if (paymentTermsDays is < 0 or > 365) throw new DomainException(PurchasingErrors.PaymentTermsOutOfRange, "Payment terms must be between 0 and 365 days.");
     Name = name.Trim();
     Tin = string.IsNullOrWhiteSpace(tin) ? null : tin.Trim();
     Address = string.IsNullOrWhiteSpace(address) ? null : address.Trim();
@@ -215,35 +215,16 @@ Create and update take the same fields, so they share one input record and its v
 using Erp.Modules.Sales.Domain;
 using Erp.Modules.Sales.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Sales.Features;
 
 internal sealed record CustomerInput(string Name, string? Tin, string? Address, decimal CreditLimit, int PaymentTermsDays);
 
-internal sealed class CustomerInputValidator : AbstractValidator<CustomerInput>
-{
-    public CustomerInputValidator()
-    {
-        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
-        RuleFor(x => x.Tin).MaximumLength(20);
-        RuleFor(x => x.Address).MaximumLength(500);
-        RuleFor(x => x.CreditLimit).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.PaymentTermsDays).InclusiveBetween(0, 365);
-    }
-}
+internal sealed record CreateCustomerCommand(CustomerInput Customer);
 
-internal sealed record CreateCustomerCommand(CustomerInput Customer) : ICommand<long>;
-
-internal sealed class CreateCustomerValidator : AbstractValidator<CreateCustomerCommand>
+internal sealed class CreateCustomerHandler(SalesDbContext db)
 {
-    public CreateCustomerValidator() => RuleFor(x => x.Customer).SetValidator(new CustomerInputValidator());
-}
-
-internal sealed class CreateCustomerHandler(SalesDbContext db) : ICommandHandler<CreateCustomerCommand, long>
-{
-    public async ValueTask<long> Handle(CreateCustomerCommand cmd, CancellationToken ct)
+    public async Task<long> HandleAsync(CreateCustomerCommand cmd, CancellationToken ct)
     {
         var c = cmd.Customer;
         var customer = Customer.Create(c.Name, c.Tin, c.Address, new Money(c.CreditLimit), c.PaymentTermsDays);
@@ -260,21 +241,35 @@ the domain guarantees the rule even for code that never passes through a validat
 
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/CreateCustomer/CreateCustomerEndpoint.cs
-using Carter;
-using Mediator;
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed class CreateCustomerEndpoint : ICarterModule
+
+internal sealed class CustomerInputValidator : AbstractValidator<CustomerInput>
 {
-    public void AddRoutes(IEndpointRouteBuilder app) =>
-        app.MapPost("/customers", async (CustomerInput body, ISender sender, CancellationToken ct) =>
+    public CustomerInputValidator()
+    {
+        RuleFor(x => x.Name).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.Tin).MaximumLength(20);
+        RuleFor(x => x.Address).MaximumLength(500);
+        RuleFor(x => x.CreditLimit).GreaterThanOrEqualTo(0);
+        RuleFor(x => x.PaymentTermsDays).InclusiveBetween(0, 365);
+    }
+}
+
+internal static class CreateCustomerEndpoint
+{
+    public static void Map(IEndpointRouteBuilder app) =>
+        app.MapPost("/customers", async Task<Created<CreatedId>> (CustomerInput body, CreateCustomerHandler handler, CancellationToken ct) =>
             {
-                var id = await sender.Send(new CreateCustomerCommand(body), ct);
-                return Results.Created($"/api/customers/{id}", new { id });
+                var id = await handler.HandleAsync(new CreateCustomerCommand(body), ct);
+                return TypedResults.Created($"/api/customers/{id}", new CreatedId(id));
             })
             .RequireAuthorization(p => p.RequireRole(SalesRoles.Managers));
 }
@@ -288,46 +283,35 @@ there's no point writing the same five fields three times today.
 using Erp.Modules.Sales.Domain;
 using Erp.Modules.Sales.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed record UpdateCustomerCommand(long CustomerId, CustomerInput Customer) : ICommand;
+internal sealed record UpdateCustomerCommand(long CustomerId, CustomerInput Customer);
 
-internal sealed class UpdateCustomerValidator : AbstractValidator<UpdateCustomerCommand>
+internal sealed class UpdateCustomerHandler(SalesDbContext db)
 {
-    public UpdateCustomerValidator()
+    public async Task<bool> HandleAsync(UpdateCustomerCommand cmd, CancellationToken ct)
     {
-        RuleFor(x => x.CustomerId).GreaterThan(0);
-        RuleFor(x => x.Customer).SetValidator(new CustomerInputValidator());
-    }
-}
-
-internal sealed class UpdateCustomerHandler(SalesDbContext db) : ICommandHandler<UpdateCustomerCommand>
-{
-    public async ValueTask<Unit> Handle(UpdateCustomerCommand cmd, CancellationToken ct)
-    {
-        var customer = await db.Customers.FindAsync([new CustomerId(cmd.CustomerId)], ct)
-            ?? throw new NotFoundException($"Customer {cmd.CustomerId} not found.");
+        var customer = await db.Customers.FindAsync([new CustomerId(cmd.CustomerId)], ct);
+        if (customer is null) return false;
         var c = cmd.Customer;
         customer.Update(c.Name, c.Tin, c.Address, new Money(c.CreditLimit), c.PaymentTermsDays);
         await db.SaveChangesAsync(ct);
-        return Unit.Value;
+        return true;
     }
 }
 
-internal sealed record SetCustomerBlockedCommand(long CustomerId, bool Blocked) : ICommand;
+internal sealed record SetCustomerBlockedCommand(long CustomerId, bool Blocked);
 
-internal sealed class SetCustomerBlockedHandler(SalesDbContext db) : ICommandHandler<SetCustomerBlockedCommand>
+internal sealed class SetCustomerBlockedHandler(SalesDbContext db)
 {
-    public async ValueTask<Unit> Handle(SetCustomerBlockedCommand cmd, CancellationToken ct)
+    public async Task<bool> HandleAsync(SetCustomerBlockedCommand cmd, CancellationToken ct)
     {
-        var customer = await db.Customers.FindAsync([new CustomerId(cmd.CustomerId)], ct)
-            ?? throw new NotFoundException($"Customer {cmd.CustomerId} not found.");
+        var customer = await db.Customers.FindAsync([new CustomerId(cmd.CustomerId)], ct);
+        if (customer is null) return false;
         if (cmd.Blocked) customer.Block(); else customer.Unblock();
         await db.SaveChangesAsync(ct);
-        return Unit.Value;
+        return true;
     }
 }
 ```
@@ -340,37 +324,33 @@ approval charges Acme's balance can't silently undo either change: the second sa
 
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/UpdateCustomer/UpdateCustomerEndpoint.cs
-using Carter;
-using Mediator;
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed class UpdateCustomerEndpoint : ICarterModule
+
+internal static class UpdateCustomerEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app)
+    public static void Map(IEndpointRouteBuilder app)
     {
-        app.MapPut("/customers/{id:long}", async (long id, CustomerInput body, ISender sender, CancellationToken ct) =>
-            {
-                await sender.Send(new UpdateCustomerCommand(id, body), ct);
-                return Results.NoContent();
-            })
+        app.MapPut("/customers/{id:long}",
+                async Task<Results<NoContent, NotFound>> (long id, CustomerInput body, UpdateCustomerHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new UpdateCustomerCommand(id, body), ct) ? TypedResults.NoContent() : TypedResults.NotFound())
             .RequireAuthorization(p => p.RequireRole(SalesRoles.Managers));
 
-        app.MapPost("/customers/{id:long}/block", async (long id, ISender sender, CancellationToken ct) =>
-            {
-                await sender.Send(new SetCustomerBlockedCommand(id, true), ct);
-                return Results.NoContent();
-            })
+        app.MapPost("/customers/{id:long}/block",
+                async Task<Results<NoContent, NotFound>> (long id, SetCustomerBlockedHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new SetCustomerBlockedCommand(id, true), ct) ? TypedResults.NoContent() : TypedResults.NotFound())
             .RequireAuthorization(p => p.RequireRole(SalesRoles.Managers));
 
-        app.MapPost("/customers/{id:long}/unblock", async (long id, ISender sender, CancellationToken ct) =>
-            {
-                await sender.Send(new SetCustomerBlockedCommand(id, false), ct);
-                return Results.NoContent();
-            })
+        app.MapPost("/customers/{id:long}/unblock",
+                async Task<Results<NoContent, NotFound>> (long id, SetCustomerBlockedHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new SetCustomerBlockedCommand(id, false), ct) ? TypedResults.NoContent() : TypedResults.NotFound())
             .RequireAuthorization(p => p.RequireRole(SalesRoles.Managers));
     }
 }

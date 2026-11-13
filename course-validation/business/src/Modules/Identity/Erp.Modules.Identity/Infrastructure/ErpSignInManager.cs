@@ -18,7 +18,7 @@ internal sealed class ErpSignInManager(
     IAuthenticationSchemeProvider schemes,
     IUserConfirmation<AppUser> confirmation,
     ErpIdentityDbContext db,
-    IClock clock)
+    TimeProvider time)
     : SignInManager<AppUser>(users, context, claims, options, logger, schemes, confirmation)
 {
     public override async Task<bool> CanSignInAsync(AppUser user) =>
@@ -37,7 +37,7 @@ internal sealed class ErpSignInManager(
             : result.RequiresTwoFactor ? "RequiresTwoFactor"
             : "InvalidCredentials";
         db.SignInAttempts.Add(new SignInAttempt(userName, user?.Id, outcome,
-            Context.Connection.RemoteIpAddress?.ToString(), clock.UtcNow));
+            Context.Connection.RemoteIpAddress?.ToString(), time.GetUtcNow().UtcDateTime));
         await db.SaveChangesAsync();
         return result;
     }

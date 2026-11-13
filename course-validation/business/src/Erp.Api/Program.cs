@@ -1,6 +1,7 @@
+extern alias ErpWeb;
+
 using System.Diagnostics;
 using System.Text.Json.Serialization;
-using Carter;
 using Erp.Api;
 using Erp.Api.Security;
 using Erp.Modules.Identity;
@@ -10,9 +11,8 @@ using Erp.Modules.Purchasing;
 using Erp.Modules.Sales;
 using Erp.Shared.BuildingBlocks;
 using Erp.Shared.Infrastructure;
-using Mediator;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.OpenApi;
+using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.WebHost.ConfigureKestrel(o => o.AddServerHeader = false);
@@ -20,36 +20,29 @@ builder.WebHost.ConfigureKestrel(o => o.AddServerHeader = false);
 builder.AddObservability();
 builder.Services.AddSharedInfrastructure(builder.Configuration);
 
-builder.Services.AddMediator((MediatorOptions options) =>
-{
-    options.ServiceLifetime = ServiceLifetime.Scoped;   // handlers use scoped DbContexts
-    // Every assembly that holds a message or a handler. Contracts hold the integration events: leave one out and
-    // publishing its events silently reaches nobody.
-    options.Assemblies =
-    [
-        typeof(IdentityModule), typeof(SalesModule), typeof(InventoryModule), typeof(PurchasingModule), typeof(InvoicingModule),
-        typeof(Erp.Modules.Inventory.Contracts.ItemCatalogChanged), typeof(Erp.Modules.Invoicing.Contracts.PaymentRecorded)
-    ];
-    options.PipelineBehaviors = [typeof(TelemetryBehavior<,>), typeof(ValidationBehavior<,>)];   // outermost first
-});
-
 // Registration order = migration and seed order.
 builder.Services.AddIdentityModule(builder.Configuration);
 builder.Services.AddSalesModule();
 builder.Services.AddInventoryModule();
 builder.Services.AddPurchasingModule();
 builder.Services.AddInvoicingModule(builder.Configuration);
-builder.Services.AddCarter();
 
 builder.Services.AddAuthorization();
+// The browser app: the server renders its page, the screens run in the browser as WebAssembly.
+builder.Services.AddRazorComponents().AddInteractiveWebAssemblyComponents();
 builder.Services.AddErpRateLimiting(builder.Configuration);
 builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database", tags: ["ready"]);
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 // Enums travel as their names ("Cash"), not numbers, in both directions.
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));
-// Every problem body, ours or the framework's, carries the trace id that the X-Trace-Id header and the logs carry.
+// Every problem body, ours or the framework's, carries an error code and the trace id that the X-Trace-Id header and
+// the logs carry.
 builder.Services.AddProblemDetails(o => o.CustomizeProblemDetails = c =>
-    c.ProblemDetails.Extensions["traceId"] = Activity.Current?.TraceId.ToString() ?? c.HttpContext.TraceIdentifier);
+{
+    if (!c.ProblemDetails.Extensions.ContainsKey("code"))
+        ErrorProblems.Apply(c.ProblemDetails, ErrorProblems.ForStatus(c.ProblemDetails.Status ?? c.HttpContext.Response.StatusCode));
+    c.ProblemDetails.Extensions["traceId"] = Activity.Current?.TraceId.ToString() ?? c.HttpContext.TraceIdentifier;
+});
 builder.Services.AddHsts(o =>
 {
     o.MaxAge = TimeSpan.FromDays(365);
@@ -65,25 +58,17 @@ builder.Services.AddCors(o => o.AddDefaultPolicy(p =>
         p.WithOrigins(allowedOrigins).AllowAnyHeader().AllowAnyMethod();
 }));
 
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options =>
-{
-    options.SwaggerDoc("v1", new OpenApiInfo { Title = "Erp API", Version = "v1" });
-    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        Name = "Authorization", Type = SecuritySchemeType.Http, Scheme = "bearer",
-        In = ParameterLocation.Header, Description = "The accessToken from POST /api/auth/login."
-    });
-    options.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
-    {
-        { new OpenApiSecuritySchemeReference("Bearer", doc, null), new List<string>() }
-    });
-});
+// The API's description, generated from the endpoints themselves: /openapi/v1.json, browsed at /scalar (development).
+builder.Services.AddOpenApi(o => o.AddDocumentTransformer<BearerSecurityScheme>());
 
 var app = builder.Build();
 
+app.UseUtf8ProblemBodies();
 app.UseExceptionHandler();
 app.UseStatusCodePages();   // an error with no body (a bare 404, 401, 403) gets a problem+json body too
+// An address that is no page of the app shows the app's own "not found" page (with a 404), not a JSON problem.
+app.UseWhen(ctx => !ctx.Request.Path.StartsWithSegments("/api"),
+    pages => pages.UseStatusCodePagesWithReExecute("/not-found", createScopeForStatusCodePages: true));
 if (!app.Environment.IsDevelopment())
     app.UseHsts();
 app.UseHttpsRedirection();
@@ -92,12 +77,14 @@ app.UseTraceIdHeader();
 
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    app.MapOpenApi();
+    app.MapScalarApiReference();
 }
 
 await app.InitializeDatabaseAsync();
 
+// Explicit, and after the status-code pages: a re-executed request ("/not-found") must be routed again.
+app.UseRouting();
 app.UseCors();
 app.UseAuthentication();
 app.UseRateLimiter();   // after authentication, so limits are per user where possible
@@ -106,13 +93,23 @@ app.UseAuthorization();
 app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false });   // the process is up
 app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = c => c.Tags.Contains("ready") });
 // The browser app is served from the same host, so the API gets a prefix of its own.
-var api = app.MapGroup("/api");
+// Every request with a body or query record is validated here, once, before any module's endpoint runs.
+var api = app.MapGroup("/api").ValidateRequests();
+api.MapErrorCatalog();
 api.MapIdentityModule();
-api.MapCarter();
+api.MapSalesEndpoints();
+api.MapInventoryEndpoints();
+api.MapPurchasingEndpoints();
+api.MapInvoicingEndpoints();
 api.MapFallback(() => Results.NotFound());   // an unknown API address is a 404, never the app's page
 
+app.UseAntiforgery();
 app.MapStaticAssets();
-app.MapFallbackToFile("index.html");          // any other address is a page of the app: let it route
+// The pages guard themselves in the browser (AuthorizeRouteView sends a signed-out user to sign in). The server
+// only serves the page; every piece of data still comes from the API, which checks the user on each call.
+app.MapRazorComponents<ErpWeb::Erp.Web.App>()
+    .AddInteractiveWebAssemblyRenderMode()
+    .AllowAnonymous();
 
 app.Run();
 

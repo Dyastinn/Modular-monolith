@@ -24,8 +24,8 @@ public sealed record TaxPolicy
 
     public TaxPolicy(TaxRegime regime, decimal vatRate)
     {
-        if (!Enum.IsDefined(regime)) throw new DomainException($"'{regime}' is not a tax regime.");
-        if (vatRate is < 0 or >= 1) throw new DomainException("The VAT rate must be a fraction between 0 and 1, such as 0.12.");
+        if (!Enum.IsDefined(regime)) throw new DomainException(CommonErrors.UnknownTaxRegime, $"'{regime}' is not a tax regime.");
+        if (vatRate is < 0 or >= 1) throw new DomainException(CommonErrors.InvalidVatRate, "The VAT rate must be a fraction between 0 and 1, such as 0.12.");
         Regime = regime;
         VatRate = regime == TaxRegime.Vat ? vatRate : 0;
     }

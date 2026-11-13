@@ -1,5 +1,6 @@
 using System.Security.Cryptography.X509Certificates;
-using Carter;
+using Erp.Modules.Identity.Domain;
+using Erp.Modules.Identity.Features;
 using Erp.Modules.Identity.Infrastructure;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
@@ -79,11 +80,20 @@ public static class IdentityModule
 
         services.AddHostedService<InitialAdmin>();
         services.AddValidatorsFromAssembly(typeof(IdentityModule).Assembly, includeInternalTypes: true);
+        services.AddSingleton(ErrorCatalog.From(typeof(IdentityErrors)));
 
-        // AddCarter() only finds public endpoint classes; ours are internal.
-        foreach (var endpoint in typeof(IdentityModule).Assembly.GetTypes()
-                     .Where(t => !t.IsAbstract && typeof(ICarterModule).IsAssignableFrom(t)))
-            services.AddSingleton(typeof(ICarterModule), endpoint);
+        // Handlers: plain classes, injected straight into the endpoints that use them.
+        services.AddScoped<GetCurrentUserHandler>();
+        services.AddScoped<ChangePasswordHandler>();
+        services.AddScoped<SignOutHandler>();
+        services.AddScoped<SignOutEverywhereHandler>();
+        services.AddScoped<CreateUserHandler>();
+        services.AddScoped<SearchUsersHandler>();
+        services.AddScoped<GetUserDirectoryHandler>();
+        services.AddScoped<UpdateUserHandler>();
+        services.AddScoped<SetUserDisabledHandler>();
+        services.AddScoped<ResetUserPasswordHandler>();
+        services.AddScoped<SearchSignInAttemptsHandler>();
 
         return services;
     }
@@ -96,9 +106,18 @@ public static class IdentityModule
             .AddEndpointFilter(async (ctx, next) =>
                 // Staff accounts are created by an administrator, never by self sign-up.
                 ctx.HttpContext.Request.Path.Value?.EndsWith("/auth/register", StringComparison.OrdinalIgnoreCase) == true
-                    ? Results.NotFound()
+                    ? TypedResults.NotFound()
                     : await next(ctx))
             .RequireRateLimiting(RateLimitPolicies.Auth);
+
+        var identity = app.MapGroup("").WithTags("Identity");
+        GetCurrentUserEndpoint.Map(identity);
+        ChangePasswordEndpoint.Map(identity);
+        SignOutEndpoint.Map(identity);
+        CreateUserEndpoint.Map(identity);
+        SearchUsersEndpoint.Map(identity);
+        UpdateUserEndpoint.Map(identity);
+        SearchSignInAttemptsEndpoint.Map(identity);
         return app;
     }
 }
