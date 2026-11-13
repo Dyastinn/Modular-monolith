@@ -32,9 +32,11 @@ Save the event **in the same transaction** as the change, as a row in an `outbox
 approval and "an approval happened" commit together, or not at all. Then, separately, a background worker
 reads the outbox, delivers each event to its handlers, and marks it done.
 
-To remember it easily: it's the office out-tray. You don't run each letter to the post office the moment you
-write it. You drop it in the tray as part of finishing the job, and the mail run picks the tray up. If you go
-home sick, the letters are still in the tray tomorrow.
+To remember it easily: the aggregate writes the letter, the outbox is the mailbox, and the dispatcher is the
+**post office**. You don't run each letter to its reader the moment you write it; you drop it in the box as
+part of finishing the job. The post office picks it up and delivers it to whoever subscribed, and the writer
+never needs to know who that is. If the office closes for the night, the letters are still in the box
+tomorrow.
 
 ```mermaid
 sequenceDiagram
@@ -58,15 +60,16 @@ whether it already did the work.
 
 ## 1. Teach the aggregate to record events
 
-The pieces live in BuildingBlocks. First, the marker for an event. It's a Mediator **notification**, which
-is like a command, except it can have any number of handlers, including none:
+The pieces live in BuildingBlocks. First, the marker for an event, and the shape of a class that reacts to
+one. Unlike a command, an event can have any number of handlers:
 
 ```csharp
-// add to src/Shared/Erp.Shared.BuildingBlocks/Domain/BuildingBlocks.cs  (and `using Mediator;` at the top)
+// add to src/Shared/Erp.Shared.BuildingBlocks/Domain/BuildingBlocks.cs
 
-// A fact the domain records ("order approved"). Saved to the outbox in the same transaction as the change, then
-// delivered to INotificationHandler<T> classes by the outbox dispatcher after the commit.
-public interface IDomainEvent : INotification { }
+// A fact the domain records ("order approved"), in its own module's words. Saved to the outbox in the same transaction
+// as the change, then delivered to that module's IDomainEventHandler<T> classes after the commit. Never public: other
+// modules hear about it only through an integration event (IIntegrationEvent) the module chooses to publish.
+public interface IDomainEvent;
 
 // What the outbox needs from any aggregate, whatever its id type: the events it recorded, and a way to forget them.
 public interface IAggregateRoot
@@ -93,6 +96,23 @@ public abstract class AggregateRoot<TId> : Entity<TId>, IAggregateRoot where TId
     public void ClearEvents() => _events.Clear();
 }
 ```
+
+And the handler's shape, in a file of its own:
+
+```csharp
+// src/Shared/Erp.Shared.BuildingBlocks/Messaging/Events.cs
+namespace Erp.Shared.BuildingBlocks;
+
+// Runs after the change that raised the event has committed. At-least-once: it may run twice, so it must be idempotent.
+public interface IDomainEventHandler<in TEvent> where TEvent : IDomainEvent
+{
+    Task HandleAsync(TEvent domainEvent, CancellationToken ct);
+}
+```
+
+Two small interfaces and no library: that's all "deliver this to whoever is interested" needs inside one
+process. (Lesson 03 promised we'd build exactly this, small.) The comment on `IDomainEvent` mentions
+integration events: those are for telling *other* modules, and arrive in [lesson 17](17-item-catalog.md).
 
 `Raise` is `protected`: only the aggregate itself can record a fact about itself. Why the extra
 `IAggregateRoot` interface? `AggregateRoot<TId>` is generic, and the outbox needs to find every aggregate,
@@ -140,11 +160,25 @@ internal sealed class SalesOrderApprovedAuditHandler(ILogger<SalesOrderApprovedA
 }
 ```
 
-The Mediator generator finds the handler on its own; there's nothing to register.
+Register it in `AddSalesModule`, like every handler, by hand:
 
-Notice the comment on the event: *raise an event only in the change that adds its first handler.* If you
-raise events nobody listens to, the generator warns you (`MSG0005: message without any registered handler`).
-Keep that warning on. It's how you notice an event someone forgot to handle.
+```csharp
+// Events: each module registers the handlers it owns. An unregistered handler never runs, and a test checks.
+services.AddScoped<IDomainEventHandler<SalesOrderApproved>, SalesOrderApprovedAuditHandler>();
+```
+
+Notice the comment on the event: *raise an event only in the change that adds its first handler.* An event
+nobody handles is a feature that silently does nothing, and a handler nobody registered is the same thing from
+the other side. Step 8 adds a test for each.
+
+The analyzers have one more opinion here: CA1711 says a type name ending in `EventHandler` should be a
+delegate. `IDomainEventHandler` is the standard name for this interface in domain-driven code, so `.editorconfig`
+gets one more line, with its reason:
+
+```ini
+# CA1711: IDomainEventHandler and IIntegrationEventHandler are the standard names for these interfaces in DDD code.
+dotnet_diagnostic.CA1711.severity = none
+```
 
 ## 3. The outbox message
 
@@ -345,10 +379,10 @@ same for Identity and Inventory).
 
 ```csharp
 // src/Shared/Erp.Shared.Infrastructure/Outbox/OutboxDispatcher.cs
+using System.Reflection;
 using System.Text.RegularExpressions;
 using Dapper;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -364,14 +398,14 @@ public sealed class OutboxOptions
     public int MaxAttempts { get; set; } = 10;
 }
 
-// Delivers outbox events after commit. At-least-once: a handler may see an event twice, so handlers must be
+// Delivers outbox events to their module's IDomainEventHandler<T> classes after commit. At-least-once: a handler may see an event twice, so handlers must be
 // idempotent. FOR UPDATE SKIP LOCKED keeps several app instances from taking the same message. After
 // MaxAttempts failures a message is left, with its last_error, for a person to look at.
 public sealed partial class OutboxDispatcher(
     IServiceScopeFactory scopes,
     NpgsqlDataSource dataSource,
     IConfiguration config,
-    IClock clock,
+    TimeProvider time,
     ILogger<OutboxDispatcher> log) : BackgroundService
 {
     private readonly OutboxOptions _options = config.GetSection("Outbox").Get<OutboxOptions>() ?? new();
@@ -427,10 +461,10 @@ public sealed partial class OutboxDispatcher(
             {
                 var domainEvent = OutboxMessage.Deserialize(message.Type, message.Payload);
                 await using var scope = scopes.CreateAsyncScope();
-                await scope.ServiceProvider.GetRequiredService<IPublisher>().Publish(domainEvent, ct);
+                await DeliverAsync(scope.ServiceProvider, domainEvent, ct);
 
                 await conn.ExecuteAsync($"UPDATE {table} SET processed_utc = @Now WHERE id = @Id",
-                    new { Now = clock.UtcNow, message.Id }, tx);
+                    new { Now = time.GetUtcNow().UtcDateTime, message.Id }, tx);
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {
@@ -442,6 +476,20 @@ public sealed partial class OutboxDispatcher(
 
         await tx.CommitAsync(ct);
         return batch.Count;
+    }
+
+    // The event's type is known only at run time (it was read from a row), so the typed method is picked by reflection.
+    private static readonly MethodInfo DeliverTyped =
+        typeof(OutboxDispatcher).GetMethod(nameof(DeliverToHandlersAsync), BindingFlags.NonPublic | BindingFlags.Static)!;
+
+    private static Task DeliverAsync(IServiceProvider services, IDomainEvent domainEvent, CancellationToken ct) =>
+        (Task)DeliverTyped.MakeGenericMethod(domainEvent.GetType()).Invoke(null, [services, domainEvent, ct])!;
+
+    private static async Task DeliverToHandlersAsync<TEvent>(IServiceProvider services, TEvent domainEvent, CancellationToken ct)
+        where TEvent : IDomainEvent
+    {
+        foreach (var handler in services.GetServices<IDomainEventHandler<TEvent>>())
+            await handler.HandleAsync(domainEvent, ct);
     }
 
     [GeneratedRegex("^[a-z_][a-z0-9_]*$")]
@@ -456,7 +504,8 @@ This is the longest file in the course, so let's walk it carefully:
 | `BackgroundService` | ASP.NET Core starts it with the app and stops it with the app; `ExecuteAsync` runs for the app's whole life |
 | `PeriodicTimer` | Wakes up every 2 seconds (configurable) and checks each module's outbox |
 | `FOR UPDATE SKIP LOCKED` | Takes a batch of waiting messages and locks them. If you run two copies of the app, the second skips the locked rows instead of delivering them twice |
-| `IPublisher.Publish` | Mediator's way to deliver a notification to all its handlers. Each event gets a fresh scope, like a fresh request |
+| `DeliverAsync` | Hands the event to every `IDomainEventHandler<T>` registered for its type. Each event gets a fresh scope, like a fresh request |
+| `MakeGenericMethod` | The event's type is only known once its row is read, so reflection picks `DeliverToHandlersAsync<SalesOrderApproved>`; inside it, everything is typed again |
 | On success | `processed_utc` is set: delivered |
 | On failure | `attempts` goes up and the error is kept. After 10 failures it stops retrying, and the message waits for a person |
 | `SafeIdentifier` | The schema name is pasted into the SQL (table names can't be parameters), so we only allow plain lowercase names |
@@ -669,34 +718,74 @@ Two things this test taught us, by failing the first time it was written. Run al
 redeliver, so it raises one of its own. And it reads the schemas from the registered modules, so each new
 module's outbox joins automatically. A test should pass alone, and in any order.
 
-### Every event has a handler
+### Every event has a handler, and every handler is wired up
 
-An event nobody handles is a feature that silently does nothing. The Mediator generator warns at compile
-time when a *message* has no handler (MSG0005, which we keep on), but an event with zero handlers is legal.
-An architecture test makes it illegal:
+An event nobody handles is a feature that silently does nothing. So is a handler class nobody registered. Two
+architecture tests watch the events, in `ModuleBoundaryTests`:
 
 ```csharp
 // tests/Erp.Architecture.Tests/ModuleBoundaryTests.cs (add)
 // Raise an event only with its first handler. An event nobody handles is a feature that silently does nothing.
 [Fact]
-public void Every_event_has_a_handler()
+public void Every_domain_event_has_a_handler_in_its_own_module()
 {
-    var events = Modules.Concat(ContractsAssemblies)
-        .SelectMany(a => a.GetTypes())
-        .Where(t => t is { IsAbstract: false, IsInterface: false } && typeof(IDomainEvent).IsAssignableFrom(t));
+    foreach (var module in Modules)
+    {
+        var handled = HandledBy(module, typeof(IDomainEventHandler<>));
+        module.GetTypes().Where(t => t is { IsAbstract: false, IsInterface: false } && typeof(IDomainEvent).IsAssignableFrom(t))
+            .Where(e => !handled.Contains(e)).Select(e => e.FullName)
+            .Should().BeEmpty($"every domain event in {module.GetName().Name} needs a handler there");
+    }
+}
 
-    var handled = Modules.SelectMany(a => a.GetTypes())
+// A public domain event would let another module couple to this module's internals: publish an integration event.
+[Fact]
+public void Domain_events_never_leave_their_module()
+{
+    Modules.Concat(ContractsAssemblies).SelectMany(a => a.GetTypes())
+        .Where(t => t is { IsAbstract: false, IsInterface: false, IsVisible: true } && typeof(IDomainEvent).IsAssignableFrom(t))
+        .Select(t => t.FullName)
+        .Should().BeEmpty("domain events are internal; other modules hear about them through an IIntegrationEvent");
+}
+
+private static HashSet<Type> HandledBy(Assembly module, Type openHandler) =>
+    module.GetTypes()
         .SelectMany(t => t.GetInterfaces())
-        .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(INotificationHandler<>))
+        .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == openHandler)
         .Select(i => i.GetGenericArguments()[0])
         .ToHashSet();
+```
 
-    events.Where(e => !handled.Contains(e)).Select(e => e.FullName).Should().BeEmpty("every event needs at least one handler");
+(with `using Erp.Shared.BuildingBlocks;`). The second one guards the wall: a public domain event would let
+another module couple itself to this module's insides. Other modules will hear about things through
+*integration events* instead, from [lesson 17](17-item-catalog.md).
+
+And the integration test from lesson 03 that checks every feature handler is registered gets a sibling for
+event handlers, in `WiringTests`:
+
+```csharp
+[Fact]
+public async Task Every_event_handler_class_is_registered()
+{
+    Type[] handlerInterfaces = [typeof(IDomainEventHandler<>)];
+    var handlers = Modules.SelectMany(m => m.Assembly.GetTypes())
+        .Where(t => t is { IsAbstract: false, IsInterface: false })
+        .SelectMany(t => t.GetInterfaces()
+            .Where(i => i.IsGenericType && handlerInterfaces.Contains(i.GetGenericTypeDefinition()))
+            .Select(i => (Class: t, Interface: i)))
+        .ToList();
+
+    await using var scope = factory.Services.CreateAsyncScope();
+    handlers.Should().NotBeEmpty();
+    handlers.Where(h => !scope.ServiceProvider.GetServices(h.Interface).Any(s => s!.GetType() == h.Class))
+        .Select(h => $"{h.Class.Name} as {h.Interface.Name}<{h.Interface.GetGenericArguments()[0].Name}>")
+        .Should().BeEmpty("a handler that isn't registered never runs");
 }
 ```
 
-(with `using Erp.Shared.BuildingBlocks;` and `using Mediator;`). Delete `SalesOrderApprovedAuditHandler` and
-run it: `SalesOrderApproved` is named as unhandled. Put it back.
+Delete `SalesOrderApprovedAuditHandler` and run the architecture tests: `SalesOrderApproved` is named as
+unhandled. Put it back, comment out its `AddScoped` line instead, and the wiring test names it. Put that back
+too.
 
 ### Edge cases covered in this lesson
 
@@ -707,7 +796,9 @@ run it: `SalesOrderApproved` is named as unhandled. Put it back.
 | `Too_little_stock_...` (the outbox line) | Rolled back | An event from a change that never happened is never delivered |
 | `A_message_that_keeps_failing_is_parked_with_its_error` | Forever | A poison message is set aside, with its error, and doesn't block the rest |
 | `Delivering_every_event_a_second_time_changes_nothing` | Twice | At-least-once delivery, made safe |
-| `Every_event_has_a_handler` | Nobody listening | A feature that silently does nothing |
+| `Every_domain_event_has_a_handler_in_its_own_module` | Nobody listening | A feature that silently does nothing |
+| `Domain_events_never_leave_their_module` | One `public` too many | Other modules couple to this one's insides |
+| `Every_event_handler_class_is_registered` | A forgotten `AddScoped` | A handler that compiles, passes its unit tests, and never runs |
 
 ## Mistakes to avoid
 

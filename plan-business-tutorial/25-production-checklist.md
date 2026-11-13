@@ -195,24 +195,30 @@ dotnet test
 ```
 
 ```
-Passed!  - Failed: 0, Passed: 28, ... Erp.Modules.Sales.UnitTests.dll
-Passed!  - Failed: 0, Passed:  5, ... Erp.Modules.Inventory.UnitTests.dll
-Passed!  - Failed: 0, Passed:  6, ... Erp.Modules.Purchasing.UnitTests.dll
-Passed!  - Failed: 0, Passed: 16, ... Erp.Modules.Invoicing.UnitTests.dll
-Passed!  - Failed: 0, Passed:  4, ... Erp.Modules.Identity.UnitTests.dll
-Passed!  - Failed: 0, Passed:  7, ... Erp.Architecture.Tests.dll
-Passed!  - Failed: 0, Passed: 37, ... Erp.Integration.Tests.dll
+Test run summary: Passed!
+  total: 297
+  failed: 0
+  succeeded: 289
+  skipped: 8
 ```
 
-and, with the app running, the browser tests:
+That's 161 unit tests across the five modules, 14 architecture tests and 114 integration tests. The 8 skipped
+are the browser tests, which wait for a running app:
 
 ```bash
-ERP_UI_URL=http://localhost:5264 dotnet test tests/Erp.Web.UiTests
-# Passed!  - Failed: 0, Passed: 3
+ERP_UI_URL=http://localhost:5264 dotnet test --project tests/Erp.Web.UiTests
 ```
 
-Your counts will match these if you wrote every test the lessons showed; the reference build has exactly
-these.
+```
+Test run summary: Passed!
+  total: 8
+  failed: 0
+  succeeded: 8
+  skipped: 0
+```
+
+Your counts will match these if you wrote every test the lessons showed, including the edge-case tables; the
+reference build has exactly these.
 
 ## Let's check!
 

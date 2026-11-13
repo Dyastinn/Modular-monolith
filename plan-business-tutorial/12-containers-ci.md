@@ -214,11 +214,11 @@ public sealed class CustomWebAppFactory : WebApplicationFactory<Program>, IAsync
 
     public string ConnectionString => _postgres.GetConnectionString();
 
-    public Task InitializeAsync() => _postgres.StartAsync();
+    public async ValueTask InitializeAsync() => await _postgres.StartAsync();
 
-    async Task IAsyncLifetime.DisposeAsync()
+    public override async ValueTask DisposeAsync()
     {
-        await DisposeAsync();
+        await base.DisposeAsync();
         await _postgres.DisposeAsync();
     }
 
@@ -250,9 +250,9 @@ public static class TestDatabase
 What changed, and why:
 
 - **`IAsyncLifetime`** is xUnit's way to run `async` code before the first test and after the last.
-  `InitializeAsync` starts the container; `DisposeAsync` stops the app, then the container. (The factory
-  already has a `DisposeAsync` of its own from `WebApplicationFactory`, so ours is written as
-  `IAsyncLifetime.DisposeAsync`, an *explicit* implementation, to keep the two apart.)
+  `InitializeAsync` starts the container; `DisposeAsync` stops the app, then the container. In xUnit v3 both
+  return `ValueTask`. `WebApplicationFactory` already has a `DisposeAsync` of its own, so ours `override`s it,
+  and `base.DisposeAsync()` stops the app before the container goes.
 - **`GetConnectionString()`** returns the address Testcontainers picked: a free port on your machine, a
   user and password it made up. Nothing is hard-coded, so nothing can point at the wrong server.
 - **`DropDatabase` and `ERP_TEST_DB` are gone.** There's nothing to drop: every run gets a brand-new server.
@@ -357,13 +357,14 @@ jobs:
           dotnet-version: 10.0.x
       - run: dotnet tool restore
       - run: dotnet build Erp.slnx
-      - run: dotnet test Erp.slnx --no-build --collect "XPlat Code Coverage" --results-directory TestResults
+      # xUnit v3 on Microsoft.Testing.Platform (global.json opts in); coverlet.MTP adds the --coverlet options.
+      - run: dotnet test --solution Erp.slnx --no-build --coverlet --coverlet-output-format cobertura --results-directory TestResults
       - name: Coverage report
         if: always()
         run: >
-          dotnet reportgenerator -reports:"TestResults/*/coverage.cobertura.xml" -targetdir:coverage
+          dotnet reportgenerator -reports:"TestResults/**/coverage.cobertura*.xml" -targetdir:coverage
           -reporttypes:"Html;MarkdownSummaryGithub"
-          -assemblyfilters:"+Erp.*;-Erp.Web" -classfilters:"-*.Migrations.*;-Mediator.*"
+          -assemblyfilters:"+Erp.*;-Erp.Web" -classfilters:"-*.Migrations.*"
           && cat coverage/SummaryGithub.md >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v5
         if: always()
@@ -381,7 +382,7 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - run: dotnet tool restore
-      - run: dotnet stryker
+      - run: dotnet stryker   # stryker-config.json picks the Microsoft.Testing.Platform runner
         working-directory: tests/Erp.Modules.Sales.UnitTests
       - uses: actions/upload-artifact@v5
         if: always()
@@ -404,6 +405,19 @@ Read it top to bottom:
 | `$GITHUB_STEP_SUMMARY` | A file whose text appears on the run's page: the coverage table, right there |
 | `upload-artifact` | Keep the HTML report as a download on the run's page |
 | `mutation:` | Only when you press **Run workflow**: the Stryker run from lesson 11 |
+
+One more line makes the build server stricter than your machine. In `Directory.Build.props`, inside the
+`<PropertyGroup>`:
+
+```xml
+<!-- On the build server (CI sets CI=true) a warning fails the build, so none slips into main. Locally they stay
+     warnings, so a half-finished change still runs. -->
+<TreatWarningsAsErrors Condition="'$(CI)' == 'true'">true</TreatWarningsAsErrors>
+```
+
+GitHub Actions sets `CI=true` on every run. So a warning from the analyzers you turned on in lesson 01 is a
+red build on the server, while at your desk it stays a warning you can fix before you push. Try it locally
+with `CI=true dotnet build`.
 
 Notice the runner has Docker, not Podman, and the tests don't care. Testcontainers talks to whichever it
 finds. That's the compatibility we chose Podman for, paying off.

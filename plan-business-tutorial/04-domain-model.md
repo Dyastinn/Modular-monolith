@@ -1135,10 +1135,10 @@ makes up a hundred inputs to try. If one fails, it shrinks it down to the simple
 and shows you that.
 
 ```bash
-dotnet add tests/Erp.Modules.Sales.UnitTests package FsCheck.Xunit --version 3.6.0
+dotnet add tests/Erp.Modules.Sales.UnitTests package FsCheck.Xunit.v3 --version 3.6.0
 ```
 
-`FsCheck.Xunit` (BSD-3-Clause) gives us the `[Property]` attribute. A property is a method that takes
+`FsCheck.Xunit.v3` (BSD-3-Clause) gives us the `[Property]` attribute. A property is a method that takes
 generated values and returns `true` when the rule holds:
 
 ```csharp
@@ -1398,9 +1398,11 @@ dotnet test
 ```
 
 ```
-Passed!  - Failed: 0, Passed: 52, ... Erp.Modules.Sales.UnitTests.dll
-Passed!  - Failed: 0, Passed:  7, ... Erp.Architecture.Tests.dll
-Passed!  - Failed: 0, Passed: 16, ... Erp.Integration.Tests.dll
+Test run summary: Passed!
+  total: 75
+  failed: 0
+  succeeded: 75
+  skipped: 0
 ```
 
 Every business rule, its edges, and four properties tried a hundred times each, proven in about a second,

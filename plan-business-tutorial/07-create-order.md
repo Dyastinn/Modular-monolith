@@ -1,7 +1,7 @@
 # Lesson 07 — Create an Order: The First Real Feature
 
-Good day, developer! Everything we've built so far has been foundation: walls, a mediator, the rules, a
-database, sign-in, and an app to put it all in. Today it all meets in one place. A sales rep will send an order, and the system will check
+Good day, developer! Everything we've built so far has been foundation: walls, features with their
+handlers, the rules, a database, sign-in, and an app to put it all in. Today it all meets in one place. A sales rep will send an order, and the system will check
 the customer, the items, the categories and the credit limit, then save it with a proper order number. And
 when something's wrong, the caller will get a clear answer instead of a crash. About two hours. Are you
 ready? Let's begin!
@@ -10,9 +10,10 @@ ready? Let's begin!
 
 - `POST /api/sales-orders`: create a draft order, for SalesRep, SalesManager and Admin.
 - Order numbers like `SO-2026-000042`, which no two orders can ever share.
-- Proper error responses: 400 for a malformed request, 404 for something missing, 422 for a broken business
-  rule.
-- Swagger, a page in the browser where you can try every endpoint.
+- Proper error responses, each with a **code** a person can look up: 422 for a broken business rule, a tidy
+  500 for a bug, and a code on every error the framework writes too.
+- An **error catalog**: `/api/errors`, and a page in the app that explains every code and how to fix it.
+- An **API description** (OpenAPI), and a page in the browser where you can try every endpoint.
 - The first screen: a **New sales order** form in the app.
 
 We'll also say goodbye to `/ping`. It did its job.
@@ -34,60 +35,41 @@ Every "is this allowed?" is a method call on a domain object. If a rule changes,
 
 ### Errors the caller can understand
 
-Run lesson 03's checkpoint again and you'll remember the problem: a failed validation came back as a
-**500 Internal Server Error**, with a stack trace. That's wrong in two ways. A 500 means "the server broke",
-when really the caller sent a bad request. And a stack trace tells an attacker far too much.
+Lesson 03 already answers a malformed request properly: a 400 with the field that's wrong. Today the domain
+starts saying no, and right now a `DomainException` would come back as a **500 Internal Server Error**, with a
+stack trace. That's wrong in two ways. A 500 means "the server broke", when really the caller asked for
+something the rules don't allow. And a stack trace tells an attacker far too much.
 
-There's a standard for error responses, **Problem Details** (RFC 9457): a small JSON body with a `status`,
-a `title` and a `detail`. We'll write one exception handler that turns each kind of exception into the right
-status, once, for every endpoint.
+Every error uses the standard shape from lesson 03, **Problem Details** (RFC 9457), and from today every one
+carries the **error code** from lesson 04, so a person can look it up:
 
-| What went wrong | Exception | HTTP status |
-|---|---|---|
-| The request is malformed (no lines, a negative quantity) | `ValidationException` | 400 Bad Request |
-| Something it refers to doesn't exist | `NotFoundException` | 404 Not Found |
-| A business rule said no (blocked customer, over the credit limit) | `DomainException` | 422 Unprocessable Content |
-| Anything else: a real bug | any other | 500, with no internals shown in production |
+| What went wrong | Who answers | HTTP status | Code |
+|---|---|---|---|
+| The request is malformed (no lines, a negative quantity) | The validation filter (lesson 03) | 400 Bad Request | `ERP-0001` |
+| The thing in the address doesn't exist (`/sales-orders/999`) | The endpoint itself, from [lesson 08](08-find-orders.md) | 404 Not Found | `ERP-0002` |
+| An id *inside* the request doesn't exist (an unknown customer) | The handler, with a `DomainException` | 422 Unprocessable Content | `SALES-0018` |
+| A business rule said no (blocked customer, over the credit limit) | The domain, with a `DomainException` | 422 Unprocessable Content | the rule's own: `SALES-0002` |
+| Anything else: a real bug | Any other exception | 500, with no internals shown in production | `ERP-0008` |
 
-## 1. Two small additions to BuildingBlocks
+Why is an unknown customer a 422 and not a 404? The HTTP standard (RFC 9110) defines 404 as "the address you
+asked for doesn't exist". `POST /api/sales-orders` exists; what's wrong is an id inside the request. The
+server understood the request but can't carry it out: that's exactly what 422 means. And notice that only
+two rows are exceptions: a bad request and a missing order are everyday events, so they're answered without
+throwing anything.
+
+## 1. The clock, and a document number
 
 A handler shouldn't call `DateTime.UtcNow` directly, for the same reason the domain doesn't: you can't control
-it in a test. So handlers ask for a clock:
+it in a test. So handlers ask for a clock. .NET has one built in since .NET 8, `TimeProvider`: in the app it's
+the real clock, and in a test you hand over a `FakeTimeProvider` you can set and move forward yourself.
+Register the real one in `AddSharedInfrastructure`:
 
 ```csharp
-// src/Shared/Erp.Shared.BuildingBlocks/Abstractions/IClock.cs
-namespace Erp.Shared.BuildingBlocks;
-
-// Inject instead of DateTime.UtcNow so time-based rules can be tested with a fixed clock.
-public interface IClock
-{
-    DateTime UtcNow { get; }
-}
+services.AddSingleton(TimeProvider.System);
 ```
 
-```csharp
-// src/Shared/Erp.Shared.Infrastructure/SystemClock.cs
-using Erp.Shared.BuildingBlocks;
-
-namespace Erp.Shared.Infrastructure;
-
-public sealed class SystemClock : IClock
-{
-    public DateTime UtcNow => DateTime.UtcNow;
-}
-```
-
-Register it in `AddSharedInfrastructure`: `services.AddSingleton<IClock, SystemClock>();`
-
-And a way to say "that doesn't exist":
-
-```csharp
-// src/Shared/Erp.Shared.BuildingBlocks/Abstractions/Exceptions.cs
-namespace Erp.Shared.BuildingBlocks;
-
-// Mapped to HTTP 404 by GlobalExceptionHandler.
-public class NotFoundException(string message) : Exception(message);
-```
+A handler asks for `TimeProvider time` and reads `time.GetUtcNow().UtcDateTime`. Older code often wraps the
+clock in its own `IClock` interface; you'd be writing what the framework already ships.
 
 And one for document numbers. Sales orders need them today; purchase orders and invoices will want the same
 shape later, so it lives where every module can use it:
@@ -136,7 +118,7 @@ The handler also needs to turn "item 1, quantity 2" from the request into a real
 `SetLines`. Creating an order needs it, and so will editing one, so it's a method on the context too:
 
 ```csharp
-// Pairs each requested line with its item. An unknown item is a 404; whether it may be sold is the order's call.
+// Pairs each requested line with its item. An unknown item is refused with its code; whether it may be sold is the order's call.
 public async Task<IReadOnlyList<(SalesItem Item, Quantity Quantity)>> ResolveLinesAsync(
     IEnumerable<(long ItemId, decimal Quantity)> lines, CancellationToken ct)
 {
@@ -144,7 +126,7 @@ public async Task<IReadOnlyList<(SalesItem Item, Quantity Quantity)>> ResolveLin
     var ids = requested.Select(l => new ItemId(l.ItemId)).Distinct().ToList();
     var items = await SalesItems.Include(i => i.Category).Where(i => ids.Contains(i.Id)).ToDictionaryAsync(i => i.Id.Value, ct);
     return requested
-        .Select(l => (items.TryGetValue(l.ItemId, out var item) ? item : throw new NotFoundException($"Item {l.ItemId} not found."),
+        .Select(l => (items.TryGetValue(l.ItemId, out var item) ? item : throw new DomainException(SalesErrors.ItemNotFound, $"Item {l.ItemId} doesn't exist."),
                       new Quantity(l.Quantity)))
         .ToList();
 }
@@ -182,7 +164,18 @@ dotnet ef migrations add AddOrderNumberSequence \
 
 ## 3. The slice
 
-The ping feature has done its job: delete the `Features/Ping` folder, the app's `Pages/Ping.razor`, and its link in `NavMenu.razor`. Then create `Features/CreateSalesOrder/`:
+The ping feature has done its job: delete the `Features/Ping` folder, its `AddScoped<PingHandler>()` and
+`PingEndpoint.Map(...)` lines in `SalesModule`, the app's `Pages/Ping.razor`, and its link in `NavMenu.razor`.
+Then create `Features/CreateSalesOrder/`.
+
+Two new codes join the end of `SalesErrors`, for an id in the request that doesn't exist:
+
+```csharp
+    public static readonly ErrorCode CustomerNotFound = new("SALES-0018", "The customer doesn't exist",
+        "Choose a customer from the list. If you just created one, reload the page.");
+    public static readonly ErrorCode ItemNotFound = new("SALES-0019", "An item on the order doesn't exist",
+        "Choose items from the list. A new catalog item appears in Sales a few seconds after it's created.");
+```
 
 Two small helpers first. Many requests will carry quantities and page numbers, so their shape rules are
 written once, in BuildingBlocks:
@@ -259,8 +252,8 @@ internal sealed class CreateSalesOrderHandler(SalesDbContext db, ICurrentUser cu
 
 Three things to notice:
 
-- **The validator checks shape only**: positive ids, at least one line, a sensible quantity. Whether this
-  *customer* may order, or whether 1.5 Widgets makes sense, are business rules, so they're the domain's job.
+- **An unknown customer is refused with a code**, `SALES-0018`, like any other "no". It's not an exception to
+  the rule; it's a rule.
 - **The handler has no business `if`.** It loads, it hands things to the domain, it saves. Every "no" comes
   from `EnsureNotBlocked`, `SetLines` or `EnsureWithinCreditLimit`.
 - **`order.Id.Value` after `SaveChangesAsync`**: the database assigns the id, and EF writes it back into the
@@ -276,7 +269,6 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
-
 
 internal sealed record CreateSalesOrderRequest(long CustomerId, IReadOnlyList<OrderLineInput> Lines);
 
@@ -312,6 +304,12 @@ internal static class CreateSalesOrderEndpoint
 }
 ```
 
+The validators sit next to the request they check, because the request is what the endpoint receives and
+the filter from lesson 03 checks. They check **shape only**: positive ids, at least one line, a sensible
+quantity. Whether this *customer* may order, or whether 1.5 Widgets makes sense, are business rules, so
+they're the domain's job. And register the handler in `SalesModule`: `services.AddScoped<CreateSalesOrderHandler>();`,
+and its endpoint in `MapSalesEndpoints`: `CreateSalesOrderEndpoint.Map(api);`.
+
 You might wonder why there's a `CreateSalesOrderRequest` *and* a `CreateSalesOrderCommand` with the same
 fields. The request is the **HTTP contract**, what callers send over the wire; the command is the **internal
 message**. Today they match. The day you rename a field for the API, or add one the command shouldn't trust
@@ -321,13 +319,114 @@ from the caller, they can differ without either side breaking.
 data, like "only managers may order Controlled items", lives in the domain instead, as you saw in
 `EnsureRoleAllowed`.
 
-## 4. One handler for every error
+## 4. One handler for every exception, a code on every error
 
-The handler needs `ValidationException` from FluentValidation, so the host references it directly:
+First, the catalog grows up. `ErrorCode.cs` gets a class that collects one catalog's codes, so each module
+can hand its own to the host:
 
-```bash
-dotnet add src/Erp.Api package FluentValidation --version 12.1.1
+```csharp
+// src/Shared/Erp.Shared.BuildingBlocks/Abstractions/ErrorCode.cs (below the ErrorCode record)
+// The codes one module can answer with. Each module registers its own; the host serves them all at /api/errors.
+public sealed class ErrorCatalog(IReadOnlyList<ErrorCode> codes)
+{
+    public IReadOnlyList<ErrorCode> Codes { get; } = codes;
+
+    // Every public static ErrorCode field of a catalog class such as SalesErrors.
+    public static ErrorCatalog From(Type catalogClass) =>
+        new(catalogClass.GetFields(BindingFlags.Public | BindingFlags.Static)
+            .Where(f => f.FieldType == typeof(ErrorCode))
+            .Select(f => (ErrorCode)f.GetValue(null)!)
+            .ToList());
+}
 ```
+
+and `CommonErrors` gets the codes for the errors HTTP itself can produce, at the top:
+
+```csharp
+    public static readonly ErrorCode ValidationFailed = new("ERP-0001", "The request has invalid fields",
+        "Correct the fields listed in the message and send it again.");
+    public static readonly ErrorCode NotFound = new("ERP-0002", "Not found",
+        "Check the number or link. If it was created a moment ago on another screen, such as a new catalog item, wait a few seconds and reload.");
+    public static readonly ErrorCode ChangedBySomeoneElse = new("ERP-0003", "Someone else changed this first",
+        "Reload to see their change, then make yours again.");
+    public static readonly ErrorCode UnreadableRequest = new("ERP-0004", "The request could not be read",
+        "The request body is missing or isn't valid JSON. If you're calling the API directly, check the body and the Content-Type header.");
+    public static readonly ErrorCode NotSignedIn = new("ERP-0005", "Not signed in",
+        "Sign in again. Sessions end after a period without use, or when an admin signs you out everywhere.");
+    public static readonly ErrorCode NotAllowed = new("ERP-0006", "Not allowed",
+        "Your role can't do this. Ask an admin if you need it.");
+    public static readonly ErrorCode TooManyRequests = new("ERP-0007", "Too many requests",
+        "Wait a minute and try again. Repeated failed sign-ins are limited on purpose.");
+    public static readonly ErrorCode Unexpected = new("ERP-0008", "Unexpected error",
+        "Try again. If it keeps happening, send the trace id from the message to support: it finds this exact failure in the logs.");
+```
+
+You won't meet a 409 or a 429 for a few lessons yet, but these eight are one set: every way the HTTP layer
+can say no. `using System.Reflection;` goes at the top of the file, for `BindingFlags`.
+
+Each module hands its catalog to the host, in `AddSalesModule`:
+
+```csharp
+services.AddSingleton(ErrorCatalog.From(typeof(SalesErrors)));
+```
+
+and the shared one in `AddSharedInfrastructure`: `services.AddSingleton(ErrorCatalog.From(typeof(CommonErrors)));`.
+
+Now the host's side. One small class decides how a code goes into a problem body:
+
+```csharp
+// src/Erp.Api/ErrorProblems.cs
+using Erp.Shared.BuildingBlocks;
+using Microsoft.AspNetCore.Mvc;
+
+namespace Erp.Api;
+
+// Puts the error code into a problem response: "code" for programs, "type" as the link to its catalog page.
+internal static class ErrorProblems
+{
+    // The framework's own errors (a bare 401, 403, 404, 429) carry no code of their own: their status decides it.
+    public static ErrorCode ForStatus(int status) => status switch
+    {
+        StatusCodes.Status400BadRequest => CommonErrors.ValidationFailed,
+        StatusCodes.Status401Unauthorized => CommonErrors.NotSignedIn,
+        StatusCodes.Status403Forbidden => CommonErrors.NotAllowed,
+        StatusCodes.Status404NotFound => CommonErrors.NotFound,
+        StatusCodes.Status409Conflict => CommonErrors.ChangedBySomeoneElse,
+        StatusCodes.Status429TooManyRequests => CommonErrors.TooManyRequests,
+        _ => CommonErrors.Unexpected
+    };
+
+    // The framework writes "application/problem+json" with no charset. Some clients (Windows PowerShell 5.1) then don't
+    // assume UTF-8, and ₱ arrives garbled, so every problem body says it plainly.
+    public static IApplicationBuilder UseUtf8ProblemBodies(this IApplicationBuilder app) =>
+        app.Use((ctx, next) =>
+        {
+            ctx.Response.OnStarting(() =>
+            {
+                if (ctx.Response.ContentType == "application/problem+json")
+                    ctx.Response.ContentType = "application/problem+json; charset=utf-8";
+                return Task.CompletedTask;
+            });
+            return next(ctx);
+        });
+
+    public static void Apply(ProblemDetails problem, ErrorCode error)
+    {
+        problem.Type = $"/errors/{error.Code}";
+        problem.Title = error.Title;
+        problem.Extensions["code"] = error.Code;
+    }
+}
+```
+
+- **`type`** is a link: `/errors/SALES-0002`. The standard calls it the problem's identifier and says it
+  should lead to documentation, and it does: the page we build below.
+- **`code`** is the same thing for a program, short enough to read out over the phone.
+- **`ForStatus`** covers the errors the framework writes itself: a bare 404, a 401 from sign-in.
+- **`UseUtf8ProblemBodies`** adds what the framework leaves out of the header, `charset=utf-8`. Windows
+  PowerShell 5.1, for one, doesn't assume UTF-8, and ₱ arrives garbled.
+
+And the one place that turns an exception into an answer:
 
 ```csharp
 // src/Erp.Api/GlobalExceptionHandler.cs
@@ -335,43 +434,38 @@ using System.Diagnostics;
 using Erp.Shared.BuildingBlocks;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
-using ValidationException = FluentValidation.ValidationException;
 
 namespace Erp.Api;
 
-// One place that maps exceptions to HTTP statuses, answering with RFC 9457 problem+json.
+// One place that maps exceptions to HTTP statuses, answering with RFC 9457 problem+json. Only what is thrown lands
+// here: a business rule refused, two people changing the same thing, or a bug. A bad request or a missing record is
+// answered by its endpoint without an exception.
 internal sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> log, IHostEnvironment env) : IExceptionHandler
 {
     public async ValueTask<bool> TryHandleAsync(HttpContext ctx, Exception ex, CancellationToken ct)
     {
-        var (status, title) = ex switch
+        var (status, error) = ex switch
         {
-            ValidationException          => (StatusCodes.Status400BadRequest, "Validation failed"),
             // Malformed JSON, a missing body: the request never reached a handler.
-            BadHttpRequestException bad  => (bad.StatusCode, "The request could not be read"),
-            NotFoundException            => (StatusCodes.Status404NotFound, "Resource not found"),
-            DomainException              => (StatusCodes.Status422UnprocessableEntity, "Business rule violated"),
-            _                            => (StatusCodes.Status500InternalServerError, "Unexpected error")
+            BadHttpRequestException bad  => (bad.StatusCode, CommonErrors.UnreadableRequest),
+            DomainException domain       => (StatusCodes.Status422UnprocessableEntity, domain.Error),
+            _                            => (StatusCodes.Status500InternalServerError, CommonErrors.Unexpected)
         };
 
         if (status == StatusCodes.Status500InternalServerError)
             log.LogError(ex, "Unhandled exception");
-
-        var errors = (ex as ValidationException)?.Errors.Select(e => e.ErrorMessage).ToArray();
 
         // Never leak a stack trace outside development.
         var detail = status switch
         {
             StatusCodes.Status500InternalServerError when env.IsDevelopment() => ex.ToString(),
             StatusCodes.Status500InternalServerError                          => "An unexpected error occurred.",
-            _ when errors is not null                                         => string.Join(" ", errors),
             _                                                                 => ex.Message
         };
 
-        var problem = new ProblemDetails { Status = status, Title = title, Detail = detail, Instance = ctx.Request.Path };
+        var problem = new ProblemDetails { Status = status, Detail = detail, Instance = ctx.Request.Path };
+        ErrorProblems.Apply(problem, error);
         problem.Extensions["traceId"] = Activity.Current?.TraceId.ToString() ?? ctx.TraceIdentifier;
-        if (errors is not null)
-            problem.Extensions["errors"] = errors;
 
         ctx.Response.StatusCode = status;
         // charset spelled out: some clients (Windows PowerShell 5.1) don't assume UTF-8, and ₱ arrives garbled.
@@ -381,71 +475,131 @@ internal sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> log
 }
 ```
 
-`IExceptionHandler` is ASP.NET Core's hook for exactly this. **`BadHttpRequestException`** is what
-ASP.NET Core throws when it can't even read the request, say a body that isn't JSON; without its line, a
-typo in a client's JSON would look like a server crash. The **`traceId`** in every error body is the
-request's id; when a user reports a problem, they can quote it, and you can find that exact request in your
-logs. Business messages (404, 422) are meant for people, so they're shown as they are. A validation failure
-lists its messages twice: joined into one sentence in `detail`, for a person to read, and one by one in
-`errors`, for a program to show next to each field. FluentValidation's own exception message is written for
-developers, with field names and severities, so it never reaches the caller. A 500's details stay on the
-server in production.
+`IExceptionHandler` is ASP.NET Core's hook for exactly this. **`BadHttpRequestException`** is what ASP.NET Core
+throws when it can't even read the request, say a body that isn't JSON; without its line, a typo in a
+client's JSON would look like a server crash. The **`traceId`** in every error body is the request's id; when
+a user reports a problem, they can quote it, and you can find that exact request in your logs. So a person
+reporting a problem gives you two things: the **code** says what kind of problem it was, the **trace id**
+finds this one. Business messages (422) are meant for people, so they're shown as they are. A 500's details
+stay on the server in production.
 
-In `Program.cs`, register it and turn it on as the first thing in the pipeline, so it catches everything
-after it:
+In `Program.cs`, register it, and give every problem body the framework writes the same code and trace id:
 
 ```csharp
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
-builder.Services.AddProblemDetails();
+// Every problem body, ours or the framework's, carries an error code.
+builder.Services.AddProblemDetails(o => o.CustomizeProblemDetails = c =>
+{
+    if (!c.ProblemDetails.Extensions.ContainsKey("code"))
+        ErrorProblems.Apply(c.ProblemDetails, ErrorProblems.ForStatus(c.ProblemDetails.Status ?? c.HttpContext.Response.StatusCode));
+});
 // ...
 var app = builder.Build();
+app.UseUtf8ProblemBodies();
 app.UseExceptionHandler();
 app.UseStatusCodePages();   // an error with no body (a bare 404, 401, 403) gets a problem+json body too
 ```
 
-`UseStatusCodePages` covers the errors that never throw: an endpoint that returns `Results.NotFound()`, a
-401 from sign-in, the `/api` fallback. Without it, those answer with an empty body, and a client that reads
-every error the same way finds nothing to read. With it, they get the same kind of body as every other
-error.
+`UseStatusCodePages` covers the errors that never throw: an endpoint that returns `TypedResults.NotFound()`, a 401 from sign-in, the `/api` fallback.
+Without it, those answer with an empty body, and a client that reads every error the same way finds nothing to
+read. With it, they get the same kind of body as every other error, code included. And the validation filter
+from lesson 03 now gets its `ERP-0001` from `CustomizeProblemDetails` too.
 
-## 5. Swagger: try your endpoints in the browser
+### The catalog, for anyone to read
 
-From now on, there'll be more endpoints than you'll want to type `curl` for. **Swagger** reads your
-endpoints and builds a page where you can call them. Swashbuckle (MIT) does it:
+The codes are only useful if people can look them up. The host serves the whole catalog:
+
+```csharp
+// src/Erp.Api/ErrorCatalogEndpoints.cs
+using Erp.Shared.BuildingBlocks;
+using Microsoft.AspNetCore.Http.HttpResults;
+
+namespace Erp.Api;
+
+// The error catalog every module contributes to. Public on purpose: the "type" link in an error must open even for
+// someone whose session just ended.
+internal static class ErrorCatalogEndpoints
+{
+    public static IEndpointRouteBuilder MapErrorCatalog(this IEndpointRouteBuilder api)
+    {
+        var errors = api.MapGroup("/errors").AllowAnonymous().WithTags("Errors");
+
+        errors.MapGet("/", (IEnumerable<ErrorCatalog> catalogs) =>
+            TypedResults.Ok(catalogs.SelectMany(c => c.Codes).OrderBy(c => c.Code, StringComparer.Ordinal).ToList()));
+
+        errors.MapGet("/{code}", Results<Ok<ErrorCode>, NotFound> (string code, IEnumerable<ErrorCatalog> catalogs) =>
+            catalogs.SelectMany(c => c.Codes).FirstOrDefault(c => c.Code.Equals(code, StringComparison.OrdinalIgnoreCase)) is { } error
+                ? TypedResults.Ok(error)
+                : TypedResults.NotFound());
+
+        return api;
+    }
+}
+```
+
+Map it in `Program.cs`, inside the `/api` group: `api.MapErrorCatalog();`.
+
+## 5. The API description, and a page to try it
+
+From now on, there'll be more endpoints than you'll want to type `curl` for. ASP.NET Core can describe every
+endpoint in a standard format, **OpenAPI**, and a small page can read that description and let you call each
+one. Since .NET 9 the description comes from Microsoft's own package; the page is **Scalar** (MIT):
 
 ```bash
-dotnet add src/Erp.Api package Swashbuckle.AspNetCore --version 10.2.3
+dotnet add src/Erp.Api package Microsoft.AspNetCore.OpenApi --version 10.0.14
+dotnet add src/Erp.Api package Scalar.AspNetCore --version 2.18.7
 ```
 
 ```csharp
 // in Program.cs, with the other services
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(options =>
-{
-    options.SwaggerDoc("v1", new OpenApiInfo { Title = "Erp API", Version = "v1" });
-    options.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
-    {
-        Name = "Authorization", Type = SecuritySchemeType.Http, Scheme = "bearer",
-        In = ParameterLocation.Header, Description = "The accessToken from POST /api/auth/login."
-    });
-    options.AddSecurityRequirement(doc => new OpenApiSecurityRequirement
-    {
-        { new OpenApiSecuritySchemeReference("Bearer", doc, null), new List<string>() }
-    });
-});
+// The API's description, generated from the endpoints themselves: /openapi/v1.json, browsed at /scalar (development).
+builder.Services.AddOpenApi(o => o.AddDocumentTransformer<BearerSecurityScheme>());
 
 // after UseExceptionHandler
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    app.MapOpenApi();
+    app.MapScalarApiReference();
 }
 ```
 
-(Add `using Microsoft.OpenApi;` at the top.) The security definition adds an **Authorize** button: paste an
-access token there once, and every call you make from the page carries it. (If you're already signed in to
-the app in the same browser, the cookie works too.) Swagger only runs in
-Development; a production server doesn't advertise its API to strangers.
+(`using Scalar.AspNetCore;` at the top.) Programs other than our app sign in with a bearer token, so the
+description says so, and the page offers a box for one:
+
+```csharp
+// src/Erp.Api/BearerSecurityScheme.cs
+using Microsoft.AspNetCore.OpenApi;
+using Microsoft.OpenApi;
+
+namespace Erp.Api;
+
+// Tells the API browser that a client other than the web app signs in with a bearer token, so it offers a box for one.
+// The web app itself uses the sign-in cookie, which the browser sends to /scalar too.
+internal sealed class BearerSecurityScheme : IOpenApiDocumentTransformer
+{
+    public Task TransformAsync(OpenApiDocument document, OpenApiDocumentTransformerContext context, CancellationToken ct)
+    {
+        document.Components ??= new OpenApiComponents();
+        document.Components.SecuritySchemes ??= new Dictionary<string, IOpenApiSecurityScheme>();
+        document.Components.SecuritySchemes["Bearer"] = new OpenApiSecurityScheme
+        {
+            Type = SecuritySchemeType.Http, Scheme = "bearer", Description = "The accessToken from POST /api/auth/login."
+        };
+        document.Security ??= [];
+        document.Security.Add(new OpenApiSecurityRequirement { [new OpenApiSecuritySchemeReference("Bearer", document)] = [] });
+        return Task.CompletedTask;
+    }
+}
+```
+
+Here's where lesson 03's `TypedResults` pay off: open `/openapi/v1.json` and `POST /api/sales-orders` lists
+its `201` answer, with the `CreatedId` body, without anyone having described it. And group each module's
+endpoints under its name: in `MapSalesEndpoints`, map into `var sales = api.MapGroup("").WithTags("Sales");`
+instead of `api`.
+
+The description and the page only run in Development; a production server doesn't advertise its API to
+strangers. If you meet older tutorials using Swashbuckle (`AddSwaggerGen`, `/swagger`): that's how it was done
+before .NET 9, when Microsoft took it out of the project templates.
 
 ## 6. The first screen
 
@@ -457,15 +611,16 @@ the user can read, a 401 means the session ended. So all calls go through one cl
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.AspNetCore.Components;
 using MudBlazor;
 
 namespace Erp.Web.Services;
 
 // Every call to the API goes through here, so every page handles errors the same way: the API's problem details
 // become a message on screen, and a 401 (session ended) sends the user back to sign in.
-public sealed class ApiClient(HttpClient http, ISnackbar snackbar, CookieAuthenticationStateProvider auth)
+public sealed class ApiClient(HttpClient http, ISnackbar snackbar, CookieAuthenticationStateProvider auth, NavigationManager nav)
 {
-    private sealed record Problem(string? Title, string? Detail, int? Status);
+    private sealed record Problem(string? Title, string? Detail, int? Status, string? Code);
     private sealed record Created(long Id);
 
     public async Task<T?> Get<T>(string url)
@@ -503,26 +658,34 @@ public sealed class ApiClient(HttpClient http, ISnackbar snackbar, CookieAuthent
             return default;
         }
 
+        var problem = await ReadProblem(response);
         var message = response.StatusCode switch
         {
             HttpStatusCode.Forbidden => "You don't have permission to do that.",
             HttpStatusCode.TooManyRequests => "Too many requests. Wait a moment and try again.",
-            _ => await ProblemText(response)
+            _ => problem?.Detail ?? problem?.Title ?? $"The server answered {(int)response.StatusCode}."
         };
-        snackbar.Add(message, response.StatusCode == HttpStatusCode.Conflict ? Severity.Warning : Severity.Error);
+        // The code goes with the message, and its catalog entry is one click away (see Pages/Errors.razor).
+        if (problem?.Code is { } code)
+            message = $"{message} ({code})";
+        snackbar.Add(message, response.StatusCode == HttpStatusCode.Conflict ? Severity.Warning : Severity.Error, options =>
+        {
+            if (problem?.Code is not { } code) return;
+            options.Action = "What does this mean?";
+            options.OnClick = _ => { nav.NavigateTo($"errors/{code}"); return Task.CompletedTask; };
+        });
         return default;
     }
 
-    private static async Task<string> ProblemText(HttpResponseMessage response)
+    private static async Task<Problem?> ReadProblem(HttpResponseMessage response)
     {
         try
         {
-            var problem = await response.Content.ReadFromJsonAsync<Problem>();
-            return problem?.Detail ?? problem?.Title ?? $"The server answered {(int)response.StatusCode}.";
+            return await response.Content.ReadFromJsonAsync<Problem>();
         }
         catch (JsonException)
         {
-            return $"The server answered {(int)response.StatusCode}.";
+            return null;   // not a problem body (a proxy's error page, say)
         }
     }
 }
@@ -530,8 +693,90 @@ public sealed class ApiClient(HttpClient http, ISnackbar snackbar, CookieAuthent
 
 This is where the Problem Details from step 4 pay off. The API already wrote a sentence for people
 ("Customer 'Gamma Traders' is blocked and cannot place orders."), so the app just shows `detail` in a
-**snackbar**, the small message that slides up at the bottom of the screen. The page itself never deals with
-status codes: a call either returns what it asked for, or `null`/`false` after the user has been told why.
+**snackbar**, the small message that slides up at the bottom of the screen, with the code after it:
+"(SALES-0002)". The snackbar's button, **What does this mean?**, opens that code's page. The page itself never
+deals with status codes: a call either returns what it asked for, or `null`/`false` after the user has been
+told why.
+
+The page that button opens, open to anyone, because the link must work even after the session has ended:
+
+```razor
+@* src/Erp.Web/Pages/Errors.razor *@
+@page "/errors"
+@page "/errors/{Code}"
+@attribute [AllowAnonymous]
+@inject HttpClient Http
+
+@* Every error the app shows carries a code, like a compiler's CS0122. This page says what each one means and what to
+   do about it. Open to anyone: the link in an error message must work even after the session has ended. *@
+
+<PageTitle>@(Code is null ? "Error codes" : Code) · ERP</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="py-6">
+    <MudText Typo="Typo.h4" GutterBottom="true">Error codes</MudText>
+
+    @if (_codes is null)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+    }
+    else
+    {
+        if (Selected is { } selected)
+        {
+            <MudPaper Class="pa-4 mb-6" Elevation="2">
+                <MudText Typo="Typo.overline">@selected.Code</MudText>
+                <MudText Typo="Typo.h6" GutterBottom="true">@selected.Title</MudText>
+                <MudText Typo="Typo.body1"><strong>What to do:</strong> @selected.Fix</MudText>
+                <MudText Typo="Typo.body2" Class="mt-3">
+                    If this doesn't solve it, send support the code and the trace id from the message.
+                </MudText>
+            </MudPaper>
+        }
+        else if (Code is not null)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-6">There is no error code @Code.</MudAlert>
+        }
+
+        <MudTextField @bind-Value="_search" Label="Search" Immediate="true" Adornment="Adornment.Start"
+                      AdornmentIcon="@Icons.Material.Filled.Search" Class="mb-4" />
+        <MudSimpleTable Dense="true" Hover="true">
+            <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
+            <tbody>
+                @foreach (var error in Filtered)
+                {
+                    <tr>
+                        <td><MudLink Href="@($"errors/{error.Code}")">@error.Code</MudLink></td>
+                        <td>@error.Title</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    }
+</MudContainer>
+
+@code {
+    [Parameter] public string? Code { get; set; }
+
+    private sealed record ErrorCode(string Code, string Title, string Fix);
+
+    private List<ErrorCode>? _codes;
+    private string _search = "";
+
+    private ErrorCode? Selected => _codes?.FirstOrDefault(c => string.Equals(c.Code, Code, StringComparison.OrdinalIgnoreCase));
+
+    private IEnumerable<ErrorCode> Filtered => (_codes ?? []).Where(c =>
+        c.Code.Contains(_search, StringComparison.OrdinalIgnoreCase) || c.Title.Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync() => _codes = await Http.GetFromJsonAsync<List<ErrorCode>>("api/errors");
+}
+```
+
+It fetches the whole catalog once and shows one code on top when the address names one. And a way to find it
+without an error, at the bottom of `NavMenu.razor`:
+
+```razor
+<MudNavLink Href="errors" Icon="@Icons.Material.Filled.HelpOutline">Error codes</MudNavLink>
+```
 
 Register it in `Erp.Web/Program.cs`, after the `HttpClient`:
 
@@ -546,8 +791,8 @@ and give the snackbar somewhere to appear, in `MainLayout.razor` under `<MudPopo
 ```
 
 The page will be for sellers only, and that check needs the role names. The app must not reference
-BuildingBlocks (that would pull Mediator and FluentValidation into the browser), so it compiles just the one
-file. In `Erp.Web.csproj`:
+BuildingBlocks (that would pull FluentValidation and the domain's types into the browser), so it compiles just
+the one file. In `Erp.Web.csproj`:
 
 ```xml
 <!-- Role names are defined once, in BuildingBlocks. The file is compiled in here too, not copied. -->
@@ -574,9 +819,22 @@ After:
 <ProjectReference Include="..\Erp.Web\Erp.Web.csproj" Aliases="ErpWeb" PrivateAssets="all" />
 ```
 
-An alias puts a referenced assembly's classes behind a name (`extern alias ErpWeb;`) that nobody in the host
-writes, so `Roles` means BuildingBlocks' one again. The reference stays a normal one, so MudBlazor's files are
-still served.
+An alias puts a referenced assembly's classes behind a name, so `Roles` means BuildingBlocks' one again. The
+reference stays a normal one, so MudBlazor's files are still served. The one place the host does name an app
+class is `App`, the page it sends. So `Program.cs` asks for the alias by name, at the very top, before the
+`using` lines:
+
+```csharp
+extern alias ErpWeb;
+```
+
+and the page is named through it:
+
+```csharp
+app.MapRazorComponents<ErpWeb::Erp.Web.App>()
+    .AddInteractiveWebAssemblyRenderMode()
+    .AllowAnonymous();
+```
 
 Is the browser app allowed to hide things by role? Yes, as a courtesy. A hidden button isn't security: the
 API checks every call on its own, and a rep who builds the URL by hand still gets a 403.
@@ -670,17 +928,18 @@ important test guarded `includeInternalTypes: true`; the create slice takes over
 
 ```csharp
 // tests/Erp.Modules.Sales.UnitTests/ValidatorTests.cs
+using System.Globalization;
 using AwesomeAssertions;
 using Erp.Modules.Sales.Features;
 
 namespace Erp.Modules.Sales.UnitTests;
 
 // Validators are plain classes: test the shape rules directly, no HTTP, no database.
-public class CreateSalesOrderValidatorTests
+public class CreateSalesOrderRequestValidatorTests
 {
-    private static readonly CreateSalesOrderValidator Validator = new();
+    private static readonly CreateSalesOrderRequestValidator Validator = new();
 
-    private static CreateSalesOrderCommand Order(long customerId = 1, long itemId = 1, decimal quantity = 1) =>
+    private static CreateSalesOrderRequest Order(long customerId = 1, long itemId = 1, decimal quantity = 1) =>
         new(customerId, [new OrderLineInput(itemId, quantity)]);
 
     [Fact]
@@ -695,17 +954,17 @@ public class CreateSalesOrderValidatorTests
     [InlineData(1, 1, "-1")]
     [InlineData(1, 1, "1.2345")]
     public void A_bad_id_or_quantity_is_refused(long customerId, long itemId, string quantity) =>
-        Validator.Validate(Order(customerId, itemId, decimal.Parse(quantity))).IsValid.Should().BeFalse();
+        Validator.Validate(Order(customerId, itemId, decimal.Parse(quantity, CultureInfo.InvariantCulture))).IsValid.Should().BeFalse();
 
     [Fact]
     public void An_order_without_lines_is_refused_with_a_readable_message() =>
-        Validator.Validate(new CreateSalesOrderCommand(1, [])).Errors
+        Validator.Validate(new CreateSalesOrderRequest(1, [])).Errors
             .Should().ContainSingle().Which.ErrorMessage.Should().Be("An order needs at least one line.");
 
     [Fact]
     public void Every_bad_line_is_reported_not_just_the_first()
     {
-        var result = Validator.Validate(new CreateSalesOrderCommand(1, [new(0, 1), new(1, 0), new(1, 1)]));
+        var result = Validator.Validate(new CreateSalesOrderRequest(1, [new(0, 1), new(1, 0), new(1, 1)]));
         result.Errors.Should().HaveCount(2);
     }
 }
@@ -773,8 +1032,11 @@ public class SalesOrderWorkflowTests(CustomWebAppFactory factory)
         create.Content.Headers.ContentType!.ToString().Should().Be("application/problem+json; charset=utf-8");
         var problem = await create.Content.ReadFromJsonAsync<Problem>();
         problem!.Detail.Should().Be("An order needs at least one line.");
-        problem.Errors.Should().Equal("An order needs at least one line.");
+        problem.Code.Should().Be("ERP-0001");
+        problem.Errors["Lines"].Should().Equal("An order needs at least one line.");   // keyed by field, so a form can mark it
     }
+
+    private sealed record Problem(string Detail, string Code, Dictionary<string, string[]> Errors);
 }
 ```
 
@@ -784,9 +1046,11 @@ an earlier test did:
 
 ```csharp
 // tests/Erp.Integration.Tests/SalesOrderEdgeCaseTests.cs
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text;
+using System.Text.Json;
 using AwesomeAssertions;
 using Erp.Modules.Sales.Domain;
 using Erp.Modules.Sales.Infrastructure;
@@ -826,12 +1090,20 @@ public class SalesOrderEdgeCaseTests(CustomWebAppFactory factory)
         return (await response.Content.ReadFromJsonAsync<Created>())!.Id;
     }
 
+    // 404 means the address (POST /api/sales-orders) doesn't exist. It does: what's wrong is an id inside the body,
+    // so the request is understood but can't be processed: 422, with a code that says which id.
     [Fact]
-    public async Task An_unknown_customer_or_item_is_404()
+    public async Task An_unknown_customer_or_item_is_422_with_its_code()
     {
         var rep = await factory.ClientFor(Rep);
-        (await PostOrder(rep, customerId: 999_999, itemId: 1, quantity: 1)).StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await PostOrder(rep, await NewCustomer(), itemId: 999_999, quantity: 1)).StatusCode.Should().Be(HttpStatusCode.NotFound);
+
+        var noCustomer = await PostOrder(rep, customerId: 999_999, itemId: 1, quantity: 1);
+        noCustomer.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await noCustomer.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString().Should().Be("SALES-0018");
+
+        var noItem = await PostOrder(rep, await NewCustomer(), itemId: 999_999, quantity: 1);
+        noItem.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await noItem.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("code").GetString().Should().Be("SALES-0019");
     }
 
     [Theory]
@@ -841,7 +1113,7 @@ public class SalesOrderEdgeCaseTests(CustomWebAppFactory factory)
     public async Task A_quantity_that_is_zero_negative_or_too_precise_is_400(string quantity)
     {
         var rep = await factory.ClientFor(Rep);
-        (await PostOrder(rep, await NewCustomer(), 1, decimal.Parse(quantity))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await PostOrder(rep, await NewCustomer(), 1, decimal.Parse(quantity, CultureInfo.InvariantCulture))).StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
     // Shape is fine (400 rules pass), but widgets are counted in whole pieces: that's the item's rule, so 422.
@@ -864,33 +1136,110 @@ public class SalesOrderEdgeCaseTests(CustomWebAppFactory factory)
 }
 ```
 
+And a third file, for the codes themselves: a refusal carries its code, its link and the trace id; the errors the
+framework writes get a code too; and the catalog explains a code to anyone, signed in or not:
+
+```csharp
+// tests/Erp.Integration.Tests/ErrorCodeTests.cs
+using System.Net;
+using System.Net.Http.Json;
+using System.Text.Json;
+using AwesomeAssertions;
+
+namespace Erp.Integration.Tests;
+
+// Every error a person can see carries a stable code, and the code's link opens its entry in the catalog.
+[Collection("Integration")]
+public class ErrorCodeTests(CustomWebAppFactory factory)
+{
+    private const string Manager = "manager@erp.local";
+
+    [Fact]
+    public async Task A_refused_business_rule_answers_with_its_code_its_link_and_the_trace_id()
+    {
+        var manager = await factory.ClientFor(Manager);
+
+        var response = await manager.PostAsJsonAsync("/api/sales-orders",
+            new { customerId = 3, lines = new[] { new { itemId = 1, quantity = 1 } } });   // customer 3 is blocked
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        problem.GetProperty("code").GetString().Should().Be("SALES-0002");
+        problem.GetProperty("type").GetString().Should().Be("/errors/SALES-0002");
+        problem.GetProperty("title").GetString().Should().Be("The customer is blocked");
+        problem.GetProperty("detail").GetString().Should().Contain("blocked");   // the specifics stay in the detail
+        problem.GetProperty("traceId").GetString().Should().NotBeNullOrEmpty();
+    }
+
+    // The framework writes these responses itself; they get a code from their status.
+    [Theory]
+    [InlineData("/api/sales-orders", false, "ERP-0005")]          // not signed in
+    [InlineData("/api/no-such-thing", true, "ERP-0002")]          // unknown address
+    public async Task Errors_the_framework_writes_carry_a_code_too(string path, bool signedIn, string code)
+    {
+        var client = signedIn ? await factory.ClientFor(Manager) : factory.CreateClient();
+
+        var problem = await (await client.GetAsync(path)).Content.ReadFromJsonAsync<JsonElement>();
+
+        problem.GetProperty("code").GetString().Should().Be(code);
+        problem.GetProperty("type").GetString().Should().Be($"/errors/{code}");
+    }
+
+    [Fact]
+    public async Task The_catalog_explains_a_code_to_anyone_even_signed_out()
+    {
+        var error = await factory.CreateClient().GetFromJsonAsync<JsonElement>("/api/errors/sales-0003");
+
+        error.GetProperty("code").GetString().Should().Be("SALES-0003");
+        error.GetProperty("title").GetString().Should().NotBeNullOrWhiteSpace();
+        error.GetProperty("fix").GetString().Should().NotBeNullOrWhiteSpace();
+    }
+
+    [Fact]
+    public async Task The_catalog_lists_every_module_and_an_unknown_code_is_404()
+    {
+        var client = factory.CreateClient();
+
+        var all = await client.GetFromJsonAsync<JsonElement[]>("/api/errors");
+        all!.Select(e => e.GetProperty("code").GetString()!.Split('-')[0]).Distinct()
+            .Should().BeEquivalentTo(["ERP", "SALES"]);   // each new module's catalog joins this list
+
+        (await client.GetAsync("/api/errors/SALES-9999")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+}
+```
+
+Make it fail once: in `ErrorProblems.Apply`, comment out the `code` line. Every test in the file goes red.
+
 ### Edge cases covered in this lesson
 
 | Test | The edge | Why it matters |
 |---|---|---|
 | `A_bad_id_or_quantity_is_refused` (7 cases) | Zero, negative, too precise | The shape rules, one by one |
 | `Every_bad_line_is_reported_not_just_the_first` | Many | Users fix everything in one go |
-| `An_unknown_customer_or_item_is_404` | An id that doesn't exist | 404, not 500 |
+| `An_unknown_customer_or_item_is_422_with_its_code` | An id that doesn't exist | 422 with the code that names it, not a 404 for an address that exists, nor a 500 |
 | `A_quantity_that_is_zero_negative_or_too_precise_is_400` | Same edges, through HTTP | The validator really runs on this endpoint |
 | `Half_a_widget_is_a_business_rule_not_a_bad_request` | The line between 400 and 422 | Shape is the validator's; "is this allowed?" is the domain's |
 | `Broken_json_is_400_with_problem_details_not_500` | Broken input | A client's typo isn't our crash |
 | `Blocked_customer_is_rejected_with_422`, `Over_credit_limit_is_rejected_with_422` | Who, how much | The domain's rules reach the caller as 422 with the domain's words |
 | `Order_with_no_lines_is_rejected_by_the_internal_validator` | Configuration | The `includeInternalTypes` guard, now on a real feature |
+| `Errors_the_framework_writes_carry_a_code_too` | Not signed in, an unknown address | Errors nobody threw still say what they are |
+| `The_catalog_explains_a_code_to_anyone_even_signed_out` | Who: nobody signed in | The link in an error must open after the session ended |
 
 ## How a request flows
 
 ```mermaid
 sequenceDiagram
   participant C as Client
+  participant V as Validation filter (/api)
   participant E as CreateSalesOrderEndpoint
-  participant V as ValidationBehavior
   participant H as CreateSalesOrderHandler
   participant D as Customer / ItemCategory / SalesOrder
   participant DB as PostgreSQL
-  C->>E: POST /api/sales-orders (cookie or bearer token)
-  E->>E: role check (SalesRep / SalesManager / Admin)
-  E->>V: Send(CreateSalesOrderCommand)
-  V->>H: valid shape → next()
+  C->>V: POST /api/sales-orders (cookie or bearer token)
+  V->>V: role check (SalesRep / SalesManager / Admin), then the request's validators
+  V->>E: valid shape → next()
+  E->>H: HandleAsync(CreateSalesOrderCommand)
   H->>DB: load customer, items + categories, next order number
   H->>D: EnsureNotBlocked, SetLines (sellable, role, unit, category cap), EnsureWithinCreditLimit
   H->>DB: SaveChangesAsync (order + lines, one transaction)
@@ -898,7 +1247,7 @@ sequenceDiagram
 ```
 
 If any domain check throws, nothing is saved, and the exception handler turns the `DomainException` into a
-422. Easy, right?
+422 with the rule's code. Easy, right?
 
 ## Mistakes to avoid
 
@@ -933,23 +1282,25 @@ Now each kind of "no":
 
 | Try this body | You get | Because |
 |---|---|---|
-| `{"customerId":1,"lines":[]}` | **400** "An order needs at least one line." | The validator |
-| `{"customerId":1,"lines":` (cut off) | **400** "The request could not be read" | ASP.NET Core couldn't read the JSON |
-| `{"customerId":99,"lines":[{"itemId":1,"quantity":1}]}` | **404** "Customer 99 not found." | The handler |
-| `{"customerId":3,"lines":[{"itemId":1,"quantity":1}]}` | **422** "Customer 'Gamma Traders' is blocked..." | `Customer.EnsureNotBlocked` |
-| `{"customerId":2,"lines":[{"itemId":1,"quantity":100}]}` | **422** "...exceed the credit limit. Available credit: ₱500.00." | `Customer.EnsureWithinCreditLimit` |
-| `{"customerId":1,"lines":[{"itemId":3,"quantity":1}]}` | **422** "Category 'Controlled' requires role 'SalesManager'." | `ItemCategory.EnsureRoleAllowed` |
-| `{"customerId":1,"lines":[{"itemId":1,"quantity":1.5}]}` | **422** "Item GEN-001 is sold in whole pc..." | `SalesItem.EnsureQuantityFits` |
+| `{"customerId":1,"lines":[]}` | **400** `ERP-0001` "An order needs at least one line." | The validator |
+| `{"customerId":1,"lines":` (cut off) | **400** `ERP-0004` "The request could not be read" | ASP.NET Core couldn't read the JSON |
+| `{"customerId":99,"lines":[{"itemId":1,"quantity":1}]}` | **422** `SALES-0018` "Customer 99 doesn't exist." | The handler |
+| `{"customerId":3,"lines":[{"itemId":1,"quantity":1}]}` | **422** `SALES-0002` "Customer 'Gamma Traders' is blocked..." | `Customer.EnsureNotBlocked` |
+| `{"customerId":2,"lines":[{"itemId":1,"quantity":100}]}` | **422** `SALES-0003` "...exceed the credit limit. Available credit: ₱500.00." | `Customer.EnsureWithinCreditLimit` |
+| `{"customerId":1,"lines":[{"itemId":3,"quantity":1}]}` | **422** `SALES-0007` "Category 'Controlled' requires role 'SalesManager'." | `ItemCategory.EnsureRoleAllowed` |
+| `{"customerId":1,"lines":[{"itemId":1,"quantity":1.5}]}` | **422** `SALES-0012` "Item GEN-001 is sold in whole pc..." | `SalesItem.EnsureQuantityFits` |
 | `{"customerId":1,"lines":[{"itemId":5,"quantity":2.5}]}` | **201**: 2.5 kg of Copper Wire is fine | |
 
-Each answer is a `application/problem+json` body with a `traceId`. Then open
-`http://localhost:5264/swagger`, click **Authorize**, paste your token, and try the same calls from the
+Each answer is a `application/problem+json` body with its `code`, a `type` link to the code's page, and a
+`traceId`. Look one up: `curl http://localhost:5264/api/errors/SALES-0003`. Then open
+`http://localhost:5264/scalar`, put your token in the authentication box, and try the same calls from the
 browser.
 
 And now the way a sales rep will do it. Open `http://localhost:5264`, sign in as `rep@erp.local`, and click
 **Sales → New sales order**. Save customer 1 with item 1, quantity 2: a green "Draft saved" appears. Change
 the customer to 3 and save again: a red snackbar says Gamma Traders is blocked, word for word what the
-domain wrote.
+domain wrote, with `(SALES-0002)` after it. Click **What does this mean?** and the Error codes page explains
+the code and what to do about it.
 
 Then the tests:
 
@@ -958,9 +1309,11 @@ dotnet test
 ```
 
 ```
-Passed!  - Failed: 0, Passed: 58, ... Erp.Modules.Sales.UnitTests.dll
-Passed!  - Failed: 0, Passed:  5, ... Erp.Architecture.Tests.dll
-Passed!  - Failed: 0, Passed: 39, ... Erp.Integration.Tests.dll
+Test run summary: Passed!
+  total: 110
+  failed: 0
+  succeeded: 110
+  skipped: 0
 ```
 
 Check the order number in the database:
@@ -980,8 +1333,8 @@ PGPASSWORD=erp_dev_only "/c/Program Files/PostgreSQL/18/bin/psql.exe" -h localho
 2. Why does `MAX(order_number) + 1` go wrong, and how does a sequence avoid it?
 3. Why is there a `CreateSalesOrderRequest` *and* a `CreateSalesOrderCommand`?
 4. What status does each of these produce, and why: a blocked customer, an empty order, an unknown item?
-5. Why does the error body include a `traceId`?
-6. Why is Swagger only turned on in Development?
+5. An error body has a `code` and a `traceId`. What does each one tell you, and why do you need both?
+6. Why are the API description and its page only turned on in Development?
 7. Half a widget is a 422, but a quantity of 1.2345 is a 400. Why the difference?
 8. Why does each edge-case test create its own customer?
 

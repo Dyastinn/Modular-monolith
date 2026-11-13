@@ -204,18 +204,48 @@ internal static class StaffAccountRules
 It takes plain numbers and strings, not `AppUser`, so it stays pure: no Identity, no database, testable in
 milliseconds. The handler looks the facts up; the rules decide.
 
-A test project for the Identity module, the same way as lesson 04's (delete the template's
-`<PackageReference>` lines first):
+Identity's first rules mean Identity's first error codes, in a catalog of its own, next to the rules:
+
+```csharp
+// src/Modules/Identity/Erp.Modules.Identity/Domain/IdentityErrors.cs
+using Erp.Shared.BuildingBlocks;
+
+namespace Erp.Modules.Identity.Domain;
+
+// Every business rule Identity can refuse with. Add new codes at the end; never renumber or reuse one.
+internal static class IdentityErrors
+{
+    public static readonly ErrorCode UnknownRole = new("IDENTITY-0001", "Unknown role",
+        "Choose one of the roles in the list.");
+    public static readonly ErrorCode CannotChangeOwnRole = new("IDENTITY-0002", "You can't change your own role",
+        "Ask another admin to change it, so no one can promote themselves.");
+    public static readonly ErrorCode CannotDisableSelf = new("IDENTITY-0003", "You can't disable your own account",
+        "Ask another admin, so the company can't lose its last way in by accident.");
+    public static readonly ErrorCode LastAdmin = new("IDENTITY-0004", "This is the last active admin",
+        "Make someone else an admin first, then change or disable this account.");
+    public static readonly ErrorCode AccountChangeRefused = new("IDENTITY-0005", "The account change was refused",
+        "The message says why: usually the password is too weak (12+ characters, upper and lower case, a digit and a symbol) or the user name is taken.");
+}
+```
+
+The last one is for Identity's own refusals ("password too short", "email taken"), coming up in step 5. Hand
+the catalog to the host in `AddIdentityModule`: `services.AddSingleton(ErrorCatalog.From(typeof(IdentityErrors)));`.
+And the tests that guard catalogs learn about it: in `ErrorCatalogTests`, add `(CatalogIn(typeof(IdentityModule)), "IDENTITY")`
+to `Catalogs`; in `ErrorCodeTests`, add `"IDENTITY"` to the list of prefixes.
+
+A test project for the Identity module, the same way as Sales' in lesson 03:
 
 ```bash
-dotnet new xunit -o tests/Erp.Modules.Identity.UnitTests
+dotnet new classlib -n Erp.Modules.Identity.UnitTests -o tests/Erp.Modules.Identity.UnitTests
+rm tests/Erp.Modules.Identity.UnitTests/Class1.cs
 dotnet sln add tests/Erp.Modules.Identity.UnitTests
 dotnet add tests/Erp.Modules.Identity.UnitTests reference src/Modules/Identity/Erp.Modules.Identity
-dotnet add tests/Erp.Modules.Identity.UnitTests package Microsoft.NET.Test.Sdk --version 17.14.1
-dotnet add tests/Erp.Modules.Identity.UnitTests package xunit --version 2.9.3
-dotnet add tests/Erp.Modules.Identity.UnitTests package xunit.runner.visualstudio --version 3.1.4
+dotnet add tests/Erp.Modules.Identity.UnitTests package xunit.v3 --version 4.0.2
 dotnet add tests/Erp.Modules.Identity.UnitTests package AwesomeAssertions --version 9.6.0
+dotnet add tests/Erp.Modules.Identity.UnitTests package coverlet.MTP --version 10.1.0
 ```
+
+with the same `.csproj` clean-up (`IsPackable`, `OutputType Exe`, `Using Include="Xunit"`)
 
 and `<InternalsVisibleTo Include="Erp.Modules.Identity.UnitTests" />` in `Erp.Modules.Identity.csproj`.
 
@@ -309,7 +339,7 @@ internal sealed class ErpSignInManager(
 ```
 
 The long constructor is just Identity's own, passed straight through, plus our two extras (`db` and
-`clock`). When `CanSignInAsync` says no, Identity answers the login with "NotAllowed", the outcome we
+`time`). When `CanSignInAsync` says no, Identity answers the login with "NotAllowed", the outcome we
 record.
 
 Register it in `IdentityModule`, at the end of the `AddIdentityApiEndpoints` chain:
@@ -409,7 +439,6 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Identity.Features;
-
 
 internal sealed record CreateUserRequest(string Email, string FullName, string Role, string TemporaryPassword);
 
@@ -525,7 +554,6 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Identity.Features;
 
-
 internal sealed record UpdateUserRequest(string FullName, string Role);
 internal sealed record ResetUserPasswordRequest(string TemporaryPassword);
 
@@ -602,7 +630,6 @@ internal sealed class ChangePasswordHandler(UserManager<AppUser> users, SignInMa
 
 ```csharp
 // src/Modules/Identity/Erp.Modules.Identity/Features/ChangePassword/ChangePasswordEndpoint.cs
-using Erp.Shared.BuildingBlocks;
 using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -610,7 +637,6 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Identity.Features;
-
 
 internal sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 
@@ -636,8 +662,10 @@ internal static class ChangePasswordEndpoint
 }
 ```
 
-Identity now has validators, so `IdentityModule` registers them the way Sales does, with internal types
-included:
+Register the new handlers in `AddIdentityModule` (`CreateUserHandler`, `UpdateUserHandler`, `SetUserDisabledHandler`,
+`ResetUserPasswordHandler`, `ChangePasswordHandler`), and map their endpoints in `MapIdentityModule`. The user
+commands return `false` for a user that doesn't exist, and their endpoints answer 404. Identity now has
+validators too, so `IdentityModule` registers them the way Sales does, with internal types included:
 
 ```csharp
 services.AddValidatorsFromAssembly(typeof(IdentityModule).Assembly, includeInternalTypes: true);
@@ -655,10 +683,10 @@ whether they must change their password, which only the database knows. Before:
 ```csharp
 internal sealed record CurrentUserDto(long Id, string Username, string Role);
 
-internal sealed class GetCurrentUserHandler(ICurrentUser user) : IQueryHandler<GetCurrentUserQuery, CurrentUserDto>
+internal sealed class GetCurrentUserHandler(ICurrentUser user)
 {
-    public ValueTask<CurrentUserDto> Handle(GetCurrentUserQuery query, CancellationToken ct) =>
-        ValueTask.FromResult(new CurrentUserDto(user.UserId, user.Username, user.Role));
+    public Task<CurrentUserDto> HandleAsync(GetCurrentUserQuery query, CancellationToken ct) =>
+        Task.FromResult(new CurrentUserDto(user.UserId, user.Username, user.Role));
 }
 ```
 
@@ -668,18 +696,20 @@ After:
 internal sealed record CurrentUserDto(long Id, string Username, string FullName, string Role, bool MustChangePassword);
 
 internal sealed class GetCurrentUserHandler(ICurrentUser current, UserManager<AppUser> users)
-    : IQueryHandler<GetCurrentUserQuery, CurrentUserDto>
 {
-    public async ValueTask<CurrentUserDto> Handle(GetCurrentUserQuery query, CancellationToken ct)
+    public async Task<CurrentUserDto> HandleAsync(CancellationToken ct)
     {
-        var user = await users.FindByIdAsync(current.UserId.ToString())
-            ?? throw new NotFoundException("The signed-in user no longer exists.");
+        // Users are disabled, never deleted, and a disabled user's session is refused at the door: this can't happen.
+        var user = await users.FindByIdAsync(current.UserId.ToString(CultureInfo.InvariantCulture))
+            ?? throw new InvalidOperationException("The signed-in user no longer exists.");
         return new CurrentUserDto(user.Id, user.UserName!, user.FullName, current.Role, user.MustChangePassword);
     }
 }
 ```
 
-(add `using Erp.Modules.Identity.Infrastructure;` and `using Microsoft.AspNetCore.Identity;`).
+(add `using System.Globalization;`, `using Erp.Modules.Identity.Infrastructure;` and
+`using Microsoft.AspNetCore.Identity;`). A signed-in user who doesn't exist is a bug, not a request to refuse,
+so it's an `InvalidOperationException`, a 500 with a trace id, rather than a 404.
 
 ## 7. Reading users and the sign-in log
 
@@ -828,14 +858,11 @@ internal sealed class GetUserDirectoryHandler(IDbConnectionFactory connections)
 ```csharp
 // src/Modules/Identity/Erp.Modules.Identity/Features/SearchUsers/SearchUsersEndpoint.cs
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Identity.Features;
-
 
 internal static class SearchUsersEndpoint
 {
@@ -852,11 +879,11 @@ internal static class SearchUsersEndpoint
 }
 ```
 
-The sign-in log slice, `Features/SearchSignInAttempts/`, is the same shape: a `SearchSignInAttemptsQuery(string?
-Email, bool FailedOnly, int Page, int PageSize)`, a `SignInAttemptDto(long Id, string Email, long? UserId,
+Register `SearchUsersHandler` and `GetUserDirectoryHandler`, and map `SearchUsersEndpoint`. The sign-in log
+slice, `Features/SearchSignInAttempts/`, is the same shape: a `SearchSignInAttemptsQuery(string? Email = null,
+bool FailedOnly = false, int Page = 1, int PageSize = 50)` bound with `[AsParameters]`, a `SignInAttemptDto(long Id, string Email, long? UserId,
 string Outcome, string? IpAddress, DateTime OccurredUtc)`, the paging validator, a handler calling
-`identity.search_sign_in_attempts` and its count, and `GET /sign-in-attempts` for Admin only, with a page size
-of 50 by default. Write it from the pattern; the reference build has it if you want to compare.
+`identity.search_sign_in_attempts` and its count, and `GET /sign-in-attempts` for Admin only. Write it from the pattern; the reference build has it if you want to compare.
 
 ## 8. Email, for "I forgot my password"
 

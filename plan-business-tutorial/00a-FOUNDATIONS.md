@@ -134,8 +134,8 @@ var order = await db.SalesOrders.SingleOrDefaultAsync(o => o.Id == orderId, ct);
 
 Rules of thumb for reading our code:
 
-- `Task<Order>` or `ValueTask<Order>`: "an `Order`, arriving a moment later". Our handlers return
-  `ValueTask`, a lighter ticket for results that are often ready straight away.
+- `Task<Order>`: "an `Order`, arriving a moment later". Our handlers return `Task`. You'll also meet
+  `ValueTask` in a few framework methods: a lighter ticket for results that are often ready straight away.
 - `await x`: "wait for `x`, then give me what's inside".
 - A method containing `await` is marked `async`. That's just the rule.
 - **`CancellationToken ct`** appears everywhere. It's a "stop early, the caller gave up" signal. Just pass
@@ -147,12 +147,11 @@ Sometimes code should work with any type. `T` is a placeholder for "whatever typ
 cardboard box doesn't care what's inside: `Box<Shoe>` and `Box<Book>` are the same box design.
 
 ```csharp
-internal sealed class CancelSalesOrderHandler : ICommandHandler<CancelSalesOrderCommand>
-internal sealed class SearchSalesOrdersHandler : IQueryHandler<SearchSalesOrdersQuery, PagedResult<SalesOrderSummaryDto>>
+public async Task<PagedResult<SalesOrderSummaryDto>> HandleAsync(SearchSalesOrdersQuery q, CancellationToken ct)
 ```
 
-Read the second one as "the handler for a `SearchSalesOrdersQuery`, which gives back a page of order
-summaries". You'll rarely write generic code yourself; you'll mostly fill in the blanks.
+Read it as "handle a `SearchSalesOrdersQuery`, and give back, a moment later, a page of order summaries".
+`PagedResult<T>` is one page design that works for any row: orders here, customers somewhere else. You'll rarely write generic code yourself; you'll mostly fill in the blanks.
 
 The `<T>` you'll see most is a list:
 

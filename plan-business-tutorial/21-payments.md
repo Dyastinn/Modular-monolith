@@ -157,7 +157,7 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
             string.IsNullOrWhiteSpace(reference) ? null : reference.Trim(), by, nowUtc));
         AmountPaid += settled;
         RefreshStatus();
-        Raise(new PaymentRecorded(id.Value, CustomerId, settled.Amount));
+        Raise(new InvoicePaymentRecorded(id, CustomerId, settled));
     }
 
     // A payment recorded by mistake, or a check that bounced.
@@ -171,7 +171,7 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
         payment.Void(reason.Trim(), nowUtc);
         AmountPaid -= payment.Settled;
         RefreshStatus();
-        Raise(new PaymentVoided(id.Value, CustomerId, payment.Settled.Amount));
+        Raise(new InvoicePaymentVoided(id, CustomerId, payment.Settled));
     }
 
     private void RefreshStatus() =>
@@ -187,12 +187,33 @@ And voiding the invoice itself learns one more rule, in `Void`, after the reason
 if (AmountPaid > Money.Zero) throw new DomainException(InvoicingErrors.InvoiceHasPayments, $"{Number} has payments. Void them first.");
 ```
 
+Each refusal is the next code in `InvoicingErrors`, after lesson 20's nine:
+
+```csharp
+public static readonly ErrorCode PaymentNotPositive = new("INVOICING-0010", "A payment must be more than zero",
+    "Enter the amount received, plus any tax withheld.");
+public static readonly ErrorCode PaymentExceedsBalance = new("INVOICING-0011", "The payment is more than the balance due",
+    "Enter at most the balance due. Record any overpayment separately with the accountant.");
+public static readonly ErrorCode WithholdingExceedsNetSales = new("INVOICING-0012", "More tax withheld than the sales allow",
+    "Tax withheld is a percentage of the sales before VAT. Check the amount on the customer's BIR Form 2307.");
+public static readonly ErrorCode PaymentBeforeInvoice = new("INVOICING-0013", "A payment can't be dated before the invoice",
+    "Enter the date the payment was actually received.");
+public static readonly ErrorCode PaymentInFuture = new("INVOICING-0014", "A payment can't be dated in the future",
+    "Enter the date the payment was actually received.");
+public static readonly ErrorCode PaymentNotOnInvoice = new("INVOICING-0015", "That payment isn't on this invoice",
+    "Reload the invoice: its payments may have changed.");
+public static readonly ErrorCode PaymentAlreadyVoid = new("INVOICING-0016", "The payment is already void",
+    "Nothing to do. Record the payment again if it was voided by mistake.");
+public static readonly ErrorCode InvoiceHasPayments = new("INVOICING-0017", "The invoice has payments",
+    "Void its payments first, then void the invoice.");
+```
+
 What each rule protects:
 
 - **No payment over the balance.** Money in, plus tax withheld, can never make an invoice "more than paid".
 - **Sales hears the settled amount.** For the customer's balance, ₱8.89 withheld is as good as ₱8.89 paid.
 - **No payment dated before the invoice, or in the future.** Both are typing mistakes that would wreck the
-  aging report. "Future" means after *today in the business's time zone*, lesson 20's `clock.Today`, passed
+  aging report. "Future" means after *today in the business's time zone*, lesson 20's `time.Today()`, passed
   in as `today` so the rule stays testable.
 - **The status follows the money.** `RefreshStatus` works it out from the amounts every time; it's never set
   by hand. Void a payment on a paid invoice, and it's partly paid again.
@@ -201,7 +222,16 @@ What each rule protects:
 
 ## 2. The events, in Invoicing's window
 
-Invoicing's Contracts project (lesson 20) gets two events, because Sales must handle them:
+The invoice raises its own two domain events, in Invoicing's words, at the bottom of `Invoice.cs`:
+
+```csharp
+// Published to other modules as PaymentRecorded / PaymentVoided.
+internal sealed record InvoicePaymentRecorded(PaymentId PaymentId, long CustomerId, Money Settled) : IDomainEvent;
+internal sealed record InvoicePaymentVoided(PaymentId PaymentId, long CustomerId, Money Settled) : IDomainEvent;
+```
+
+`Money` survives the trip through the outbox thanks to lesson 13's `[JsonConstructor]`. Sales must hear about
+them, so Invoicing's Contracts project (lesson 20) gets two integration events:
 
 ```bash
 dotnet add src/Modules/Sales/Erp.Modules.Sales reference src/Modules/Invoicing/Erp.Modules.Invoicing.Contracts
@@ -219,16 +249,39 @@ public sealed record PaymentRecorded(long PaymentId, long CustomerId, decimal Am
 public sealed record PaymentVoided(long PaymentId, long CustomerId, decimal Amount) : IIntegrationEvent;
 ```
 
-And lesson 17's trap, avoided this time on purpose: now that it holds events, the Contracts assembly goes into
-`options.Assemblies` in `Program.cs`.
+and the two mappings, the third and fourth of their kind:
 
 ```csharp
-options.Assemblies =
-[
-    typeof(IdentityModule), typeof(SalesModule), typeof(InventoryModule), typeof(PurchasingModule), typeof(InvoicingModule),
-    typeof(Erp.Modules.Inventory.Contracts.ItemCatalogChanged), typeof(Erp.Modules.Invoicing.Contracts.PaymentRecorded)
-];
+// src/Modules/Invoicing/Erp.Modules.Invoicing/Infrastructure/EventHandlers/PublishedEvents.cs
+using Erp.Modules.Invoicing.Contracts;
+using Erp.Modules.Invoicing.Domain;
+using Erp.Shared.BuildingBlocks;
+
+namespace Erp.Modules.Invoicing.Infrastructure;
+
+// Invoicing's payment events, told to the other modules in the plain words of Invoicing.Contracts.
+internal sealed class PublishPaymentRecorded(IIntegrationEventPublisher publisher) : IDomainEventHandler<InvoicePaymentRecorded>
+{
+    public Task HandleAsync(InvoicePaymentRecorded e, CancellationToken ct) =>
+        publisher.PublishAsync(new PaymentRecorded(e.PaymentId.Value, e.CustomerId, e.Settled.Amount), ct);
+}
+
+internal sealed class PublishPaymentVoided(IIntegrationEventPublisher publisher) : IDomainEventHandler<InvoicePaymentVoided>
+{
+    public Task HandleAsync(InvoicePaymentVoided e, CancellationToken ct) =>
+        publisher.PublishAsync(new PaymentVoided(e.PaymentId.Value, e.CustomerId, e.Settled.Amount), ct);
+}
 ```
+
+registered in `AddInvoicingModule`:
+
+```csharp
+services.AddScoped<IDomainEventHandler<InvoicePaymentRecorded>, PublishPaymentRecorded>();
+services.AddScoped<IDomainEventHandler<InvoicePaymentVoided>, PublishPaymentVoided>();
+```
+
+Lesson 17's trap, avoided this time on purpose: Sales registers its two handlers (step 5) in the same change
+that writes them, and `WiringTests` would fail if it didn't.
 
 Notice the arrows. Sales now references Invoicing's Contracts, and Invoicing references Sales' Contracts.
 Both point at Contracts, so there's still no cycle.
@@ -287,7 +340,7 @@ namespace Erp.Modules.Invoicing.Features;
 internal sealed record RecordPaymentCommand(long InvoiceId, decimal Amount, decimal TaxWithheld, DateOnly PaidOn, PaymentMethod Method,
     string? Reference);
 
-// Saving the payment also writes PaymentRecorded to the outbox; Sales lowers the customer's balance from it.
+// Saving the payment also writes InvoicePaymentRecorded to the outbox; Sales hears it as PaymentRecorded.
 internal sealed class RecordPaymentHandler(InvoicingDbContext db, ICurrentUser user, TimeProvider time)
 {
     // null: there is no such invoice.
@@ -323,9 +376,65 @@ One `SaveChangesAsync` writes the payment, the invoice's new totals, and the eve
 "tell Sales" call anywhere in the handler: the domain raised the event, and lesson 13's interceptor did the
 rest.
 
-The endpoints, in `RecordPaymentEndpoint.cs`, take a `RecordPaymentRequest(decimal Amount, DateOnly PaidOn,
-PaymentMethod Method, string? Reference, decimal TaxWithheld = 0)` and a `VoidRequest(string Reason)`, both for
-`InvoicingRoles.Accountants`. (Move `VoidRequest` here from lesson 20's void endpoint: both voids share it.)
+The endpoints, both for accountants. `VoidRequest` and its validator move here from lesson 20's void endpoint,
+because every void (an invoice, a payment, and next a certificate) shares them:
+
+```csharp
+// src/Modules/Invoicing/Erp.Modules.Invoicing/Features/RecordPayment/RecordPaymentEndpoint.cs
+using Erp.Modules.Invoicing.Domain;
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Routing;
+
+namespace Erp.Modules.Invoicing.Features;
+
+internal sealed record RecordPaymentRequest(decimal Amount, DateOnly PaidOn, PaymentMethod Method, string? Reference,
+    decimal TaxWithheld = 0);
+internal sealed record VoidRequest(string Reason);
+
+internal sealed class RecordPaymentRequestValidator : AbstractValidator<RecordPaymentRequest>
+{
+    public RecordPaymentRequestValidator()
+    {
+        RuleFor(x => x.Amount).GreaterThanOrEqualTo(0).Must(a => decimal.Round(a, 2) == a).WithMessage("Amounts are in pesos and centavos.");
+        RuleFor(x => x.TaxWithheld).GreaterThanOrEqualTo(0).Must(a => decimal.Round(a, 2) == a).WithMessage("Amounts are in pesos and centavos.");
+        RuleFor(x => x.Amount + x.TaxWithheld).GreaterThan(0).WithName("Amount").WithMessage("Enter the amount received, the tax withheld, or both.");
+        RuleFor(x => x.Method).IsInEnum();
+        RuleFor(x => x.Reference).MaximumLength(100);
+    }
+}
+
+// Voiding a payment, an invoice or a withholding certificate always needs a reason.
+internal sealed class VoidRequestValidator : AbstractValidator<VoidRequest>
+{
+    public VoidRequestValidator() => RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+}
+
+internal static class RecordPaymentEndpoint
+{
+    public static void Map(IEndpointRouteBuilder app)
+    {
+        app.MapPost("/invoices/{id:long}/payments",
+                async Task<Results<Created<CreatedId>, NotFound>> (long id, RecordPaymentRequest body, RecordPaymentHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new RecordPaymentCommand(id, body.Amount, body.TaxWithheld, body.PaidOn, body.Method, body.Reference), ct)
+                        is { } paymentId
+                        ? TypedResults.Created($"/api/invoices/{id}", new CreatedId(paymentId))
+                        : TypedResults.NotFound())
+            .RequireAuthorization(p => p.RequireRole(InvoicingRoles.Accountants));
+
+        app.MapPost("/invoices/{id:long}/payments/{paymentId:long}/void",
+                async Task<Results<NoContent, NotFound>> (long id, long paymentId, VoidRequest body, VoidPaymentHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new VoidPaymentCommand(id, paymentId, body.Reason), ct) ? TypedResults.NoContent() : TypedResults.NotFound())
+            .RequireAuthorization(p => p.RequireRole(InvoicingRoles.Accountants));
+    }
+}```
+
+The validator checks the shape a person could get wrong in the form: centavos, not fractions of them, and some
+money or tax on the payment. Whether ₱500 fits the balance is the invoice's rule, in the domain. Register
+`RecordPaymentHandler` and `VoidPaymentHandler`, and map `RecordPaymentEndpoint` in `MapInvoicingEndpoints`.
 
 The method arrives as `"BankTransfer"` from the app, and the enum converter from lesson 20 reads it by name.
 
@@ -418,6 +527,13 @@ internal sealed class PaymentVoidedHandler(SalesDbContext db, TimeProvider time)
 }
 ```
 
+Register them in `AddSalesModule`:
+
+```csharp
+services.AddScoped<IIntegrationEventHandler<PaymentRecorded>, PaymentRecordedHandler>();
+services.AddScoped<IIntegrationEventHandler<PaymentVoided>, PaymentVoidedHandler>();
+```
+
 The customer's `xmin` from lesson 10 protects this too: a payment lowering the balance while a manager
 approves an order that raises it can't lose either change; the loser gets a concurrency error, and the outbox
 retries it with fresh numbers.
@@ -464,7 +580,7 @@ creates:
 The file is exactly the reference build's
 [search_invoices file](../course-validation/business/src/Modules/Invoicing/Erp.Modules.Invoicing/Infrastructure/Sql/Functions/invoicing.search_invoices.v1.sql)
 with the `DROP FUNCTION` lines added at the top (the reference build ships each function at its final shape,
-the same way it squashes migrations). The handlers pass `OverdueOn = q.OverdueOnly ? clock.Today : null`,
+the same way it squashes migrations). The handlers pass `OverdueOn = q.OverdueOnly ? time.Today() : null`,
 and `GetInvoiceHandler` reads the payments as a third result set, turning `method` back into its name.
 `GET /invoices` gains a `bool? overdueOnly` parameter.
 
@@ -612,6 +728,23 @@ internal sealed class WithholdingCertificate : Entity<WithholdingCertificateId>
 }
 ```
 
+Its codes, and the one for a customer we never billed, finish the catalog for this lesson:
+
+```csharp
+public static readonly ErrorCode InvalidQuarter = new("INVOICING-0018", "Invalid quarter",
+    "Enter 1, 2, 3 or 4.");
+public static readonly ErrorCode InvalidCertificateYear = new("INVOICING-0019", "Invalid year for a certificate",
+    "Enter the year printed on the BIR Form 2307; it can't be in the future.");
+public static readonly ErrorCode CertificateAmountZero = new("INVOICING-0020", "The certificate shows no tax withheld",
+    "Enter the total tax withheld shown on the BIR Form 2307.");
+public static readonly ErrorCode CertificateReceivedInFuture = new("INVOICING-0021", "A certificate can't be received in the future",
+    "Enter the date the BIR Form 2307 actually arrived.");
+public static readonly ErrorCode CertificateAlreadyVoid = new("INVOICING-0022", "The certificate is already void",
+    "Nothing to do. Record a new certificate if the old one was replaced.");
+public static readonly ErrorCode CustomerNeverInvoiced = new("INVOICING-0023", "The customer has no invoices",
+    "A customer we never invoiced can't have withheld tax from us. Check the customer.");
+```
+
 It maps to `invoicing.withholding_certificate` (identity id, checks `quarter BETWEEN 1 AND 4` and
 `amount > 0`, an index on year, quarter and customer), in the same `AddPayments` migration.
 
@@ -621,7 +754,7 @@ billed them at all:
 ```csharp
 var customerName = await db.Invoices.Where(i => i.CustomerId == cmd.CustomerId)
         .OrderByDescending(i => i.Id).Select(i => i.CustomerName).FirstOrDefaultAsync(ct)
-    ?? throw new NotFoundException($"No invoices for customer {cmd.CustomerId}.");
+    ?? throw new DomainException(InvoicingErrors.CustomerNeverInvoiced, $"Customer {cmd.CustomerId} has no invoices.");
 ```
 
 The report is one more read function, `invoicing.withholding_summary.v1.sql`, shipped in `AddPaymentReads`:
@@ -731,7 +864,8 @@ public void Payments_move_it_to_partly_paid_then_paid_and_tell_Sales()
     Pay(invoice, 2, 480.75m);
     invoice.Status.Should().Be(InvoiceStatus.Paid);
 
-    invoice.DomainEvents.Should().Equal(new PaymentRecorded(1, 7, 500), new PaymentRecorded(2, 7, 480.75m));
+    invoice.DomainEvents.Should().Equal(
+        new InvoicePaymentRecorded(new PaymentId(1), 7, new Money(500)), new InvoicePaymentRecorded(new PaymentId(2), 7, new Money(480.75m)));
 }
 ```
 
@@ -746,7 +880,7 @@ public void Tax_withheld_settles_the_invoice_like_money_and_comes_back_if_the_pa
     Pay(invoice, 1, 972.00m, withheld: 8.75m);   // 1% of the sales before VAT, certified later on a Form 2307
 
     invoice.Status.Should().Be(InvoiceStatus.Paid);
-    invoice.DomainEvents.OfType<PaymentRecorded>().Single().Amount.Should().Be(980.75m);
+    invoice.DomainEvents.OfType<InvoicePaymentRecorded>().Single().Settled.Should().Be(new Money(980.75m));
 
     invoice.VoidPayment(new PaymentId(1), "Wrong invoice", Now);
     invoice.BalanceDue.Should().Be(new Money(980.75m));
@@ -832,9 +966,9 @@ sequenceDiagram
   participant D as Outbox dispatcher
   participant S as Sales (PaymentRecordedHandler)
   A->>V: POST /api/invoices/17/payments { amount: 500, method: "Cash", ... }
-  V->>V: invoice.RecordPayment → PartiallyPaid; raises PaymentRecorded(31, customer 1, 500)
+  V->>V: invoice.RecordPayment → PartiallyPaid; raises InvoicePaymentRecorded(31, customer 1, 500)
   V->>O: INSERT payment, UPDATE invoice, INSERT outbox row (one transaction)
-  D->>S: PaymentRecorded(31, 1, 500)
+  D->>S: published as PaymentRecorded(31, 1, 500)
   S->>S: applied_payment 31 exists? no → Apply: deduct min(500, balance)
   S->>S: INSERT applied_payment 31; UPDATE customer (one transaction)
   D->>S: PaymentRecorded(31, ...) again, after a crash
@@ -874,7 +1008,7 @@ And replay the event on purpose, as in lesson 20:
 
 ```bash
 podman exec -i erp-postgres psql -U postgres -d erp \
-  -c "UPDATE invoicing.outbox_message SET processed_utc = NULL WHERE type LIKE '%PaymentRecorded%';" \
+  -c "UPDATE invoicing.outbox_message SET processed_utc = NULL WHERE type LIKE '%InvoicePaymentRecorded%';" \
   -c "SELECT payment_id, amount, reversed_utc FROM sales.applied_payment;"
 ```
 

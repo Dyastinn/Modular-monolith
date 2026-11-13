@@ -9,7 +9,7 @@ it all live in a dashboard. About an hour and a half. Are you ready? Let's begin
 ## What we'll build
 
 - **OpenTelemetry** traces, metrics and logs, sent to any monitoring tool you point it at.
-- A **telemetry behavior** that measures every command and query.
+- Every request traced and timed, with no change to a single endpoint, and the outbox measuring itself.
 - An `X-Trace-Id` header on every response, so a user can quote it when something goes wrong.
 - **Health checks**: `/health/live` (is the app up?) and `/health/ready` (can it reach the database?).
 - The **Aspire dashboard**, to see all of it while you develop.
@@ -43,14 +43,23 @@ setup. It's perfect on your machine. In production it's a different story: it ke
 forgets it all on restart, and has no alerts. So it's our development tool, and production points the same
 data at a real monitoring system. Same code, one setting.
 
-## 1. Refactor: from a logging behavior to a telemetry behavior
+## 1. The app's own signals
 
-Back in [lesson 03](03-features.md), we wrote a `LoggingBehavior`: it logged each request and how long it
-took. That was enough then. Now it falls short in two ways: it can't tell a slow request's *parts* apart (no
-spans), and you can't chart it (no metrics). Let's replace it with a behavior that does all three.
+Here's the good news first: **every request is already measured**, or will be in a moment. The OpenTelemetry
+package for ASP.NET Core, which step 2 adds, opens a span for every request, times it, and records the
+standard metric `http.server.request.duration`, tagged with the route (`POST /api/sales-orders/{id}/submit`)
+and the status code. Every database query inside becomes a child span. You don't touch a single endpoint.
+That's lesson 03's promise kept: the cross-cutting work lives at the edge, written once.
 
-First, the app's own trace source and meter. These are plain .NET types; OpenTelemetry will pick them up by
-name. They live in Infrastructure, because only infrastructure code records telemetry:
+The status code also gives you the most important split for free. A **4xx** is the system working correctly:
+a blocked customer, a bad request, someone else's order. A **5xx** is a failure worth waking someone for.
+Mixing them would make your alerts useless; charting the two apart is one filter in any monitoring tool. And
+the error code from lesson 07 says *which* rejection it was.
+
+What the framework can't see is work that happens *outside* a request. Ours is the outbox dispatcher,
+delivering events in the background. So the app gets its own trace source and meter. These are plain .NET
+types; OpenTelemetry will pick them up by name. They live in Infrastructure, because only infrastructure code
+records telemetry:
 
 ```csharp
 // src/Shared/Erp.Shared.Infrastructure/Telemetry/ErpTelemetry.cs
@@ -70,90 +79,7 @@ public static class ErpTelemetry
 
 An `ActivitySource` makes spans (.NET calls a span an **activity**), and a `Meter` makes metrics.
 
-Before, in BuildingBlocks' `Behaviors.cs`:
-
-```csharp
-public sealed class LoggingBehavior<TMessage, TResponse>(ILogger<LoggingBehavior<TMessage, TResponse>> log)
-    : IPipelineBehavior<TMessage, TResponse> where TMessage : IMessage
-{
-    // ... a stopwatch and two log lines
-}
-```
-
-After: delete `LoggingBehavior` from `Behaviors.cs` (leaving only `ValidationBehavior`), and create:
-
-```csharp
-// src/Shared/Erp.Shared.Infrastructure/Telemetry/TelemetryBehavior.cs
-using System.Diagnostics;
-using System.Diagnostics.Metrics;
-using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
-
-namespace Erp.Shared.Infrastructure;
-
-// A span, a duration metric and a log line for every command and query. Registered outermost.
-public sealed class TelemetryBehavior<TMessage, TResponse>(ILogger<TelemetryBehavior<TMessage, TResponse>> log)
-    : IPipelineBehavior<TMessage, TResponse>
-    where TMessage : IMessage
-{
-    private static readonly Histogram<double> Duration = ErpTelemetry.Meter.CreateHistogram<double>(
-        "erp.request.duration", unit: "ms", description: "Time to handle a command or query");
-
-    public async ValueTask<TResponse> Handle(
-        TMessage message, MessageHandlerDelegate<TMessage, TResponse> next, CancellationToken ct)
-    {
-        var name = typeof(TMessage).Name;
-        using var activity = ErpTelemetry.Source.StartActivity(name);
-        var sw = Stopwatch.StartNew();
-        var outcome = "success";
-        try
-        {
-            var response = await next(message, ct);
-            log.LogInformation("{Request} handled in {ElapsedMs} ms", name, sw.ElapsedMilliseconds);
-            return response;
-        }
-        catch (Exception ex)
-        {
-            // Rejections the caller caused are expected; anything else is a failure worth alerting on.
-            outcome = ex is ValidationException or DomainException or NotFoundException or DbUpdateConcurrencyException
-                ? "rejected" : "error";
-            activity?.SetStatus(ActivityStatusCode.Error, ex.Message);
-            log.LogWarning(ex, "{Request} {Outcome} after {ElapsedMs} ms", name, outcome, sw.ElapsedMilliseconds);
-            throw;
-        }
-        finally
-        {
-            Duration.Record(sw.Elapsed.TotalMilliseconds,
-                new KeyValuePair<string, object?>("request", name), new KeyValuePair<string, object?>("outcome", outcome));
-        }
-    }
-}
-```
-
-What's new compared with the logging version:
-
-- **`StartActivity(name)`** opens a span named after the command. Every database query inside it shows up as
-  a child span.
-- **A histogram** records each request's duration, tagged with its name and its **outcome**. From that you can
-  chart "how slow is SubmitSalesOrder" and "how often does it fail".
-- **The outcome separates "rejected" from "error".** A blocked customer is the system working correctly; a
-  crash is not. Mixing them would make your alerts useless. That's also why this behavior lives in
-  Infrastructure: it needs to recognize EF Core's `DbUpdateConcurrencyException`, and BuildingBlocks must
-  never depend on EF Core.
-
-In `Program.cs`, swap the pipeline's first entry:
-
-```csharp
-options.PipelineBehaviors = [typeof(TelemetryBehavior<,>), typeof(ValidationBehavior<,>)];   // outermost first
-```
-
-BuildingBlocks no longer writes logs itself, so remove its `Microsoft.Extensions.Logging.Abstractions`
-package reference.
-
-Let's give the outbox dispatcher the same treatment. In `OutboxDispatcher`, add `using System.Diagnostics;`
+In `OutboxDispatcher`, add `using System.Diagnostics;`
 and `using System.Diagnostics.Metrics;`, then two counters:
 
 ```csharp
@@ -268,7 +194,7 @@ Here's what each part does:
 | `ActivityTrackingOptions` | Every log line carries the current trace and span id |
 | `AddJsonConsole` outside development | Logs come out as JSON, one per line, which log collectors read directly |
 | `AddService("erp-api")` | Names the app in every monitoring tool |
-| `AddSource(ErpTelemetry.Name)` | Includes our own spans: one per command, one per outbox delivery |
+| `AddSource(ErpTelemetry.Name)` | Includes our own spans: one per outbox delivery |
 | The `/health` filter | Health checks run every few seconds; tracing them would be noise |
 | `AddMeter(...)` | Our metrics, plus Npgsql's (connection pool) and EF Core's (queries, saves) |
 | `UseOtlpExporter()` only if an endpoint is set | No collector configured, nothing sent, nothing breaks |
@@ -283,15 +209,25 @@ one id means a support person searching the logs for the wrong one. Tell the pro
 ours. In `Program.cs`, before:
 
 ```csharp
-builder.Services.AddProblemDetails();
+// Every problem body, ours or the framework's, carries an error code.
+builder.Services.AddProblemDetails(o => o.CustomizeProblemDetails = c =>
+{
+    if (!c.ProblemDetails.Extensions.ContainsKey("code"))
+        ErrorProblems.Apply(c.ProblemDetails, ErrorProblems.ForStatus(c.ProblemDetails.Status ?? c.HttpContext.Response.StatusCode));
+});
 ```
 
 After:
 
 ```csharp
-// Every problem body, ours or the framework's, carries the trace id that the X-Trace-Id header and the logs carry.
+// Every problem body, ours or the framework's, carries an error code and the trace id that the X-Trace-Id header and
+// the logs carry.
 builder.Services.AddProblemDetails(o => o.CustomizeProblemDetails = c =>
-    c.ProblemDetails.Extensions["traceId"] = Activity.Current?.TraceId.ToString() ?? c.HttpContext.TraceIdentifier);
+{
+    if (!c.ProblemDetails.Extensions.ContainsKey("code"))
+        ErrorProblems.Apply(c.ProblemDetails, ErrorProblems.ForStatus(c.ProblemDetails.Status ?? c.HttpContext.Response.StatusCode));
+    c.ProblemDetails.Extensions["traceId"] = Activity.Current?.TraceId.ToString() ?? c.HttpContext.TraceIdentifier;
+});
 ```
 
 (with `using System.Diagnostics;`). A test in step 5 proves the header and the body agree.
@@ -476,7 +412,7 @@ public async Task An_error_carries_the_same_trace_id_as_its_response_header()
 }
 ```
 
-That 404 comes from `Results.NotFound()` in the get endpoint: no exception, so no `GlobalExceptionHandler`.
+That 404 comes from `TypedResults.NotFound()` in the get endpoint: no exception, so no `GlobalExceptionHandler`.
 Its body comes from `UseStatusCodePages`, and its `traceId` from the line we just added. Remove that line,
 run the test, and see the two formats disagree.
 
@@ -491,11 +427,10 @@ run the test, and see the two formats disagree.
 ```mermaid
 flowchart LR
   R[POST /submit] --> A[ASP.NET Core span]
-  A --> T[TelemetryBehavior span: SubmitSalesOrderCommand]
-  T --> Q1[Npgsql span: SELECT order]
-  T --> Q2[Npgsql span: SELECT ... FOR UPDATE]
-  T --> Q3[Npgsql span: UPDATE inventory.item]
-  T --> Q4[Npgsql span: UPDATE sales_order + INSERT outbox_message]
+  A --> Q1[Npgsql span: SELECT order]
+  A --> Q2[Npgsql span: SELECT ... FOR UPDATE]
+  A --> Q3[Npgsql span: UPDATE inventory.item]
+  A --> Q4[Npgsql span: UPDATE sales_order + INSERT outbox_message]
   A -. same trace id .-> L[every log line of this request]
 ```
 
@@ -540,8 +475,10 @@ And `dotnet test`: all green, the three new tests among them.
 ## Let's check!
 
 1. What question does each signal answer: logs, traces, metrics?
-2. Why does the telemetry behavior separate "rejected" from "error"?
-3. Why did the telemetry behavior move from BuildingBlocks to Infrastructure?
+2. A blocked customer and a crash both end a request badly. How does the request metric tell them apart,
+   and why must your alerts?
+3. Every request is traced without touching an endpoint. Where does that happen, and what's left that the
+   app has to measure itself?
 4. What's the difference between `/health/live` and `/health/ready`, and why does it matter?
 5. Why is the Aspire dashboard only for development?
 6. How does a user's error report help you find the right trace?

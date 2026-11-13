@@ -147,6 +147,13 @@ EF generates the new column and the wider check constraint; add the `.v2.sql` at
 version 1 back in `Down`. In `GetSalesOrderHandler.cs`, the header row and the DTO gain
 `DateTime? ShippedUtc` at the end, passed through as `h.ShippedUtc`.
 
+Shipping an order that isn't approved gets a code, at the end of `SalesErrors`:
+
+```csharp
+    public static readonly ErrorCode OnlyApprovedOrdersShip = new("SALES-0024", "Only approved orders can be shipped",
+        "Submit the order and get it approved first.");
+```
+
 ## 2. Sales' service window
 
 ```bash
@@ -171,8 +178,9 @@ public sealed record ShippableLine(long ItemId, decimal Quantity);
 
 public interface ISalesOrders
 {
-    // Both join the caller's transaction. GetForShipment throws a DomainException unless the order is approved.
-    Task<ShippableOrder> GetForShipmentAsync(long orderId, DbTransaction tx, CancellationToken ct);
+    // Both join the caller's transaction. GetForShipment returns null when there is no such order, and throws a
+    // DomainException unless the order is approved.
+    Task<ShippableOrder?> GetForShipmentAsync(long orderId, DbTransaction tx, CancellationToken ct);
     Task MarkShippedAsync(long orderId, DateTime shippedUtc, DbTransaction tx, CancellationToken ct);
 }
 ```
@@ -193,15 +201,15 @@ namespace Erp.Modules.Sales.Infrastructure;
 // Sales' service window for the modules that ship and bill its orders.
 internal sealed class SalesOrdersService(SalesDbContext db) : ISalesOrders
 {
-    public Task<ShippableOrder> GetForShipmentAsync(long orderId, DbTransaction tx, CancellationToken ct) =>
+    public Task<ShippableOrder?> GetForShipmentAsync(long orderId, DbTransaction tx, CancellationToken ct) =>
         InTransaction(tx, async () =>
         {
             var id = new SalesOrderId(orderId);
             await db.LockOrderAsync(id, ct);   // two clerks shipping the same order: the second waits, then sees Shipped
-            var order = await db.SalesOrders.SingleOrDefaultAsync(o => o.Id == id, ct)
-                ?? throw new NotFoundException($"Sales order {orderId} not found.");
+            var order = await db.SalesOrders.SingleOrDefaultAsync(o => o.Id == id, ct);
+            if (order is null) return null;
             order.EnsureCanShip();
-            return new ShippableOrder(order.Id.Value, order.OrderNumber,
+            return (ShippableOrder?)new ShippableOrder(order.Id.Value, order.OrderNumber,
                 order.Lines.Select(l => new ShippableLine(l.ItemId.Value, l.Quantity.Value)).ToList());
         }, ct);
 
@@ -225,7 +233,9 @@ internal sealed class SalesOrdersService(SalesDbContext db) : ISalesOrders
 }
 ```
 
-It's the mirror image of Inventory's `StockService`: join, work, let go. And the rule about shipping, "only
+It's the mirror image of Inventory's `StockService`: join, work, let go. A missing order is `null`, not an
+exception: the caller decides what "not there" means for it. (The `(ShippableOrder?)` cast tells the compiler
+both branches return the same nullable type.) And the rule about shipping, "only
 approved orders", is still asked of the domain (`EnsureCanShip`), on Sales' side of the window. Inventory
 never sees `SalesOrderStatus`.
 
@@ -336,30 +346,23 @@ using Erp.Modules.Inventory.Domain;
 using Erp.Modules.Inventory.Infrastructure;
 using Erp.Modules.Sales.Contracts;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Erp.Modules.Inventory.Features;
 
-internal sealed record ShipSalesOrderCommand(long SalesOrderId) : ICommand<long>;
-
-internal sealed class ShipSalesOrderValidator : AbstractValidator<ShipSalesOrderCommand>
-{
-    public ShipSalesOrderValidator() => RuleFor(x => x.SalesOrderId).GreaterThan(0);
-}
+internal sealed record ShipSalesOrderCommand(long SalesOrderId);
 
 // Stock leaves, the reservation is used up, and the order becomes Shipped: one transaction across two modules.
-internal sealed class ShipSalesOrderHandler(InventoryDbContext db, ISalesOrders orders, ICurrentUser user, IClock clock)
-    : ICommandHandler<ShipSalesOrderCommand, long>
+internal sealed class ShipSalesOrderHandler(InventoryDbContext db, ISalesOrders orders, ICurrentUser user, TimeProvider time)
 {
-    public async ValueTask<long> Handle(ShipSalesOrderCommand cmd, CancellationToken ct)
+    public async Task<long> HandleAsync(ShipSalesOrderCommand cmd, CancellationToken ct)
     {
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        var order = await orders.GetForShipmentAsync(cmd.SalesOrderId, tx.GetDbTransaction(), ct);
+        var order = await orders.GetForShipmentAsync(cmd.SalesOrderId, tx.GetDbTransaction(), ct)
+            ?? throw new DomainException(InventoryErrors.SalesOrderNotFound, $"Sales order {cmd.SalesOrderId} doesn't exist.");
 
-        var now = clock.UtcNow;
+        var now = time.GetUtcNow().UtcDateTime;
         var by = new UserId(user.UserId);
         var id = new ShipmentId(await db.NextShipmentIdAsync(ct));
         var number = DocumentNumber.Format("SH", id.Value, now);
@@ -414,7 +417,6 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Inventory.Features;
 
-
 internal sealed record ShipSalesOrderRequest(long SalesOrderId);
 
 internal sealed class ShipSalesOrderRequestValidator : AbstractValidator<ShipSalesOrderRequest>
@@ -435,7 +437,21 @@ internal static class ShipSalesOrderEndpoint
 ```
 
 A shipment is something *created*, so it's `POST /shipments`, not `POST /sales-orders/{id}/ship`. That also
-puts the address in the module that owns it.
+puts the address in the module that owns it, and it decides what an unknown order means here: the order id is
+inside the request body, so it's a 422 with its code, as in lesson 07, not a 404. Three codes join the end of
+`InventoryErrors`:
+
+```csharp
+    public static readonly ErrorCode ShipmentNeedsLines = new("INVENTORY-0007", "A shipment needs at least one line",
+        "The order has nothing left to ship.");
+    public static readonly ErrorCode ReservationMissing = new("INVENTORY-0008", "The order's stock is no longer reserved",
+        "Reload the order: it may have been cancelled or already shipped by someone else.");
+    public static readonly ErrorCode SalesOrderNotFound = new("INVENTORY-0009", "The sales order doesn't exist",
+        "Choose an approved order from the list of orders ready to ship.");
+```
+
+Register `ShipSalesOrderHandler` (and, for the next section, `SearchShipmentsHandler`), and map
+`ShipSalesOrderEndpoint` and `SearchShipmentsEndpoint` in `MapInventoryEndpoints`.
 
 ## 5. Listing shipments
 

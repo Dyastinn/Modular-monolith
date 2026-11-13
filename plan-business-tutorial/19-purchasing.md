@@ -74,15 +74,17 @@ dotnet add src/Erp.Api reference src/Modules/Purchasing/Erp.Modules.Purchasing
 ```
 
 Then the packages and `.csproj` lines every module has: Npgsql's EF Core provider, `EFCore.NamingConventions`,
-the design package (build-only), Carter, `FluentValidation.DependencyInjectionExtensions` and Dapper, the
-ASP.NET Core framework reference, the embedded SQL, and `InternalsVisibleTo` for `Erp.Api` and
-`Erp.Modules.Purchasing.UnitTests`. Copy them from `Erp.Modules.Inventory.csproj`; the versions are already in
+the design package (build-only), `FluentValidation.DependencyInjectionExtensions` and Dapper, the ASP.NET Core
+framework reference, the embedded SQL, and `InternalsVisibleTo` for `Erp.Modules.Purchasing.UnitTests` and
+`Erp.Integration.Tests` (test projects only, as always). Copy them from `Erp.Modules.Inventory.csproj`; the versions are already in
 `Directory.Packages.props`.
 
-`PurchasingModule.AddPurchasingModule` is the same shape as Inventory's: the DbContext on the shared
-connection with the outbox interceptor, `IModuleDatabase`, the Carter loop and the validators. In
-`Program.cs`, register it after Inventory, and add `typeof(PurchasingModule)` to `options.Assemblies`. The
-architecture tests get it in their `Modules` list.
+`PurchasingModule` has the same two public methods as Inventory's. `AddPurchasingModule` registers the
+DbContext on the shared connection with the outbox interceptor, `IModuleDatabase`, each handler as you write
+it, the validators and the error catalog; `MapPurchasingEndpoints` maps each endpoint class into a group
+tagged "Purchasing". In `Program.cs`, register it after Inventory and map it with `api.MapPurchasingEndpoints();`.
+The module joins the `Modules` lists in the architecture tests and in `WiringTests`, and its catalog joins
+`ErrorCatalogTests` (`"PURCHASING"`) and `ErrorCodeTests`.
 
 ## 2. The domain
 
@@ -323,6 +325,52 @@ order decides what arrived; the handler only carries it to Inventory.
 And `OrderLineSpec` is how the handler hands the domain an item it got from another module: plain facts,
 already looked up, so the domain stays pure.
 
+
+Every rule above has its code, in Purchasing's catalog:
+
+```csharp
+// src/Modules/Purchasing/Erp.Modules.Purchasing/Domain/PurchasingErrors.cs
+using Erp.Shared.BuildingBlocks;
+
+namespace Erp.Modules.Purchasing.Domain;
+
+// Every business rule Purchasing can refuse with. Add new codes at the end; never renumber or reuse one.
+internal static class PurchasingErrors
+{
+    public static readonly ErrorCode ReceiptExceedsOutstanding = new("PURCHASING-0001", "More was received than is still to come",
+        "Enter only what arrived for this line. Extra goods need a new purchase order.");
+    public static readonly ErrorCode OrderNeedsLines = new("PURCHASING-0002", "The purchase order has no lines",
+        "Add at least one item.");
+    public static readonly ErrorCode DuplicateItem = new("PURCHASING-0003", "An item appears twice",
+        "Put each item on one line and add up the quantities.");
+    public static readonly ErrorCode InactiveItem = new("PURCHASING-0004", "The item is inactive",
+        "Reactivate the item under Inventory → Items, or choose another.");
+    public static readonly ErrorCode WholeUnitsOnly = new("PURCHASING-0005", "The item is counted in whole units",
+        "Enter a whole number: this item's unit can't be split.");
+    public static readonly ErrorCode CreatorCannotApprove = new("PURCHASING-0006", "You can't approve your own purchase order",
+        "Another admin must approve it.");
+    public static readonly ErrorCode NothingReceived = new("PURCHASING-0007", "No received quantity was entered",
+        "Enter the quantity that arrived on at least one line.");
+    public static readonly ErrorCode LineNotOnOrder = new("PURCHASING-0008", "That line isn't on this purchase order",
+        "Reload the purchase order: its lines may have changed.");
+    public static readonly ErrorCode InvalidStatusChange = new("PURCHASING-0009", "The purchase order can't do that in its current status",
+        "Reload it: someone may have changed it. The status shown lists the actions still possible.");
+    public static readonly ErrorCode SupplierNameRequired = new("PURCHASING-0010", "A supplier needs a name",
+        "Enter the supplier's registered or trade name.");
+    public static readonly ErrorCode PaymentTermsOutOfRange = new("PURCHASING-0011", "Payment terms out of range",
+        "Enter payment terms between 0 (cash) and 365 days.");
+    public static readonly ErrorCode SupplierInactive = new("PURCHASING-0012", "The supplier is inactive",
+        "Reactivate the supplier, or choose another.");
+    public static readonly ErrorCode SupplierNotFound = new("PURCHASING-0013", "The supplier doesn't exist",
+        "Choose a supplier from the list.");
+    public static readonly ErrorCode ItemNotFound = new("PURCHASING-0014", "An item on the purchase order doesn't exist",
+        "Choose items from the list.");
+}
+```
+
+The last two are for ids inside a request that don't exist, the pattern from lesson 07, used by the save
+handler below.
+
 ## 3. Two more windows on Inventory
 
 In `InventoryContracts.cs`:
@@ -341,11 +389,11 @@ public interface IItemCatalog
 }
 ```
 
-`StockService` implements both. It needs the time for the movement, so it asks for `IClock` too:
+`StockService` implements both. It needs the time for the movement, so it asks for `TimeProvider` too:
 
 ```csharp
 // Inventory's service window: what other modules may ask of it.
-internal sealed class StockService(InventoryDbContext db, IClock clock) : IStockReservation, IStockReceiving, IItemCatalog
+internal sealed class StockService(InventoryDbContext db, TimeProvider time) : IStockReservation, IStockReceiving, IItemCatalog
 {
     // ... TryReserveAsync and ReleaseAsync as before ...
 
@@ -355,9 +403,10 @@ internal sealed class StockService(InventoryDbContext db, IClock clock) : IStock
             var id = new ItemId(itemId);
             var rows = await db.Items.Where(i => i.Id == id)
                 .ExecuteUpdateAsync(s => s.SetProperty(i => i.OnHand, i => i.OnHand + quantity), ct);
-            if (rows == 0) throw new NotFoundException($"Item {itemId} not found.");
+            // Only items already on a purchase order are received, so a missing one is a bug, not a request to refuse.
+            if (rows == 0) throw new InvalidOperationException($"Item {itemId} doesn't exist.");
 
-            db.StockMovements.Add(StockMovement.Receipt(id, quantity, reference, new UserId(userId), clock.UtcNow));
+            db.StockMovements.Add(StockMovement.Receipt(id, quantity, reference, new UserId(userId), time.GetUtcNow().UtcDateTime));
             await db.SaveChangesAsync(ct);
             return true;
         }, ct);
@@ -532,7 +581,11 @@ internal sealed class SavePurchaseOrderHandler(PurchasingDbContext db, IItemCata
 ```
 
 The endpoints map `POST /purchase-orders` (no id) and `PUT /purchase-orders/{id:long}` to this one command,
-for `PurchasingRoles.Buyers`. `DateOnly` is new here: an expected delivery date is a calendar day, not a
+for `PurchasingRoles.Buyers`. Both take a `PurchaseOrderRequest(long SupplierId, DateOnly? ExpectedDate, string?
+Notes, IReadOnlyList<PurchaseLineInput> Lines)`, whose validator in the endpoint file wants a supplier id above
+zero, at least one line, and sensible quantities and costs. A `null` from the handler means the purchase order
+to edit doesn't exist: the `PUT` answers 404. An unknown supplier or item inside the request is a 422 with
+`PURCHASING-0013` or `0014`. `DateOnly` is new here: an expected delivery date is a calendar day, not a
 moment, so it's stored as PostgreSQL's `date` type.
 
 **The simple status changes** (approve, send, close, cancel) touch nothing but the order, so they share one
@@ -575,15 +628,12 @@ internal sealed class ChangePurchaseOrderStatusHandler(PurchasingDbContext db, I
 
 ```csharp
 // src/Modules/Purchasing/Erp.Modules.Purchasing/Features/ChangePurchaseOrderStatus/ChangePurchaseOrderStatusEndpoint.cs
-using Erp.Shared.BuildingBlocks;
-using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Purchasing.Features;
-
 
 internal static class ChangePurchaseOrderStatusEndpoint
 {
@@ -647,8 +697,10 @@ internal sealed class ReceivePurchaseOrderHandler(PurchasingDbContext db, IStock
 
 It's lesson 10's reject handler, mirrored: the domain says what moves, Inventory joins the transaction to
 move it, and the order's own save commits with it. The address is
-`POST /purchase-orders/{id:long}/receipts`, taking `{ lines: [{ lineId, quantity }] }`, for
-`PurchasingRoles.Receivers`: a receipt is something created, like a shipment.
+`POST /purchase-orders/{id:long}/receipts`, taking a `ReceivePurchaseOrderRequest` (`{ lines: [{ lineId, quantity }] }`,
+validated in the endpoint file: at least one line, sensible quantities), for `PurchasingRoles.Receivers`: a
+receipt is something created, like a shipment. Like the status changes, the handler returns `false` for an
+order that doesn't exist, and the endpoint answers 404.
 
 **Reading** follows lesson 08: `purchasing.search_suppliers.v1.sql` (with `count_suppliers`) and
 `purchasing.search_purchase_orders.v1.sql`, which also holds `count_purchase_orders`, `get_purchase_order`

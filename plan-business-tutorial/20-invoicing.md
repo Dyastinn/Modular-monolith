@@ -121,38 +121,93 @@ To remember it easily: the law sets the rate, the accountant enters it, and each
 
 ## 1. Today, in the business's time zone
 
-`IClock` grows a second member:
+`TimeProvider` already has the idea we need: besides the UTC time, it has a **local time zone**, which it
+uses for `GetLocalNow()`. On a server that's the server's zone, which could be anything. So the app gets its
+own provider, whose "local" is the company's zone:
 
 ```csharp
-// src/Shared/Erp.Shared.BuildingBlocks/Abstractions/IClock.cs
-namespace Erp.Shared.BuildingBlocks;
-
-// Inject instead of DateTime.UtcNow so time-based rules can be tested with a fixed clock.
-public interface IClock
-{
-    DateTime UtcNow { get; }
-
-    // The calendar date where the business is (Company:TimeZone), for invoice and due dates.
-    DateOnly Today { get; }
-}
-```
-
-```csharp
-// src/Shared/Erp.Shared.Infrastructure/SystemClock.cs
-using Erp.Shared.BuildingBlocks;
-using Microsoft.Extensions.Configuration;
-
+// src/Shared/Erp.Shared.Infrastructure/CompanyTimeProvider.cs
 namespace Erp.Shared.Infrastructure;
 
-public sealed class SystemClock(IConfiguration config) : IClock
+// The system clock, with the company's time zone as "local": at 7 a.m. in Manila it's still yesterday in UTC, and an
+// invoice must carry the local date. Tests use FakeTimeProvider instead.
+public sealed class CompanyTimeProvider(TimeZoneInfo zone) : TimeProvider
 {
-    // At 7 a.m. in Manila it's still yesterday in UTC; an invoice must carry the local date.
-    private readonly TimeZoneInfo _zone = TimeZoneInfo.FindSystemTimeZoneById(config["Company:TimeZone"] ?? "Asia/Manila");
-
-    public DateTime UtcNow => DateTime.UtcNow;
-    public DateOnly Today => DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, _zone));
+    public override TimeZoneInfo LocalTimeZone => zone;
 }
 ```
+
+and one small extension, so every handler can ask for today's date in one word:
+
+```csharp
+// src/Shared/Erp.Shared.BuildingBlocks/Abstractions/TimeProviderExtensions.cs
+namespace Erp.Shared.BuildingBlocks;
+
+public static class TimeProviderExtensions
+{
+    // The calendar date where the business is (the provider's local time zone), for invoice and due dates.
+    public static DateOnly Today(this TimeProvider time) => DateOnly.FromDateTime(time.GetLocalNow().DateTime);
+}
+```
+
+In `AddSharedInfrastructure`, the registration from lesson 07 changes. Before:
+
+```csharp
+services.AddSingleton(TimeProvider.System);
+```
+
+After:
+
+```csharp
+services.AddSingleton<TimeProvider>(new CompanyTimeProvider(
+    TimeZoneInfo.FindSystemTimeZoneById(config["Company:TimeZone"] ?? "Asia/Manila")));
+```
+
+A handler now writes `time.Today()` for invoice and due dates, and `time.GetUtcNow().UtcDateTime` for moments,
+as before. And this is exactly the kind of rule a fixed clock proves: 23:30 UTC on the 12th is already the
+13th in Manila. .NET's `FakeTimeProvider` (in `Microsoft.Extensions.TimeProvider.Testing`, MIT) is a clock you
+set and move yourself:
+
+```bash
+dotnet add tests/Erp.Modules.Invoicing.UnitTests package Microsoft.Extensions.TimeProvider.Testing --version 10.11.0
+```
+
+```csharp
+// tests/Erp.Modules.Invoicing.UnitTests/BusinessDateTests.cs
+using AwesomeAssertions;
+using Erp.Shared.BuildingBlocks;
+using Microsoft.Extensions.Time.Testing;
+
+namespace Erp.Modules.Invoicing.UnitTests;
+
+public class BusinessDateTests
+{
+    private static readonly TimeZoneInfo Manila = TimeZoneInfo.FindSystemTimeZoneById("Asia/Manila");
+
+    [Fact]
+    public void Today_is_the_date_in_the_company_time_zone_not_in_UTC()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 11, 12, 23, 30, 0, TimeSpan.Zero));
+        time.SetLocalTimeZone(Manila);   // 07:30 on the 13th in Manila
+
+        time.Today().Should().Be(new DateOnly(2026, 11, 13));
+    }
+
+    [Fact]
+    public void Today_moves_when_the_clock_passes_local_midnight()
+    {
+        var time = new FakeTimeProvider(new DateTimeOffset(2026, 11, 12, 15, 59, 0, TimeSpan.Zero));
+        time.SetLocalTimeZone(Manila);   // 23:59 on the 12th in Manila
+
+        time.Today().Should().Be(new DateOnly(2026, 11, 12));
+        time.Advance(TimeSpan.FromMinutes(1));
+        time.Today().Should().Be(new DateOnly(2026, 11, 13));
+    }
+}
+```
+
+`SetLocalTimeZone` plays the company's zone; `Advance` moves the clock a minute past local midnight. (The
+Invoicing test project is created in step 12; add this file there.)
 
 The time zone describes where the server's business is, set once per installation and never by an accountant,
 so it's the one company value that belongs in `appsettings.json`:
@@ -167,17 +222,35 @@ Everything else about the company goes into the company profile, in section 6.
 
 ## 2. The shipment announces itself
 
-In `InventoryContracts.cs`, next to `ItemCatalogChanged`:
+Lesson 17's pattern again: a domain event in Inventory's words, at the bottom of `Shipment.cs`,
+
+```csharp
+// Published to other modules as ShipmentRecorded.
+internal sealed record ShipmentCreated(ShipmentId ShipmentId, string Number, long SalesOrderId, DateTime ShippedUtc) : IDomainEvent;
+```
+
+raised at the end of `Shipment.Record`, before `return shipment;`:
+
+```csharp
+shipment.Raise(new ShipmentCreated(id, number, salesOrderId, nowUtc));
+```
+
+the integration event in `InventoryContracts.cs`, next to `ItemCatalogChanged`:
 
 ```csharp
 public sealed record ShipmentRecorded(long ShipmentId, string ShipmentNumber, long SalesOrderId, DateTime ShippedUtc)
-    : IDomainEvent;
+    : IIntegrationEvent;
 ```
 
-And at the end of `Shipment.Record`, before `return shipment;`:
+and the mapping, next to the first one in `PublishedEvents.cs`, registered in `AddInventoryModule` as
+`IDomainEventHandler<ShipmentCreated>`:
 
 ```csharp
-shipment.Raise(new ShipmentRecorded(id.Value, number, salesOrderId, nowUtc));
+internal sealed class PublishShipmentRecorded(IIntegrationEventPublisher publisher) : IDomainEventHandler<ShipmentCreated>
+{
+    public Task HandleAsync(ShipmentCreated e, CancellationToken ct) =>
+        publisher.PublishAsync(new ShipmentRecorded(e.ShipmentId.Value, e.Number, e.SalesOrderId, e.ShippedUtc), ct);
+}
 ```
 
 This is why lesson 18 took the shipment's id from a sequence before creating it: the event carries the id,
@@ -195,7 +268,7 @@ public void A_shipment_needs_lines_and_is_announced()
         .Should().Throw<DomainException>();
 
     var shipment = Shipment.Record(new ShipmentId(1), "SH-1", 7, "SO-7", [new ShipmentLine(new ItemId(1), 2)], Clerk, Now);
-    shipment.DomainEvents.Should().ContainSingle().Which.Should().Be(new ShipmentRecorded(1, "SH-1", 7, Now));
+    shipment.DomainEvents.Should().ContainSingle().Which.Should().Be(new ShipmentCreated(new ShipmentId(1), "SH-1", 7, Now));
 }
 ```
 
@@ -239,13 +312,21 @@ public void SetPricing(Money unitPrice, ItemCategory category, bool isForSale, T
 }
 ```
 
+The first line refuses a number that isn't one of the three treatments (an API client could send `7`), with
+the next code in Sales' catalog:
+
+```csharp
+public static readonly ErrorCode UnknownTaxType = new("SALES-0025", "Unknown tax type",
+    "Choose VATable, zero-rated or VAT-exempt.");
+```
+
 `SalesOrderLine` gets the same property and a sixth constructor parameter, `TaxType taxType`, and
 `SalesOrder.AddLine` passes `item.TaxType` along with `item.UnitPrice`. The line copies the treatment for the
 same reason it copies the price: the invoice bills what was ordered, not what the price list says today. Lesson
-03's unit tests call `SetPricing` in two places; add `TaxType.Vatable` to both.
+04's unit tests call `SetPricing` in two places; add `TaxType.Vatable` to both.
 
 Down the slice: `SetItemPricingCommand` and `SetItemPricingRequest` gain `TaxType TaxType` at the end (the
-request defaults it to `TaxType.Vatable`, so lesson 17's test still passes), the validator adds
+request defaults it to `TaxType.Vatable`, so lesson 17's test still passes), the request's validator adds
 `RuleFor(x => x.TaxType).IsInEnum();`, and the handler passes `cmd.TaxType` on.
 
 The browser sends `"taxType": "ZeroRated"`, but System.Text.Json reads an enum only as a number by default,
@@ -309,7 +390,8 @@ public async Task<OrderForInvoice> GetForInvoiceAsync(long orderId, Cancellation
 {
     var id = new SalesOrderId(orderId);
     var order = await db.SalesOrders.AsNoTracking().SingleOrDefaultAsync(o => o.Id == id, ct)
-        ?? throw new NotFoundException($"Sales order {orderId} not found.");
+        // The order shipped, so it exists: a missing one is a bug, not a request to refuse. The outbox retries, then parks it.
+        ?? throw new InvalidOperationException($"Sales order {orderId} was shipped but doesn't exist.");
     var customer = await db.Customers.AsNoTracking().SingleAsync(c => c.Id == order.CustomerId, ct);
 
     return new OrderForInvoice(order.Id.Value, order.OrderNumber, customer.Id.Value, customer.Name, customer.Tin,
@@ -326,7 +408,8 @@ Lesson 04's line snapshot pays off here too.
 
 Create `Erp.Modules.Invoicing` the way you created Purchasing, referencing BuildingBlocks and the Sales and
 Inventory Contracts, and register it in `Program.cs` after Purchasing, as `AddInvoicingModule(builder.Configuration)`
-(it reads the font settings, coming up). Add it to `options.Assemblies` and the architecture tests' `Modules`.
+(it reads the font settings, coming up), and map its endpoints with `api.MapInvoicingEndpoints();`. It joins the `Modules`
+lists in the architecture tests and in `WiringTests`.
 
 ```csharp
 // src/Modules/Invoicing/Erp.Modules.Invoicing/Domain/Invoice.cs
@@ -492,7 +575,50 @@ What to notice:
   the profile's own object.
 
 `TaxType`, `TaxRegime` and `TaxPolicy` sit in BuildingBlocks' `Domain/Tax.cs`, because Sales needs the policy
-too, in [lesson 22](22-special-discounts.md).
+too, in [lesson 22](22-special-discounts.md). That's also why `TaxPolicy`'s two codes are shared ones, added to
+`CommonErrors` after lesson 04's value-object codes:
+
+```csharp
+public static readonly ErrorCode UnknownTaxRegime = new("ERP-0104", "Unknown tax regime",
+    "Choose VAT, percentage tax or exempt.");
+public static readonly ErrorCode InvalidVatRate = new("ERP-0105", "Invalid VAT rate",
+    "Enter the rate as a fraction between 0 and 1: 0.12 for 12%.");
+```
+
+The module's own rules get their own catalog. The first five belong to the company profile, coming next:
+
+```csharp
+// src/Modules/Invoicing/Erp.Modules.Invoicing/Domain/InvoicingErrors.cs
+using Erp.Shared.BuildingBlocks;
+
+namespace Erp.Modules.Invoicing.Domain;
+
+// Every business rule Invoicing can refuse with. Add new codes at the end; never renumber or reuse one.
+internal static class InvoicingErrors
+{
+    public static readonly ErrorCode CompanyFieldRequired = new("INVOICING-0001", "A company detail is missing",
+        "Fill in the field named in the message under Invoicing → Company and tax.");
+    public static readonly ErrorCode InvalidTin = new("INVOICING-0002", "The TIN is not in the BIR format",
+        "Enter it with the branch code, like 123-456-789-00000.");
+    public static readonly ErrorCode InvoiceTitleMissingWord = new("INVOICING-0003", "The invoice title must contain \"Invoice\"",
+        "BIR RR 7-2024 Sec. 6(A.3) requires it: for example \"Sales Invoice\".");
+    public static readonly ErrorCode InvalidPermitDate = new("INVOICING-0004", "The permit date is not in the BIR format",
+        "Write it mm/dd/yyyy, exactly as on the BIR permit.");
+    public static readonly ErrorCode CompanyProfileIncomplete = new("INVOICING-0005", "The company profile is incomplete",
+        "Nothing can be shipped until an invoice can be printed. Fill in the registered name, TIN and address under Invoicing → Company and tax.");
+    public static readonly ErrorCode InvoiceNeedsLines = new("INVOICING-0006", "An invoice needs at least one line",
+        "The shipment had nothing to invoice. Check the shipment.");
+    public static readonly ErrorCode InvoiceIsVoid = new("INVOICING-0007", "The invoice is void",
+        "A void invoice can't take payments. Use the invoice that replaced it.");
+    public static readonly ErrorCode VoidReasonRequired = new("INVOICING-0008", "Voiding needs a reason",
+        "Write why it's being voided. The reason is kept for the audit trail.");
+    public static readonly ErrorCode OnlyVoidInvoiceReissued = new("INVOICING-0009", "Only a void invoice can be reissued",
+        "Void the invoice first, with the reason, then reissue it.");
+}
+```
+
+`AddInvoicingModule` registers it with the handlers, like Purchasing's, and it joins `ErrorCatalogTests`
+(`"INVOICING"`) and `ErrorCodeTests`.
 
 ## 6. The company profile, and its screen
 
@@ -649,16 +775,15 @@ through `invoicing.get_company_profile()`, a one-row SQL function in its own `.v
 
 ```csharp
 internal sealed record UpdateCompanyProfileCommand(string RegisteredName, string? TradeName, string Tin, string RegisteredAddress,
-    TaxRegime TaxRegime, decimal VatRate, string InvoiceTitle, string? PermitNumber, string? SeriesRange, string? PermitDateIssued)
-    : ICommand;
+    TaxRegime TaxRegime, decimal VatRate, string InvoiceTitle, string? PermitNumber, string? SeriesRange, string? PermitDateIssued);
 ```
 
-Its validator checks only shape (required fields, lengths, `IsInEnum`); its handler is load, `Update`, save:
+The request's validator, in the endpoint file, checks only shape (required fields, lengths, `IsInEnum`); the handler is load, `Update`, save:
 
 ```csharp
 var profile = await db.CompanyProfileAsync(ct);
 profile.Update(cmd.RegisteredName, cmd.TradeName, cmd.Tin, cmd.RegisteredAddress, new TaxPolicy(cmd.TaxRegime, cmd.VatRate),
-    cmd.InvoiceTitle, cmd.PermitNumber, cmd.SeriesRange, cmd.PermitDateIssued, new UserId(user.UserId), clock.UtcNow);
+    cmd.InvoiceTitle, cmd.PermitNumber, cmd.SeriesRange, cmd.PermitDateIssued, new UserId(user.UserId), time.GetUtcNow().UtcDateTime);
 await db.SaveChangesAsync(ct);
 ```
 
@@ -798,7 +923,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Erp.Modules.Invoicing.Infrastructure;
 
 // Bills one shipment. Safe to call again: if the shipment already has a live invoice, that one is returned.
-internal sealed class InvoiceIssuer(InvoicingDbContext db, ISalesOrders orders, IClock clock)
+internal sealed class InvoiceIssuer(InvoicingDbContext db, ISalesOrders orders, TimeProvider time)
 {
     public async Task<long> IssueForShipmentAsync(long shipmentId, long salesOrderId, CancellationToken ct)
     {
@@ -813,11 +938,11 @@ internal sealed class InvoiceIssuer(InvoicingDbContext db, ISalesOrders orders, 
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         // Taking the next number locks the counter, so two deliveries of the same event are now in single file.
-        var number = await db.AllocateInvoiceNumberAsync(clock.UtcNow, ct);
+        var number = await db.AllocateInvoiceNumberAsync(time.GetUtcNow().UtcDateTime, ct);
         if (await LiveInvoiceForAsync(shipmentId, ct) is { } raced) return raced;   // rollback: the number isn't used up
 
         var invoice = Invoice.Issue(number, company.Seller(), shipmentId, order.OrderId, order.OrderNumber, order.CustomerId,
-            order.CustomerName, order.CustomerTin, order.CustomerAddress, order.PaymentTermsDays, lines, clock.Today, company.Tax);
+            order.CustomerName, order.CustomerTin, order.CustomerAddress, order.PaymentTermsDays, lines, time.Today(), company.Tax);
         db.Invoices.Add(invoice);
         await db.SaveChangesAsync(ct);
         await tx.CommitAsync(ct);
@@ -847,19 +972,24 @@ The handler is one line:
 ```csharp
 // src/Modules/Invoicing/Erp.Modules.Invoicing/Infrastructure/ShipmentRecordedHandler.cs
 using Erp.Modules.Inventory.Contracts;
-using Mediator;
+using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Invoicing.Infrastructure;
 
 // Goods left the building: bill them. Idempotent because the issuer returns the existing invoice on a repeat.
-internal sealed class ShipmentRecordedHandler(InvoiceIssuer issuer) : INotificationHandler<ShipmentRecorded>
+internal sealed class ShipmentRecordedHandler(InvoiceIssuer issuer) : IIntegrationEventHandler<ShipmentRecorded>
 {
-    public async ValueTask Handle(ShipmentRecorded e, CancellationToken ct) =>
+    public async Task HandleAsync(ShipmentRecorded e, CancellationToken ct) =>
         await issuer.IssueForShipmentAsync(e.ShipmentId, e.SalesOrderId, ct);
 }
 ```
 
-Register the issuer in `InvoicingModule` with `services.AddScoped<InvoiceIssuer>();`.
+Register both in `InvoicingModule`:
+
+```csharp
+services.AddScoped<InvoiceIssuer>();
+services.AddScoped<IIntegrationEventHandler<ShipmentRecorded>, ShipmentRecordedHandler>();
+```
 
 ## 9. Void and reissue
 
@@ -904,9 +1034,48 @@ internal sealed class ReissueInvoiceHandler(InvoicingDbContext db, InvoiceIssuer
 
 Reissuing reads the order *again*, and takes today's company profile. So the usual fix for a wrong invoice is:
 correct the customer in Sales (lesson 15), void the invoice, reissue. The new invoice copies the corrected
-details. The endpoints are
-`POST /invoices/{id:long}/void` (taking `{ reason }`) and `POST /invoices/{id:long}/reissue` (answering
-201 with the new id), both for:
+details. The endpoints:
+
+```csharp
+// src/Modules/Invoicing/Erp.Modules.Invoicing/Features/VoidInvoice/VoidInvoiceEndpoint.cs
+using Erp.Shared.BuildingBlocks;
+using FluentValidation;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Routing;
+
+namespace Erp.Modules.Invoicing.Features;
+
+internal sealed record VoidRequest(string Reason);
+
+internal sealed class VoidRequestValidator : AbstractValidator<VoidRequest>
+{
+    public VoidRequestValidator() => RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+}
+
+internal static class VoidInvoiceEndpoint
+{
+    public static void Map(IEndpointRouteBuilder app)
+    {
+        app.MapPost("/invoices/{id:long}/void",
+                async Task<Results<NoContent, NotFound>> (long id, VoidRequest body, VoidInvoiceHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new VoidInvoiceCommand(id, body.Reason), ct) ? TypedResults.NoContent() : TypedResults.NotFound())
+            .RequireAuthorization(p => p.RequireRole(InvoicingRoles.Accountants));
+
+        app.MapPost("/invoices/{id:long}/reissue",
+                async Task<Results<Created<CreatedId>, NotFound>> (long id, ReissueInvoiceHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new ReissueInvoiceCommand(id), ct) is { } newId
+                        ? TypedResults.Created($"/api/invoices/{newId}", new CreatedId(newId))
+                        : TypedResults.NotFound())
+            .RequireAuthorization(p => p.RequireRole(InvoicingRoles.Accountants));
+    }
+}
+```
+
+The validator stops a blank reason at the door (400), and `Invoice.Void` refuses it again (INVOICING-0008), so
+the rule holds even for a caller that skips the endpoint. Register both handlers, and map the endpoint in
+`MapInvoicingEndpoints`. Both actions are for:
 
 ```csharp
 // src/Modules/Invoicing/Erp.Modules.Invoicing/Features/InvoicingRoles.cs
@@ -1058,28 +1227,31 @@ Printing changes something now (the count), so it's a command, next to the query
 
 ```csharp
 // Printing is recorded, because every copy after the first must say "REPRINT" (RR 7-2024 Sec. 6(B.21)).
-internal sealed record PrintInvoiceCommand(long InvoiceId) : ICommand<(string FileName, byte[] Content)?>;
+internal sealed record PrintInvoiceCommand(long InvoiceId);
 
-internal sealed class PrintInvoiceHandler(InvoicingDbContext db, ISender sender)
-    : ICommandHandler<PrintInvoiceCommand, (string, byte[])?>
+internal sealed record InvoicePdfFile(string FileName, byte[] Content);
+
+internal sealed class PrintInvoiceHandler(InvoicingDbContext db, GetInvoiceHandler invoices)
 {
-    public async ValueTask<(string, byte[])?> Handle(PrintInvoiceCommand cmd, CancellationToken ct)
+    public async Task<InvoicePdfFile?> HandleAsync(PrintInvoiceCommand cmd, CancellationToken ct)
     {
         if (await db.RecordPrintAsync(cmd.InvoiceId, ct) is not { } printCount) return null;
-        if (await sender.Send(new GetInvoiceQuery(cmd.InvoiceId), ct) is not { } invoice) return null;
-        return ($"{invoice.Number}.pdf", InvoicePdf.Render(invoice, reprint: printCount > 1));
+        if (await invoices.HandleAsync(new GetInvoiceQuery(cmd.InvoiceId), ct) is not { } invoice) return null;
+        return new InvoicePdfFile($"{invoice.Number}.pdf", InvoicePdf.Render(invoice, reprint: printCount > 1));
     }
 }
 ```
 
-It counts first, then reads, through `GetInvoiceQuery`. One query reuses another, so the PDF can never show
-something the screen doesn't. The endpoint returns a file instead of JSON:
+It counts first, then reads, by injecting `GetInvoiceHandler` and calling it. One handler reuses another, so the
+PDF can never show something the screen doesn't. Register it with `services.AddScoped<PrintInvoiceHandler>();`.
+The endpoint, in `GetInvoiceEndpoint.Map`, returns a file instead of JSON:
 
 ```csharp
-app.MapGet("/invoices/{id:long}/pdf", async (long id, ISender sender, CancellationToken ct) =>
-        await sender.Send(new PrintInvoiceCommand(id), ct) is { } pdf
-            ? Results.File(pdf.Content, "application/pdf", pdf.FileName)
-            : Results.NotFound())
+app.MapGet("/invoices/{id:long}/pdf",
+        async Task<Results<FileContentHttpResult, NotFound>> (long id, PrintInvoiceHandler handler, CancellationToken ct) =>
+            await handler.HandleAsync(new PrintInvoiceCommand(id), ct) is { } pdf
+                ? TypedResults.File(pdf.Content, "application/pdf", pdf.FileName)
+                : TypedResults.NotFound())
     .RequireAuthorization(p => p.RequireRole(InvoicingRoles.Readers));
 ```
 
@@ -1198,7 +1370,7 @@ The tests above check the breakdown for the invoices we thought of. The BIR chec
 let FsCheck invent a hundred, with every mix of VATable, zero-rated and exempt lines, and odd quantities:
 
 ```bash
-dotnet add tests/Erp.Modules.Invoicing.UnitTests package FsCheck.Xunit --version 3.6.0
+dotnet add tests/Erp.Modules.Invoicing.UnitTests package FsCheck.Xunit.v3 --version 3.6.0
 ```
 
 ```csharp
@@ -1300,8 +1472,8 @@ sequenceDiagram
   participant V as Invoicing (InvoiceIssuer)
   participant S as Sales (GetForInvoiceAsync)
   C->>I: POST /api/shipments (order 42)
-  I->>I: ship; Shipment.Record raises ShipmentRecorded; COMMIT with outbox row
-  D->>V: ShipmentRecorded(shipment 9, order 42)
+  I->>I: ship; Shipment.Record raises ShipmentCreated; COMMIT with outbox row
+  D->>V: ShipmentCreated, published as ShipmentRecorded(shipment 9, order 42)
   V->>V: live invoice for shipment 9? no
   V->>S: GetForInvoiceAsync(42) → lines, customer, terms
   V->>V: BEGIN; UPDATE document_counter ... RETURNING → 17; check again; INSERT invoice SI-2026-000017; COMMIT
@@ -1343,13 +1515,13 @@ Restart the app; Invoicing migrates, and its counter starts at 1. Then:
    Open the first invoice again: it still shows its 12% VAT and "VAT Reg TIN", because it stored them. Only
    invoices issued from now on say "Non-VAT Reg TIN". Switch it back to VAT-registered.
 
-Now try to break it: in `psql`, look at the outbox and confirm the `ShipmentRecorded` message was processed,
+Now try to break it: in `psql`, look at the outbox and confirm the `ShipmentCreated` message was processed,
 then set its `processed_utc` back to `NULL`. A couple of seconds later the dispatcher delivers it again, and
 nothing changes: still one live invoice, and the counter didn't move.
 
 ```bash
 podman exec -i erp-postgres psql -U postgres -d erp \
-  -c "UPDATE inventory.outbox_message SET processed_utc = NULL WHERE type LIKE '%ShipmentRecorded%';" \
+  -c "UPDATE inventory.outbox_message SET processed_utc = NULL WHERE type LIKE '%ShipmentCreated%';" \
   -c "SELECT number, status FROM invoicing.invoice ORDER BY id;"
 ```
 

@@ -129,6 +129,16 @@ What to notice:
   can't sort them differently.
 - **`VatExemptedGross`** is for the invoice's breakdown: those sales stop being VATable and become VAT-exempt.
 
+It lives in BuildingBlocks, so its two new codes join `CommonErrors`, after lesson 20's tax codes (a bad VAT
+rate reuses `ERP-0105`):
+
+```csharp
+public static readonly ErrorCode SpecialDiscountHolderMissing = new("ERP-0106", "The discount holder's details are missing",
+    "A senior citizen or PWD discount needs the holder's name and ID number, exactly as on the ID card.");
+public static readonly ErrorCode InvalidDiscountRate = new("ERP-0107", "Invalid discount rate",
+    "Enter the rate as a fraction between 0 and 1: 0.20 for 20%.");
+```
+
 ## 2. Programs, in Sales
 
 ```csharp
@@ -264,6 +274,19 @@ private void EnsureDiscountChangeable()
 }
 ```
 
+Sales' catalog gets the order's three new refusals, plus one for the handler below:
+
+```csharp
+public static readonly ErrorCode DiscountProgramEnded = new("SALES-0026", "That discount program is no longer offered",
+    "Choose an active program, or ask an admin to reactivate it under Price list → Special discounts.");
+public static readonly ErrorCode NoLineQualifiesForDiscount = new("SALES-0027", "No item on the order qualifies for the discount",
+    "Only items marked eligible in the price list get a senior citizen or PWD discount.");
+public static readonly ErrorCode DiscountOnlyOnDraft = new("SALES-0028", "The discount can only change on a draft order",
+    "Cancel the order and create a new one if the discount must change.");
+public static readonly ErrorCode DiscountProgramNotFound = new("SALES-0029", "There is no such discount program",
+    "Choose a program from the list.");
+```
+
 `SetLines` ends with `RecalculateSpecialDiscount();`, so editing a discounted order keeps its discount right.
 And notice what *didn't* change: `Submit`, `MarkApproved` and `Cancel` all use `Total`, so the credit check,
 the ₱50,000 approval threshold and the customer's balance see the discounted amount without a line of change.
@@ -308,24 +331,26 @@ Add the four `.sql` files (and the programs function) at the end of `Up`, and th
 
 ```csharp
 internal sealed class ApplySpecialDiscountHandler(SalesDbContext db, ICurrentUser currentUser, IInvoicingSetup invoicing)
-    : ICommandHandler<ApplySpecialDiscountCommand>
 {
-    public async ValueTask<Unit> Handle(ApplySpecialDiscountCommand cmd, CancellationToken ct)
+    public async Task<bool> HandleAsync(ApplySpecialDiscountCommand cmd, CancellationToken ct)
     {
         var order = await db.GetVisibleOrderAsync(cmd.OrderId, new UserId(currentUser.UserId), currentUser.Role, ct);
+        if (order is null) return false;
         var program = await db.SpecialDiscountPrograms.FindAsync([cmd.ProgramCode.Trim().ToUpperInvariant()], ct)
-            ?? throw new NotFoundException($"There is no special discount program '{cmd.ProgramCode}'.");
+            ?? throw new DomainException(SalesErrors.DiscountProgramNotFound, $"There is no special discount program '{cmd.ProgramCode}'.");
 
         order.ApplySpecialDiscount(program.Grant(cmd.HolderName, cmd.IdNumber, await invoicing.GetTaxPolicyAsync(ct)));
         await db.SaveChangesAsync(ct);
-        return Unit.Value;
+        return true;
     }
 }
 ```
 
 Load, call the domain, save. The tax policy comes through Invoicing's service window, lesson 20's
-`IInvoicingSetup`, which Sales already references since lesson 21. The command's validator checks only that
-the program code, the name and the ID number are there. `RemoveSpecialDiscountCommand` is the same, shorter.
+`IInvoicingSetup`, which Sales already references since lesson 21. The order in the URL may not exist (`false`,
+so 404), but the program code is in the body, so an unknown one is a coded 422, lesson 07's rule. The
+request's validator, `ApplySpecialDiscountRequestValidator` in the endpoint file, checks only that the program
+code, the name and the ID number are there. `RemoveSpecialDiscountCommand` is the same, shorter.
 
 ## 6. The invoice bills what was ordered
 

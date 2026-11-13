@@ -100,7 +100,6 @@ The validator reuses `OrderLineInputValidator` from create, for the same reason:
 
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/UpdateSalesOrder/UpdateSalesOrderEndpoint.cs
-using Erp.Shared.BuildingBlocks;
 using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -108,7 +107,6 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
-
 
 internal sealed record UpdateSalesOrderRequest(IReadOnlyList<OrderLineInput> Lines);
 
@@ -130,6 +128,9 @@ internal static class UpdateSalesOrderEndpoint
             .RequireAuthorization(p => p.RequireRole(SalesRoles.Sellers));
 }
 ```
+
+The request has its own validator, next to it, reusing lesson 07's `OrderLineInputValidator` for each line.
+Register `UpdateSalesOrderHandler` in `AddSalesModule` and map `UpdateSalesOrderEndpoint` in `MapSalesEndpoints`.
 
 The order's id comes from the URL, and only the lines come in the body. That way there's never a question of
 which id wins when the URL says 7 and the body says 8.
@@ -292,29 +293,32 @@ We have about a hundred tests now. Are there rules no test touches? **Code cover
 tests run, a collector notes every line that runs. Lines no test reaches are lines no test protects.
 
 ```bash
-dotnet add tests/Erp.Modules.Sales.UnitTests package coverlet.collector --version 10.1.0
-dotnet add tests/Erp.Integration.Tests package coverlet.collector --version 10.1.0
-dotnet add tests/Erp.Architecture.Tests package coverlet.collector --version 10.1.0
+dotnet add tests/Erp.Modules.Sales.UnitTests package coverlet.MTP --version 10.1.0
+dotnet add tests/Erp.Integration.Tests package coverlet.MTP --version 10.1.0
+dotnet add tests/Erp.Architecture.Tests package coverlet.MTP --version 10.1.0
+dotnet add tests/Erp.Web.UiTests package coverlet.MTP --version 10.1.0
 dotnet tool install dotnet-reportgenerator-globaltool --version 5.6.0
 ```
 
 | Tool | What it does | License |
 |---|---|---|
-| `coverlet.collector` | Records which lines and branches ran during `dotnet test` | MIT |
+| `coverlet.MTP` | Records which lines and branches ran during `dotnet test`, on the Microsoft.Testing.Platform runner from lesson 02 | MIT |
 | `dotnet-reportgenerator-globaltool` | Turns those records into a readable HTML report | Apache-2.0 |
 
-ReportGenerator joins `dotnet-ef` in the tool manifest, so everyone who clones the repository gets it with
+Every test project gets it, even the browser tests, which have nothing to measure: `dotnet test` passes the
+same options to every project, and a project that doesn't know `--coverlet` refuses to start. ReportGenerator
+joins `dotnet-ef` in the tool manifest, so everyone who clones the repository gets it with
 `dotnet tool restore`. Then:
 
 ```bash
-dotnet test --collect "XPlat Code Coverage" --results-directory TestResults
-dotnet reportgenerator -reports:"TestResults/*/coverage.cobertura.xml" -targetdir:coverage -reporttypes:Html \
-  -assemblyfilters:"+Erp.*;-Erp.Web" -classfilters:"-*.Migrations.*;-Mediator.*"
+dotnet test --coverlet --coverlet-output-format cobertura --results-directory TestResults
+dotnet reportgenerator -reports:"TestResults/**/coverage.cobertura*.xml" -targetdir:coverage -reporttypes:Html \
+  -assemblyfilters:"+Erp.*;-Erp.Web" -classfilters:"-*.Migrations.*"
 ```
 
 Open `coverage/index.html`. Each class has a percentage; click one, and every line is green (ran), red
-(never ran) or yellow (a branch where only one side ran). The filters leave out the browser app, migrations
-and the mediator's generated code: no one writes tests for code a tool wrote. Add `TestResults/` and
+(never ran) or yellow (a branch where only one side ran). The filters leave out the browser app and the
+migrations: no one writes tests for code a tool wrote. Add `TestResults/` and
 `coverage/` to `.gitignore`.
 
 Look at the Sales domain first. Most of it is green. The red lines are worth a minute each: is that a rule
@@ -342,7 +346,8 @@ dotnet tool install dotnet-stryker --version 5.1.0
 {
   "stryker-config": {
     "project": "Erp.Modules.Sales.csproj",
-    "mutate": [ "**/Domain/**/*.cs" ],
+    "test-runner": "mtp",
+    "mutate": [ "**/Domain/**/*.cs", "!**/Domain/SalesErrors.cs" ],
     "reporters": [ "progress", "html", "cleartext" ],
     "thresholds": { "high": 90, "low": 80, "break": 75 }
   }
@@ -350,7 +355,15 @@ dotnet tool install dotnet-stryker --version 5.1.0
 ```
 
 Only the domain: that's where the rules live, and the unit tests run in a second, so a few hundred runs take
-two minutes. `break: 75` makes the run fail if the score drops under 75%. Then:
+under a minute. Two settings need a word:
+
+- **`test-runner: mtp`** tells Stryker our tests run on Microsoft.Testing.Platform (xUnit v3). Stryker marks
+  that runner as a preview and prints a warning; on these tests it gives exactly the same results as the old
+  one.
+- **`!**/Domain/SalesErrors.cs`** leaves the error catalog out. Stryker would change its titles and fixes,
+  no test reads that text, and every changed word would "survive". Mutating help text proves nothing.
+
+`break: 75` makes the run fail if the score drops under 75%. Then:
 
 ```bash
 cd tests/Erp.Modules.Sales.UnitTests
@@ -506,7 +519,7 @@ times it for you. Run everything, then the coverage report and the mutation run 
 
 ```bash
 dotnet test
-dotnet test --collect "XPlat Code Coverage" --results-directory TestResults
+dotnet test --coverlet --coverlet-output-format cobertura --results-directory TestResults
 cd tests/Erp.Modules.Sales.UnitTests && dotnet stryker
 ```
 

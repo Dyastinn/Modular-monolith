@@ -912,9 +912,11 @@ dotnet test
 ```
 
 ```
-Passed!  - Failed: 0, Passed: 52, ... Erp.Modules.Sales.UnitTests.dll
-Passed!  - Failed: 0, Passed:  7, ... Erp.Architecture.Tests.dll
-Passed!  - Failed: 0, Passed: 21, ... Erp.Integration.Tests.dll
+Test run summary: Passed!
+  total: 80
+  failed: 0
+  succeeded: 80
+  skipped: 0
 ```
 
 Look in pgAdmin or `psql`: `erp_test` is there, holding whatever the last run left behind, and the next run

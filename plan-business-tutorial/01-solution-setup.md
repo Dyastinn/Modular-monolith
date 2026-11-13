@@ -353,6 +353,7 @@ the app project:
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
+    <link rel="icon" type="image/png" href="@Assets["icon-192.png"]" />
     <link rel="stylesheet" href="@Assets["_content/MudBlazor/MudBlazor.min.css"]" />
     <link rel="stylesheet" href="@Assets["css/app.css"]" />
     <HeadOutlet @rendermode="InBrowser" />
@@ -384,6 +385,7 @@ the app project:
   skip that.
 - **`@Assets["css/app.css"]`** writes the file's name with a fingerprint in it (`app.wdx55whw5k.css`). When the
   file changes, so does the name, so a browser never runs yesterday's copy from its cache.
+- **`icon-192.png`** is the little picture on the browser tab. Put any 192×192 PNG in `wwwroot` under that name.
 - **`blazor-error-ui`** is the bar Blazor shows if the app crashes.
 
 And notice there's no `<script>` with code inside it. [Lesson 23](23-security-hardening.md) adds a

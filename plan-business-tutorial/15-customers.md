@@ -74,7 +74,7 @@ public static Customer Create(string name, string? tin, string? address, Money c
 public void Update(string name, string? tin, string? address, Money creditLimit, int paymentTermsDays)
 {
     if (string.IsNullOrWhiteSpace(name)) throw new DomainException(SalesErrors.CustomerNameRequired, "A customer needs a name.");
-    if (paymentTermsDays is < 0 or > 365) throw new DomainException(PurchasingErrors.PaymentTermsOutOfRange, "Payment terms must be between 0 and 365 days.");
+    if (paymentTermsDays is < 0 or > 365) throw new DomainException(SalesErrors.PaymentTermsOutOfRange, "Payment terms must be between 0 and 365 days.");
     Name = name.Trim();
     Tin = string.IsNullOrWhiteSpace(tin) ? null : tin.Trim();
     Address = string.IsNullOrWhiteSpace(address) ? null : address.Trim();
@@ -129,6 +129,13 @@ WHERE NOT EXISTS (SELECT 1 FROM sales.customer);
 
 Your existing development database already has customers, so this only affects a fresh one. To start
 fresh, drop the `erp` database and restart the app; it rebuilds everything.
+
+The new rule gets its code, at the end of `SalesErrors`:
+
+```csharp
+    public static readonly ErrorCode PaymentTermsOutOfRange = new("SALES-0021", "Payment terms out of range",
+        "Enter payment terms between 0 (cash) and 365 days.");
+```
 
 ## 2. Version 2 of the search
 
@@ -208,7 +215,8 @@ internal sealed record CustomerDto(
 
 ## 3. The maintenance slices
 
-Create and update take the same fields, so they share one input record and its validator:
+Create and update take the same fields, so they share one input record. Both endpoints receive that record
+as their body, so its validator lives with the first of them, in `CreateCustomerEndpoint.cs`:
 
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/CreateCustomer/CreateCustomerHandler.cs
@@ -249,7 +257,6 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
-
 
 internal sealed class CustomerInputValidator : AbstractValidator<CustomerInput>
 {
@@ -324,15 +331,12 @@ approval charges Acme's balance can't silently undo either change: the second sa
 
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/UpdateCustomer/UpdateCustomerEndpoint.cs
-using Erp.Shared.BuildingBlocks;
-using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
-
 
 internal static class UpdateCustomerEndpoint
 {
@@ -355,6 +359,11 @@ internal static class UpdateCustomerEndpoint
     }
 }
 ```
+
+Register the three new handlers (`CreateCustomerHandler`, `UpdateCustomerHandler` and `SetCustomerBlockedHandler`;
+`SearchCustomersHandler` is already there) in `AddSalesModule`, and map
+`CreateCustomerEndpoint` and `UpdateCustomerEndpoint` in `MapSalesEndpoints`. Updating and blocking return
+`false` for a customer that doesn't exist, and their endpoints answer 404, the pattern from lesson 09.
 
 Block and unblock are two addresses rather than `PUT {"blocked": true}`, because they're two business
 actions. Later, an audit log or a "you've been blocked" email attaches to exactly one of them.

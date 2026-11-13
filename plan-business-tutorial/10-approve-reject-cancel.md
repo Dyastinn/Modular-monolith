@@ -121,26 +121,25 @@ public static readonly string[] Managers = [Roles.SalesManager, Roles.Admin];
 using Erp.Modules.Sales.Domain;
 using Erp.Modules.Sales.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
 using Microsoft.EntityFrameworkCore;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed record ApproveSalesOrderCommand(long OrderId) : ICommand;
+internal sealed record ApproveSalesOrderCommand(long OrderId);
 
-internal sealed class ApproveSalesOrderHandler(SalesDbContext db, ICurrentUser currentUser, IClock clock)
-    : ICommandHandler<ApproveSalesOrderCommand>
+internal sealed class ApproveSalesOrderHandler(SalesDbContext db, ICurrentUser currentUser, TimeProvider time)
 {
-    public async ValueTask<Unit> Handle(ApproveSalesOrderCommand cmd, CancellationToken ct)
+    public async Task<bool> HandleAsync(ApproveSalesOrderCommand cmd, CancellationToken ct)
     {
         var approver = new UserId(currentUser.UserId);
         var order = await db.GetVisibleOrderAsync(cmd.OrderId, approver, currentUser.Role, ct);
+        if (order is null) return false;
         var customer = await db.Customers.SingleAsync(c => c.Id == order.CustomerId, ct);
 
-        order.Approve(approver, customer, clock.UtcNow);
+        order.Approve(approver, customer, time.GetUtcNow().UtcDateTime);
 
         await db.SaveChangesAsync(ct);   // order and customer balance: one transaction
-        return Unit.Value;
+        return true;
     }
 }
 ```
@@ -151,15 +150,12 @@ hand when another module has to join it, like Inventory did at submit.
 
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/ApproveSalesOrder/ApproveSalesOrderEndpoint.cs
-using Erp.Shared.BuildingBlocks;
-using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
-
 
 internal static class ApproveSalesOrderEndpoint
 {
@@ -218,7 +214,6 @@ won't do. Releasing stock is Inventory's job again, so we're back to a transacti
 
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/RejectSalesOrder/RejectSalesOrderEndpoint.cs
-using Erp.Shared.BuildingBlocks;
 using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -226,7 +221,6 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
-
 
 internal sealed record RejectSalesOrderRequest(string Reason);
 
@@ -286,15 +280,12 @@ handed, and saves.
 
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/CancelSalesOrder/CancelSalesOrderEndpoint.cs
-using Erp.Shared.BuildingBlocks;
-using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
-
 
 internal static class CancelSalesOrderEndpoint
 {
@@ -305,6 +296,11 @@ internal static class CancelSalesOrderEndpoint
             .RequireAuthorization(p => p.RequireRole(SalesRoles.Sellers));
 }
 ```
+
+As with submit, each handler returns `false` when the order isn't there (or isn't this person's to see), and
+its endpoint answers 404. Register the three handlers in `AddSalesModule` (`services.AddScoped<ApproveSalesOrderHandler>();`
+and the same for `RejectSalesOrderHandler` and `CancelSalesOrderHandler`) and map the three endpoints in
+`MapSalesEndpoints`. The wiring test from lesson 03 notices if you forget one.
 
 A rep can cancel only an order they can see, so only their own: `GetVisibleOrderAsync` makes a rep's
 attempt on anyone else's order a 404, without a line of extra code.
@@ -598,7 +594,7 @@ rep reloads the order and sees your reason in red.
 Finally the tests: `dotnet test` for everything, and with the app running, the browser flow:
 
 ```bash
-ERP_UI_URL=http://localhost:5264 ERP_UI_SCREENSHOTS=./screens dotnet test tests/Erp.Web.UiTests
+ERP_UI_URL=http://localhost:5264 ERP_UI_SCREENSHOTS=./screens dotnet test --project tests/Erp.Web.UiTests
 ```
 
 Open `screens`: the rep's order, submitted, then the manager's approval, picture by picture.

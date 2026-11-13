@@ -432,18 +432,19 @@ Submit is the first command that loads an order someone else may have created, s
 visibility rule. Every later command will ask it too, so it goes on `SalesDbContext`:
 
 ```csharp
-// An order the caller may not see is "not found": a rep can't even learn that someone else's order exists.
-public async Task<SalesOrder> GetVisibleOrderAsync(long orderId, UserId user, string role, CancellationToken ct)
+// null when there is no such order, and when the caller may not see it: a rep can't even learn that someone
+// else's order exists.
+public async Task<SalesOrder?> GetVisibleOrderAsync(long orderId, UserId user, string role, CancellationToken ct)
 {
     var id = new SalesOrderId(orderId);
     var order = await SalesOrders.SingleOrDefaultAsync(o => o.Id == id, ct);
-    return order is not null && order.IsVisibleTo(user, role)
-        ? order
-        : throw new NotFoundException($"Sales order {orderId} not found.");
+    return order is not null && order.IsVisibleTo(user, role) ? order : null;
 }
 ```
 
-Invisible and missing give the same exception, so the same 404, with the same words.
+Invisible and missing give the same answer, `null`, so the caller can't tell them apart either. Why not throw?
+Because someone opening an old link, or typing the wrong number, is an everyday event, not an exceptional
+one; Microsoft's guidance is to handle common conditions without exceptions.
 
 Then one more method:
 
@@ -513,19 +514,27 @@ Read it top to bottom; it's the story of a submit:
 5. **Save and commit.** The status change and every reservation become permanent together.
 
 And there's still no business `if` here. "Out of stock" is the database's answer, and the handler only turns
-it into a `DomainException`.
+it into a `DomainException`, with a new code at the end of `SalesErrors`:
+
+```csharp
+    public static readonly ErrorCode InsufficientStock = new("SALES-0020", "Not enough stock",
+        "Lower the quantity or wait for the next delivery. The order stays a draft.");
+```
+
+Notice what the handler returns: `bool`. **`false` means "there's no such order"** (or none this person may
+see), and the endpoint below turns it into a 404 with `TypedResults.NotFound()`. Every command on a thing
+named in the address works this way from now on: the handler answers "not found" in its return value, and
+throws only when a rule says no. Register it (`services.AddScoped<SubmitSalesOrderHandler>();`) and map its
+endpoint in `MapSalesEndpoints`.
 
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/SubmitSalesOrder/SubmitSalesOrderEndpoint.cs
-using Erp.Shared.BuildingBlocks;
-using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
-
 
 internal static class SubmitSalesOrderEndpoint
 {
@@ -538,7 +547,8 @@ internal static class SubmitSalesOrderEndpoint
 ```
 
 `{id:long}` in the route means "this part of the URL must be a number"; `/api/sales-orders/abc/submit` won't
-even match.
+even match. And `Results<NoContent, NotFound>` lists both answers in the type, so the API description shows
+them both.
 
 ## 7. The Submit button
 

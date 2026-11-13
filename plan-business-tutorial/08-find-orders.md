@@ -405,11 +405,10 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
 using Dapper;
 using Erp.Modules.Sales.Domain;
 using Erp.Shared.BuildingBlocks;
-using Mediator;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed record GetSalesOrderQuery(long OrderId) : IQuery<SalesOrderDetailDto?>;
+internal sealed record GetSalesOrderQuery(long OrderId);
 
 internal sealed record SalesOrderDetailDto(
     long Id, string OrderNumber, long CustomerId, string CustomerName, string Status, decimal Total,
@@ -426,9 +425,8 @@ internal sealed record SalesOrderHeaderRow(
 internal sealed record SalesOrderLineRow(long ItemId, string ItemName, string Unit, decimal Quantity, decimal UnitPrice);
 
 internal sealed class GetSalesOrderHandler(IDbConnectionFactory connections, ICurrentUser currentUser)
-    : IQueryHandler<GetSalesOrderQuery, SalesOrderDetailDto?>
 {
-    public async ValueTask<SalesOrderDetailDto?> Handle(GetSalesOrderQuery q, CancellationToken ct)
+    public async Task<SalesOrderDetailDto?> HandleAsync(GetSalesOrderQuery q, CancellationToken ct)
     {
         var createdBy = SalesOrder.CreatorFilterFor(new UserId(currentUser.UserId), currentUser.Role)?.Value;
 
@@ -464,29 +462,25 @@ There are two kinds of records here, and the difference matters:
 `@OrderId` is a parameter, filled from `new { q.OrderId }`, never pasted into the SQL text, so SQL
 injection can't happen.
 
-And look at the first line of `Handle`. A rep's own id goes in as `@CreatedBy`, so someone else's order
+And look at the first line of `HandleAsync`. A rep's own id goes in as `@CreatedBy`, so someone else's order
 simply isn't found. The handler returns `null`, the endpoint turns that into a 404, and the rep learns
 nothing.
 
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/GetSalesOrder/GetSalesOrderEndpoint.cs
-using Carter;
-using Mediator;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed class GetSalesOrderEndpoint : ICarterModule
+internal static class GetSalesOrderEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app) =>
+    public static void Map(IEndpointRouteBuilder app) =>
         app.MapGet("/sales-orders/{id:long}",
-            async (long id, ISender sender, CancellationToken ct) =>
-            {
-                var dto = await sender.Send(new GetSalesOrderQuery(id), ct);
-                return dto is null ? Results.NotFound() : Results.Ok(dto);
-            })
+                async Task<Results<Ok<SalesOrderDetailDto>, NotFound>> (long id, GetSalesOrderHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new GetSalesOrderQuery(id), ct) is { } order ? TypedResults.Ok(order) : TypedResults.NotFound())
             .RequireAuthorization(p => p.RequireRole(SalesRoles.Sellers));
 }
 ```
@@ -499,12 +493,10 @@ using Dapper;
 using Erp.Modules.Sales.Domain;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed record SearchSalesOrdersQuery(long? CustomerId, string? Status, string? Search, int Page = 1, int PageSize = 20)
-    : IQuery<PagedResult<SalesOrderSummaryDto>>;
+internal sealed record SearchSalesOrdersQuery(long? CustomerId = null, string? Status = null, string? Search = null, int Page = 1, int PageSize = 20);
 
 internal sealed record SalesOrderSummaryDto(
     long Id, string OrderNumber, long CustomerId, string CustomerName, string Status, decimal Total, long CreatedBy, DateTime CreatedUtc);
@@ -525,9 +517,8 @@ internal sealed class SearchSalesOrdersValidator : AbstractValidator<SearchSales
 }
 
 internal sealed class SearchSalesOrdersHandler(IDbConnectionFactory connections, ICurrentUser currentUser)
-    : IQueryHandler<SearchSalesOrdersQuery, PagedResult<SalesOrderSummaryDto>>
 {
-    public async ValueTask<PagedResult<SalesOrderSummaryDto>> Handle(SearchSalesOrdersQuery q, CancellationToken ct)
+    public async Task<PagedResult<SalesOrderSummaryDto>> HandleAsync(SearchSalesOrdersQuery q, CancellationToken ct)
     {
         int? status = q.Status is null ? null : (int)Enum.Parse<SalesOrderStatus>(q.Status, ignoreCase: true);
         var args = new
@@ -553,34 +544,33 @@ internal sealed class SearchSalesOrdersHandler(IDbConnectionFactory connections,
 }
 ```
 
-Queries go through the validation behavior too. Here it caps the page size, and rejects a status that
-doesn't exist with a clear 400 instead of an empty list.
+Queries go through the validation filter too. Here it caps the page size, and rejects a status that
+doesn't exist with a clear 400 instead of an empty list. Notice where this validator lives: in the handler
+file, next to the query. The endpoint below receives the query itself, straight from the address, so the
+validator sits with the type it checks, as lesson 03's did.
 
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/SearchSalesOrders/SearchSalesOrdersEndpoint.cs
-using Carter;
-using Mediator;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed class SearchSalesOrdersEndpoint : ICarterModule
+internal static class SearchSalesOrdersEndpoint
 {
-    // int?, not int: a non-nullable query parameter is required, so a bare GET would be a 400.
-    public void AddRoutes(IEndpointRouteBuilder app) =>
-        app.MapGet("/sales-orders",
-            async (long? customerId, string? status, string? search, int? page, int? pageSize, ISender sender, CancellationToken ct) =>
-                Results.Ok(await sender.Send(
-                    new SearchSalesOrdersQuery(customerId, status, search, page ?? 1, pageSize ?? 20), ct)))
+    // The query string binds straight onto the query record; its defaults make every parameter optional.
+    public static void Map(IEndpointRouteBuilder app) =>
+        app.MapGet("/sales-orders", async ([AsParameters] SearchSalesOrdersQuery query, SearchSalesOrdersHandler handler, CancellationToken ct) =>
+                TypedResults.Ok(await handler.HandleAsync(query, ct)))
             .RequireAuthorization(p => p.RequireRole(SalesRoles.Sellers));
 }
 ```
 
-That comment points at a real trap. Minimal APIs treat a query parameter declared as plain `int` as
-*required*. So `GET /api/sales-orders`, with no `?page=`, would fail with a 400 before your handler ever
-ran. Make it `int?` and give it a default yourself.
+`[AsParameters]` fills the query's fields from the query string: `?status=Approved&page=2`. The defaults in
+the record are what make each one optional. That points at a real trap: without `Page = 1`, minimal APIs
+treat a plain `int` as *required*, and `GET /api/sales-orders`, with no `?page=`, would fail with a 400 before
+your handler ever ran.
 
 ## 6. Customers and the price list
 
@@ -592,13 +582,12 @@ receive, there's no need for a separate `Row` record: Dapper fills the DTO direc
 using Dapper;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed record SearchCustomersQuery(string? Search, int Page, int PageSize) : IQuery<PagedResult<CustomerDto>>;
+internal sealed record SearchCustomersQuery(string? Search = null, int Page = 1, int PageSize = 20);
 
-internal sealed record GetCustomerQuery(long CustomerId) : IQuery<CustomerDto?>;
+internal sealed record GetCustomerQuery(long CustomerId);
 
 // Available credit is what the next order may use: the limit, minus what they owe, minus what's awaiting approval.
 internal sealed record CustomerDto(
@@ -614,9 +603,8 @@ internal sealed class SearchCustomersValidator : AbstractValidator<SearchCustome
 }
 
 internal sealed class SearchCustomersHandler(IDbConnectionFactory connections)
-    : IQueryHandler<SearchCustomersQuery, PagedResult<CustomerDto>>, IQueryHandler<GetCustomerQuery, CustomerDto?>
 {
-    public async ValueTask<PagedResult<CustomerDto>> Handle(SearchCustomersQuery q, CancellationToken ct)
+    public async Task<PagedResult<CustomerDto>> HandleAsync(SearchCustomersQuery q, CancellationToken ct)
     {
         var search = string.IsNullOrWhiteSpace(q.Search) ? null : q.Search.Trim();
         await using var conn = connections.Create();
@@ -630,7 +618,7 @@ internal sealed class SearchCustomersHandler(IDbConnectionFactory connections)
         return new PagedResult<CustomerDto>(rows, q.Page, q.PageSize, (int)await multi.ReadSingleAsync<long>());
     }
 
-    public async ValueTask<CustomerDto?> Handle(GetCustomerQuery q, CancellationToken ct)
+    public async Task<CustomerDto?> HandleAsync(GetCustomerQuery q, CancellationToken ct)
     {
         await using var conn = connections.Create();
         return await conn.QuerySingleOrDefaultAsync<CustomerDto>(new CommandDefinition(
@@ -644,24 +632,24 @@ still one feature, in one file.
 
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/SearchCustomers/SearchCustomersEndpoint.cs
-using Carter;
-using Mediator;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed class SearchCustomersEndpoint : ICarterModule
+internal static class SearchCustomersEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app)
+    public static void Map(IEndpointRouteBuilder app)
     {
-        app.MapGet("/customers", async (string? search, int? page, int? pageSize, ISender sender, CancellationToken ct) =>
-                Results.Ok(await sender.Send(new SearchCustomersQuery(search, page ?? 1, pageSize ?? 20), ct)))
+        app.MapGet("/customers", async ([AsParameters] SearchCustomersQuery query, SearchCustomersHandler handler, CancellationToken ct) =>
+                TypedResults.Ok(await handler.HandleAsync(query, ct)))
             .RequireAuthorization(p => p.RequireRole(SalesRoles.Sellers));
 
-        app.MapGet("/customers/{id:long}", async (long id, ISender sender, CancellationToken ct) =>
-                await sender.Send(new GetCustomerQuery(id), ct) is { } customer ? Results.Ok(customer) : Results.NotFound())
+        app.MapGet("/customers/{id:long}",
+                async Task<Results<Ok<CustomerDto>, NotFound>> (long id, SearchCustomersHandler handler, CancellationToken ct) =>
+                    await handler.HandleAsync(new GetCustomerQuery(id), ct) is { } customer ? TypedResults.Ok(customer) : TypedResults.NotFound())
             .RequireAuthorization(p => p.RequireRole(SalesRoles.Sellers));
     }
 }
@@ -672,11 +660,10 @@ internal sealed class SearchCustomersEndpoint : ICarterModule
 using Dapper;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed record SearchPriceListQuery(string? Search, bool ForSaleOnly, int Page, int PageSize) : IQuery<PagedResult<PriceListItemDto>>;
+internal sealed record SearchPriceListQuery(string? Search = null, bool ForSaleOnly = false, int Page = 1, int PageSize = 20);
 
 internal sealed record PriceListItemDto(
     long Id, string Sku, string Name, string Unit, bool AllowsFractions, bool IsActive,
@@ -692,9 +679,8 @@ internal sealed class SearchPriceListValidator : AbstractValidator<SearchPriceLi
 }
 
 internal sealed class SearchPriceListHandler(IDbConnectionFactory connections)
-    : IQueryHandler<SearchPriceListQuery, PagedResult<PriceListItemDto>>
 {
-    public async ValueTask<PagedResult<PriceListItemDto>> Handle(SearchPriceListQuery q, CancellationToken ct)
+    public async Task<PagedResult<PriceListItemDto>> HandleAsync(SearchPriceListQuery q, CancellationToken ct)
     {
         var args = new { Search = string.IsNullOrWhiteSpace(q.Search) ? null : q.Search.Trim(), q.ForSaleOnly, q.Page, q.PageSize };
         await using var conn = connections.Create();
@@ -712,22 +698,39 @@ internal sealed class SearchPriceListHandler(IDbConnectionFactory connections)
 
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Features/SearchPriceList/SearchPriceListEndpoint.cs
-using Carter;
-using Mediator;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed class SearchPriceListEndpoint : ICarterModule
+internal static class SearchPriceListEndpoint
 {
-    public void AddRoutes(IEndpointRouteBuilder app) =>
-        app.MapGet("/price-list", async (string? search, bool? forSaleOnly, int? page, int? pageSize, ISender sender, CancellationToken ct) =>
-                Results.Ok(await sender.Send(new SearchPriceListQuery(search, forSaleOnly ?? false, page ?? 1, pageSize ?? 20), ct)))
+    public static void Map(IEndpointRouteBuilder app) =>
+        app.MapGet("/price-list", async ([AsParameters] SearchPriceListQuery query, SearchPriceListHandler handler, CancellationToken ct) =>
+                TypedResults.Ok(await handler.HandleAsync(query, ct)))
             .RequireAuthorization(p => p.RequireRole(SalesRoles.Sellers));
 }
 ```
+
+Register the three new handlers in `AddSalesModule`, as in lesson 03, and map their endpoints in
+`MapSalesEndpoints`:
+
+```csharp
+services.AddScoped<GetSalesOrderHandler>();
+services.AddScoped<SearchSalesOrdersHandler>();
+services.AddScoped<SearchCustomersHandler>();
+services.AddScoped<SearchPriceListHandler>();
+```
+
+```csharp
+GetSalesOrderEndpoint.Map(sales);
+SearchSalesOrdersEndpoint.Map(sales);
+SearchCustomersEndpoint.Map(sales);
+SearchPriceListEndpoint.Map(sales);
+```
+
+(Four lines, one per handler class: `SearchCustomersHandler` answers both of its queries.)
 
 ## 7. The screens
 
@@ -1325,10 +1328,49 @@ public async Task Orders_created_at_the_same_moment_get_different_numbers()
 }
 ```
 
+### Commands write, queries read: a wall for CQRS
+
+From today, Sales has both kinds of handler, and the split from lesson 03 means something concrete: commands
+change state through the domain and EF Core; queries read with Dapper. A query handler holding a
+`SalesDbContext` could quietly start writing, and a command handler running SQL with Dapper would skip every
+rule the domain checks. An architecture test keeps them apart. Add it to `ModuleBoundaryTests`:
+
+```csharp
+    // CQRS: a command changes state through the domain and EF Core; a query reads with Dapper and SQL functions. A query
+    // handler holding a DbContext could write; a command handler using Dapper would skip the domain's rules.
+    [Fact]
+    public void Queries_read_with_Dapper_and_commands_write_with_EF_Core()
+    {
+        foreach (var handler in Modules.SelectMany(m => m.GetTypes()).Where(t => t.Name.EndsWith("Handler", StringComparison.Ordinal) && (t.Namespace ?? "").EndsWith(".Features", StringComparison.Ordinal)))
+        {
+            var messages = handler.GetMethods().Where(m => m.Name == "HandleAsync")
+                .Select(m => m.GetParameters().First().ParameterType.Name).ToList();
+            var dependencies = handler.GetConstructors().Single().GetParameters().Select(p => p.ParameterType).ToList();
+            var isQuery = messages.Any(m => m.EndsWith("Query", StringComparison.Ordinal))
+                          || handler.Name.StartsWith("Get", StringComparison.Ordinal) || handler.Name.StartsWith("List", StringComparison.Ordinal) || handler.Name.StartsWith("Search", StringComparison.Ordinal);
+
+            if (isQuery)
+                dependencies.Where(d => d.IsSubclassOf(typeof(Microsoft.EntityFrameworkCore.DbContext))).Select(d => d.Name)
+                    .Should().BeEmpty($"{handler.Name} is a query: it reads with Dapper, never through a DbContext");
+            else if (messages.Any(m => m.EndsWith("Command", StringComparison.Ordinal)))
+                dependencies.Should().NotContain(typeof(IDbConnectionFactory),
+                    $"{handler.Name} is a command: it writes through the DbContext and the domain, never with Dapper");
+        }
+    }
+```
+
+It tells the two kinds apart by name: a handler is a query if it handles a `...Query` (or its name starts with
+`Get`, `List` or `Search`, for the few that take no message), and a command if it handles a `...Command`. The
+names you've been writing since lesson 03 are what make this test possible. Make it fail once: give
+`CreateSalesOrderHandler` an `IDbConnectionFactory dapper` parameter.
+
 ### And the rest of this lesson's edges
 
 The reference build's `SalesOrderEdgeCaseTests.cs`, `SalesOrderWorkflowTests.cs` and `BusinessFlowTests.cs`
-hold these; write them in the same style. In `AuthTests`, the search address also joins the 401 theory with
+hold these; write them in the same style. Two older test files grow too, now that orders have addresses of
+their own: `HostTests` gets the deep-link test (`/sales-orders` and `/sales-orders/42` are the app's page, with
+a 200), and in `ErrorCodeTests` the framework theory gains `[InlineData("/api/sales-orders/999999", true, "ERP-0002")]`,
+an unknown order. In `AuthTests`, the search address also joins the 401 theory with
 `[InlineData("/api/sales-orders")]`, and in `DatabaseTests` one more: `Nothing_of_ours_lands_in_the_public_schema`,
 which checks that no table or function was created outside a module's schema.
 
@@ -1338,7 +1380,8 @@ which checks that no table or function was created outside a module's schema.
 | `A_search_finds_names_with_quotes_and_ignores_case` | `O'Brien`, capitals | A quote must never break the SQL; parameters make sure it can't |
 | `A_bad_page_or_status_is_400` (6 cases) | Zero, negative, too big, nonsense | A 400 that says why, not a 500 or a silent empty page |
 | `A_status_filter_must_name_a_real_status` | A number posing as a status | `Enum.TryParse` accepts `"99"` |
-| `Search_with_no_query_string_returns_the_first_page` | Nothing | `int?` parameters, or a bare `GET` is a 400 |
+| `Search_with_no_query_string_returns_the_first_page` | Nothing | Defaults on the query record, or a bare `GET` is a 400 |
+| `A_page_address_is_the_app_too` (`HostTests`) | A deep link | `/sales-orders/42` typed into the address bar opens that screen |
 | `A_page_past_the_end_still_reports_the_real_total` | Past the end | The count is a separate function, so the pager still knows how many pages there are |
 | `A_rep_sees_only_their_own_orders` | Someone else's data | The list obeys `CreatorFilterFor` |
 | `Another_reps_order_is_404_for_reading_submitting_and_editing` | Someone else's data, by id | A rep can't even learn another rep's order exists (submit and edit join it in lessons 09 and 11) |
@@ -1372,7 +1415,7 @@ public async Task Every_page_opens_without_an_error()
 }
 ```
 
-`#blazor-error-ui` is the bar from lesson 01's `index.html`; if it's visible, a page threw. This test catches
+`#blazor-error-ui` is the bar from lesson 01's `App.razor`; if it's visible, a page threw. This test catches
 exactly the cost we named above: a field the API renamed, which the app's copy of the shape still expects.
 Every later lesson that adds a screen adds its address to `pages`.
 
@@ -1401,7 +1444,7 @@ No change tracking, no transaction, one trip to the database. Easy, right?
 - Editing a released `.sql` file. Add `.v2` and a new migration.
 - Filtering "my orders" in the browser. The browser can be bypassed; the filter belongs in the query.
 - Answering 403 for someone else's order. 404 tells them nothing.
-- Declaring an optional query parameter as plain `int`.
+- Leaving the default off a query record's field. A plain `int` with no default is a required parameter.
 - Paging in the browser. `ServerData` asks for one page at a time.
 - Passing what the user typed straight into a `LIKE` pattern. Escape `%`, `_` and `\` with `SearchText.ForLike`.
 - Checking an enum filter with `Enum.TryParse`. It accepts any number; compare against the names.

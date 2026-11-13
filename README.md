@@ -126,7 +126,7 @@ And the tests. The integration tests start their own PostgreSQL with Testcontain
 Docker) running; on Linux, enable the Podman socket and point `DOCKER_HOST` at it (lesson 12):
 
 ```bash
-dotnet test     # 161 unit + 14 architecture + 113 integration; the 8 browser tests skip without ERP_UI_URL
+dotnet test     # 161 unit + 14 architecture + 114 integration; the 8 browser tests skip without ERP_UI_URL
 ERP_UI_URL=http://localhost:5264 dotnet test --project tests/Erp.Web.UiTests   # with the app running
 dotnet test --coverlet --coverlet-output-format cobertura                    # coverage (lesson 11)
 cd tests/Erp.Modules.Sales.UnitTests && dotnet stryker                       # mutation testing, under a minute

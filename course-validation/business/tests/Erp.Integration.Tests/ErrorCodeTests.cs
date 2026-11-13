@@ -30,7 +30,7 @@ public class ErrorCodeTests(CustomWebAppFactory factory)
 
     // The framework writes these responses itself; they get a code from their status.
     [Theory]
-    [InlineData("/api/sales-orders", false, "ERP-0006")]          // not signed in
+    [InlineData("/api/sales-orders", false, "ERP-0005")]          // not signed in
     [InlineData("/api/no-such-thing", true, "ERP-0002")]          // unknown address
     [InlineData("/api/sales-orders/999999", true, "ERP-0002")]    // unknown order
     public async Task Errors_the_framework_writes_carry_a_code_too(string path, bool signedIn, string code)

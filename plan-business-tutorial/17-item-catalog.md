@@ -162,7 +162,7 @@ internal sealed class Item : AggregateRoot<ItemId>
     }
 
     private void RaiseChanged() =>
-        Raise(new ItemCatalogChanged(Id.Value, Sku, Name, Unit, AllowsFractions, IsActive));
+        Raise(new ItemChanged(Id, Sku, Name, Unit, AllowsFractions, IsActive));
 
     private static string Required(string value, string field) =>
         string.IsNullOrWhiteSpace(value) ? throw new DomainException(InventoryErrors.FieldRequired, $"{field} is required.") : value.Trim();
@@ -185,7 +185,43 @@ What each rule protects:
   right.
 
 Notice `Item` raises an event, so it's an `AggregateRoot` now, and `Adjust` returns a `StockMovement`: the
-audit row the handler saves next to the item.
+audit row the handler saves next to the item. The event is Inventory's own, in Inventory's words, at the
+bottom of `Item.cs`:
+
+```csharp
+// The catalog half of an item changed (created, renamed, activated...). Published to other modules as ItemCatalogChanged.
+internal sealed record ItemChanged(ItemId ItemId, string Sku, string Name, string Unit, bool AllowsFractions, bool IsActive) : IDomainEvent;
+```
+
+Inventory's rules need Inventory's error codes, in a catalog of its own:
+
+```csharp
+// src/Modules/Inventory/Erp.Modules.Inventory/Domain/InventoryErrors.cs
+using Erp.Shared.BuildingBlocks;
+
+namespace Erp.Modules.Inventory.Domain;
+
+// Every business rule Inventory can refuse with. Add new codes at the end; never renumber or reuse one.
+internal static class InventoryErrors
+{
+    public static readonly ErrorCode FieldRequired = new("INVENTORY-0001", "A required field is empty",
+        "Fill in the field named in the message.");
+    public static readonly ErrorCode WholeUnitsOnly = new("INVENTORY-0002", "The item is counted in whole units",
+        "Enter a whole number: this item's unit can't be split.");
+    public static readonly ErrorCode AdjustmentMustChangeQuantity = new("INVENTORY-0003", "An adjustment must change the quantity",
+        "Enter a positive number to add stock or a negative one to remove it.");
+    public static readonly ErrorCode AdjustmentBelowReserved = new("INVENTORY-0004", "The adjustment would leave less than is reserved",
+        "Stock reserved for orders can't be adjusted away. Cancel or ship those orders first, or adjust by less.");
+    public static readonly ErrorCode ItemHasReservations = new("INVENTORY-0005", "The item has stock reserved for orders",
+        "Ship or cancel those orders first, then deactivate the item.");
+    public static readonly ErrorCode SkuTaken = new("INVENTORY-0006", "An item with that SKU already exists",
+        "Choose another SKU, or edit the existing item.");
+}
+```
+
+`InventoryModule` hands it to the host (`services.AddSingleton(ErrorCatalog.From(typeof(InventoryErrors)));`),
+and the catalog tests learn its prefix: `(CatalogIn(typeof(InventoryModule)), "INVENTORY")` in
+`ErrorCatalogTests`, `"INVENTORY"` in `ErrorCodeTests`.
 
 ```csharp
 // src/Modules/Inventory/Erp.Modules.Inventory/Domain/StockMovement.cs
@@ -218,15 +254,24 @@ is what's stored, so it's decided once and never renumbered.
 
 ## 2. The integration event, in the Contracts
 
+`ItemChanged` is internal: Sales can't see it, and shouldn't. What Inventory *tells* other modules is a
+separate, public record in its service window, in plain types:
+
 ```csharp
 // add to src/Modules/Inventory/Erp.Modules.Inventory.Contracts/InventoryContracts.cs  (and `using Erp.Shared.BuildingBlocks;`)
 
-// Integration events: public, because other modules handle them. Raised through the Inventory outbox.
+// Integration events: public, because other modules handle them. Inventory publishes them from its own domain events,
+// so they leave through its outbox and arrive at least once.
 public sealed record ItemCatalogChanged(long ItemId, string Sku, string Name, string Unit, bool AllowsFractions, bool IsActive)
-    : IDomainEvent;
+    : IIntegrationEvent;
 ```
 
-`IDomainEvent` lives in BuildingBlocks, so the Contracts project needs its first reference:
+Why two records with the same fields? Today they match. But `ItemChanged` belongs to Inventory's domain, and
+the day Inventory renames a field or adds one for its own reasons, Sales must not break. The integration
+event is a promise to other modules, so it changes only on purpose. Now, let's be honest about the cost:
+one more small record, and one small class that copies one into the other.
+
+`IIntegrationEvent` lives in BuildingBlocks, so the Contracts project needs its first reference:
 
 ```bash
 dotnet add src/Modules/Inventory/Erp.Modules.Inventory.Contracts reference src/Shared/Erp.Shared.BuildingBlocks
@@ -234,6 +279,82 @@ dotnet add src/Modules/Inventory/Erp.Modules.Inventory.Contracts reference src/S
 
 That's the one reference a Contracts project may have. It still references no module, so no cycle can form.
 The architecture test from [lesson 09](09-submit.md) checks exactly that.
+
+BuildingBlocks' `Events.cs` grows to its full size: the marker, a handler for other modules, and a way to
+publish:
+
+```csharp
+// src/Shared/Erp.Shared.BuildingBlocks/Messaging/Events.cs
+namespace Erp.Shared.BuildingBlocks;
+
+// Runs after the change that raised the event has committed. At-least-once: it may run twice, so it must be idempotent.
+public interface IDomainEventHandler<in TEvent> where TEvent : IDomainEvent
+{
+    Task HandleAsync(TEvent domainEvent, CancellationToken ct);
+}
+
+// A fact one module tells the others, declared in its .Contracts project. Plain data only (ids, amounts, text), so the
+// publishing module can change its domain without breaking the modules that listen.
+public interface IIntegrationEvent;
+
+public interface IIntegrationEventHandler<in TEvent> where TEvent : IIntegrationEvent
+{
+    Task HandleAsync(TEvent integrationEvent, CancellationToken ct);
+}
+
+// Hands an integration event to every module that handles it. A module calls it from one of its domain event handlers,
+// so it runs inside the outbox delivery: if any handler fails, the whole delivery is retried.
+public interface IIntegrationEventPublisher
+{
+    Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct) where TEvent : IIntegrationEvent;
+}
+```
+
+The publisher is a few lines in Infrastructure: every registered handler for that event type, one after the
+other, in the same delivery:
+
+```csharp
+// src/Shared/Erp.Shared.Infrastructure/Outbox/IntegrationEventPublisher.cs
+using Erp.Shared.BuildingBlocks;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace Erp.Shared.Infrastructure;
+
+internal sealed class IntegrationEventPublisher(IServiceProvider services) : IIntegrationEventPublisher
+{
+    public async Task PublishAsync<TEvent>(TEvent integrationEvent, CancellationToken ct) where TEvent : IIntegrationEvent
+    {
+        foreach (var handler in services.GetServices<IIntegrationEventHandler<TEvent>>())
+            await handler.HandleAsync(integrationEvent, ct);
+    }
+}
+```
+
+Register it in `AddSharedInfrastructure`: `services.AddScoped<IIntegrationEventPublisher, IntegrationEventPublisher>();`.
+
+And the one small class that turns Inventory's domain event into the integration event. It's an ordinary
+domain event handler, so the outbox delivers it, and the publish happens inside that delivery:
+
+```csharp
+// src/Modules/Inventory/Erp.Modules.Inventory/Infrastructure/EventHandlers/PublishedEvents.cs
+using Erp.Modules.Inventory.Contracts;
+using Erp.Modules.Inventory.Domain;
+using Erp.Shared.BuildingBlocks;
+
+namespace Erp.Modules.Inventory.Infrastructure;
+
+// Inventory's domain events, told to the other modules in the plain words of Inventory.Contracts. The domain can be
+// renamed or reshaped freely; only these mappings must keep the published shape.
+internal sealed class PublishItemCatalogChanged(IIntegrationEventPublisher publisher) : IDomainEventHandler<ItemChanged>
+{
+    public Task HandleAsync(ItemChanged e, CancellationToken ct) =>
+        publisher.PublishAsync(new ItemCatalogChanged(e.ItemId.Value, e.Sku, e.Name, e.Unit, e.AllowsFractions, e.IsActive), ct);
+}
+```
+
+Register it in `AddInventoryModule`: `services.AddScoped<IDomainEventHandler<ItemChanged>, PublishItemCatalogChanged>();`.
+If Sales' handler fails, the whole delivery fails and the outbox tries again later: the same at-least-once
+promise as lesson 13, now across modules.
 
 ## 3. Inventory's database
 
@@ -375,16 +496,41 @@ var assembly = typeof(InventoryModule).Assembly;
 services.AddScoped<IModuleDatabase, InventoryDatabase>();
 services.AddScoped<IStockReservation, StockService>();
 
-// AddCarter() only finds public endpoint classes; ours are internal.
-foreach (var endpoint in assembly.GetTypes().Where(t => !t.IsAbstract && typeof(ICarterModule).IsAssignableFrom(t)))
-    services.AddSingleton(typeof(ICarterModule), endpoint);
+// Handlers: plain classes, injected straight into the endpoints that use them.
+services.AddScoped<CreateItemHandler>();
+services.AddScoped<UpdateItemHandler>();
+services.AddScoped<SetItemActiveHandler>();
+services.AddScoped<SearchItemsHandler>();
+services.AddScoped<AdjustStockHandler>();
+services.AddScoped<GetItemMovementsHandler>();
+
+// Events: each module registers the handlers it owns. An unregistered handler never runs, and a test checks.
+services.AddScoped<IDomainEventHandler<ItemChanged>, PublishItemCatalogChanged>();
 
 services.AddValidatorsFromAssembly(assembly, includeInternalTypes: true);
+services.AddSingleton(ErrorCatalog.From(typeof(InventoryErrors)));
 return services;
 ```
 
+and its second public method, mapped in `Program.cs` with `api.MapInventoryEndpoints();`:
+
+```csharp
+public static IEndpointRouteBuilder MapInventoryEndpoints(this IEndpointRouteBuilder api)
+{
+    var inventory = api.MapGroup("").WithTags("Inventory");
+    CreateItemEndpoint.Map(inventory);
+    UpdateItemEndpoint.Map(inventory);
+    SetItemActiveEndpoint.Map(inventory);
+    SearchItemsEndpoint.Map(inventory);
+    AdjustStockEndpoint.Map(inventory);
+    GetItemMovementsEndpoint.Map(inventory);
+    return api;
+}
+```
+
+Inventory joins the module lists in `WiringTests` too.
+
 ```bash
-dotnet add src/Modules/Inventory/Erp.Modules.Inventory package Carter --version 10.0.0
 dotnet add src/Modules/Inventory/Erp.Modules.Inventory package FluentValidation.DependencyInjectionExtensions --version 12.1.1
 dotnet add src/Modules/Inventory/Erp.Modules.Inventory package Dapper --version 2.1.79
 ```
@@ -419,12 +565,19 @@ internal sealed class CreateItemHandler(InventoryDbContext db)
 The `AnyAsync` check gives a clear 422 in the normal case. But it's check-then-insert, so two clerks adding
 the same SKU at the same instant could both pass it. The unique index catches the second one, and
 PostgreSQL reports error `23505`, "unique violation". Teach the exception handler to answer that with a 409
-instead of a 500. In `GlobalExceptionHandler`'s status switch, after the concurrency line:
+instead of a 500, with a code of its own, the last of the shared ones, at the end of `CommonErrors`' HTTP codes:
+
+```csharp
+    public static readonly ErrorCode AlreadyExists = new("ERP-0009", "That already exists",
+        "Someone created the same thing at the same moment. Reload and use the existing one.");
+```
+
+In `GlobalExceptionHandler`'s status switch, after the concurrency line:
 
 ```csharp
 // A unique index caught what a check-then-insert missed: two people creating the same thing at once.
 DbUpdateException { InnerException: Npgsql.PostgresException { SqlState: "23505" } }
-                             => (StatusCodes.Status409Conflict, "That already exists. Reload and try again."),
+                             => (StatusCodes.Status409Conflict, CommonErrors.AlreadyExists),
 ```
 
 The host already has Npgsql's exception type, through lesson 14's `Npgsql.OpenTelemetry` package.
@@ -439,7 +592,6 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Inventory.Features;
-
 
 internal sealed record CreateItemRequest(string Sku, string Name, string Unit, bool AllowsFractions);
 
@@ -467,11 +619,12 @@ internal static class CreateItemEndpoint
 
 The other three writes are short, and look like everything you've written since lesson 10. In
 `Features/UpdateItem/`, an `UpdateItemCommand(long ItemId, string Name, string Unit, bool AllowsFractions)`
-with the same validator rules, whose handler loads the item with `FindAsync`, calls `item.Describe(...)` and
-saves; `PUT /items/{id:long}` takes an `UpdateItemRequest(string Name, string Unit, bool AllowsFractions)`.
-In `Features/SetItemActive/`, a `SetItemActiveCommand(long ItemId, bool Active)` whose handler calls
-`item.SetActive(cmd.Active)`, mapped as `POST /items/{id:long}/activate` and `/deactivate`. All for
-`Roles.InventoryClerk, Roles.Admin`. And the adjustment:
+whose handler loads the item with `FindAsync`, returns `false` if there's none, calls `item.Describe(...)` and
+saves; `PUT /items/{id:long}` takes an `UpdateItemRequest(string Name, string Unit, bool AllowsFractions)`,
+with the create request's rules for name and unit in its validator. In `Features/SetItemActive/`, a
+`SetItemActiveCommand(long ItemId, bool Active)` whose handler calls `item.SetActive(cmd.Active)`, mapped as
+`POST /items/{id:long}/activate` and `/deactivate`. All for `Roles.InventoryClerk, Roles.Admin`, and all
+answering 404 when the handler says `false`. And the adjustment:
 
 ```csharp
 // src/Modules/Inventory/Erp.Modules.Inventory/Features/AdjustStock/AdjustStockHandler.cs
@@ -497,8 +650,10 @@ internal sealed class AdjustStockHandler(InventoryDbContext db, ICurrentUser use
 }
 ```
 
-`POST /items/{id:long}/adjustments` takes an `AdjustStockRequest(decimal Quantity, string Reason)`. The
-item and its movement are saved together, so there's never a count change without its audit row.
+`POST /items/{id:long}/adjustments` takes an `AdjustStockRequest(decimal Quantity, string Reason)`, whose
+validator, in the endpoint file, wants a non-zero quantity with at most three decimals and a reason of up to
+500 characters. The item and its movement are saved together, so there's never a count change without its
+audit row.
 
 ## 6. Reading the catalog
 
@@ -604,8 +759,9 @@ internal sealed class SearchItemsHandler(IDbConnectionFactory connections)
 }
 ```
 
-`GET /items` (with `search`, `activeOnly`, `page`, `pageSize`) and `GET /items/{id:long}/movements` are open
-to anyone signed in: a rep checks what's in stock, and a buyer will pick items for purchase orders. The
+`GET /items` (binding a `SearchItemsQuery` with `[AsParameters]`: `search`, `activeOnly`, `page`, `pageSize`)
+and `GET /items/{itemId:long}/movements` (a `GetItemMovementsQuery(long ItemId, int Page = 1, int PageSize = 20)`;
+the route's `{itemId}` fills `ItemId`) are open to anyone signed in: a rep checks what's in stock, and a buyer will pick items for purchase orders. The
 movements slice, `Features/GetItemMovements/`, maps each row's `kind` number back to its name with
 `((MovementKind)r.Kind).ToString()`, the way lesson 08 did for order statuses.
 
@@ -642,27 +798,43 @@ carrying the full state instead of a change.
 A new item arrives unpriced and not for sale (`FromCatalog` from lesson 04), so it can't land on an order by
 accident. It waits for the sales manager.
 
-Now the trap that cost a real afternoon while building this course. Run the app, add an item, and wait.
-Nothing reaches Sales. No error, no warning: the outbox marks the message processed, and no handler ran.
-
-The cause is in `Program.cs`. The Mediator source generator only knows the messages in the assemblies you
-list in `options.Assemblies`. `ItemCatalogChanged` lives in `Erp.Modules.Inventory.Contracts`, which wasn't
-listed, so when the dispatcher published it, the generated mediator didn't know it had any handler at all.
-The fix:
+Register it in `AddSalesModule`, as an integration event handler:
 
 ```csharp
-// Every assembly that holds a message or a handler. Contracts hold the integration events: leave one out and
-// publishing its events silently reaches nobody.
-options.Assemblies =
-[
-    typeof(IdentityModule), typeof(SalesModule), typeof(InventoryModule),
-    typeof(Erp.Modules.Inventory.Contracts.ItemCatalogChanged)
-];
+services.AddScoped<IIntegrationEventHandler<ItemCatalogChanged>, ItemCatalogChangedHandler>();
 ```
 
-[Lesson 13](13-events-outbox.md)'s `Every_event_has_a_handler` test didn't catch this, because a handler *exists*. What catches it
-is a test through the front door: create an item as the clerk, and wait for it to appear in the price list.
-That's the integration test in step 10.
+Now the trap. Leave that line out, run the app, add an item, and wait. Nothing reaches Sales. No error, no
+warning: the outbox delivers the event, the publisher finds no handler for it, and the message is marked
+processed. Registering by hand has exactly this cost, which is why two tests watch it: lesson 13's
+`Every_event_handler_class_is_registered` names the class you forgot, in a second, and the integration test in
+step 10 proves the whole trip, by creating an item as the clerk and waiting for it to appear in the price
+list.
+
+One more architecture test, now that there's an integration event: it must have a handler in *another*
+module. An integration event only its own module handles should have been a domain event. In
+`ModuleBoundaryTests`:
+
+```csharp
+// An integration event exists to tell other modules something; one the publisher alone handles is a domain event.
+[Fact]
+public void Every_integration_event_is_handled_by_another_module()
+{
+    foreach (var contracts in ContractsAssemblies)
+    {
+        var owner = contracts.GetName().Name![..^".Contracts".Length];
+        var handled = Modules.Where(m => m.GetName().Name != owner)
+            .SelectMany(m => HandledBy(m, typeof(IIntegrationEventHandler<>))).ToHashSet();
+
+        contracts.GetTypes().Where(t => t is { IsAbstract: false, IsInterface: false } && typeof(IIntegrationEvent).IsAssignableFrom(t))
+            .Where(e => !handled.Contains(e)).Select(e => e.FullName)
+            .Should().BeEmpty($"every integration event in {contracts.GetName().Name} needs a handler in another module");
+    }
+}
+```
+
+And `Every_event_handler_class_is_registered` in `WiringTests` now looks for both kinds of handler:
+`Type[] handlerInterfaces = [typeof(IDomainEventHandler<>), typeof(IIntegrationEventHandler<>)];`.
 
 ## 8. The price list and categories
 
@@ -694,44 +866,45 @@ public void Update(string name, decimal maxQuantityPerOrder, string? requiredRol
 using Erp.Modules.Sales.Domain;
 using Erp.Modules.Sales.Infrastructure;
 using Erp.Shared.BuildingBlocks;
-using FluentValidation;
-using Mediator;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed record SetItemPricingCommand(long ItemId, decimal UnitPrice, long CategoryId, bool IsForSale) : ICommand;
+internal sealed record SetItemPricingCommand(long ItemId, decimal UnitPrice, long CategoryId, bool IsForSale);
 
-internal sealed class SetItemPricingValidator : AbstractValidator<SetItemPricingCommand>
+internal sealed class SetItemPricingHandler(SalesDbContext db)
 {
-    public SetItemPricingValidator()
+    public async Task<bool> HandleAsync(SetItemPricingCommand cmd, CancellationToken ct)
     {
-        RuleFor(x => x.ItemId).GreaterThan(0);
-        RuleFor(x => x.UnitPrice).GreaterThanOrEqualTo(0);
-        RuleFor(x => x.CategoryId).GreaterThan(0);
-    }
-}
-
-internal sealed class SetItemPricingHandler(SalesDbContext db) : ICommandHandler<SetItemPricingCommand>
-{
-    public async ValueTask<Unit> Handle(SetItemPricingCommand cmd, CancellationToken ct)
-    {
-        var item = await db.SalesItems.FindAsync([new ItemId(cmd.ItemId)], ct)
-            ?? throw new NotFoundException($"Item {cmd.ItemId} not found. New catalog items appear here within a few seconds.");
+        var item = await db.SalesItems.FindAsync([new ItemId(cmd.ItemId)], ct);
+        if (item is null) return false;
         var category = await db.ItemCategories.FindAsync([new CategoryId(cmd.CategoryId)], ct)
-            ?? throw new NotFoundException($"Category {cmd.CategoryId} not found.");
+            ?? throw new DomainException(SalesErrors.CategoryNotFound, $"Category {cmd.CategoryId} doesn't exist.");
 
         item.SetPricing(new Money(cmd.UnitPrice), category, cmd.IsForSale);
         await db.SaveChangesAsync(ct);
-        return Unit.Value;
+        return true;
     }
 }
 ```
 
-Look at the not-found message. Eventual consistency has a visible edge: a manager who prices an item the
-second the clerk saves it might beat the event. The message says exactly that, instead of a bare 404.
+Two kinds of "doesn't exist" again, as in lesson 07. The item is the address (`/price-list/{itemId}`), so a
+missing one is a 404. The category is inside the request, so a missing one is a 422 with its code. Two codes
+join the end of `SalesErrors`, this one and the duplicate category name below:
+
+```csharp
+    public static readonly ErrorCode CategoryNameTaken = new("SALES-0022", "A category with that name already exists",
+        "Choose another name, or edit the existing category.");
+    public static readonly ErrorCode CategoryNotFound = new("SALES-0023", "The category doesn't exist",
+        "Choose a category from the list.");
+```
+
+And notice eventual consistency's visible edge: a manager who prices an item the second the clerk saves it
+might beat the event, and get a 404. `ERP-0002`'s fix, in the catalog, says exactly that: wait a few seconds
+and reload.
 
 `PUT /price-list/{itemId:long}` takes a `SetItemPricingRequest(decimal UnitPrice, long CategoryId, bool
-IsForSale)`, for `SalesRoles.Managers`. Changing a price never changes an existing order: lesson 04's lines
+IsForSale)`, for `SalesRoles.Managers`, with its validator (price zero or more, a category id above zero) next
+to it in the endpoint file. Changing a price never changes an existing order: lesson 04's lines
 keep the price as ordered.
 
 The categories slice puts list, create and edit in one feature folder, `Features/ItemCategories/`:
@@ -794,7 +967,9 @@ internal sealed class SaveItemCategoryHandler(SalesDbContext db)
 The `if (cmd.CategoryId is { } id)` chooses between *create* and *edit*; it isn't a business rule, so it's
 allowed in a handler. The endpoints map `GET /item-categories` (Sales readers), `POST /item-categories` and
 `PUT /item-categories/{id:long}` (managers), all taking an `ItemCategoryRequest(string Name, decimal
-MaxQuantityPerOrder, string? RequiredRole)`. The list function is one more file, applied by a Sales migration
+MaxQuantityPerOrder, string? RequiredRole)`, validated in the endpoint file. A `null` from the handler means
+the category to edit doesn't exist: a 404. Register the three new Sales handlers and map the two endpoint
+classes. The list function is one more file, applied by a Sales migration
 named `AddCategoryList`:
 
 ```sql
@@ -1156,10 +1331,11 @@ public class ItemTests
 The second test is the one that caught `Adjust` changing the count before checking the reason: after the
 refused call, `OnHand` was 10, then 20.
 
-The architecture tests already list Inventory's Contracts assembly, so `Every_event_has_a_handler` now checks
-`ItemCatalogChanged` too, and finds Sales' handler.
+The architecture tests already list Inventory's Contracts assembly, so `Every_integration_event_is_handled_by_another_module`
+checks `ItemCatalogChanged` and finds Sales' handler, and `Every_domain_event_has_a_handler_in_its_own_module`
+finds `PublishItemCatalogChanged` for `ItemChanged`.
 
-And the integration test that would have caught the Mediator trap, in `BusinessFlowTests.cs`:
+And the integration test that proves the whole trip, in `BusinessFlowTests.cs`:
 
 ```csharp
 [Fact]
@@ -1255,7 +1431,9 @@ sequenceDiagram
 - Letting two modules change the same fact. One owner per fact; everyone else keeps a copy.
 - A `JOIN` into another module's schema to show a name. Keep a copy, kept in step by an event.
 - Events that carry only what changed. Carry the full state, so the handler can apply it twice safely.
-- Forgetting the Contracts assembly in `options.Assemblies`. The events are published to nobody, silently.
+- Forgetting to register an event handler. The event is delivered to nobody, silently; the wiring test names it.
+- Making a domain event public "so Sales can use it". Publish an integration event instead; the domain stays
+  free to change.
 - Raising an event with an id the database hasn't assigned yet. Take it from a sequence first.
 - Seeding explicit ids without `setval`. The first real insert collides.
 - Changing a count before checking the reason. Check everything, then change.
@@ -1285,8 +1463,9 @@ pc reserved for orders and can't be deactivated."
 dotnet test
 ```
 
-The four Inventory unit tests pass, and so does the catalog-to-price-list integration test. Remove the
-Contracts assembly from `options.Assemblies` once, run that test, and watch it time out. Then put it back.
+The four Inventory unit tests pass, and so does the catalog-to-price-list integration test. Comment out
+`ItemCatalogChangedHandler`'s registration once: that test times out, and the wiring test names the handler.
+Then put it back.
 
 ## Let's check!
 

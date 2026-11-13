@@ -92,7 +92,6 @@ dotnet add src/Modules/Identity/Erp.Modules.Identity package Microsoft.AspNetCor
 dotnet add src/Modules/Identity/Erp.Modules.Identity package Npgsql.EntityFrameworkCore.PostgreSQL --version 10.0.3
 dotnet add src/Modules/Identity/Erp.Modules.Identity package EFCore.NamingConventions --version 10.0.1
 dotnet add src/Modules/Identity/Erp.Modules.Identity package Microsoft.EntityFrameworkCore.Design --version 10.0.14
-dotnet add src/Modules/Identity/Erp.Modules.Identity package Carter --version 10.0.0
 ```
 
 `Microsoft.AspNetCore.Identity.EntityFrameworkCore` (MIT) is Identity itself, storing its users and roles
@@ -103,12 +102,10 @@ with EF Core. The other packages you know from lessons 03 and 04. As before, del
 <ItemGroup>
   <FrameworkReference Include="Microsoft.AspNetCore.App" />
 </ItemGroup>
-
-<!-- Erp.Api: the Mediator source generator runs there. Never grant this to another module. -->
-<ItemGroup>
-  <InternalsVisibleTo Include="Erp.Api" />
-</ItemGroup>
 ```
+
+No `InternalsVisibleTo` yet: nothing outside the module needs its insides. The architecture tests will hold
+it to that.
 
 ## 2. Users, roles and their tables
 
@@ -240,7 +237,7 @@ exactly the way real users will.
 
 ```csharp
 // src/Modules/Identity/Erp.Modules.Identity/IdentityModule.cs
-using Carter;
+using Erp.Modules.Identity.Features;
 using Erp.Modules.Identity.Infrastructure;
 using Erp.Shared.BuildingBlocks;
 using Microsoft.AspNetCore.Authentication.BearerToken;
@@ -295,10 +292,10 @@ public static class IdentityModule
             o.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = StatusCodes.Status403Forbidden; return Task.CompletedTask; };
         });
 
-        // AddCarter() only finds public endpoint classes; ours are internal.
-        foreach (var endpoint in typeof(IdentityModule).Assembly.GetTypes()
-                     .Where(t => !t.IsAbstract && typeof(ICarterModule).IsAssignableFrom(t)))
-            services.AddSingleton(typeof(ICarterModule), endpoint);
+        // Handlers: plain classes, injected straight into the endpoints that use them.
+        services.AddScoped<GetCurrentUserHandler>();
+        services.AddScoped<SignOutHandler>();
+        services.AddScoped<SignOutEverywhereHandler>();
 
         return services;
     }
@@ -311,8 +308,11 @@ public static class IdentityModule
             .AddEndpointFilter(async (ctx, next) =>
                 // Staff accounts are created by an administrator, never by self sign-up.
                 ctx.HttpContext.Request.Path.Value?.EndsWith("/auth/register", StringComparison.OrdinalIgnoreCase) == true
-                    ? Results.NotFound()
+                    ? TypedResults.NotFound()
                     : await next(ctx));
+
+        GetCurrentUserEndpoint.Map(app);
+        SignOutEndpoint.Map(app);
         return app;
     }
 }
@@ -395,32 +395,25 @@ what to show. So let's add `/auth/me`:
 ```csharp
 // src/Modules/Identity/Erp.Modules.Identity/Features/Me/GetCurrentUserHandler.cs
 using Erp.Shared.BuildingBlocks;
-using Mediator;
 
 namespace Erp.Modules.Identity.Features;
 
-internal sealed record GetCurrentUserQuery : IQuery<CurrentUserDto>;
-
 internal sealed record CurrentUserDto(long Id, string Username, string Role);
 
-internal sealed class GetCurrentUserHandler(ICurrentUser user) : IQueryHandler<GetCurrentUserQuery, CurrentUserDto>
+internal sealed class GetCurrentUserHandler(ICurrentUser user)
 {
-    public ValueTask<CurrentUserDto> Handle(GetCurrentUserQuery query, CancellationToken ct) =>
-        ValueTask.FromResult(new CurrentUserDto(user.UserId, user.Username, user.Role));
+    public Task<CurrentUserDto> HandleAsync(CancellationToken ct) =>
+        Task.FromResult(new CurrentUserDto(user.UserId, user.Username, user.Role));
 }
 ```
 
 ```csharp
 // src/Modules/Identity/Erp.Modules.Identity/Features/Me/GetCurrentUserEndpoint.cs
-using Erp.Shared.BuildingBlocks;
-using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Identity.Features;
-
 
 // Identity's own /auth/manage/info has no role; a client needs it to decide what to show.
 internal static class GetCurrentUserEndpoint
@@ -470,15 +463,12 @@ internal sealed class SignOutEverywhereHandler(UserManager<AppUser> users, SignI
 
 ```csharp
 // src/Modules/Identity/Erp.Modules.Identity/Features/SignOut/SignOutEndpoint.cs
-using Erp.Shared.BuildingBlocks;
-using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Identity.Features;
-
 
 internal static class SignOutEndpoint
 {
@@ -501,34 +491,33 @@ internal static class SignOutEndpoint
 }
 ```
 
-`SignInManager<AppUser>` is Identity's other front desk: it signs people in and out. `ICommand` with no type
-means a command with no result; its handler returns `Unit.Value`, Mediator's way of saying "nothing".
+`SignInManager<AppUser>` is Identity's other front desk: it signs people in and out. Notice that none of these
+handlers takes a message: "who am I?" and "sign me out" need nothing but who's asking, and `ICurrentUser` and
+the cookie already know that. A record with no fields would only be noise.
 
 ## 7. Wire it into the host
 
 In `Program.cs`:
 
 ```csharp
-// after AddSharedInfrastructure, add Identity to the mediator's assemblies:
-options.Assemblies = [typeof(IdentityModule), typeof(SalesModule)];
-
 // register the modules, Identity first (it's also the migration order):
 builder.Services.AddIdentityModule(builder.Configuration);
 builder.Services.AddSalesModule();
-builder.Services.AddCarter();
 builder.Services.AddAuthorization();
 
-// ...after InitializeDatabaseAsync:
+// ...after InitializeDatabaseAsync, and after UseRouting:
 app.UseAuthentication();   // who are you?
 app.UseAuthorization();    // are you allowed?
+app.UseAntiforgery();      // moves down here: it must come after the two above
 
-var api = app.MapGroup("/api");
+var api = app.MapGroup("/api").ValidateRequests();
 api.MapIdentityModule();   // /api/auth/...
-api.MapCarter();
+api.MapSalesEndpoints();
 ```
 
 Order matters for the middleware lines: a request must be identified before anyone can check what it's
-allowed to do, and both must happen before it reaches an endpoint.
+allowed to do, and both must happen before it reaches an endpoint. `UseAntiforgery` checks the signed-in user's
+form tokens, so it goes after them; move it from where lesson 01 put it.
 
 Add the `Auth` settings to `appsettings.json`:
 
@@ -665,44 +654,32 @@ The last line is the important one: **every page requires a signed-in user** unl
 `[AllowAnonymous]`. Forgetting to protect a page is impossible; forgetting to *unprotect* the sign-in page is
 a mistake you'll notice in seconds.
 
-The router learns to check it. In `App.razor`, `RouteView` becomes `AuthorizeRouteView`:
+The router learns to check it. In `Routes.razor`, `RouteView` becomes `AuthorizeRouteView`:
 
 ```razor
-@* src/Erp.Web/App.razor *@
-@* The page the server sends for every address of the app. Only Routes (and the page title) run in the browser, as
-   WebAssembly; prerender is off because every screen needs the signed-in user's data from the API. *@
+@* src/Erp.Web/Routes.razor *@
+@* Every page needs a signed-in user (the [Authorize] in _Imports), unless it says [AllowAnonymous]. *@
 @attribute [AllowAnonymous]
-
-<!DOCTYPE html>
-<html lang="en">
-
-<head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <base href="/" />
-    <link rel="icon" type="image/png" href="@Assets["icon-192.png"]" />
-    <link rel="stylesheet" href="@Assets["_content/MudBlazor/MudBlazor.min.css"]" />
-    <link rel="stylesheet" href="@Assets["css/app.css"]" />
-    <HeadOutlet @rendermode="InBrowser" />
-</head>
-
-<body>
-    <Routes @rendermode="InBrowser" />
-
-    <div id="blazor-error-ui">
-        Something went wrong. <a href="." class="reload">Reload</a>
-    </div>
-
-    @* No inline scripts anywhere: the Content-Security-Policy forbids them. *@
-    <script src="@Assets["_framework/blazor.web.js"]"></script>
-    <script src="@Assets["_content/MudBlazor/MudBlazor.min.js"]"></script>
-</body>
-
-</html>
-
-@code {
-    private static readonly IComponentRenderMode InBrowser = new InteractiveWebAssemblyRenderMode(prerender: false);
-}
+<Router AppAssembly="typeof(Routes).Assembly" NotFoundPage="typeof(Pages.NotFound)">
+    <Found Context="routeData">
+        <AuthorizeRouteView RouteData="routeData" DefaultLayout="typeof(MainLayout)">
+            <NotAuthorized>
+                @if (context.User.Identity?.IsAuthenticated == true)
+                {
+                    <MudAlert Severity="Severity.Warning" Class="ma-6">You don't have access to this page.</MudAlert>
+                }
+                else
+                {
+                    <RedirectToLogin />
+                }
+            </NotAuthorized>
+            <Authorizing>
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            </Authorizing>
+        </AuthorizeRouteView>
+        <FocusOnNavigate RouteData="routeData" Selector="h1" />
+    </Found>
+</Router>
 ```
 
 Not signed in? Off to the sign-in page. Signed in but the wrong role? A polite "no access" message.
@@ -722,7 +699,21 @@ Not signed in? Off to the sign-in page. Signed in but the wrong role? A polite "
 ```
 
 It remembers where you were going, so after signing in you land there instead of on the home page. The
-"not found" page should work for everyone, so add `@attribute [AllowAnonymous]` to `NotFound.razor`.
+"not found" page should work for everyone, so add `@attribute [AllowAnonymous]` to `NotFound.razor`, and to
+`App.razor` and `Routes.razor` too: they wrap every page, the sign-in page included.
+
+One more line, on the server. The host turns each page into an address of its own, and it reads the same
+`[Authorize]`: without help, it would refuse a signed-out visitor the sign-in page itself. But the server
+only sends the page; the data on it comes from the API, which checks the user on every call. So tell the
+server to let anyone have the page, in `Program.cs`:
+
+```csharp
+// The pages guard themselves in the browser (AuthorizeRouteView sends a signed-out user to sign in). The server
+// only serves the page; every piece of data still comes from the API, which checks the user on each call.
+app.MapRazorComponents<Erp.Web.App>()
+    .AddInteractiveWebAssemblyRenderMode()
+    .AllowAnonymous();
+```
 
 ### The sign-in page
 
@@ -916,6 +907,15 @@ Tests must not step on each other.
 
 ### The doors, tested
 
+First, a one-line change you'll make for every new module from now on: Identity has handlers of its own, so
+it joins the list in `WiringTests` from lesson 03, and a forgotten `AddScoped` in Identity gets caught too:
+
+```csharp
+private static readonly Type[] Modules = [typeof(IdentityModule), typeof(SalesModule)];
+```
+
+(with `using Erp.Modules.Identity;` at the top). Then the doors themselves:
+
 ```csharp
 // tests/Erp.Integration.Tests/AuthTests.cs
 using System.Net;
@@ -1095,9 +1095,7 @@ wait for text.
 dotnet new classlib -n Erp.Web.UiTests -o tests/Erp.Web.UiTests
 rm tests/Erp.Web.UiTests/Class1.cs
 dotnet sln add tests/Erp.Web.UiTests
-dotnet add tests/Erp.Web.UiTests package Microsoft.NET.Test.Sdk --version 17.14.1
-dotnet add tests/Erp.Web.UiTests package xunit --version 2.9.3
-dotnet add tests/Erp.Web.UiTests package xunit.runner.visualstudio --version 3.1.4
+dotnet add tests/Erp.Web.UiTests package xunit.v3 --version 4.0.2
 dotnet add tests/Erp.Web.UiTests package AwesomeAssertions --version 9.6.0
 dotnet add tests/Erp.Web.UiTests package Microsoft.Playwright --version 1.64.1
 ```
@@ -1107,6 +1105,7 @@ address, like a real user.
 
 ```csharp
 // tests/Erp.Web.UiTests/BusinessFlowUiTests.cs
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using AwesomeAssertions;
 using Microsoft.Playwright;
@@ -1119,14 +1118,16 @@ namespace Erp.Web.UiTests;
 // `playwright install chromium` downloads, on a machine with neither.
 public sealed class UiFactAttribute : FactAttribute
 {
-    public UiFactAttribute()
+    // xUnit v3 records where each test is written; an attribute built on Fact passes that location on.
+    public UiFactAttribute([CallerFilePath] string? sourceFilePath = null, [CallerLineNumber] int sourceLineNumber = -1)
+        : base(sourceFilePath, sourceLineNumber)
     {
         if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("ERP_UI_URL")))
             Skip = "Set ERP_UI_URL to a running ERP to run browser tests.";
     }
 }
 
-public class BusinessFlowUiTests : IAsyncLifetime
+public sealed class BusinessFlowUiTests : IAsyncLifetime
 {
     private static readonly string BaseUrl = Environment.GetEnvironmentVariable("ERP_UI_URL")?.TrimEnd('/') ?? "";
     private static readonly string? Screenshots = Environment.GetEnvironmentVariable("ERP_UI_SCREENSHOTS");
@@ -1134,7 +1135,7 @@ public class BusinessFlowUiTests : IAsyncLifetime
     private IBrowser _browser = default!;
     private int _shot;
 
-    public async Task InitializeAsync()
+    public async ValueTask InitializeAsync()
     {
         if (BaseUrl.Length == 0) return;
         _playwright = await Playwright.CreateAsync();
@@ -1143,7 +1144,7 @@ public class BusinessFlowUiTests : IAsyncLifetime
         _browser = await _playwright.Chromium.LaunchAsync(new() { Channel = channel == "chromium" ? null : channel });
     }
 
-    public async Task DisposeAsync()
+    public async ValueTask DisposeAsync()
     {
         if (BaseUrl.Length == 0) return;
         await _browser.DisposeAsync();
@@ -1222,7 +1223,7 @@ dotnet run --project src/Erp.Api
 ```
 
 ```bash
-ERP_UI_URL=http://localhost:5264 ERP_UI_SCREENSHOTS=./screens dotnet test tests/Erp.Web.UiTests
+ERP_UI_URL=http://localhost:5264 ERP_UI_SCREENSHOTS=./screens dotnet test --project tests/Erp.Web.UiTests
 ```
 
 Open the `screens` folder afterwards: each step is a picture. The browser runs *headless* (no window), so
@@ -1240,7 +1241,7 @@ sequenceDiagram
   participant B as Browser
   participant H as Erp.Api
   B->>H: GET /ping (a page of the app)
-  H-->>B: index.html; the app starts
+  H-->>B: the app's page (App.razor); the app starts
   B->>H: GET /api/auth/me
   H-->>B: 401
   Note over B: RedirectToLogin → /login?returnUrl=ping
@@ -1307,10 +1308,11 @@ dotnet test
 ```
 
 ```
-Passed!  - Failed: 0, Passed: 52, ... Erp.Modules.Sales.UnitTests.dll
-Passed!  - Failed: 0, Passed:  5, ... Erp.Architecture.Tests.dll
-Passed!  - Failed: 0, Passed: 32, ... Erp.Integration.Tests.dll
-Skipped! - Failed: 0, Skipped: 3, ... Erp.Web.UiTests.dll
+Test run summary: Passed!
+  total: 95
+  failed: 0
+  succeeded: 92
+  skipped: 3
 ```
 
 The browser tests skip until you point them at a running app, as in step 9.

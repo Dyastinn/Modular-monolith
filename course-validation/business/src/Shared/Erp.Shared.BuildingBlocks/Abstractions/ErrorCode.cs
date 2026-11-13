@@ -19,7 +19,7 @@ public sealed class ErrorCatalog(IReadOnlyList<ErrorCode> codes)
             .ToList());
 }
 
-// Codes that belong to no module: the shape of a request, the HTTP layer, and the value objects every module shares.
+// Codes that belong to no module: the HTTP layer, and the value objects every module shares.
 public static class CommonErrors
 {
     public static readonly ErrorCode ValidationFailed = new("ERP-0001", "The request has invalid fields",
@@ -28,18 +28,18 @@ public static class CommonErrors
         "Check the number or link. If it was created a moment ago on another screen, such as a new catalog item, wait a few seconds and reload.");
     public static readonly ErrorCode ChangedBySomeoneElse = new("ERP-0003", "Someone else changed this first",
         "Reload to see their change, then make yours again.");
-    public static readonly ErrorCode AlreadyExists = new("ERP-0004", "That already exists",
-        "Someone created the same thing at the same moment. Reload and use the existing one.");
-    public static readonly ErrorCode UnreadableRequest = new("ERP-0005", "The request could not be read",
+    public static readonly ErrorCode UnreadableRequest = new("ERP-0004", "The request could not be read",
         "The request body is missing or isn't valid JSON. If you're calling the API directly, check the body and the Content-Type header.");
-    public static readonly ErrorCode NotSignedIn = new("ERP-0006", "Not signed in",
+    public static readonly ErrorCode NotSignedIn = new("ERP-0005", "Not signed in",
         "Sign in again. Sessions end after a period without use, or when an admin signs you out everywhere.");
-    public static readonly ErrorCode NotAllowed = new("ERP-0007", "Not allowed",
+    public static readonly ErrorCode NotAllowed = new("ERP-0006", "Not allowed",
         "Your role can't do this. Ask an admin if you need it.");
-    public static readonly ErrorCode TooManyRequests = new("ERP-0008", "Too many requests",
+    public static readonly ErrorCode TooManyRequests = new("ERP-0007", "Too many requests",
         "Wait a minute and try again. Repeated failed sign-ins are limited on purpose.");
-    public static readonly ErrorCode Unexpected = new("ERP-0009", "Unexpected error",
+    public static readonly ErrorCode Unexpected = new("ERP-0008", "Unexpected error",
         "Try again. If it keeps happening, send the trace id from the message to support: it finds this exact failure in the logs.");
+    public static readonly ErrorCode AlreadyExists = new("ERP-0009", "That already exists",
+        "Someone created the same thing at the same moment. Reload and use the existing one.");
 
     public static readonly ErrorCode NegativeMoney = new("ERP-0101", "An amount can't be negative",
         "Enter zero or a positive amount.");

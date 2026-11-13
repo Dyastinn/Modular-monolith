@@ -81,8 +81,9 @@ methods, one per area. Carter's main feature is discovering endpoint modules aut
 see our internal types, so every module already registers its endpoints by hand.
 
 **Change.** Each module exposes `MapSalesEndpoints(this IEndpointRouteBuilder)` beside `AddSalesModule()`,
-builds one `MapGroup("/sales")` with its authorization and validation filter, and maps its features. One
-package goes, and the module's public surface is two methods, the same shape on both the services and the
+maps its features into `api.MapGroup("").WithTags("Sales")`, and keeps its existing URLs (`/api/customers`,
+not `/api/sales/customers`, so no client breaks). Validation is one filter on the host's `/api` group, and
+authorization stays per endpoint, because roles differ endpoint by endpoint. One package goes, and the module's public surface is two methods, the same shape on both the services and the
 routes side.
 
 ## 3. Validation — Change how it runs, keep FluentValidation
