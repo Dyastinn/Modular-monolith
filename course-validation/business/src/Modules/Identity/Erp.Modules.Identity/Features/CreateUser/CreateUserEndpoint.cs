@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Identity.Features;
 
-
 internal sealed record CreateUserRequest(string Email, string FullName, string Role, string TemporaryPassword);
 
 internal sealed class CreateUserRequestValidator : AbstractValidator<CreateUserRequest>

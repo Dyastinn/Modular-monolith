@@ -1,12 +1,8 @@
-using Erp.Shared.BuildingBlocks;
-using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Identity.Features;
-
 
 // Identity's own /auth/manage/info has no role; a client needs it to decide what to show.
 internal static class GetCurrentUserEndpoint

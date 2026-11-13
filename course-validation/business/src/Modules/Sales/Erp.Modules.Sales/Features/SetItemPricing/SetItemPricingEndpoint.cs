@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-
 internal sealed record SetItemPricingRequest(decimal UnitPrice, long CategoryId, bool IsForSale, TaxType TaxType = TaxType.Vatable,
     bool SpecialDiscountEligible = false);
 

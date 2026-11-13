@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Inventory.Features;
 
-
 internal sealed record ShipSalesOrderRequest(long SalesOrderId);
 
 internal sealed class ShipSalesOrderRequestValidator : AbstractValidator<ShipSalesOrderRequest>

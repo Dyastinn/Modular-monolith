@@ -8,7 +8,6 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Invoicing.Features;
 
-
 internal sealed record RecordPaymentRequest(decimal Amount, DateOnly PaidOn, PaymentMethod Method, string? Reference,
     decimal TaxWithheld = 0);
 internal sealed record VoidRequest(string Reason);

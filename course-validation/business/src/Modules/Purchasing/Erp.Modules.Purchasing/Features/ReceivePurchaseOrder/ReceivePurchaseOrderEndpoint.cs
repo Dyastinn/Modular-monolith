@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Purchasing.Features;
 
-
 internal sealed record ReceivePurchaseOrderRequest(IReadOnlyList<ReceivedLineInput> Lines);
 
 internal sealed class ReceivePurchaseOrderRequestValidator : AbstractValidator<ReceivePurchaseOrderRequest>

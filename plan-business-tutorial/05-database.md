@@ -408,7 +408,7 @@ internal sealed class SalesDatabase(SalesDbContext db) : IModuleDatabase
 }
 ```
 
-In `SalesModule.AddSalesModule`, before the Carter loop, register the context and the database:
+In `SalesModule.AddSalesModule`, before the handler registrations, register the context and the database:
 
 ```csharp
 services.AddDbContext<SalesDbContext>((sp, o) =>
@@ -508,7 +508,19 @@ The **scope** is there because the module databases are scoped services (each on
 startup task has no HTTP request to provide a scope, so we make one.
 
 In `Program.cs`, call `builder.Services.AddSharedInfrastructure(builder.Configuration);` before
-`AddMediator`, and `await app.InitializeDatabaseAsync();` right after `builder.Build()`.
+`AddSalesModule()`, and `await app.InitializeDatabaseAsync();` right after `builder.Build()`.
+
+These are the app's first log lines, and the analyzers from lesson 01 have an opinion: CA1848 suggests
+source-generated `[LoggerMessage]` methods instead of `log.LogInformation(...)`, and CA1873 warns that an
+argument is worked out even when that level is switched off. Both matter on a *hot path*, code that runs
+thousands of times a second. Ours log at startup, on failures and once per approval, so we keep the plain,
+readable calls, and say so in `.editorconfig`:
+
+```ini
+# CA1848, CA1873: source-generated logging pays off on hot paths. Ours log at startup, on failures and once per approval.
+dotnet_diagnostic.CA1848.severity = none
+dotnet_diagnostic.CA1873.severity = none
+```
 
 Then configuration. `appsettings.json` holds the production defaults: everything off, no secrets.
 
@@ -552,6 +564,16 @@ dotnet ef migrations add InitialCreate \
 `tool-manifest` creates `.config/dotnet-tools.json`, and `tool install` records `dotnet-ef` in it. Then open
 the generated `..._InitialCreate.cs`. It's plain C# that creates the `sales` schema, the tables and their
 constraints. Read through it once; it's the clearest picture of what your model became.
+
+Build now and the analyzers complain about it (CA1861, "prefer static readonly fields over constant arrays").
+That's EF Core's code, not ours, and we keep a migration exactly as it was generated. So tell the analyzers
+it's generated code, at the end of `.editorconfig`:
+
+```ini
+# EF Core writes migrations; they're generated code, kept exactly as generated.
+[**/Migrations/*.cs]
+generated_code = true
+```
 
 One thing to know before you compare your work with the reference build: your migration history will grow
 lesson by lesson (`InitialCreate`, then more as features arrive), while the reference build squashes each
@@ -653,12 +675,8 @@ After:
 public class HostTests(CustomWebAppFactory factory)
 ```
 
-One test will look inside Sales with its own `SalesDbContext`, which is internal. Let the test project in,
-next to the other `InternalsVisibleTo` lines in `Erp.Modules.Sales.csproj`:
-
-```xml
-<InternalsVisibleTo Include="Erp.Integration.Tests" />
-```
+One test will look inside Sales with its own `SalesDbContext`, which is internal. Lesson 03 already let the
+integration tests in, with `<InternalsVisibleTo Include="Erp.Integration.Tests" />`.
 
 ### What the migrations built
 
@@ -895,8 +913,8 @@ dotnet test
 
 ```
 Passed!  - Failed: 0, Passed: 52, ... Erp.Modules.Sales.UnitTests.dll
-Passed!  - Failed: 0, Passed:  5, ... Erp.Architecture.Tests.dll
-Passed!  - Failed: 0, Passed: 20, ... Erp.Integration.Tests.dll
+Passed!  - Failed: 0, Passed:  7, ... Erp.Architecture.Tests.dll
+Passed!  - Failed: 0, Passed: 21, ... Erp.Integration.Tests.dll
 ```
 
 Look in pgAdmin or `psql`: `erp_test` is there, holding whatever the last run left behind, and the next run

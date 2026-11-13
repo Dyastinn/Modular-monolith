@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Inventory.Features;
 
-
 internal sealed record UpdateItemRequest(string Name, string Unit, bool AllowsFractions);
 
 internal sealed class UpdateItemRequestValidator : AbstractValidator<UpdateItemRequest>

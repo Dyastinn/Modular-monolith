@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-
 internal sealed class CustomerInputValidator : AbstractValidator<CustomerInput>
 {
     public CustomerInputValidator()

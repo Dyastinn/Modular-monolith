@@ -1,4 +1,3 @@
-using Erp.Shared.BuildingBlocks;
 using FluentValidation;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
@@ -6,7 +5,6 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
-
 
 internal sealed record SaveSpecialDiscountProgramRequest(string Name, string IdLabel, decimal Rate, bool VatExempt, bool IsActive = true);
 internal sealed record ApplySpecialDiscountRequest(string ProgramCode, string HolderName, string IdNumber);

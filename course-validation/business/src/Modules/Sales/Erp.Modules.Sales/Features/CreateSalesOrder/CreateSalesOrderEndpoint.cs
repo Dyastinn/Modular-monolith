@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-
 internal sealed record CreateSalesOrderRequest(long CustomerId, IReadOnlyList<OrderLineInput> Lines);
 
 internal sealed class OrderLineInputValidator : AbstractValidator<OrderLineInput>

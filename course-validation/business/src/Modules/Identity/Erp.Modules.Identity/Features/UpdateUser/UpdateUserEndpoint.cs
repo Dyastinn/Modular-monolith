@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Identity.Features;
 
-
 internal sealed record UpdateUserRequest(string FullName, string Role);
 internal sealed record ResetUserPasswordRequest(string TemporaryPassword);
 

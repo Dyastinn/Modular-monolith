@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Sales.Features;
 
-
 internal sealed record ItemCategoryRequest(string Name, decimal MaxQuantityPerOrder, string? RequiredRole);
 
 internal sealed class ItemCategoryRequestValidator : AbstractValidator<ItemCategoryRequest>

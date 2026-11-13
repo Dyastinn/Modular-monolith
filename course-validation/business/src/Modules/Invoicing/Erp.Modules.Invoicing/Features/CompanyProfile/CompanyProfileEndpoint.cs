@@ -1,4 +1,3 @@
-using Erp.Modules.Invoicing.Domain;
 using Erp.Shared.BuildingBlocks;
 using FluentValidation;
 using Microsoft.AspNetCore.Builder;
@@ -7,7 +6,6 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Invoicing.Features;
-
 
 internal sealed record UpdateCompanyProfileRequest(string RegisteredName, string? TradeName, string Tin, string RegisteredAddress,
     TaxRegime TaxRegime, decimal VatRate, string InvoiceTitle, string? PermitNumber, string? SeriesRange, string? PermitDateIssued);

@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Inventory.Features;
 
-
 internal sealed record AdjustStockRequest(decimal Quantity, string Reason);
 
 internal sealed class AdjustStockRequestValidator : AbstractValidator<AdjustStockRequest>

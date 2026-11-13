@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Erp.Modules.Purchasing.Features;
 
-
 internal sealed class SupplierInputValidator : AbstractValidator<SupplierInput>
 {
     public SupplierInputValidator()
