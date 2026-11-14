@@ -564,7 +564,7 @@ after it:
 @if (_order.Status == "Draft")
 {
     <AuthorizeView Roles="@Sellers">
-        <MudButton OnClick="Submit" Variant="Variant.Filled" Color="Color.Primary">Submit</MudButton>
+        <MudButton OnClick="Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="Api.Busy">Submit</MudButton>
     </AuthorizeView>
 }
 ```

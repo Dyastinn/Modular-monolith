@@ -2,10 +2,14 @@
 @page "/purchase-orders/{Id:long}/edit"
 @attribute [Authorize(Roles = $"{Roles.Purchaser},{Roles.Admin}")]
 @inject ApiClient Api
+@inject ListMemory Lists
 @inject NavigationManager Nav
+@inject IDialogService Dialogs
 
 <PageTitle>@(Id is null ? "New purchase order" : "Edit purchase order") · ERP</PageTitle>
 
+<NavigationLock OnBeforeInternalNavigation="ConfirmLeave" ConfirmExternalNavigation="Unsaved" />
+<MudBreadcrumbs Items="@Crumbs" Class="pa-0 mb-2" />
 <MudText Typo="Typo.h4" Class="mb-4">@(Id is null ? "New purchase order" : $"Edit {_number}")</MudText>
 
 <MudPaper Class="pa-4 mb-4" Outlined="true">
@@ -21,7 +25,7 @@
     <MudText Typo="Typo.h6" GutterBottom="true">Lines</MudText>
     @foreach (var line in _lines)
     {
-        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mb-2">
+        <MudStack Row="true" Spacing="3" Class="mb-2 align-start align-sm-center" Breakpoint="Breakpoint.Xs">
             <AppAutocomplete T="StockItem" Label="Item" @bind-Value="line.Item" SearchFunc="FindItems" Style="min-width:320px"
                              ToStringFunc="@(i => i is null ? null : $"{i.Sku} · {i.Name}")" DebounceInterval="300" />
             <AppNumericField T="decimal" Label="@($"Quantity{(line.Item is null ? "" : $" ({line.Item.Unit})")}")" @bind-Value="line.Quantity" Min="0" Style="max-width:160px" />
@@ -36,12 +40,17 @@
 </MudPaper>
 
 <MudStack Row="true" Spacing="2">
-    <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="!CanSave">Save draft</MudButton>
+    <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(!CanSave || Api.Busy)">Save draft</MudButton>
     <MudButton Href="@(Id is null ? "purchase-orders" : $"purchase-orders/{Id}")" Variant="Variant.Text">Back</MudButton>
 </MudStack>
 
 @code {
     [Parameter] public long? Id { get; set; }
+
+    // Where this page sits: under the list, and under the purchase order itself when editing one.
+    private List<BreadcrumbItem> Crumbs => Id is null
+        ? [new("Purchase orders", Lists.Last("purchase-orders")), new("New purchase order", null, disabled: true)]
+        : [new("Purchase orders", Lists.Last("purchase-orders")), new(_number ?? "Purchase order", $"purchase-orders/{Id}"), new("Edit", null, disabled: true)];
 
     private sealed class Line
     {
@@ -56,11 +65,19 @@
     private string? _notes, _number;
     private List<Line> _lines = [new()];
 
+    private string State =>
+        $"{_supplier?.Id}|{_expected:yyyy-MM-dd}|{_notes}|{string.Join(",", _lines.Select(l => $"{l.Item?.Id}x{l.Quantity}@{l.UnitCost}"))}";
+
+    // What the form held when it was loaded or last saved; leaving with anything else asks first.
+    private string _saved = "";
+    private bool Unsaved => State != _saved;
+    private Task ConfirmLeave(LocationChangingContext context) => UnsavedChanges.ConfirmLeave(Dialogs, context, Unsaved);
+
     private bool CanSave => _supplier is not null && _lines.Count > 0 && _lines.All(l => l.Item is not null && l.Quantity > 0);
 
     protected override async Task OnParametersSetAsync()
     {
-        if (Id is null) return;
+        if (Id is null) { _saved = State; return; }
         var po = await Api.Get<PurchaseOrderDetail>($"api/purchase-orders/{Id}");
         if (po is null) return;
         _number = po.Number;
@@ -71,6 +88,7 @@
         {
             Item = new StockItem(l.ItemId, l.Sku, l.ItemName, l.Unit, true, true, 0, 0, 0), Quantity = l.Quantity, UnitCost = l.UnitCost
         }).ToList();
+        _saved = State;
     }
 
     private async Task<IEnumerable<Supplier>> FindSuppliers(string? text, CancellationToken ct) =>
@@ -90,10 +108,15 @@
         };
         if (Id is null)
         {
-            if (await Api.Create("api/purchase-orders", body, "Draft saved.") is { } newId) Nav.NavigateTo($"purchase-orders/{newId}");
+            if (await Api.Create("api/purchase-orders", body, "Draft saved.") is { } newId)
+            {
+                _saved = State;
+                Nav.NavigateTo($"purchase-orders/{newId}");
+            }
         }
         else if (await Api.Put($"api/purchase-orders/{Id}", body, "Draft saved."))
         {
+            _saved = State;
             Nav.NavigateTo($"purchase-orders/{Id}");
         }
     }

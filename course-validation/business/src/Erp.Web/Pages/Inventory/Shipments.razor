@@ -1,6 +1,7 @@
 @page "/shipments"
 @inject ApiClient Api
 @inject UserDirectory Users
+@inject ListAddress View
 
 <PageTitle>Shipments · ERP</PageTitle>
 
@@ -9,28 +10,37 @@
     To ship an approved order, open it from <MudLink Href="sales-orders?status=Approved">Ready to ship</MudLink> and choose Ship.
 </MudText>
 
-<MudTable Outlined="true" T="Shipment" ServerData="Load" Hover="true" Dense="true">
+<AppTable T="Shipment" @key="View.Version" ServerData="Load"
+          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
     <HeaderContent>
         <MudTh>Shipment</MudTh><MudTh>Order</MudTh><MudTh>Lines</MudTh><MudTh>Shipped</MudTh><MudTh>By</MudTh>
     </HeaderContent>
     <RowTemplate>
-        <MudTd>@context.Number</MudTd>
-        <MudTd><MudLink Href="@($"sales-orders/{context.SalesOrderId}")">@context.OrderNumber</MudLink></MudTd>
-        <MudTd>@context.LineCount</MudTd>
-        <MudTd>@Format.Date(context.ShippedUtc)</MudTd>
-        <MudTd>@_names.GetValueOrDefault(context.ShippedBy)</MudTd>
+        <MudTd DataLabel="Shipment">@context.Number</MudTd>
+        <MudTd DataLabel="Order"><MudLink Href="@($"sales-orders/{context.SalesOrderId}")">@context.OrderNumber</MudLink></MudTd>
+        <MudTd DataLabel="Lines">@context.LineCount</MudTd>
+        <MudTd DataLabel="Shipped">@Format.Date(context.ShippedUtc)</MudTd>
+        <MudTd DataLabel="By">@_names.GetValueOrDefault(context.ShippedBy)</MudTd>
     </RowTemplate>
     <NoRecordsContent>Nothing has shipped yet.</NoRecordsContent>
     <PagerContent><MudTablePager /></PagerContent>
-</MudTable>
+</AppTable>
 
 @code {
+    // The list's view lives in the address (see ListAddress).
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+    [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
+
     private readonly Dictionary<long, string> _names = [];
 
     private async Task<TableData<Shipment>> Load(TableState state, CancellationToken ct)
     {
+        View.Save(state);
         var page = await Api.Page<Shipment>("api/shipments", state);
         foreach (var id in page.Items!.Select(s => s.ShippedBy).Distinct()) _names[id] = await Users.NameOf(id);
         return page;
     }
+
+    // A link to this list (the menu, Back) shows it from its own address.
+    protected override void OnParametersSet() => View.Check();
 }

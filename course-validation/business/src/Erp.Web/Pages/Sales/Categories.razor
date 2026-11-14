@@ -1,7 +1,7 @@
 @inject ApiClient Api
 
 @* Category rules: who may sell its items, and how much of them one order may hold. *@
-<MudSimpleTable Dense="true" Hover="true" Class="ma-4">
+<AppSimpleTable Class="ma-4">
     <thead><tr><th>Name</th><th class="money">Max per order</th><th>Only for role</th><th></th></tr></thead>
     <tbody>
         @foreach (var c in _categories)
@@ -18,12 +18,12 @@
             </tr>
         }
     </tbody>
-</MudSimpleTable>
+</AppSimpleTable>
 
 <AuthorizeView Roles="@Managers">
     <MudPaper Class="pa-4 ma-4" Outlined="true">
         <MudText Typo="Typo.subtitle1" GutterBottom="true">@(_editing is null ? "New category" : $"Edit {_editing.Name}")</MudText>
-        <MudStack Row="true" Spacing="3" AlignItems="AlignItems.End" Wrap="Wrap.Wrap">
+        <MudStack Row="true" Spacing="3" AlignItems="AlignItems.End" Wrap="Wrap.Wrap" Breakpoint="Breakpoint.Xs">
             <AppTextField @bind-Value="_name" Label="Name" MaxLength="100" />
             <AppNumericField @bind-Value="_max" Label="Max per order" Min="1" />
             <AppSelect T="string" @bind-Value="_role" Label="Only for role" Clearable="true" Style="min-width:200px">
@@ -32,7 +32,7 @@
                     <MudSelectItem Value="r">@Format.Words(r)</MudSelectItem>
                 }
             </AppSelect>
-            <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="string.IsNullOrWhiteSpace(_name)">Save</MudButton>
+            <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(string.IsNullOrWhiteSpace(_name) || Api.Busy)">Save</MudButton>
             @if (_editing is not null) { <MudButton OnClick="() => Start(null)">Cancel</MudButton> }
         </MudStack>
     </MudPaper>

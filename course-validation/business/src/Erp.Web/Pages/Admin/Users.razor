@@ -1,6 +1,7 @@
 @page "/users"
 @attribute [Authorize(Roles = Roles.Admin)]
 @inject ApiClient Api
+@inject ListAddress View
 @inject IDialogService Dialogs
 
 <PageTitle>Users · ERP</PageTitle>
@@ -11,23 +12,24 @@
     <MudButton OnClick="() => Edit(null)" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PersonAdd">New user</MudButton>
 </MudStack>
 
-<AppTextField T="string" Value="_search" ValueChanged="OnSearch" Label="Name or email" DebounceInterval="400" Clearable="true" Class="mb-4" />
+<AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Name or email" DebounceInterval="400" Clearable="true" Class="mb-4" />
 
-<MudTable Outlined="true" T="User" @ref="_table" ServerData="Load" Hover="true" Dense="true">
+<AppTable T="User" @ref="_table" @key="View.Version" ServerData="Load"
+          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
     <HeaderContent>
         <MudTh>Name</MudTh><MudTh>Email</MudTh><MudTh>Role</MudTh><MudTh>Status</MudTh><MudTh>Last sign-in</MudTh><MudTh></MudTh>
     </HeaderContent>
     <RowTemplate>
-        <MudTd>@context.FullName</MudTd>
-        <MudTd>@context.Email</MudTd>
-        <MudTd>@Format.Words(context.Role)</MudTd>
-        <MudTd>
+        <MudTd DataLabel="Name">@context.FullName</MudTd>
+        <MudTd DataLabel="Email">@context.Email</MudTd>
+        <MudTd DataLabel="Role">@Format.Words(context.Role)</MudTd>
+        <MudTd DataLabel="Status">
             @if (context.IsDisabled) { <MudChip T="string" Size="Size.Small" Color="Color.Default">Disabled</MudChip> }
             else if (context.LockedOutUntil is not null) { <MudChip T="string" Size="Size.Small" Color="Color.Error">Locked out</MudChip> }
             else if (context.MustChangePassword) { <MudChip T="string" Size="Size.Small" Color="Color.Warning">Temporary password</MudChip> }
             else { <MudChip T="string" Size="Size.Small" Color="Color.Success">Active</MudChip> }
         </MudTd>
-        <MudTd>@Format.Date(context.LastSignIn)</MudTd>
+        <MudTd DataLabel="Last sign-in">@Format.Date(context.LastSignIn)</MudTd>
         <MudTd>
             <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" aria-label="Actions">
                 <MudMenuItem OnClick="() => Edit(context)">Edit name and role</MudMenuItem>
@@ -38,16 +40,26 @@
     </RowTemplate>
     <NoRecordsContent>No users match.</NoRecordsContent>
     <PagerContent><MudTablePager /></PagerContent>
-</MudTable>
+</AppTable>
 
 @code {
-    private MudTable<User> _table = default!;
-    private string? _search;
+    // The list's view lives in the address (see ListAddress).
+    [SupplyParameterFromQuery] public string? Search { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+    [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
 
-    private Task<TableData<User>> Load(TableState state, CancellationToken ct) =>
-        Api.Page<User>(Url.With("api/users", ("search", _search)), state);
+    private AppTable<User> _table = default!;
 
-    private Task OnSearch(string? text) { _search = text; return _table.ReloadServerData(); }
+    private Task<TableData<User>> Load(TableState state, CancellationToken ct)
+    {
+        View.Save(state, ("search", Search));
+        return Api.Page<User>(Url.With("api/users", ("search", Search)), state);
+    }
+
+    // A link to this list with other filters (the menu, a home tile, Back) shows them.
+    protected override void OnParametersSet() => View.Check();
+
+    private Task OnSearch(string? text) { Search = text; return _table.FirstPage(); }
 
     private async Task Edit(User? user)
     {

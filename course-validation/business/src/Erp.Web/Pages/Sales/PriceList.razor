@@ -1,5 +1,6 @@
 @page "/price-list"
 @inject ApiClient Api
+@inject ListAddress View
 @inject IDialogService Dialogs
 
 <PageTitle>Price list · ERP</PageTitle>
@@ -12,24 +13,25 @@
 
 <MudTabs Elevation="0" Outlined="true" Class="mb-4">
     <MudTabPanel Text="Items">
-        <MudStack Row="true" Spacing="4" Class="pa-4">
-            <AppTextField T="string" Value="_search" ValueChanged="OnSearch" Label="SKU or name" DebounceInterval="400" Clearable="true" />
-            <MudSwitch T="bool" Value="_forSaleOnly" ValueChanged="OnForSale" Label="For sale only" Color="Color.Primary" />
+        <MudStack Row="true" Spacing="4" Class="pa-4" Breakpoint="Breakpoint.Xs">
+            <AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="SKU or name" DebounceInterval="400" Clearable="true" />
+            <MudSwitch T="bool" Value="ForSaleOnly" ValueChanged="OnForSale" Label="For sale only" Color="Color.Primary" />
         </MudStack>
-        <MudTable Outlined="true" T="PriceListItem" @ref="_table" ServerData="Load" Hover="true" Dense="true">
+        <AppTable T="PriceListItem" @ref="_table" @key="View.Version" ServerData="Load"
+          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
             <HeaderContent>
                 <MudTh>SKU</MudTh><MudTh>Name</MudTh><MudTh>Unit</MudTh><MudTh>Category</MudTh>
                 <MudTh Class="money">Price</MudTh><MudTh>VAT</MudTh><MudTh>SC/PWD</MudTh><MudTh>For sale</MudTh><MudTh></MudTh>
             </HeaderContent>
             <RowTemplate>
-                <MudTd>@context.Sku</MudTd>
-                <MudTd>@context.Name @if (!context.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</MudTd>
-                <MudTd>@context.Unit</MudTd>
-                <MudTd>@context.CategoryName</MudTd>
-                <MudTd Class="money">@Format.Peso(context.UnitPrice)</MudTd>
-                <MudTd>@Format.Words(context.TaxType)</MudTd>
-                <MudTd>@(context.IsSpecialDiscountEligible ? "Yes" : "")</MudTd>
-                <MudTd>@(context.IsForSale ? "Yes" : "No")</MudTd>
+                <MudTd DataLabel="SKU">@context.Sku</MudTd>
+                <MudTd DataLabel="Name">@context.Name @if (!context.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</MudTd>
+                <MudTd DataLabel="Unit">@context.Unit</MudTd>
+                <MudTd DataLabel="Category">@context.CategoryName</MudTd>
+                <MudTd DataLabel="Price" Class="money">@Format.Peso(context.UnitPrice)</MudTd>
+                <MudTd DataLabel="VAT">@Format.Words(context.TaxType)</MudTd>
+                <MudTd DataLabel="SC/PWD">@(context.IsSpecialDiscountEligible ? "Yes" : "")</MudTd>
+                <MudTd DataLabel="For sale">@(context.IsForSale ? "Yes" : "No")</MudTd>
                 <MudTd>
                     <AuthorizeView Roles="@Managers" Context="auth">
                         <MudButton Size="Size.Small" OnClick="() => Price(context)">Set price</MudButton>
@@ -38,7 +40,7 @@
             </RowTemplate>
             <NoRecordsContent>No items match.</NoRecordsContent>
             <PagerContent><MudTablePager /></PagerContent>
-        </MudTable>
+        </AppTable>
     </MudTabPanel>
     <MudTabPanel Text="Categories">
         <Categories />
@@ -49,16 +51,26 @@
 </MudTabs>
 
 @code {
+    // The list's view lives in the address (see ListAddress).
+    [SupplyParameterFromQuery] public string? Search { get; set; }
+    [SupplyParameterFromQuery] public bool ForSaleOnly { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+    [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
+
     private static readonly string Managers = $"{Roles.SalesManager},{Roles.Admin}";
-    private MudTable<PriceListItem> _table = default!;
-    private string? _search;
-    private bool _forSaleOnly;
+    private AppTable<PriceListItem> _table = default!;
 
-    private Task<TableData<PriceListItem>> Load(TableState state, CancellationToken ct) =>
-        Api.Page<PriceListItem>(Url.With("api/price-list", ("search", _search), ("forSaleOnly", _forSaleOnly)), state);
+    private Task<TableData<PriceListItem>> Load(TableState state, CancellationToken ct)
+    {
+        View.Save(state, ("search", Search), ("forSaleOnly", ForSaleOnly));
+        return Api.Page<PriceListItem>(Url.With("api/price-list", ("search", Search), ("forSaleOnly", ForSaleOnly)), state);
+    }
 
-    private Task OnSearch(string? text) { _search = text; return _table.ReloadServerData(); }
-    private Task OnForSale(bool value) { _forSaleOnly = value; return _table.ReloadServerData(); }
+    // A link to this list with other filters (the menu, a home tile, Back) shows them.
+    protected override void OnParametersSet() => View.Check();
+
+    private Task OnSearch(string? text) { Search = text; return _table.FirstPage(); }
+    private Task OnForSale(bool value) { ForSaleOnly = value; return _table.FirstPage(); }
 
     private async Task Price(PriceListItem item)
     {

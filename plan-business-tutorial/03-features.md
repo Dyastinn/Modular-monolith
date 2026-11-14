@@ -366,7 +366,7 @@ them. To remember it easily: a page never writes `<MudTextField>`, it writes `<A
 
 <MudText Typo="Typo.h4" GutterBottom="true">Ping</MudText>
 
-<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mb-4">
+<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mb-4" Breakpoint="Breakpoint.Xs">
     <AppTextField @bind-Value="_message" Label="Message" Immediate="true" />
     <MudButton OnClick="Send" Variant="Variant.Filled" Color="Color.Primary">Send</MudButton>
 </MudStack>
@@ -402,7 +402,7 @@ them. To remember it easily: a page never writes `<MudTextField>`, it writes `<A
 Then a way to get there, in `NavMenu.razor`, under Home:
 
 ```razor
-<MudNavLink Href="ping" Icon="@Icons.Material.Filled.NetworkCheck">Ping</MudNavLink>
+<MudNavLink Href="ping" Icon="@Icons.Material.Outlined.NetworkCheck">Ping</MudNavLink>
 ```
 
 ## 7. Prove it: the first unit tests, and a test for the walls

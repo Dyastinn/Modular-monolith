@@ -281,6 +281,20 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
   JS), and the app would run unstyled. `App.razor` (the page) and `Routes.razor` both live in `Erp.Web`; the host
   maps `MapRazorComponents<ErpWeb::Erp.Web.App>().AddInteractiveWebAssemblyRenderMode().AllowAnonymous()` and sets
   `RequiresAspNetWebAssets` (it has no `.razor` files of its own, so the SDK wouldn't serve `blazor.web.js`).
+- **The look lives in the theme** (`Erp.Web/Layout/AppTheme.cs`: light and dark palettes, typography, flat
+  elevations 1–5), not in CSS. Pages ask for roles (`Color.Primary`), never colour codes; `app.css` holds only what
+  the theme can't say, each rule with its reason. Build screens from MudBlazor components and its utility classes,
+  not raw HTML. **Forms use the `App*` fields** (`AppTextField`, `AppNumericField`, `AppSelect`, `AppAutocomplete`,
+  `AppDatePicker` in `Shared/AppFields.cs`: outlined, normal margin), never the `Mud*` inputs directly; tables use
+  `AppTable<T>`/`AppSimpleTable` (`Shared/AppTables.cs`: striped, hover, dense; cells don't wrap, free text opts in
+  with `Class="wrap"`; every cell has a `DataLabel` for phones); row actions go in a "⋮" `MudMenu`. Rows of fields
+  use `Breakpoint="Breakpoint.Xs"` so they stack on a phone. Every page under a list (a detail or edit page) starts
+  with `MudBreadcrumbs` back to it, via `ListMemory.Last`. A list keeps its search, filters, page and page size in
+  the address (`ListAddress`); a filter change returns to page 1 (`AppTable.FirstPage`). Buttons that send a change
+  are `Disabled="Api.Busy"`; an action that can't be undone (ship, close short, cancel) asks first, naming the
+  record and the consequence, with verb buttons ("Ship" / "Not yet"); a form with unsaved changes asks before it's
+  left (`NavigationLock` + `UnsavedChanges`). Password fields are `AppPasswordField` (show/hide). Dark mode follows the system unless the person picks one (kept in
+  `localStorage`). No gradients.
 - **Every dependency is permissively licensed and free** (see §3) and listed in the third-party notices file.
 - **Code comments are minimal.** None on self-explanatory code. Where one is needed, one short line with the
   important, non-obvious *why* (a trap, a constraint). The lessons carry the explanations, not the code.

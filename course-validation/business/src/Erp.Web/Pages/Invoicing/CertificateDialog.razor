@@ -11,7 +11,7 @@
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
-        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Success" Disabled="_amount <= 0 || _receivedOn is null">Record</MudButton>
+        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Success" Disabled="@(_amount <= 0 || _receivedOn is null || Api.Busy)">Record</MudButton>
     </DialogActions>
 </MudDialog>
 

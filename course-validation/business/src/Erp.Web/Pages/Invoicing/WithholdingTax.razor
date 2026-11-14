@@ -21,7 +21,7 @@
 }
 else
 {
-    <MudSimpleTable Dense="true" Hover="true" Outlined="true" Class="mb-6">
+    <AppSimpleTable Outlined="true" Class="mb-6">
         <thead>
             <tr><th>Customer</th><th>Quarter</th><th class="money">Withheld</th><th class="money">Certified</th><th class="money">Missing</th><th></th></tr>
         </thead>
@@ -43,11 +43,11 @@ else
                 </tr>
             }
         </tbody>
-    </MudSimpleTable>
+    </AppSimpleTable>
     @if (_report.Summary.Count == 0) { <MudText Class="mb-6">No tax withheld in @_year.</MudText> }
 
     <MudText Typo="Typo.h6" GutterBottom="true">Certificates received</MudText>
-    <MudSimpleTable Dense="true" Hover="true" Outlined="true">
+    <AppSimpleTable Outlined="true">
         <thead><tr><th>Customer</th><th>Quarter</th><th class="money">Amount</th><th>Reference</th><th>Received</th><th></th></tr></thead>
         <tbody>
             @foreach (var c in _report.Certificates)
@@ -67,7 +67,7 @@ else
                 </tr>
             }
         </tbody>
-    </MudSimpleTable>
+    </AppSimpleTable>
 }
 
 @code {

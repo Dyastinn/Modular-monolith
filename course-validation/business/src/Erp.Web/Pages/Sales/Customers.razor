@@ -1,5 +1,6 @@
 @page "/customers"
 @inject ApiClient Api
+@inject ListAddress View
 @inject IDialogService Dialogs
 
 <PageTitle>Customers · ERP</PageTitle>
@@ -12,10 +13,11 @@
     </AuthorizeView>
 </MudStack>
 
-<AppTextField T="string" Value="_search" ValueChanged="OnSearch" Label="Name or TIN" DebounceInterval="400" Clearable="true"
+<AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Name or TIN" DebounceInterval="400" Clearable="true"
               Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="mb-4" />
 
-<MudTable Outlined="true" T="Customer" @ref="_table" ServerData="Load" Hover="true" Dense="true">
+<AppTable T="Customer" @ref="_table" @key="View.Version" ServerData="Load"
+          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
     <HeaderContent>
         <MudTh>Name</MudTh>
         <MudTh>TIN</MudTh>
@@ -27,38 +29,48 @@
         <MudTh></MudTh>
     </HeaderContent>
     <RowTemplate>
-        <MudTd>
+        <MudTd DataLabel="Name">
             @context.Name
             @if (context.IsBlocked) { <MudChip T="string" Color="Color.Error" Size="Size.Small">Blocked</MudChip> }
         </MudTd>
-        <MudTd>@context.Tin</MudTd>
-        <MudTd Class="money">@Format.Peso(context.CreditLimit)</MudTd>
-        <MudTd Class="money">@Format.Peso(context.OutstandingBalance)</MudTd>
-        <MudTd Class="money">@Format.Peso(context.PendingTotal)</MudTd>
-        <MudTd Class="money">@Format.Peso(context.AvailableCredit)</MudTd>
-        <MudTd>@context.PaymentTermsDays days</MudTd>
+        <MudTd DataLabel="TIN">@context.Tin</MudTd>
+        <MudTd DataLabel="Credit limit" Class="money">@Format.Peso(context.CreditLimit)</MudTd>
+        <MudTd DataLabel="Owes" Class="money">@Format.Peso(context.OutstandingBalance)</MudTd>
+        <MudTd DataLabel="Awaiting approval" Class="money">@Format.Peso(context.PendingTotal)</MudTd>
+        <MudTd DataLabel="Available" Class="money">@Format.Peso(context.AvailableCredit)</MudTd>
+        <MudTd DataLabel="Terms">@context.PaymentTermsDays days</MudTd>
         <MudTd>
             <AuthorizeView Roles="@Managers" Context="auth">
-                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => Edit(context)" aria-label="Edit" />
-                <MudButton Size="Size.Small" OnClick="() => ToggleBlock(context)" Color="@(context.IsBlocked ? Color.Success : Color.Error)">
-                    @(context.IsBlocked ? "Unblock" : "Block")
-                </MudButton>
+                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" aria-label="Actions">
+                    <MudMenuItem OnClick="() => Edit(context)">Edit</MudMenuItem>
+                    <MudMenuItem OnClick="() => ToggleBlock(context)">@(context.IsBlocked ? "Unblock" : "Block")</MudMenuItem>
+                </MudMenu>
             </AuthorizeView>
         </MudTd>
     </RowTemplate>
     <NoRecordsContent>No customers match.</NoRecordsContent>
     <PagerContent><MudTablePager /></PagerContent>
-</MudTable>
+</AppTable>
 
 @code {
+    // The list's view lives in the address (see ListAddress).
+    [SupplyParameterFromQuery] public string? Search { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+    [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
+
     private static readonly string Managers = $"{Roles.SalesManager},{Roles.Admin}";
-    private MudTable<Customer> _table = default!;
-    private string? _search;
+    private AppTable<Customer> _table = default!;
 
-    private Task<TableData<Customer>> Load(TableState state, CancellationToken ct) =>
-        Api.Page<Customer>(Url.With("api/customers", ("search", _search)), state);
+    private Task<TableData<Customer>> Load(TableState state, CancellationToken ct)
+    {
+        View.Save(state, ("search", Search));
+        return Api.Page<Customer>(Url.With("api/customers", ("search", Search)), state);
+    }
 
-    private Task OnSearch(string? text) { _search = text; return _table.ReloadServerData(); }
+    // A link to this list with other filters (the menu, a home tile, Back) shows them.
+    protected override void OnParametersSet() => View.Check();
+
+    private Task OnSearch(string? text) { Search = text; return _table.FirstPage(); }
 
     private async Task Edit(Customer? customer)
     {

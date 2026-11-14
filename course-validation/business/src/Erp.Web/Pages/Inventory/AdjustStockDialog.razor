@@ -13,7 +13,7 @@
     <DialogActions>
         <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
         <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary"
-                   Disabled="_change == 0 || string.IsNullOrWhiteSpace(_reason)">Adjust</MudButton>
+                   Disabled="@(_change == 0 || string.IsNullOrWhiteSpace(_reason) || Api.Busy)">Adjust</MudButton>
     </DialogActions>
 </MudDialog>
 

@@ -1,5 +1,6 @@
 @page "/items"
 @inject ApiClient Api
+@inject ListAddress View
 @inject IDialogService Dialogs
 
 <PageTitle>Items and stock · ERP</PageTitle>
@@ -12,24 +13,25 @@
     </AuthorizeView>
 </MudStack>
 
-<MudStack Row="true" Spacing="4" Class="mb-4">
-    <AppTextField T="string" Value="_search" ValueChanged="OnSearch" Label="SKU or name" DebounceInterval="400" Clearable="true"
+<MudStack Row="true" Spacing="4" Class="mb-4" Breakpoint="Breakpoint.Xs">
+    <AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="SKU or name" DebounceInterval="400" Clearable="true"
                   Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
-    <MudSwitch T="bool" Value="_activeOnly" ValueChanged="OnActive" Label="Active only" Color="Color.Primary" />
+    <MudSwitch T="bool" Value="ActiveOnly" ValueChanged="OnActive" Label="Active only" Color="Color.Primary" />
 </MudStack>
 
-<MudTable Outlined="true" T="StockItem" @ref="_table" ServerData="Load" Hover="true" Dense="true">
+<AppTable T="StockItem" @ref="_table" @key="View.Version" ServerData="Load"
+          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
     <HeaderContent>
         <MudTh>SKU</MudTh><MudTh>Name</MudTh><MudTh>Unit</MudTh>
         <MudTh Class="money">On hand</MudTh><MudTh Class="money">Reserved</MudTh><MudTh Class="money">Available</MudTh><MudTh></MudTh>
     </HeaderContent>
     <RowTemplate>
-        <MudTd>@context.Sku</MudTd>
-        <MudTd>@context.Name @if (!context.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</MudTd>
-        <MudTd>@context.Unit</MudTd>
-        <MudTd Class="money">@Format.Qty(context.OnHand)</MudTd>
-        <MudTd Class="money">@Format.Qty(context.Reserved)</MudTd>
-        <MudTd Class="money"><b>@Format.Qty(context.Available)</b></MudTd>
+        <MudTd DataLabel="SKU">@context.Sku</MudTd>
+        <MudTd DataLabel="Name">@context.Name @if (!context.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</MudTd>
+        <MudTd DataLabel="Unit">@context.Unit</MudTd>
+        <MudTd DataLabel="On hand" Class="money">@Format.Qty(context.OnHand)</MudTd>
+        <MudTd DataLabel="Reserved" Class="money">@Format.Qty(context.Reserved)</MudTd>
+        <MudTd DataLabel="Available" Class="money"><b>@Format.Qty(context.Available)</b></MudTd>
         <MudTd>
             <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" aria-label="Actions">
                 <MudMenuItem OnClick="() => Movements(context)">Movement history</MudMenuItem>
@@ -43,19 +45,29 @@
     </RowTemplate>
     <NoRecordsContent>No items match.</NoRecordsContent>
     <PagerContent><MudTablePager /></PagerContent>
-</MudTable>
+</AppTable>
 
 @code {
+    // The list's view lives in the address (see ListAddress).
+    [SupplyParameterFromQuery] public string? Search { get; set; }
+    [SupplyParameterFromQuery] public bool ActiveOnly { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+    [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
+
     private static readonly string Keepers = $"{Roles.InventoryClerk},{Roles.Admin}";
-    private MudTable<StockItem> _table = default!;
-    private string? _search;
-    private bool _activeOnly;
+    private AppTable<StockItem> _table = default!;
 
-    private Task<TableData<StockItem>> Load(TableState state, CancellationToken ct) =>
-        Api.Page<StockItem>(Url.With("api/items", ("search", _search), ("activeOnly", _activeOnly)), state);
+    private Task<TableData<StockItem>> Load(TableState state, CancellationToken ct)
+    {
+        View.Save(state, ("search", Search), ("activeOnly", ActiveOnly));
+        return Api.Page<StockItem>(Url.With("api/items", ("search", Search), ("activeOnly", ActiveOnly)), state);
+    }
 
-    private Task OnSearch(string? text) { _search = text; return _table.ReloadServerData(); }
-    private Task OnActive(bool value) { _activeOnly = value; return _table.ReloadServerData(); }
+    // A link to this list with other filters (the menu, a home tile, Back) shows them.
+    protected override void OnParametersSet() => View.Check();
+
+    private Task OnSearch(string? text) { Search = text; return _table.FirstPage(); }
+    private Task OnActive(bool value) { ActiveOnly = value; return _table.FirstPage(); }
 
     private async Task Edit(StockItem? item)
     {

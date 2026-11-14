@@ -1,5 +1,6 @@
 @page "/invoices"
 @inject ApiClient Api
+@inject ListAddress View
 @inject NavigationManager Nav
 
 <PageTitle>Invoices · ERP</PageTitle>
@@ -7,9 +8,9 @@
 <MudText Typo="Typo.h4" Class="mb-2">Invoices</MudText>
 <MudText Typo="Typo.body2" Class="mb-4">Every shipment is invoiced automatically, a few seconds after it leaves.</MudText>
 
-<MudStack Row="true" Spacing="4" Class="mb-4" Wrap="Wrap.Wrap">
+<MudStack Row="true" Spacing="4" Class="mb-4" Wrap="Wrap.Wrap" Breakpoint="Breakpoint.Xs">
     <AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Invoice, order or customer" DebounceInterval="400" Clearable="true" />
-    <AppSelect T="string" Value="_status" ValueChanged="OnStatus" Label="Status" Clearable="true" Style="max-width:200px">
+    <AppSelect T="string" Value="Status" ValueChanged="OnStatus" Label="Status" Clearable="true" Style="max-width:200px">
         @foreach (var s in Statuses)
         {
             <MudSelectItem Value="s">@Format.Words(s)</MudSelectItem>
@@ -18,38 +19,48 @@
     <MudSwitch T="bool" Value="OverdueOnly" ValueChanged="OnOverdue" Label="Overdue only" Color="Color.Error" />
 </MudStack>
 
-<MudTable Outlined="true" T="InvoiceSummary" @ref="_table" ServerData="Load" Hover="true" Dense="true" OnRowClick="Open" RowStyle="cursor:pointer">
+<AppTable T="InvoiceSummary" @ref="_table" @key="View.Version" ServerData="Load"
+          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize" OnRowClick="Open" RowStyle="cursor:pointer">
     <HeaderContent>
         <MudTh>Invoice</MudTh><MudTh>Customer</MudTh><MudTh>Order</MudTh><MudTh>Issued</MudTh><MudTh>Due</MudTh>
         <MudTh>Status</MudTh><MudTh Class="money">Total</MudTh><MudTh Class="money">Balance</MudTh>
     </HeaderContent>
     <RowTemplate>
-        <MudTd>@context.Number</MudTd>
-        <MudTd>@context.CustomerName</MudTd>
-        <MudTd>@context.OrderNumber</MudTd>
-        <MudTd>@Format.Date(context.IssueDate)</MudTd>
-        <MudTd>@Format.Date(context.DueDate)</MudTd>
-        <MudTd><StatusChip Status="@context.Status" /></MudTd>
-        <MudTd Class="money">@Format.Peso(context.Total)</MudTd>
-        <MudTd Class="money">@Format.Peso(context.BalanceDue)</MudTd>
+        <MudTd DataLabel="Invoice">@context.Number</MudTd>
+        <MudTd DataLabel="Customer">@context.CustomerName</MudTd>
+        <MudTd DataLabel="Order">@context.OrderNumber</MudTd>
+        <MudTd DataLabel="Issued">@Format.Date(context.IssueDate)</MudTd>
+        <MudTd DataLabel="Due">@Format.Date(context.DueDate)</MudTd>
+        <MudTd DataLabel="Status"><StatusChip Status="@context.Status" /></MudTd>
+        <MudTd DataLabel="Total" Class="money">@Format.Peso(context.Total)</MudTd>
+        <MudTd DataLabel="Balance" Class="money">@Format.Peso(context.BalanceDue)</MudTd>
     </RowTemplate>
     <NoRecordsContent>No invoices match.</NoRecordsContent>
     <PagerContent><MudTablePager /></PagerContent>
-</MudTable>
+</AppTable>
 
 @code {
+    // The list's view lives in the address (see ListAddress).
     [SupplyParameterFromQuery] public string? Search { get; set; }
     [SupplyParameterFromQuery] public bool OverdueOnly { get; set; }
+    [SupplyParameterFromQuery] public string? Status { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+    [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
 
     private static readonly string[] Statuses = ["Issued", "PartiallyPaid", "Paid", "Void"];
-    private MudTable<InvoiceSummary> _table = default!;
-    private string? _status;
+    private AppTable<InvoiceSummary> _table = default!;
 
-    private Task<TableData<InvoiceSummary>> Load(TableState state, CancellationToken ct) =>
-        Api.Page<InvoiceSummary>(Url.With("api/invoices", ("search", Search), ("status", _status), ("overdueOnly", OverdueOnly)), state);
+    private Task<TableData<InvoiceSummary>> Load(TableState state, CancellationToken ct)
+    {
+        View.Save(state, ("search", Search), ("status", Status), ("overdueOnly", OverdueOnly));
+        return Api.Page<InvoiceSummary>(Url.With("api/invoices", ("search", Search), ("status", Status), ("overdueOnly", OverdueOnly)), state);
+    }
+
+    // A link to this list with other filters (the menu, a home tile, Back) shows them.
+    protected override void OnParametersSet() => View.Check();
 
     private void Open(TableRowClickEventArgs<InvoiceSummary> row) => Nav.NavigateTo($"invoices/{row.Item!.Id}");
-    private Task OnSearch(string? text) { Search = text; return _table.ReloadServerData(); }
-    private Task OnStatus(string? status) { _status = status; return _table.ReloadServerData(); }
-    private Task OnOverdue(bool value) { OverdueOnly = value; return _table.ReloadServerData(); }
+    private Task OnSearch(string? text) { Search = text; return _table.FirstPage(); }
+    private Task OnStatus(string? status) { Status = status; return _table.FirstPage(); }
+    private Task OnOverdue(bool value) { OverdueOnly = value; return _table.FirstPage(); }
 }

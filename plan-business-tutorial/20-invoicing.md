@@ -809,7 +809,8 @@ await db.SaveChangesAsync(ct);
 
 The page, **Invoicing → Company and tax** (`/company`), is a form in three boxes: Seller, Tax (the regime as a
 select; the rate as a percentage, disabled unless VAT-registered) and BIR permit. It warns when the profile is
-incomplete. Type it from
+incomplete. Like the order form, it asks before you leave with unsaved changes (lesson 08's `NavigationLock`); its
+snapshot is every field on the form. Type it from
 [CompanyProfile.razor](../course-validation/business/src/Erp.Web/Pages/Invoicing/CompanyProfile.razor).
 
 ### No shipment without a way to bill it
@@ -1294,7 +1295,7 @@ Here's the top of the printed invoice:
 | Page | What it shows |
 |---|---|
 | **Invoices** (`/invoices`) | Lesson 08's list pattern: search by number, order or customer, a status filter, issue and due dates, total |
-| **One invoice** (`/invoices/{id}`) | The header (customer, TIN, address, order, dates), the lines (marked when zero-rated or exempt), the totals with the breakdown for its regime, a **Print** button, and for accountants a **Void** button (using lesson 10's `ReasonDialog`) and, on a void invoice, **Reissue** |
+| **One invoice** (`/invoices/{id}`) | A breadcrumb back to **Invoices**, the header (customer, TIN, address, order, dates), the lines (marked when zero-rated or exempt), the totals with the breakdown for its regime, a **Print** button, and for accountants a **Void** button (using lesson 10's `ReasonDialog`) and, on a void invoice, **Reissue** |
 
 The Print button is just a link, labelled by the count:
 
@@ -1310,8 +1311,19 @@ both pages, then compare with
 [InvoicePage.razor](../course-validation/business/src/Erp.Web/Pages/Invoicing/InvoicePage.razor), skipping their
 payment parts.
 
-The menu gets an Invoicing group for `Roles.Accountant, Roles.Admin, Roles.SalesManager`, with **Company and
-tax** inside it for accountants and admins only, and the order page
+Shipping now also bills, so the order page's Ship says so, in its question and in its message:
+
+```csharp
+var confirmed = await Dialogs.ShowMessageBoxAsync("Ship order",
+    $"Ship {_order!.OrderNumber} now? The stock leaves the warehouse and the invoice is issued. This can't be undone.",
+    yesText: "Ship", cancelText: "Not yet");
+if (confirmed == true && await Api.Create("api/shipments", new { salesOrderId = Id }, "Shipped. The invoice is being issued.") is not null)
+    await Load();
+```
+
+The menu gets an Invoicing heading, after Purchasing, for `Roles.Accountant, Roles.Admin, Roles.SalesManager`:
+**Invoices** (`Icons.Material.Outlined.Description`), and **Company and tax** (`Icons.Material.Outlined.Business`)
+for accountants and admins only, and the order page
 gets a way across, for shipped orders:
 
 ```razor

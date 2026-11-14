@@ -1,4 +1,5 @@
 using Erp.Web.Services;
+using Erp.Web.Shared;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using MudBlazor;
@@ -10,6 +11,8 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 // Same origin as the API, so the browser sends the sign-in cookie with every call on its own.
 builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
 builder.Services.AddScoped<ApiClient>();
+builder.Services.AddScoped<ListMemory>();
+builder.Services.AddTransient<ListAddress>();
 builder.Services.AddScoped<UserDirectory>();
 
 builder.Services.AddAuthorizationCore();

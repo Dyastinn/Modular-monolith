@@ -37,8 +37,8 @@ internal static class AppTheme
             LinesDefault = "#e4e7ec",
             LinesInputs = "#d0d5dd",
             TableLines = "#eaecf0",
-            TableHover = "#f5f7fb",
-            TableStriped = "#fafbfc",
+            TableHover = "#eef3fd",
+            TableStriped = "#f7f8fa",
         },
         PaletteDark = new PaletteDark
         {
@@ -67,8 +67,8 @@ internal static class AppTheme
             LinesDefault = "#2a303c",
             LinesInputs = "#3a4250",
             TableLines = "#262b36",
-            TableHover = "#1e232d",
-            TableStriped = "#1a1e27",
+            TableHover = "#232a38",
+            TableStriped = "#1c2029",
         },
         Typography = new Typography
         {

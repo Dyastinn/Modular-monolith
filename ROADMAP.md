@@ -437,3 +437,27 @@ App; errors gain stable, documented codes.
   removed), every lesson's endpoints, handlers, registrations, codes and test output updated; lesson 20 gains
   question 9 (it was only in the answer key). **161 unit + 14 architecture + 114 integration tests pass, 8 UI
   tests pass against the running app**; lessons 01–03 rebuilt from scratch and match their counts.
+- **2026-11-14** — Course and app polish (user requests). Lesson 02 now explains the kinds of tests (unit,
+  integration, end-to-end, pyramid; manual, functional, regression, smoke) before showing how. Visuals: 15 new
+  Mermaid diagrams in the "why" sections, 28 screenshots of the real app, a test-pyramid SVG; 14 existing sequence
+  diagrams never rendered (semicolons in messages) and were fixed; every diagram was rendered with Mermaid 11 to
+  check. Redesign (no gradients): a theme in `AppTheme.cs` with light and dark palettes, a deep-blue top bar,
+  section headings in the menu, flat surfaces, sentence-case buttons, outlined `App*` fields everywhere, messages
+  bottom-right, dark mode toggle. Fixed: the account button didn't open (MudBlazor 9's `ActivatorContent` needs the
+  activator to toggle; replaced by `MudMenu`'s own button), with a UI test. Lessons 04–05 rebuilt from their text:
+  six lesson bugs found and fixed (culture-sensitive parsing, a missing `using`, `WiringTests` outside the shared
+  collection, CA1711 unexplained, a redundant step). **161 unit + 14 architecture + 114 integration + 10 UI tests pass.**
+- **2026-11-14** — UX follow-up (user questions, checked against NN/g breadcrumb guidance and the zebra-striping
+  studies): breadcrumbs on every detail/edit page (sales order, invoice, purchase order and both editors), with a UI
+  test; `AppTable`/`AppSimpleTable` with subtle stripes; table cells no longer wrap and lose 16px of side padding,
+  so a nine-column list fits a 1280px laptop; customer row actions moved into the "⋮" menu like Users and Items.
+  Lesson 19's table pointed at lesson 10 for the editable form; it's lesson 11. **289 + 11 UI tests pass.**
+- **2026-11-14** — UX pass (user request), from an audit of every screen at 1280px and 390px: lists keep their
+  search, filters, page and size in the address and the breadcrumbs return to them (`ListAddress`, `ListMemory`); a
+  filter change goes back to page 1 (it used to stay on a page that might not exist); tables show labelled cards on
+  phones (`DataLabel`) and field rows stack (`Breakpoint.Xs`), so no screen scrolls sideways at 390px; buttons that
+  send a change are disabled while it's sending (`ApiClient.Busy`); Ship, Close short and the purchase order's Cancel
+  ask first; the order form, the purchase order form and the company profile ask before unsaved changes are left
+  (`NavigationLock`); password fields can be shown (`AppPasswordField`). Found on the way: no lesson ever changed
+  the Ship message to mention the invoice (lesson 20 now does). Two new UI tests were rewritten to need no existing
+  orders, so they pass on a fresh install. **289 + 14 UI tests pass.**

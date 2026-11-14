@@ -166,11 +166,29 @@ first, it stays `null`. So add the parameter, and let the title say which it is:
 <MudText Typo="Typo.h4" Class="mb-4">@(Id is null ? "New sales order" : $"Edit {_orderNumber}")</MudText>
 ```
 
+The breadcrumb learns the second address too, and when editing it passes through the order itself, so one click
+goes back to it. Before:
+
+```csharp
+private List<BreadcrumbItem> Crumbs => [new("Sales orders", Lists.Last("sales-orders")), new("New order", null, disabled: true)];
+```
+
+After, under the `Id` parameter (it reads `_orderNumber`, which the code below fills in):
+
+```csharp
+// Where this page sits: under the list, and under the order itself when editing one.
+private List<BreadcrumbItem> Crumbs => Id is null
+    ? [new("Sales orders", Lists.Last("sales-orders")), new("New order", null, disabled: true)]
+    : [new("Sales orders", Lists.Last("sales-orders")), new(_orderNumber ?? "Order", $"sales-orders/{Id}"), new("Edit", null, disabled: true)];
+```
+
 An order's customer never changes (a different customer is a different order), so the customer box is
 locked when editing: add `Disabled="Id is not null"` to the customer `AppAutocomplete`. The Back button
 goes back to wherever you came from: `Href="@(Id is null ? "sales-orders" : $"sales-orders/{Id}")"`.
 
-Then the code. When editing, load the order and turn its lines back into form lines:
+Then the code. When editing, load the order and turn its lines back into form lines. This replaces lesson 08's
+`OnInitialized`: the "nothing unsaved yet" snapshot must now be taken *after* the order has loaded, or the
+loaded lines would count as unsaved changes and leaving would ask for nothing:
 
 ```csharp
 [Parameter] public long? Id { get; set; }
@@ -179,7 +197,7 @@ private string? _orderNumber;
 
 protected override async Task OnParametersSetAsync()
 {
-    if (Id is null) return;
+    if (Id is null) { _saved = State; return; }
     var order = await Api.Get<SalesOrderDetail>($"api/sales-orders/{Id}");
     if (order is null) return;
     _orderNumber = order.OrderNumber;
@@ -189,6 +207,7 @@ protected override async Task OnParametersSetAsync()
     {
         Item = prices?.Items.FirstOrDefault(p => p.Id == l.ItemId), Quantity = l.Quantity
     }).ToList();
+    _saved = State;
 }
 ```
 
@@ -201,10 +220,14 @@ private async Task Save()
     if (Id is null)
     {
         if (await Api.Create("api/sales-orders", new { customerId = _customer!.Id, lines }, "Draft saved.") is { } newId)
+        {
+            _saved = State;
             Nav.NavigateTo($"sales-orders/{newId}");
+        }
     }
     else if (await Api.Put($"api/sales-orders/{Id}", new { lines }, "Draft saved."))
     {
+        _saved = State;
         Nav.NavigateTo($"sales-orders/{Id}");
     }
 }

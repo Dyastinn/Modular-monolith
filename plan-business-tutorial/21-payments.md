@@ -839,22 +839,22 @@ public sealed record AgingReport(DateOnly AsOf, List<AgingRow> Customers, AgingR
 | **Invoices** | A **Balance due** column, and an "Overdue only" switch that adds `overdueOnly=true` (and reads it from the address, for the tile below) |
 | **One invoice** | Paid and balance rows under the total; a **Payments** table with each payment's date, method, reference, amount and who recorded it (lesson 16's user directory), void ones struck through with their reason; a **Record payment** button while there's a balance; a **Void** link on each live payment (`ReasonDialog` again) |
 | **Payment dialog** | Amount received (starting at the balance due), **tax withheld** (with a hint: "certified on BIR Form 2307"), date (`AppDatePicker`, starting today), method (`AppSelect` over the four names), reference |
-| **Receivables aging** (`/receivables-aging`) | An as-of date picker and a `MudSimpleTable` of the report, with the totals row in bold |
+| **Receivables aging** (`/receivables-aging`) | An as-of date picker and an `AppSimpleTable` of the report, with the totals row in bold |
 | **Withholding tax** (`/withholding-tax`, accountants and admins) | A year field; per customer and quarter, withheld, certified and missing (in red), with **Record 2307** on rows still missing; under it, the certificates received, each with a **Void** button |
 
 Type them, then compare with the reference build's
 [Invoicing pages](../course-validation/business/src/Erp.Web/Pages/Invoicing/).
 
-The menu's Invoicing group gets **Receivables aging** and, for accountants and admins, **Withholding tax
-(2307)**, and the accountant's home page gets two tiles:
+The menu's Invoicing heading gets **Receivables aging** (`Icons.Material.Outlined.HourglassBottom`) and, for
+accountants and admins, **Withholding tax (2307)** (`Icons.Material.Outlined.AccountBalance`), and the accountant's home page gets two tiles:
 
 ```razor
 <AuthorizeView Roles="@AccountantRoles">
     <MudItem xs="12" sm="6" md="4">
-        <Tile Title="Overdue invoices" Text="Past their due date and not fully paid." Href="invoices?overdueOnly=true" Icon="@Icons.Material.Filled.Alarm" />
+        <Tile Title="Overdue invoices" Text="Past their due date and not fully paid." Href="invoices?overdueOnly=true" Icon="@Icons.Material.Outlined.Alarm" />
     </MudItem>
     <MudItem xs="12" sm="6" md="4">
-        <Tile Title="Receivables aging" Text="Who owes what, and how late." Href="receivables-aging" Icon="@Icons.Material.Filled.Assessment" />
+        <Tile Title="Receivables aging" Text="Who owes what, and how late." Href="receivables-aging" Icon="@Icons.Material.Outlined.Assessment" />
     </MudItem>
 </AuthorizeView>
 ```

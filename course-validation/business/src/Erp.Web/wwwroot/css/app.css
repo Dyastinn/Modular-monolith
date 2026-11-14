@@ -9,29 +9,6 @@ html, body {
     outline-offset: 2px;
 }
 
-/* Numbers in tables line up digit under digit. */
-.mud-table-root {
-    font-variant-numeric: tabular-nums;
-}
-
-/* MudBlazor writes tab labels in capitals, and has no setting for it; everything else here is sentence case. */
-.mud-tab {
-    text-transform: none;
-}
-
-/* A home tile shows it can be clicked. */
-.tile:hover {
-    border-color: var(--mud-palette-primary);
-}
-
-.boot {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-    color: #666;
-}
-
 #blazor-error-ui {
     display: none;
     position: fixed;
@@ -40,6 +17,7 @@ html, body {
     right: 0;
     padding: 0.75rem 1.25rem;
     background: #fff3cd;
+    color: #3d2e00;
     box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
     z-index: 2000;
 }
@@ -48,4 +26,36 @@ html, body {
     text-align: right;
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
+}
+
+/* Numbers in tables line up digit under digit. */
+.mud-table-root {
+    font-variant-numeric: tabular-nums;
+}
+
+/* Short values (ids, dates, amounts) stay on one line, so a row reads straight across; on a narrow screen the
+   table scrolls sideways inside its card instead. A cell of free text opts out with Class="wrap". */
+.mud-table-cell {
+    white-space: nowrap;
+}
+
+.mud-table-cell.wrap {
+    white-space: normal;
+    min-width: 16rem;
+}
+
+/* MudBlazor gives each compact cell 40px of side padding; 24px keeps rows airy and lets a nine-column list fit a
+   laptop screen. */
+.mud-table-dense * .mud-table-row .mud-table-cell {
+    padding-inline: 12px;
+}
+
+/* A home tile shows it can be clicked. */
+.tile:hover {
+    border-color: var(--mud-palette-primary);
+}
+
+/* MudBlazor writes tab labels in capitals, and has no setting for it; everything else here is sentence case. */
+.mud-tab {
+    text-transform: none;
 }

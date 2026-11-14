@@ -3,7 +3,7 @@
 @* Count what actually arrived. Partial deliveries are normal: the order stays open for the rest. *@
 <MudDialog>
     <DialogContent>
-        <MudSimpleTable Dense="true">
+        <AppSimpleTable>
             <thead><tr><th>Item</th><th class="money">Still to come</th><th>Arrived now</th></tr></thead>
             <tbody>
                 @foreach (var line in _lines)
@@ -15,11 +15,11 @@
                     </tr>
                 }
             </tbody>
-        </MudSimpleTable>
+        </AppSimpleTable>
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
-        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="!_lines.Any(l => l.Arrived > 0)">Put into stock</MudButton>
+        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(!_lines.Any(l => l.Arrived > 0) || Api.Busy)">Put into stock</MudButton>
     </DialogActions>
 </MudDialog>
 

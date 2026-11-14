@@ -51,7 +51,7 @@ public sealed class BusinessFlowUiTests : IAsyncLifetime
         var page = await context.NewPageAsync();
         await page.GotoAsync("/login");
         await page.GetByLabel("Email").FillAsync(email);
-        await page.GetByLabel("Password").FillAsync("Password123!");
+        await page.GetByLabel("Password", new() { Exact = true }).FillAsync("Password123!");
         await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
         await page.GetByText("Good day,").WaitForAsync();
         return page;
@@ -85,7 +85,7 @@ public sealed class BusinessFlowUiTests : IAsyncLifetime
         var page = await context.NewPageAsync();
         await page.GotoAsync("/login");
         await page.GetByLabel("Email").FillAsync("rep@erp.local");
-        await page.GetByLabel("Password").FillAsync("not-the-password");
+        await page.GetByLabel("Password", new() { Exact = true }).FillAsync("not-the-password");
         await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
 
         await page.GetByText("Wrong email or password.").WaitForAsync();
@@ -130,6 +130,7 @@ public sealed class BusinessFlowUiTests : IAsyncLifetime
         var clerk = await SignIn("clerk@erp.local");
         await clerk.GotoAsync(orderUrl);
         await clerk.GetByRole(AriaRole.Button, new() { Name = "Ship" }).ClickAsync();
+        await clerk.Locator(".mud-dialog").GetByRole(AriaRole.Button, new() { Name = "Ship" }).ClickAsync();   // it asks first
         await clerk.Locator(".mud-chip").Filter(new() { HasText = "Shipped" }).WaitForAsync();
         await Shot(clerk, "clerk-shipped");
 
@@ -186,6 +187,71 @@ public sealed class BusinessFlowUiTests : IAsyncLifetime
         await admin.GotoAsync("/users");
         await admin.GetByText("rep@erp.local").WaitForAsync();
         await Shot(admin, "admin-users");
+    }
+
+    // A page under a list says where it sits and leads back to the list in one click.
+    [UiFact]
+    public async Task The_breadcrumb_leads_back_to_the_list()
+    {
+        var rep = await SignIn("rep@erp.local");
+        await rep.GotoAsync("/sales-orders/new");
+
+        await rep.Locator(".mud-breadcrumbs").GetByText("Sales orders").ClickAsync();
+
+        await rep.WaitForURLAsync(new Regex(@"/sales-orders$"));
+    }
+
+    // A list keeps its search in the address: the breadcrumb returns to it as it was, and the menu starts it fresh.
+    // (No data needed: a search that matches nothing is still a search to come back to.)
+    [UiFact]
+    public async Task A_list_is_remembered_when_you_come_back_to_it()
+    {
+        var rep = await SignIn("rep@erp.local");
+        await rep.GotoAsync("/sales-orders");
+        await rep.GetByLabel("Order number or customer").FillAsync("no such order");
+        await rep.WaitForURLAsync(new Regex("search=no"));
+
+        await rep.GetByRole(AriaRole.Link, new() { Name = "New order" }).ClickAsync();
+        await rep.Locator(".mud-breadcrumbs").GetByText("Sales orders").ClickAsync();
+
+        await rep.WaitForURLAsync(new Regex(@"/sales-orders\?search=no"));
+        (await rep.GetByLabel("Order number or customer").InputValueAsync()).Should().Be("no such order");
+
+        await rep.GetByRole(AriaRole.Link, new() { Name = "Sales orders" }).First.ClickAsync();
+        await rep.WaitForURLAsync(new Regex(@"/sales-orders$"));
+        (await rep.GetByLabel("Order number or customer").InputValueAsync()).Should().BeEmpty();
+    }
+
+    // A half-filled form asks before it's left; "Stay" keeps the work.
+    [UiFact]
+    public async Task Leaving_an_unsaved_order_asks_first()
+    {
+        var rep = await SignIn("rep@erp.local");
+        await rep.GotoAsync("/sales-orders/new");
+        await rep.GetByLabel("Customer").First.FillAsync("Epsilon");
+        await rep.GetByText("Epsilon Retail").First.ClickAsync();
+
+        await rep.GetByRole(AriaRole.Link, new() { Name = "Customers" }).ClickAsync();
+        await rep.GetByText("Leave without saving?").WaitForAsync();
+        await rep.GetByRole(AriaRole.Button, new() { Name = "Stay" }).ClickAsync();
+
+        new Uri(rep.Url).AbsolutePath.Should().Be("/sales-orders/new");
+        (await rep.GetByLabel("Customer").First.InputValueAsync()).Should().Be("Epsilon Retail");
+    }
+
+    // The eye button shows what was typed, so a typo can be seen before signing in.
+    [UiFact]
+    public async Task The_password_can_be_shown_before_signing_in()
+    {
+        var context = await _browser.NewContextAsync(new() { BaseURL = BaseUrl });
+        var page = await context.NewPageAsync();
+        await page.GotoAsync("/login");
+        var password = page.GetByLabel("Password", new() { Exact = true });
+        await password.FillAsync("Secret-1234");
+
+        await page.GetByRole(AriaRole.Button, new() { Name = "Show password" }).ClickAsync();
+
+        (await password.GetAttributeAsync("type")).Should().Be("text");
     }
 
     // The account button opens its menu, and signing out from it lands on the sign-in page.

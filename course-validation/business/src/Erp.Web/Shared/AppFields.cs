@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Components;
 using MudBlazor;
 
 namespace Erp.Web.Shared;
@@ -30,4 +31,26 @@ public class AppAutocomplete<T> : MudAutocomplete<T>
 public class AppDatePicker : MudDatePicker
 {
     public AppDatePicker() { Variant = Variant.Outlined; Margin = Margin.Normal; }
+}
+
+// A password field with an eye button: people can check what they typed, because typos in a hidden field are the
+// commonest reason a sign-in fails.
+public class AppPasswordField : AppTextField<string>
+{
+    public AppPasswordField()
+    {
+        InputType = InputType.Password;
+        Adornment = Adornment.End;
+        AdornmentIcon = Icons.Material.Outlined.Visibility;
+        AdornmentAriaLabel = "Show password";
+        OnAdornmentClick = EventCallback.Factory.Create<Microsoft.AspNetCore.Components.Web.MouseEventArgs>(this, Toggle);
+    }
+
+    private void Toggle()
+    {
+        var shown = InputType == InputType.Text;
+        InputType = shown ? InputType.Password : InputType.Text;
+        AdornmentIcon = shown ? Icons.Material.Outlined.Visibility : Icons.Material.Outlined.VisibilityOff;
+        AdornmentAriaLabel = shown ? "Show password" : "Hide password";
+    }
 }

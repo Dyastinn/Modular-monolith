@@ -1,5 +1,6 @@
 @page "/invoices/{Id:long}"
 @inject ApiClient Api
+@inject ListMemory Lists
 @inject UserDirectory Users
 @inject IDialogService Dialogs
 @inject NavigationManager Nav
@@ -12,6 +13,8 @@
     return;
 }
 
+<MudBreadcrumbs Items="@([new BreadcrumbItem("Invoices", Lists.Last("invoices")), new BreadcrumbItem(_invoice.Number, null, disabled: true)])" Class="pa-0 mb-2" />
+
 <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
     <MudText Typo="Typo.h4">@_invoice.Number</MudText>
     <StatusChip Status="@_invoice.Status" />
@@ -22,15 +25,15 @@
     <AuthorizeView Roles="@Accountants">
         @if (_invoice.Status is "Issued" or "PartiallyPaid")
         {
-            <MudButton OnClick="RecordPayment" Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Payments">Record payment</MudButton>
+            <MudButton OnClick="RecordPayment" Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Payments" Disabled="Api.Busy">Record payment</MudButton>
         }
         @if (_invoice.Status == "Issued")
         {
-            <MudButton OnClick="Void" Variant="Variant.Text" Color="Color.Error">Void</MudButton>
+            <MudButton OnClick="Void" Variant="Variant.Text" Color="Color.Error" Disabled="Api.Busy">Void</MudButton>
         }
         @if (_invoice.Status == "Void")
         {
-            <MudButton OnClick="Reissue" Variant="Variant.Filled" Color="Color.Primary">Issue a replacement</MudButton>
+            <MudButton OnClick="Reissue" Variant="Variant.Filled" Color="Color.Primary" Disabled="Api.Busy">Issue a replacement</MudButton>
         }
     </AuthorizeView>
 </MudStack>
@@ -46,7 +49,7 @@
             <MudText Typo="Typo.h6">@_invoice.CustomerName</MudText>
             <MudText Typo="Typo.body2">@(_invoice.CustomerTin is null ? "" : $"TIN {_invoice.CustomerTin} · ")@_invoice.CustomerAddress</MudText>
             <MudText Typo="Typo.body2" Class="mb-3">Order @_invoice.OrderNumber · Issued @Format.Date(_invoice.IssueDate) · Due @Format.Date(_invoice.DueDate)</MudText>
-            <MudSimpleTable Dense="true">
+            <AppSimpleTable>
                 <thead><tr><th>Description</th><th class="money">Quantity</th><th class="money">Unit price</th><th class="money">Amount</th></tr></thead>
                 <tbody>
                     @foreach (var l in _invoice.Lines)
@@ -82,7 +85,7 @@
                     <tr><td colspan="3">Paid</td><td class="money">@Format.Peso(_invoice.AmountPaid)</td></tr>
                     <tr><td colspan="3"><b>Balance due</b></td><td class="money"><b>@Format.Peso(_invoice.BalanceDue)</b></td></tr>
                 </tbody>
-            </MudSimpleTable>
+            </AppSimpleTable>
         </MudPaper>
     </MudItem>
     <MudItem xs="12" md="4">
@@ -106,7 +109,7 @@
                     @if (p.VoidedUtc is null)
                     {
                         <AuthorizeView Roles="@Accountants" Context="auth">
-                            <MudIconButton Icon="@Icons.Material.Filled.Undo" Size="Size.Small" OnClick="() => VoidPayment(p)" aria-label="Void payment" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Undo" Size="Size.Small" OnClick="() => VoidPayment(p)" aria-label="Void payment" Disabled="Api.Busy" />
                         </AuthorizeView>
                     }
                 </MudStack>
@@ -126,7 +129,7 @@
     private async Task Load()
     {
         _invoice = await Api.Get<InvoiceDetail>($"api/invoices/{Id}");
-        if (_invoice is null) Nav.NavigateTo("invoices");
+        if (_invoice is null) Nav.NavigateTo(Lists.Last("invoices"));
     }
 
     private async Task RecordPayment()

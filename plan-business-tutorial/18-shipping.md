@@ -498,7 +498,7 @@ On the order page, the Ship button joins the others, for the people who ship, al
 @if (_order.Status == "Approved")
 {
     <AuthorizeView Roles="@Shippers">
-        <MudButton OnClick="Ship" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.LocalShipping">Ship</MudButton>
+        <MudButton OnClick="Ship" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.LocalShipping" Disabled="Api.Busy">Ship</MudButton>
     </AuthorizeView>
 }
 ```
@@ -510,12 +510,21 @@ On the order page, the Ship button joins the others, for the people who ship, al
 ```csharp
 private static readonly string Shippers = $"{Roles.InventoryClerk},{Roles.Admin}";
 
+// Shipping can't be undone: the stock leaves. So it asks first.
 private async Task Ship()
 {
-    if (await Api.Create("api/shipments", new { salesOrderId = Id }, "Shipped.") is not null)
+    var confirmed = await Dialogs.ShowMessageBoxAsync("Ship order",
+        $"Ship {_order!.OrderNumber} now? The stock leaves the warehouse. This can't be undone.",
+        yesText: "Ship", cancelText: "Not yet");
+    if (confirmed == true && await Api.Create("api/shipments", new { salesOrderId = Id }, "Shipped.") is not null)
         await Load();
 }
 ```
+
+Every other button on this page can be taken back (a draft edited, an approval followed by a cancel), but a
+shipment can't: the goods are on the truck. Lesson 10's Cancel asks the same way. The question names the order
+and says what happens, and its buttons say what they do ("Ship", "Not yet"), never "OK" and "Cancel", which
+make people stop and translate.
 
 `SalesOrderDetail` in `Models.cs` gets `DateTime? ShippedUtc` before `Lines`; the order list's `Statuses`
 gets `"Shipped"` after `"Approved"`; and `StatusChip` shows it green: `"Approved" or "Shipped" =>
@@ -528,6 +537,7 @@ The Shipments page:
 @page "/shipments"
 @inject ApiClient Api
 @inject UserDirectory Users
+@inject ListAddress View
 
 <PageTitle>Shipments · ERP</PageTitle>
 
@@ -536,30 +546,39 @@ The Shipments page:
     To ship an approved order, open it from <MudLink Href="sales-orders?status=Approved">Ready to ship</MudLink> and choose Ship.
 </MudText>
 
-<MudTable Outlined="true" T="Shipment" ServerData="Load" Hover="true" Dense="true">
+<AppTable T="Shipment" @key="View.Version" ServerData="Load"
+          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
     <HeaderContent>
         <MudTh>Shipment</MudTh><MudTh>Order</MudTh><MudTh>Lines</MudTh><MudTh>Shipped</MudTh><MudTh>By</MudTh>
     </HeaderContent>
     <RowTemplate>
-        <MudTd>@context.Number</MudTd>
-        <MudTd><MudLink Href="@($"sales-orders/{context.SalesOrderId}")">@context.OrderNumber</MudLink></MudTd>
-        <MudTd>@context.LineCount</MudTd>
-        <MudTd>@Format.Date(context.ShippedUtc)</MudTd>
-        <MudTd>@_names.GetValueOrDefault(context.ShippedBy)</MudTd>
+        <MudTd DataLabel="Shipment">@context.Number</MudTd>
+        <MudTd DataLabel="Order"><MudLink Href="@($"sales-orders/{context.SalesOrderId}")">@context.OrderNumber</MudLink></MudTd>
+        <MudTd DataLabel="Lines">@context.LineCount</MudTd>
+        <MudTd DataLabel="Shipped">@Format.Date(context.ShippedUtc)</MudTd>
+        <MudTd DataLabel="By">@_names.GetValueOrDefault(context.ShippedBy)</MudTd>
     </RowTemplate>
     <NoRecordsContent>Nothing has shipped yet.</NoRecordsContent>
     <PagerContent><MudTablePager /></PagerContent>
-</MudTable>
+</AppTable>
 
 @code {
+    // The list's view lives in the address (see ListAddress).
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+    [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
+
     private readonly Dictionary<long, string> _names = [];
 
     private async Task<TableData<Shipment>> Load(TableState state, CancellationToken ct)
     {
+        View.Save(state);
         var page = await Api.Page<Shipment>("api/shipments", state);
         foreach (var id in page.Items!.Select(s => s.ShippedBy).Distinct()) _names[id] = await Users.NameOf(id);
         return page;
     }
+
+    // A link to this list (the menu, Back) shows it from its own address.
+    protected override void OnParametersSet() => View.Check();
 }
 ```
 
@@ -567,13 +586,14 @@ with `public sealed record Shipment(long Id, string Number, long SalesOrderId, s
 ShippedBy, DateTime ShippedUtc, int LineCount);` in `Models.cs`. The order link crosses modules on screen,
 which is fine: the browser app talks to every module's API.
 
-The menu's Inventory group gets `<MudNavLink Href="shipments">Shipments</MudNavLink>`. And the clerk's home
+The menu's Inventory heading gets
+`<MudNavLink Href="shipments" Icon="@Icons.Material.Outlined.LocalShipping">Shipments</MudNavLink>`. And the clerk's home
 page gets a tile:
 
 ```razor
 <AuthorizeView Roles="@ClerkRoles">
     <MudItem xs="12" sm="6" md="4">
-        <Tile Title="Ready to ship" Text="Approved orders waiting for the warehouse." Href="sales-orders?status=Approved" Icon="@Icons.Material.Filled.LocalShipping" />
+        <Tile Title="Ready to ship" Text="Approved orders waiting for the warehouse." Href="sales-orders?status=Approved" Icon="@Icons.Material.Outlined.LocalShipping" />
     </MudItem>
 </AuthorizeView>
 ```
@@ -587,6 +607,7 @@ The UI flow test gets its next step, after the manager approves:
 var clerk = await SignIn("clerk@erp.local");
 await clerk.GotoAsync(orderUrl);
 await clerk.GetByRole(AriaRole.Button, new() { Name = "Ship" }).ClickAsync();
+await clerk.Locator(".mud-dialog").GetByRole(AriaRole.Button, new() { Name = "Ship" }).ClickAsync();   // it asks first
 await clerk.Locator(".mud-chip").Filter(new() { HasText = "Shipped" }).WaitForAsync();
 await Shot(clerk, "clerk-shipped");
 ```
@@ -644,6 +665,7 @@ And the browser flow takes its next step: after the manager approves, the clerk 
 var clerk = await SignIn("clerk@erp.local");
 await clerk.GotoAsync(orderUrl);
 await clerk.GetByRole(AriaRole.Button, new() { Name = "Ship" }).ClickAsync();
+await clerk.Locator(".mud-dialog").GetByRole(AriaRole.Button, new() { Name = "Ship" }).ClickAsync();   // it asks first
 await clerk.Locator(".mud-chip").Filter(new() { HasText = "Shipped" }).WaitForAsync();
 await Shot(clerk, "clerk-shipped");
 ```

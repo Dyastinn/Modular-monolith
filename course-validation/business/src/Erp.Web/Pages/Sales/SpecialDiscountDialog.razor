@@ -20,7 +20,7 @@
     <DialogActions>
         <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
         <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary"
-                   Disabled="@(_program is null || string.IsNullOrWhiteSpace(_holderName) || string.IsNullOrWhiteSpace(_idNumber))">Apply</MudButton>
+                   Disabled="@((_program is null || string.IsNullOrWhiteSpace(_holderName) || string.IsNullOrWhiteSpace(_idNumber)) || Api.Busy)">Apply</MudButton>
     </DialogActions>
 </MudDialog>
 

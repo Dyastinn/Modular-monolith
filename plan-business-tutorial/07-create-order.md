@@ -648,6 +648,11 @@ public sealed class ApiClient(HttpClient http, ISnackbar snackbar, CookieAuthent
 {
     private sealed record Problem(string? Title, string? Detail, int? Status, string? Code);
     private sealed record Created(long Id);
+    private int _saving;
+
+    // True while a change is on its way to the server. Pages disable their action buttons meanwhile, so a double
+    // click can't send the same change twice.
+    public bool Busy => _saving > 0;
 
     public async Task<T?> Get<T>(string url)
     {
@@ -661,7 +666,10 @@ public sealed class ApiClient(HttpClient http, ISnackbar snackbar, CookieAuthent
     // For "create" calls: the API answers 201 with { id }.
     public async Task<long?> Create(string url, object body, string? success = null)
     {
-        var response = await http.PostAsJsonAsync(url, body);
+        HttpResponseMessage response;
+        _saving++;
+        try { response = await http.PostAsJsonAsync(url, body); }
+        finally { _saving--; }
         if (!response.IsSuccessStatusCode) return await Fail<long?>(response);
         if (success is not null) snackbar.Add(success, Severity.Success);
         return (await response.Content.ReadFromJsonAsync<Created>())!.Id;
@@ -670,7 +678,10 @@ public sealed class ApiClient(HttpClient http, ISnackbar snackbar, CookieAuthent
     private async Task<bool> Send(HttpMethod method, string url, object? body, string? success)
     {
         using var request = new HttpRequestMessage(method, url) { Content = body is null ? null : JsonContent.Create(body) };
-        var response = await http.SendAsync(request);
+        HttpResponseMessage response;
+        _saving++;
+        try { response = await http.SendAsync(request); }
+        finally { _saving--; }
         if (!response.IsSuccessStatusCode) return await Fail<bool>(response);
         if (success is not null) snackbar.Add(success, Severity.Success);
         return true;
@@ -724,11 +735,41 @@ This is where the Problem Details from step 4 pay off. The API already wrote a s
 deals with status codes: a call either returns what it asked for, or `null`/`false` after the user has been
 told why.
 
+And `Busy`. A person who double-clicks **Save** sends the order twice, and on a slow connection people click again
+because nothing seemed to happen. So while a change is on its way, every button that sends one says
+`Disabled="Api.Busy"` and greys out. Blazor redraws the page as soon as a click handler starts waiting for the
+server, so the button is grey before a second click can land, and it comes back when the answer arrives,
+success or not (that's what the `finally` is for).
+
 Here's how that looks when a rep picks a blocked customer, and the page the button opens:
 
 ![A red message: Customer Gamma Traders is blocked and cannot place orders (SALES-0002), with a What does this mean? button](images/07-refused-with-code.png)
 
 ![The Error codes page for SALES-0002: the customer is blocked, and what to do about it, above a searchable list of every code](images/07-error-page.png)
+
+The page lists every code in a table, the app's first. Tables get one look, decided once, the same way lesson
+03 did it for fields:
+
+```csharp
+// src/Erp.Web/Shared/AppTables.cs
+using MudBlazor;
+
+namespace Erp.Web.Shared;
+
+// The app's tables, one look decided once (like AppFields): compact rows, the row under the pointer highlighted,
+// and alternating row colours, so the eye stays on the right row across a wide table.
+
+// Simple tables often sit inside a card that already has a border, so Outlined stays the page's choice here.
+public class AppSimpleTable : MudSimpleTable
+{
+    public AppSimpleTable() { Striped = true; Hover = true; Dense = true; }
+}
+```
+
+Why alternating row colours (**zebra stripes**)? The studies are honest about it: they rarely make people faster,
+but they never made them slower, they helped accuracy on some tasks, and most people prefer them. In a wide
+table of amounts, losing your row halfway across is the mistake that costs money, so we take the help. The
+stripe colour is the theme's `TableStriped`, kept faint so the status colours still stand out.
 
 The page that button opens, open to anyone, because the link must work even after the session has ended:
 
@@ -755,7 +796,7 @@ The page that button opens, open to anyone, because the link must work even afte
     {
         if (Selected is { } selected)
         {
-            <MudPaper Class="pa-4 mb-6" Elevation="2">
+            <MudPaper Class="pa-4 mb-6" Outlined="true">
                 <MudText Typo="Typo.overline">@selected.Code</MudText>
                 <MudText Typo="Typo.h6" GutterBottom="true">@selected.Title</MudText>
                 <MudText Typo="Typo.body1"><strong>What to do:</strong> @selected.Fix</MudText>
@@ -771,7 +812,7 @@ The page that button opens, open to anyone, because the link must work even afte
 
         <AppTextField @bind-Value="_search" Label="Search" Immediate="true" Adornment="Adornment.Start"
                       AdornmentIcon="@Icons.Material.Filled.Search" Class="mb-4" />
-        <MudSimpleTable Dense="true" Hover="true">
+        <AppSimpleTable Outlined="true">
             <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
             <tbody>
                 @foreach (var error in Filtered)
@@ -782,7 +823,7 @@ The page that button opens, open to anyone, because the link must work even afte
                     </tr>
                 }
             </tbody>
-        </MudSimpleTable>
+        </AppSimpleTable>
     }
 </MudContainer>
 
@@ -804,10 +845,11 @@ The page that button opens, open to anyone, because the link must work even afte
 ```
 
 It fetches the whole catalog once and shows one code on top when the address names one. And a way to find it
-without an error, at the bottom of `NavMenu.razor`:
+without an error, at the bottom of `NavMenu.razor`, under a heading of its own:
 
 ```razor
-<MudNavLink Href="errors" Icon="@Icons.Material.Filled.HelpOutline">Error codes</MudNavLink>
+<MudText Typo="Typo.overline" Color="Color.Secondary" HtmlTag="div" Class="px-3 pt-4 pb-1">Help</MudText>
+<MudNavLink Href="errors" Icon="@Icons.Material.Outlined.HelpOutline">Error codes</MudNavLink>
 ```
 
 Register it in `Erp.Web/Program.cs`, after the `HttpClient`:
@@ -884,6 +926,15 @@ API checks every call on its own, and a rep who builds the URL by hand still get
 Now the page. We can't search customers or items yet (reading lists is next lesson), so for today the
 form asks for ids. It's plain on purpose; [lesson 08](08-find-orders.md) gives it search boxes.
 
+It's the app's first number field, so it joins lesson 03's text field in `Shared/AppFields.cs`:
+
+```csharp
+public class AppNumericField<T> : MudNumericField<T>
+{
+    public AppNumericField() { Variant = Variant.Outlined; Margin = Margin.Normal; }
+}
+```
+
 ```razor
 @* src/Erp.Web/Pages/Sales/OrderEditor.razor *@
 @page "/sales-orders/new"
@@ -903,7 +954,7 @@ form asks for ids. It's plain on purpose; [lesson 08](08-find-orders.md) gives i
     <MudText Typo="Typo.h6" GutterBottom="true">Lines</MudText>
     @foreach (var line in _lines)
     {
-        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mb-2">
+        <MudStack Row="true" Spacing="3" Class="mb-2 align-start align-sm-center" Breakpoint="Breakpoint.Xs">
             <AppNumericField T="long" Label="Item id" @bind-Value="line.ItemId" Min="1" Style="max-width:160px" />
             <AppNumericField T="decimal" Label="Quantity" @bind-Value="line.Quantity" Min="0" Style="max-width:160px" />
             <MudIconButton Icon="@Icons.Material.Filled.Delete" OnClick="() => _lines.Remove(line)" aria-label="Remove line" />
@@ -912,7 +963,7 @@ form asks for ids. It's plain on purpose; [lesson 08](08-find-orders.md) gives i
     <MudButton OnClick="() => _lines.Add(new Line())" StartIcon="@Icons.Material.Filled.Add" Variant="Variant.Text">Add line</MudButton>
 </MudPaper>
 
-<MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="!CanSave">Save draft</MudButton>
+<MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(!CanSave || Api.Busy)">Save draft</MudButton>
 
 @code {
     private sealed class Line
@@ -949,9 +1000,8 @@ Last, a way to get there. In `NavMenu.razor`, under the Home link:
 
 ```razor
 <AuthorizeView Roles="@Sales">
-    <MudNavGroup Title="Sales" Icon="@Icons.Material.Filled.PointOfSale" Expanded="true">
-        <MudNavLink Href="sales-orders/new">New sales order</MudNavLink>
-    </MudNavGroup>
+    <MudText Typo="Typo.overline" Color="Color.Secondary" HtmlTag="div" Class="px-3 pt-4 pb-1">Sales</MudText>
+    <MudNavLink Href="sales-orders/new" Icon="@Icons.Material.Outlined.ReceiptLong">New sales order</MudNavLink>
 </AuthorizeView>
 
 @code {
@@ -960,6 +1010,12 @@ Last, a way to get there. In `NavMenu.razor`, under the Home link:
     private static string Join(params string[] roles) => string.Join(",", roles);
 }
 ```
+
+Each module gets a small heading (`Typo.overline`, the theme's small, spaced-out style) with its pages under
+it, each with an icon. MudBlazor also has `MudNavGroup`, a heading that folds its links away. We don't use it:
+an ERP has a dozen pages, a person uses a few of them all day, and a folded menu makes them click twice, or
+hunt. With headings, every page they're allowed is always one click away, and the icons let the eye find it
+before the words do.
 
 ## 7. Prove it: every kind of "no"
 

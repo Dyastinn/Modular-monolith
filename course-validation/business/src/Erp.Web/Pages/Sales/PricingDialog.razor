@@ -22,7 +22,7 @@
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
-        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="_categoryId is null">Save</MudButton>
+        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_categoryId is null || Api.Busy)">Save</MudButton>
     </DialogActions>
 </MudDialog>
 

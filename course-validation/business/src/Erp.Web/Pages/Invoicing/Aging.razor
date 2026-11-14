@@ -16,7 +16,7 @@
 }
 else
 {
-    <MudSimpleTable Dense="true" Hover="true" Outlined="true">
+    <AppSimpleTable Outlined="true">
         <thead>
             <tr><th>Customer</th><th class="money">Not yet due</th><th class="money">1–30 days</th><th class="money">31–60</th>
                 <th class="money">61–90</th><th class="money">Over 90</th><th class="money">Total</th></tr>
@@ -38,7 +38,7 @@ else
                 </tr>
             }
         </tbody>
-    </MudSimpleTable>
+    </AppSimpleTable>
     @if (_report.Customers.Count == 0) { <MudText Class="mt-4">Nobody owes anything on this date.</MudText> }
 }
 

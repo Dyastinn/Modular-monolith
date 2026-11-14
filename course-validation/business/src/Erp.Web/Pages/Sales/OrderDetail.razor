@@ -1,5 +1,6 @@
 @page "/sales-orders/{Id:long}"
 @inject ApiClient Api
+@inject ListMemory Lists
 @inject UserDirectory Users
 @inject IDialogService Dialogs
 @inject NavigationManager Nav
@@ -11,6 +12,8 @@
     <MudProgressLinear Indeterminate="true" />
     return;
 }
+
+<MudBreadcrumbs Items="@([new BreadcrumbItem("Sales orders", Lists.Last("sales-orders")), new BreadcrumbItem(_order.OrderNumber, null, disabled: true)])" Class="pa-0 mb-2" />
 
 <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
     <MudText Typo="Typo.h4">@_order.OrderNumber</MudText>
@@ -24,32 +27,32 @@
             <MudButton Href="@($"sales-orders/{Id}/edit")" Variant="Variant.Outlined">Edit</MudButton>
             @if (_order.SpecialDiscount is null && _order.Lines.Any(l => l.SpecialDiscountEligible))
             {
-                <MudButton OnClick="ApplyDiscount" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Elderly">Special discount</MudButton>
+                <MudButton OnClick="ApplyDiscount" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Elderly" Disabled="Api.Busy">Special discount</MudButton>
             }
             else if (_order.SpecialDiscount is not null)
             {
-                <MudButton OnClick="RemoveDiscount" Variant="Variant.Text">Remove discount</MudButton>
+                <MudButton OnClick="RemoveDiscount" Variant="Variant.Text" Disabled="Api.Busy">Remove discount</MudButton>
             }
-            <MudButton OnClick="Submit" Variant="Variant.Filled" Color="Color.Primary">Submit</MudButton>
+            <MudButton OnClick="Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="Api.Busy">Submit</MudButton>
         </AuthorizeView>
     }
     @if (_order.Status == "PendingApproval")
     {
         <AuthorizeView Roles="@Managers">
-            <MudButton OnClick="Reject" Variant="Variant.Outlined" Color="Color.Error">Reject</MudButton>
-            <MudButton OnClick="Approve" Variant="Variant.Filled" Color="Color.Success">Approve</MudButton>
+            <MudButton OnClick="Reject" Variant="Variant.Outlined" Color="Color.Error" Disabled="Api.Busy">Reject</MudButton>
+            <MudButton OnClick="Approve" Variant="Variant.Filled" Color="Color.Success" Disabled="Api.Busy">Approve</MudButton>
         </AuthorizeView>
     }
     @if (_order.Status == "Approved")
     {
         <AuthorizeView Roles="@Shippers">
-            <MudButton OnClick="Ship" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.LocalShipping">Ship</MudButton>
+            <MudButton OnClick="Ship" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.LocalShipping" Disabled="Api.Busy">Ship</MudButton>
         </AuthorizeView>
     }
     @if (_order.Status is "Draft" or "PendingApproval" or "Approved")
     {
         <AuthorizeView Roles="@Sellers">
-            <MudButton OnClick="Cancel" Variant="Variant.Text" Color="Color.Error">Cancel order</MudButton>
+            <MudButton OnClick="Cancel" Variant="Variant.Text" Color="Color.Error" Disabled="Api.Busy">Cancel order</MudButton>
         </AuthorizeView>
     }
     @if (_order.Status == "Shipped")
@@ -64,7 +67,7 @@
     <MudItem xs="12" md="8">
         <MudPaper Class="pa-4" Outlined="true">
             <MudText Typo="Typo.h6" GutterBottom="true">@_order.CustomerName</MudText>
-            <MudSimpleTable Dense="true" Hover="true">
+            <AppSimpleTable>
                 <thead><tr><th>Item</th><th class="money">Quantity</th><th class="money">Unit price</th><th class="money">Amount</th></tr></thead>
                 <tbody>
                     @foreach (var line in _order.Lines)
@@ -87,7 +90,7 @@
                     }
                     <tr><td colspan="3"><b>Total</b></td><td class="money"><b>@Format.Peso(_order.Total)</b></td></tr>
                 </tbody>
-            </MudSimpleTable>
+            </AppSimpleTable>
         </MudPaper>
     </MudItem>
     <MudItem xs="12" md="4">
@@ -132,7 +135,7 @@
     private async Task Load()
     {
         _order = await Api.Get<SalesOrderDetail>($"api/sales-orders/{Id}");
-        if (_order is null) { Nav.NavigateTo("sales-orders"); return; }
+        if (_order is null) { Nav.NavigateTo(Lists.Last("sales-orders")); return; }
         _names = (await Users.NameOf(_order.CreatedBy),
                   _order.ApprovedBy is null ? null : await Users.NameOf(_order.ApprovedBy),
                   _order.RejectedBy is null ? null : await Users.NameOf(_order.RejectedBy));
@@ -171,9 +174,13 @@
         if (confirmed == true) await Act("cancel", "Cancelled.");
     }
 
+    // Shipping can't be undone: the stock leaves and the invoice is issued. So it asks first.
     private async Task Ship()
     {
-        if (await Api.Create("api/shipments", new { salesOrderId = Id }, "Shipped. The invoice is being issued.") is not null)
+        var confirmed = await Dialogs.ShowMessageBoxAsync("Ship order",
+            $"Ship {_order!.OrderNumber} now? The stock leaves the warehouse and the invoice is issued. This can't be undone.",
+            yesText: "Ship", cancelText: "Not yet");
+        if (confirmed == true && await Api.Create("api/shipments", new { salesOrderId = Id }, "Shipped. The invoice is being issued.") is not null)
             await Load();
     }
 }

@@ -14,7 +14,7 @@
             <MudStack Spacing="4">
                 <AppTextField @bind-Value="_email" Label="Email" InputType="InputType.Email" AutoFocus="true" Required="true"
                               />
-                <AppTextField @bind-Value="_password" Label="Password" InputType="InputType.Password" Required="true"
+                <AppPasswordField @bind-Value="_password" Label="Password" Required="true"
                               />
                 @if (_error is not null)
                 {

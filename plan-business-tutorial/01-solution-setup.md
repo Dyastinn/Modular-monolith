@@ -523,8 +523,8 @@ internal static class AppTheme
             LinesDefault = "#e4e7ec",
             LinesInputs = "#d0d5dd",
             TableLines = "#eaecf0",
-            TableHover = "#f5f7fb",
-            TableStriped = "#fafbfc",
+            TableHover = "#eef3fd",
+            TableStriped = "#f7f8fa",
         },
         PaletteDark = new PaletteDark
         {
@@ -553,8 +553,8 @@ internal static class AppTheme
             LinesDefault = "#2a303c",
             LinesInputs = "#3a4250",
             TableLines = "#262b36",
-            TableHover = "#1e232d",
-            TableStriped = "#1a1e27",
+            TableHover = "#232a38",
+            TableStriped = "#1c2029",
         },
         Typography = new Typography
         {
@@ -688,6 +688,11 @@ Why remember the choice in the browser and not on the server? It's a preference 
 size of a window; it doesn't need to follow a person to another computer, and it must work on the sign-in page,
 before anyone is signed in. Notice `OnAfterRenderAsync`: calling the browser waits until the page is on the
 screen, because before that there's nothing to call.
+
+Here's where this frame ends up by the last lesson, in both modes. (The pictures in this course come from the
+finished app, so its menu already lists every module.)
+
+![The finished app's home page side by side: on the left in light mode, with a deep-blue top bar and white menu; on the right in dark mode, with the same layout on a near-black background](images/01-light-and-dark.png)
 
 ```razor
 @* src/Erp.Web/Layout/NavMenu.razor *@

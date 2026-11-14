@@ -3,20 +3,20 @@
 
 <MudDialog>
     <DialogContent>
-        <MudTable Outlined="true" T="StockMovement" ServerData="Load" Dense="true" Hover="true" Elevation="0">
+        <AppTable T="StockMovement" ServerData="Load" Elevation="0">
             <HeaderContent>
                 <MudTh>When</MudTh><MudTh>What</MudTh><MudTh Class="money">Quantity</MudTh><MudTh>Reference / reason</MudTh><MudTh>By</MudTh>
             </HeaderContent>
             <RowTemplate>
-                <MudTd>@Format.Date(context.OccurredUtc)</MudTd>
-                <MudTd>@context.Kind</MudTd>
-                <MudTd Class="money">@(context.Quantity > 0 ? "+" : "")@Format.Qty(context.Quantity) @Item.Unit</MudTd>
-                <MudTd>@(context.Reference ?? context.Reason)</MudTd>
-                <MudTd>@_names.GetValueOrDefault(context.UserId)</MudTd>
+                <MudTd DataLabel="When">@Format.Date(context.OccurredUtc)</MudTd>
+                <MudTd DataLabel="What">@context.Kind</MudTd>
+                <MudTd DataLabel="Quantity" Class="money">@(context.Quantity > 0 ? "+" : "")@Format.Qty(context.Quantity) @Item.Unit</MudTd>
+                <MudTd DataLabel="Reference / reason" Class="wrap">@(context.Reference ?? context.Reason)</MudTd>
+                <MudTd DataLabel="By">@_names.GetValueOrDefault(context.UserId)</MudTd>
             </RowTemplate>
             <NoRecordsContent>No movements yet.</NoRecordsContent>
             <PagerContent><MudTablePager /></PagerContent>
-        </MudTable>
+        </AppTable>
     </DialogContent>
 </MudDialog>
 

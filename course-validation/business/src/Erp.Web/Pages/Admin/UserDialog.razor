@@ -13,7 +13,7 @@
             </AppSelect>
             @if (User is null)
             {
-                <AppTextField @bind-Value="_password" Label="Temporary password (at least 12 characters)" InputType="InputType.Password"
+                <AppPasswordField @bind-Value="_password" Label="Temporary password (at least 12 characters)"
                               HelperText="Give it to them in person. They must change it when they first sign in." />
             }
         </MudStack>
@@ -21,7 +21,7 @@
     <DialogActions>
         <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
         <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary"
-                   Disabled="string.IsNullOrWhiteSpace(_fullName) || string.IsNullOrWhiteSpace(_email)">Save</MudButton>
+                   Disabled="@(string.IsNullOrWhiteSpace(_fullName) || string.IsNullOrWhiteSpace(_email) || Api.Busy)">Save</MudButton>
     </DialogActions>
 </MudDialog>
 

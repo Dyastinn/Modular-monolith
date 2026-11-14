@@ -774,12 +774,21 @@ and `StatusChip` learns the new statuses: `"Received"` green; `"PartiallyReceive
 
 The pages are built from parts you know:
 
+The expected date is the app's first date field, so `Shared/AppFields.cs` gets its last member:
+
+```csharp
+public class AppDatePicker : MudDatePicker
+{
+    public AppDatePicker() { Variant = Variant.Outlined; Margin = Margin.Normal; }
+}
+```
+
 | Page | Built like |
 |---|---|
 | **Suppliers** (`/suppliers`) and its `SupplierDialog` | Customers and `CustomerDialog`, lesson 15 |
-| **Purchase orders** (`/purchase-orders`), with a status filter that reads `?status=` | The order list, lesson 08 |
-| **New / edit purchase order** (`/purchase-orders/new`, `/purchase-orders/{id}/edit`) | The order form, lessons 08 and 10, with a supplier picker, an item picker over `api/items?activeOnly=true`, a unit cost per line, an expected date (`AppDatePicker`) and notes |
-| **One purchase order** (`/purchase-orders/{id}`) | The order page, lesson 08, with buttons that show by status and role: Edit and Approve on a draft, Send once approved, **Receive** while goods are due, Close on a partly received order, Cancel before anything arrives |
+| **Purchase orders** (`/purchase-orders`), with a status filter that reads `?status=` | The order list, lesson 08, its view kept in the address |
+| **New / edit purchase order** (`/purchase-orders/new`, `/purchase-orders/{id}/edit`) | The order form, lessons 08 and 11 (its breadcrumb too), with a supplier picker, an item picker over `api/items?activeOnly=true`, a unit cost per line, an expected date (`AppDatePicker`) and notes. Its unsaved-changes snapshot covers the supplier, the date, the notes and each line's item, quantity and cost |
+| **One purchase order** (`/purchase-orders/{id}`) | The order page, lesson 08, breadcrumb included, with buttons that show by status and role: Edit and Approve on a draft, Send once approved, **Receive** while goods are due, Close on a partly received order, Cancel before anything arrives. Close and Cancel can't be undone, so each asks first, the way Ship does in lesson 18, naming the purchase order and what happens |
 
 Type them out, then compare with the reference build's
 [Purchasing pages](../course-validation/business/src/Erp.Web/Pages/Purchasing/). The one new idea is the
@@ -792,7 +801,7 @@ receive dialog, so here it is in full:
 @* Count what actually arrived. Partial deliveries are normal: the order stays open for the rest. *@
 <MudDialog>
     <DialogContent>
-        <MudSimpleTable Dense="true">
+        <AppSimpleTable>
             <thead><tr><th>Item</th><th class="money">Still to come</th><th>Arrived now</th></tr></thead>
             <tbody>
                 @foreach (var line in _lines)
@@ -804,11 +813,11 @@ receive dialog, so here it is in full:
                     </tr>
                 }
             </tbody>
-        </MudSimpleTable>
+        </AppSimpleTable>
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
-        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="!_lines.Any(l => l.Arrived > 0)">Put into stock</MudButton>
+        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(!_lines.Any(l => l.Arrived > 0) || Api.Busy)">Put into stock</MudButton>
     </DialogActions>
 </MudDialog>
 
@@ -839,14 +848,13 @@ Each line starts filled in with what's still to come, because a complete deliver
 clerk only changes the lines that came short. `Max` stops typing more than is due, and the domain refuses it
 anyway.
 
-The menu gets a Purchasing group, and the home page two tiles:
+The menu gets a Purchasing heading, after Inventory, and the home page two tiles:
 
 ```razor
 <AuthorizeView Roles="@Buying">
-    <MudNavGroup Title="Purchasing" Icon="@Icons.Material.Filled.ShoppingCart" Expanded="true">
-        <MudNavLink Href="purchase-orders">Purchase orders</MudNavLink>
-        <MudNavLink Href="suppliers">Suppliers</MudNavLink>
-    </MudNavGroup>
+    <MudText Typo="Typo.overline" Color="Color.Secondary" HtmlTag="div" Class="px-3 pt-4 pb-1">Purchasing</MudText>
+    <MudNavLink Href="purchase-orders" Icon="@Icons.Material.Outlined.ShoppingCart">Purchase orders</MudNavLink>
+    <MudNavLink Href="suppliers" Icon="@Icons.Material.Outlined.Factory">Suppliers</MudNavLink>
 </AuthorizeView>
 ```
 
@@ -857,14 +865,14 @@ private static readonly string Buying = Join(Roles.Purchaser, Roles.Admin, Roles
 ```razor
 @* inside the clerk's AuthorizeView, after "Ready to ship" *@
 <MudItem xs="12" sm="6" md="4">
-    <Tile Title="Goods to receive" Text="Purchase orders on their way." Href="purchase-orders?status=Sent" Icon="@Icons.Material.Filled.Inventory" />
+    <Tile Title="Goods to receive" Text="Purchase orders on their way." Href="purchase-orders?status=Sent" Icon="@Icons.Material.Outlined.Inventory" />
 </MudItem>
 ```
 
 ```razor
 <AuthorizeView Roles="@BuyerRoles">
     <MudItem xs="12" sm="6" md="4">
-        <Tile Title="New purchase order" Text="Restock from a supplier." Href="purchase-orders/new" Icon="@Icons.Material.Filled.ShoppingCart" />
+        <Tile Title="New purchase order" Text="Restock from a supplier." Href="purchase-orders/new" Icon="@Icons.Material.Outlined.ShoppingCart" />
     </MudItem>
 </AuthorizeView>
 ```

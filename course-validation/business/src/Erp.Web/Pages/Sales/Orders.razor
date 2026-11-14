@@ -1,5 +1,6 @@
 @page "/sales-orders"
 @inject ApiClient Api
+@inject ListAddress View
 @inject NavigationManager Nav
 
 <PageTitle>Sales orders · ERP</PageTitle>
@@ -13,8 +14,8 @@
 </MudStack>
 
 <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
-    <MudStack Row="true" Spacing="4">
-        <AppTextField T="string" Value="_search" ValueChanged="OnSearch" Label="Order number or customer" DebounceInterval="400"
+    <MudStack Row="true" Spacing="4" Breakpoint="Breakpoint.Xs">
+        <AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Order number or customer" DebounceInterval="400"
                       Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Clearable="true" />
         <AppSelect T="string" Value="Status" ValueChanged="OnStatus" Label="Status" Clearable="true" Style="max-width:240px">
             @foreach (var s in Statuses)
@@ -25,7 +26,8 @@
     </MudStack>
 </MudPaper>
 
-<MudTable Outlined="true" T="SalesOrderSummary" @ref="_table" ServerData="Load" Hover="true" Dense="true"
+<AppTable T="SalesOrderSummary" @ref="_table" @key="View.Version" ServerData="Load"
+          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize"
           OnRowClick="Open" RowStyle="cursor:pointer">
     <HeaderContent>
         <MudTh>Order</MudTh>
@@ -35,29 +37,38 @@
         <MudTh>Created</MudTh>
     </HeaderContent>
     <RowTemplate>
-        <MudTd>@context.OrderNumber</MudTd>
-        <MudTd>@context.CustomerName</MudTd>
-        <MudTd><StatusChip Status="@context.Status" /></MudTd>
-        <MudTd Class="money">@Format.Peso(context.Total)</MudTd>
-        <MudTd>@Format.Date(context.CreatedUtc)</MudTd>
+        <MudTd DataLabel="Order">@context.OrderNumber</MudTd>
+        <MudTd DataLabel="Customer">@context.CustomerName</MudTd>
+        <MudTd DataLabel="Status"><StatusChip Status="@context.Status" /></MudTd>
+        <MudTd DataLabel="Total" Class="money">@Format.Peso(context.Total)</MudTd>
+        <MudTd DataLabel="Created">@Format.Date(context.CreatedUtc)</MudTd>
     </RowTemplate>
     <NoRecordsContent>No orders match.</NoRecordsContent>
     <PagerContent><MudTablePager /></PagerContent>
-</MudTable>
+</AppTable>
 
 @code {
+    // The list's view lives in the address (see ListAddress).
     [SupplyParameterFromQuery] public string? Status { get; set; }
+    [SupplyParameterFromQuery] public string? Search { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+    [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
 
     private static readonly string[] Statuses = ["Draft", "PendingApproval", "Approved", "Shipped", "Rejected", "Cancelled"];
     private static readonly string Sellers = $"{Roles.SalesRep},{Roles.SalesManager},{Roles.Admin}";
-    private MudTable<SalesOrderSummary> _table = default!;
-    private string? _search;
+    private AppTable<SalesOrderSummary> _table = default!;
 
-    private Task<TableData<SalesOrderSummary>> Load(TableState state, CancellationToken ct) =>
-        Api.Page<SalesOrderSummary>(Url.With("api/sales-orders", ("status", Status), ("search", _search)), state);
+    private Task<TableData<SalesOrderSummary>> Load(TableState state, CancellationToken ct)
+    {
+        View.Save(state, ("status", Status), ("search", Search));
+        return Api.Page<SalesOrderSummary>(Url.With("api/sales-orders", ("status", Status), ("search", Search)), state);
+    }
+
+    // A link to this list with other filters (the menu, a home tile, Back) shows them.
+    protected override void OnParametersSet() => View.Check();
 
     private void Open(TableRowClickEventArgs<SalesOrderSummary> row) => Nav.NavigateTo($"sales-orders/{row.Item!.Id}");
 
-    private Task OnSearch(string? text) { _search = text; return _table.ReloadServerData(); }
-    private Task OnStatus(string? status) { Status = status; return _table.ReloadServerData(); }
+    private Task OnSearch(string? text) { Search = text; return _table.FirstPage(); }
+    private Task OnStatus(string? status) { Status = status; return _table.FirstPage(); }
 }

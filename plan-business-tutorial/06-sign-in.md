@@ -742,6 +742,64 @@ app.MapRazorComponents<Erp.Web.App>()
 
 ### The sign-in page
 
+The sign-in page shows the product's mark too, but on a white card, not on the blue bar. So lesson 01's `Brand`
+learns to draw itself both ways. Before:
+
+```razor
+<MudAvatar Color="Color.Inherit" Variant="Variant.Outlined" Rounded="true" Size="Size.Small" aria-hidden="true">E</MudAvatar>
+```
+
+After, with a parameter that says where it sits:
+
+```razor
+@* src/Erp.Web/Shared/Brand.razor *@
+@* The product's name and mark: in the top bar (on blue, so drawn in white) and on the sign-in pages. *@
+<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="@Class">
+    <MudAvatar Color="@(OnBar ? Color.Inherit : Color.Primary)" Variant="@(OnBar ? Variant.Outlined : Variant.Filled)"
+               Rounded="true" Size="Size.Small" aria-hidden="true">E</MudAvatar>
+    <MudText Typo="Typo.h6">ERP</MudText>
+</MudStack>
+
+@code {
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public bool OnBar { get; set; }
+}
+```
+
+and `MainLayout` passes it: `<Brand OnBar="true" />`.
+
+The form has the app's first password field, and a password field has one need of its own: people type it blind,
+and a typo in a hidden field is the commonest reason a sign-in fails. So it gets an eye button that shows what was
+typed. It joins lesson 03's field in `Shared/AppFields.cs` (add `using Microsoft.AspNetCore.Components;` at the top):
+
+```csharp
+// A password field with an eye button: people can check what they typed, because typos in a hidden field are the
+// commonest reason a sign-in fails.
+public class AppPasswordField : AppTextField<string>
+{
+    public AppPasswordField()
+    {
+        InputType = InputType.Password;
+        Adornment = Adornment.End;
+        AdornmentIcon = Icons.Material.Outlined.Visibility;
+        AdornmentAriaLabel = "Show password";
+        OnAdornmentClick = EventCallback.Factory.Create<Microsoft.AspNetCore.Components.Web.MouseEventArgs>(this, Toggle);
+    }
+
+    private void Toggle()
+    {
+        var shown = InputType == InputType.Text;
+        InputType = shown ? InputType.Password : InputType.Text;
+        AdornmentIcon = shown ? Icons.Material.Outlined.Visibility : Icons.Material.Outlined.VisibilityOff;
+        AdornmentAriaLabel = shown ? "Show password" : "Hide password";
+    }
+}
+```
+
+An **adornment** is MudBlazor's word for an icon inside a field; clicking it calls `Toggle`, which switches the
+field between hidden and plain text. The `AdornmentAriaLabel` gives the eye a name for screen readers: "Show
+password", then "Hide password".
+
 ```razor
 @* src/Erp.Web/Pages/Login.razor *@
 @page "/login"
@@ -751,18 +809,21 @@ app.MapRazorComponents<Erp.Web.App>()
 
 <PageTitle>Sign in · ERP</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.ExtraSmall" Class="mt-16">
-    <MudPaper Class="pa-8" Elevation="2">
-        <MudText Typo="Typo.h5" GutterBottom="true">Sign in</MudText>
+<MudContainer MaxWidth="MaxWidth.ExtraSmall" Class="d-flex align-center justify-center" Style="min-height:100vh">
+    <MudPaper Outlined="true" Class="pa-8 rounded-lg" Width="100%">
+        <Brand Class="mb-6" />
+        <MudText Typo="Typo.h5">Sign in</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-6">Use the email and password your administrator gave you.</MudText>
         <EditForm Model="this" OnSubmit="SignIn">
-            <MudStack Spacing="3">
+            <MudStack Spacing="4">
                 <AppTextField @bind-Value="_email" Label="Email" InputType="InputType.Email" AutoFocus="true" Required="true" />
-                <AppTextField @bind-Value="_password" Label="Password" InputType="InputType.Password" Required="true" />
+                <AppPasswordField @bind-Value="_password" Label="Password" Required="true" />
                 @if (_error is not null)
                 {
                     <MudAlert Severity="Severity.Error" Dense="true">@_error</MudAlert>
                 }
-                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy">Sign in</MudButton>
+                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                           Size="Size.Large" Disabled="_busy">Sign in</MudButton>
             </MudStack>
         </EditForm>
     </MudPaper>
@@ -787,6 +848,11 @@ app.MapRazorComponents<Erp.Web.App>()
 }
 ```
 
+One card, centred on the quiet background: `d-flex align-center justify-center` are MudBlazor's layout classes,
+and `min-height:100vh` makes the container as tall as the window, so "centred" means the middle of the screen.
+One clear button, as wide as the form. The subtitle tells a new employee where their password comes from,
+because nobody signs themselves up here.
+
 `EditForm` with a submit button means pressing Enter signs in. And look at the last line. Without that
 check, an attacker could send someone a link to `/login?returnUrl=https://evil.example`, and after a real
 sign-in on our real site, the user would land on the attacker's look-alike page. That trick is called an
@@ -802,32 +868,39 @@ bare page (the sign-in form) for everyone else. The top bar gets an account menu
 @inherits LayoutComponentBase
 @inject CookieAuthenticationStateProvider Auth
 @inject NavigationManager Nav
+@inject IJSRuntime Js
 
-<MudThemeProvider Theme="Theme" />
+<MudThemeProvider @ref="_themeProvider" Theme="AppTheme.Theme" @bind-IsDarkMode="_dark" ObserveSystemDarkModeChange="_followSystem" />
 <MudPopoverProvider />
 
 <AuthorizeView>
-    <Authorized>
+    <Authorized Context="auth">
         <MudLayout>
-            <MudAppBar Elevation="1" Dense="true">
-                <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
+            <MudAppBar Elevation="0">
+                <MudIconButton Icon="@Icons.Material.Outlined.Menu" Color="Color.Inherit" Edge="Edge.Start"
                                OnClick="() => _drawerOpen = !_drawerOpen" aria-label="Menu" />
-                <MudText Typo="Typo.h6" Class="ml-2">ERP</MudText>
+                <MudButton Href="" Variant="Variant.Text" Color="Color.Inherit" Class="ml-1 px-2" aria-label="Home"><Brand OnBar="true" /></MudButton>
                 <MudSpacer />
-                <MudMenu Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Inherit" AnchorOrigin="Origin.BottomRight"
-                         aria-label="Account">
-                    <MudText Typo="Typo.body2" Class="px-4 pt-2">@context.User.Identity?.Name</MudText>
-                    <MudText Typo="Typo.caption" Class="px-4 pb-2">@RoleOf(context)</MudText>
+                <MudTooltip Text="@(_dark ? "Light mode" : "Dark mode")">
+                    <MudIconButton Icon="@(_dark ? Icons.Material.Outlined.LightMode : Icons.Material.Outlined.DarkMode)" Color="Color.Inherit"
+                                   OnClick="ToggleDarkMode" aria-label="@(_dark ? "Light mode" : "Dark mode")" />
+                </MudTooltip>
+                <MudMenu Label="@auth.User.Identity?.Name" StartIcon="@Icons.Material.Outlined.AccountCircle"
+                         EndIcon="@Icons.Material.Outlined.ExpandMore" Color="Color.Inherit" Variant="Variant.Text"
+                         AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                    <MudText Typo="Typo.body2" Class="px-4 pt-3">@auth.User.Identity?.Name</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="px-4 pb-3">@RoleOf(auth)</MudText>
                     <MudDivider />
-                    <MudMenuItem OnClick="() => SignOut(false)">Sign out</MudMenuItem>
-                    <MudMenuItem OnClick="() => SignOut(true)">Sign out everywhere</MudMenuItem>
+                    <MudMenuItem OnClick="() => SignOut(false)" Icon="@Icons.Material.Outlined.Logout">Sign out</MudMenuItem>
+                    <MudMenuItem OnClick="() => SignOut(true)" Icon="@Icons.Material.Outlined.DevicesOther">Sign out everywhere</MudMenuItem>
                 </MudMenu>
             </MudAppBar>
-            <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="1">
+            <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="0" Variant="DrawerVariant.Responsive"
+                       Class="border-r border-solid mud-border-lines-default">
                 <NavMenu />
             </MudDrawer>
             <MudMainContent>
-                <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-6">
+                <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pt-8 pb-12 px-4 px-sm-8">
                     @Body
                 </MudContainer>
             </MudMainContent>
@@ -839,12 +912,28 @@ bare page (the sign-in form) for everyone else. The top bar gets an account menu
 </AuthorizeView>
 
 @code {
+    private const string ThemeKey = "erp.theme";
+    private MudThemeProvider _themeProvider = default!;
     private bool _drawerOpen = true;
+    private bool _dark;
+    private bool _followSystem = true;
 
-    private static readonly MudTheme Theme = new()
+    // Light or dark: the person's own choice if they made one (kept in this browser), otherwise the computer's setting.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        PaletteLight = new PaletteLight { Primary = "#1e5aa8", AppbarBackground = "#1e5aa8" }
-    };
+        if (!firstRender) return;
+        var saved = await Js.InvokeAsync<string?>("localStorage.getItem", ThemeKey);
+        _followSystem = saved is null;
+        _dark = saved is null ? await _themeProvider.GetSystemDarkModeAsync() : saved == "dark";
+        StateHasChanged();
+    }
+
+    private async Task ToggleDarkMode()
+    {
+        _dark = !_dark;
+        _followSystem = false;
+        await Js.InvokeVoidAsync("localStorage.setItem", ThemeKey, _dark ? "dark" : "light");
+    }
 
     private static string RoleOf(AuthenticationState state) =>
         state.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
@@ -857,8 +946,17 @@ bare page (the sign-in form) for everyone else. The top bar gets an account menu
 }
 ```
 
-Inside `<AuthorizeView>`, `context` is the signed-in user. The account menu pops up in lesson 01's
-`MudPopoverProvider` layer. And **Sign out everywhere** is the endpoint from step 6, one click away.
+Inside `<AuthorizeView>`, `auth` is the signed-in user (`Context="auth"` names it). The account button is
+MudBlazor's own menu button: `Label` shows the person's name, so everyone can see who's signed in on this
+computer, and the menu opens in lesson 01's `MudPopoverProvider` layer with the role at the top. And **Sign out
+everywhere** is the endpoint from step 6, one click away.
+
+A word on that button, because it's tempting to build your own. MudBlazor's `MudMenu` also takes an
+`ActivatorContent` for a custom trigger, and putting a `MudButton` with an avatar inside it looks nice. Don't:
+MudBlazor wraps that content in an element that's already a button, so you get a button inside a button (two
+stops for the Tab key, and a screen reader announcing it twice), and in MudBlazor 9 the trigger must also open
+the menu itself (`context.ToggleAsync`), or clicking it does nothing. `Label`, `StartIcon` and `EndIcon` give one
+real button that just works.
 
 Last, the home page greets the person by name. In `Home.razor`:
 
@@ -1182,7 +1280,7 @@ public sealed class BusinessFlowUiTests : IAsyncLifetime
         var page = await context.NewPageAsync();
         await page.GotoAsync("/login");
         await page.GetByLabel("Email").FillAsync(email);
-        await page.GetByLabel("Password").FillAsync("Password123!");
+        await page.GetByLabel("Password", new() { Exact = true }).FillAsync("Password123!");
         await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
         await page.GetByText("Good day,").WaitForAsync();
         return page;
@@ -1210,7 +1308,7 @@ public sealed class BusinessFlowUiTests : IAsyncLifetime
         var page = await context.NewPageAsync();
         await page.GotoAsync("/login");
         await page.GetByLabel("Email").FillAsync("rep@erp.local");
-        await page.GetByLabel("Password").FillAsync("not-the-password");
+        await page.GetByLabel("Password", new() { Exact = true }).FillAsync("not-the-password");
         await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
 
         await page.GetByText("Wrong email or password.").WaitForAsync();
@@ -1228,6 +1326,9 @@ public sealed class BusinessFlowUiTests : IAsyncLifetime
     }
 }
 ```
+
+`Exact = true` because the eye button is also labelled with the word "password" ("Show password"), and Playwright
+otherwise matches any label that *contains* the text.
 
 - **It finds things the way a person does**: by label ("Email"), by button name ("Sign in"), by text on
   screen. So it breaks when the screen breaks, not when a CSS class changes.
@@ -1253,6 +1354,54 @@ ERP_UI_URL=http://localhost:5264 ERP_UI_SCREENSHOTS=./screens dotnet test --proj
 Open the `screens` folder afterwards: each step is a picture. The browser runs *headless* (no window), so
 the screenshots are how you see what it saw. The flow through orders, approvals and invoices grows in later
 lessons, one step per feature.
+
+Three more prove what this lesson built into the frame: the account button opens and signs out, the password can
+be shown, and the dark mode choice survives a reload:
+
+```csharp
+// The account button opens its menu, and signing out from it lands on the sign-in page.
+[UiFact]
+public async Task The_account_menu_opens_and_signs_out()
+{
+    var rep = await SignIn("rep@erp.local");
+    await rep.GetByRole(AriaRole.Button, new() { Name = "Rita Reyes" }).ClickAsync();
+    await rep.GetByText("Sales rep").WaitForAsync();
+    await rep.GetByText("Sign out", new() { Exact = true }).ClickAsync();
+
+    await rep.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).WaitForAsync();
+}
+
+// The eye button shows what was typed, so a typo can be seen before signing in.
+[UiFact]
+public async Task The_password_can_be_shown_before_signing_in()
+{
+    var context = await _browser.NewContextAsync(new() { BaseURL = BaseUrl });
+    var page = await context.NewPageAsync();
+    await page.GotoAsync("/login");
+    var password = page.GetByLabel("Password", new() { Exact = true });
+    await password.FillAsync("Secret-1234");
+
+    await page.GetByRole(AriaRole.Button, new() { Name = "Show password" }).ClickAsync();
+
+    (await password.GetAttributeAsync("type")).Should().Be("text");
+}
+
+// The choice of dark mode is remembered in this browser: a reload keeps it.
+[UiFact]
+public async Task Dark_mode_is_remembered_after_a_reload()
+{
+    var rep = await SignIn("rep@erp.local");
+    await rep.GetByRole(AriaRole.Button, new() { Name = "Dark mode" }).ClickAsync();
+    await rep.GetByRole(AriaRole.Button, new() { Name = "Light mode" }).WaitForAsync();
+
+    await rep.ReloadAsync();
+
+    await rep.GetByRole(AriaRole.Button, new() { Name = "Light mode" }).WaitForAsync();
+}
+```
+
+The first one exists because of a real bug: an earlier version of the account button looked right and did
+nothing when clicked, and no test had ever clicked it.
 
 Now, let's be honest about the cost here: browser tests are the slowest and the most fragile tests we have.
 They need a running app, and a slow machine can make them time out. So we keep only a few: the main flows,

@@ -19,7 +19,7 @@
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
-        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Success" Disabled="_amount + _withheld <= 0 || _paidOn is null">Record</MudButton>
+        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Success" Disabled="@(_amount + _withheld <= 0 || _paidOn is null || Api.Busy)">Record</MudButton>
     </DialogActions>
 </MudDialog>
 

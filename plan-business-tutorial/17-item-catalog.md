@@ -1036,6 +1036,7 @@ public sealed record StockMovement(long Id, decimal Quantity, string Kind, strin
 @* src/Erp.Web/Pages/Inventory/Items.razor *@
 @page "/items"
 @inject ApiClient Api
+@inject ListAddress View
 @inject IDialogService Dialogs
 
 <PageTitle>Items and stock · ERP</PageTitle>
@@ -1048,24 +1049,25 @@ public sealed record StockMovement(long Id, decimal Quantity, string Kind, strin
     </AuthorizeView>
 </MudStack>
 
-<MudStack Row="true" Spacing="4" Class="mb-4">
-    <AppTextField T="string" Value="_search" ValueChanged="OnSearch" Label="SKU or name" DebounceInterval="400" Clearable="true"
+<MudStack Row="true" Spacing="4" Class="mb-4" Breakpoint="Breakpoint.Xs">
+    <AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="SKU or name" DebounceInterval="400" Clearable="true"
                   Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
-    <MudSwitch T="bool" Value="_activeOnly" ValueChanged="OnActive" Label="Active only" Color="Color.Primary" />
+    <MudSwitch T="bool" Value="ActiveOnly" ValueChanged="OnActive" Label="Active only" Color="Color.Primary" />
 </MudStack>
 
-<MudTable Outlined="true" T="StockItem" @ref="_table" ServerData="Load" Hover="true" Dense="true">
+<AppTable T="StockItem" @ref="_table" @key="View.Version" ServerData="Load"
+          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
     <HeaderContent>
         <MudTh>SKU</MudTh><MudTh>Name</MudTh><MudTh>Unit</MudTh>
         <MudTh Class="money">On hand</MudTh><MudTh Class="money">Reserved</MudTh><MudTh Class="money">Available</MudTh><MudTh></MudTh>
     </HeaderContent>
     <RowTemplate>
-        <MudTd>@context.Sku</MudTd>
-        <MudTd>@context.Name @if (!context.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</MudTd>
-        <MudTd>@context.Unit</MudTd>
-        <MudTd Class="money">@Format.Qty(context.OnHand)</MudTd>
-        <MudTd Class="money">@Format.Qty(context.Reserved)</MudTd>
-        <MudTd Class="money"><b>@Format.Qty(context.Available)</b></MudTd>
+        <MudTd DataLabel="SKU">@context.Sku</MudTd>
+        <MudTd DataLabel="Name">@context.Name @if (!context.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</MudTd>
+        <MudTd DataLabel="Unit">@context.Unit</MudTd>
+        <MudTd DataLabel="On hand" Class="money">@Format.Qty(context.OnHand)</MudTd>
+        <MudTd DataLabel="Reserved" Class="money">@Format.Qty(context.Reserved)</MudTd>
+        <MudTd DataLabel="Available" Class="money"><b>@Format.Qty(context.Available)</b></MudTd>
         <MudTd>
             <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" aria-label="Actions">
                 <MudMenuItem OnClick="() => Movements(context)">Movement history</MudMenuItem>
@@ -1079,19 +1081,29 @@ public sealed record StockMovement(long Id, decimal Quantity, string Kind, strin
     </RowTemplate>
     <NoRecordsContent>No items match.</NoRecordsContent>
     <PagerContent><MudTablePager /></PagerContent>
-</MudTable>
+</AppTable>
 
 @code {
+    // The list's view lives in the address (see ListAddress).
+    [SupplyParameterFromQuery] public string? Search { get; set; }
+    [SupplyParameterFromQuery] public bool ActiveOnly { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+    [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
+
     private static readonly string Keepers = $"{Roles.InventoryClerk},{Roles.Admin}";
-    private MudTable<StockItem> _table = default!;
-    private string? _search;
-    private bool _activeOnly;
+    private AppTable<StockItem> _table = default!;
 
-    private Task<TableData<StockItem>> Load(TableState state, CancellationToken ct) =>
-        Api.Page<StockItem>(Url.With("api/items", ("search", _search), ("activeOnly", _activeOnly)), state);
+    private Task<TableData<StockItem>> Load(TableState state, CancellationToken ct)
+    {
+        View.Save(state, ("search", Search), ("activeOnly", ActiveOnly));
+        return Api.Page<StockItem>(Url.With("api/items", ("search", Search), ("activeOnly", ActiveOnly)), state);
+    }
 
-    private Task OnSearch(string? text) { _search = text; return _table.ReloadServerData(); }
-    private Task OnActive(bool value) { _activeOnly = value; return _table.ReloadServerData(); }
+    // A link to this list with other filters (the menu, a home tile, Back) shows them.
+    protected override void OnParametersSet() => View.Check();
+
+    private Task OnSearch(string? text) { Search = text; return _table.FirstPage(); }
+    private Task OnActive(bool value) { ActiveOnly = value; return _table.FirstPage(); }
 
     private async Task Edit(StockItem? item)
     {
@@ -1139,7 +1151,7 @@ The three dialogs are short. The item form edits SKU only when it's new (the SKU
     <DialogActions>
         <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
         <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary"
-                   Disabled="string.IsNullOrWhiteSpace(_sku) || string.IsNullOrWhiteSpace(_name) || string.IsNullOrWhiteSpace(_unit)">Save</MudButton>
+                   Disabled="@(string.IsNullOrWhiteSpace(_sku) || string.IsNullOrWhiteSpace(_name) || string.IsNullOrWhiteSpace(_unit) || Api.Busy)">Save</MudButton>
     </DialogActions>
 </MudDialog>
 
@@ -1185,7 +1197,7 @@ The success message tells the clerk what happens next: Sales still has to price 
     <DialogActions>
         <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
         <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary"
-                   Disabled="_change == 0 || string.IsNullOrWhiteSpace(_reason)">Adjust</MudButton>
+                   Disabled="@(_change == 0 || string.IsNullOrWhiteSpace(_reason) || Api.Busy)">Adjust</MudButton>
     </DialogActions>
 </MudDialog>
 
@@ -1211,20 +1223,20 @@ The success message tells the clerk what happens next: Sales still has to price 
 
 <MudDialog>
     <DialogContent>
-        <MudTable Outlined="true" T="StockMovement" ServerData="Load" Dense="true" Hover="true" Elevation="0">
+        <AppTable T="StockMovement" ServerData="Load" Elevation="0">
             <HeaderContent>
                 <MudTh>When</MudTh><MudTh>What</MudTh><MudTh Class="money">Quantity</MudTh><MudTh>Reference / reason</MudTh><MudTh>By</MudTh>
             </HeaderContent>
             <RowTemplate>
-                <MudTd>@Format.Date(context.OccurredUtc)</MudTd>
-                <MudTd>@context.Kind</MudTd>
-                <MudTd Class="money">@(context.Quantity > 0 ? "+" : "")@Format.Qty(context.Quantity) @Item.Unit</MudTd>
-                <MudTd>@(context.Reference ?? context.Reason)</MudTd>
-                <MudTd>@_names.GetValueOrDefault(context.UserId)</MudTd>
+                <MudTd DataLabel="When">@Format.Date(context.OccurredUtc)</MudTd>
+                <MudTd DataLabel="What">@context.Kind</MudTd>
+                <MudTd DataLabel="Quantity" Class="money">@(context.Quantity > 0 ? "+" : "")@Format.Qty(context.Quantity) @Item.Unit</MudTd>
+                <MudTd DataLabel="Reference / reason" Class="wrap">@(context.Reference ?? context.Reason)</MudTd>
+                <MudTd DataLabel="By">@_names.GetValueOrDefault(context.UserId)</MudTd>
             </RowTemplate>
             <NoRecordsContent>No movements yet.</NoRecordsContent>
             <PagerContent><MudTablePager /></PagerContent>
-        </MudTable>
+        </AppTable>
     </DialogContent>
 </MudDialog>
 
@@ -1248,19 +1260,29 @@ The "By" column is lesson 16's user directory at work again: the movement stores
 ### The price list
 
 The price list page is the order list's pattern with a tab for categories: `src/Erp.Web/Pages/Sales/PriceList.razor`
-at `/price-list`, a `MudTabs` with an **Items** tab (a server-paged `MudTable<PriceListItem>` over
+at `/price-list`, a `MudTabs` with an **Items** tab (a server-paged `AppTable<PriceListItem>` over
 `api/price-list` with a search box and a "For sale only" switch; each row shows SKU, name, unit, category,
 price and "for sale", and a **Set price** button for managers) and a **Categories** tab holding a
 `<Categories />` component. **Set price** opens a `PricingDialog` with a price field, a category
 `AppSelect` filled from `api/item-categories`, and a "For sale" switch, which saves with
 `Api.Put($"api/price-list/{Item.Id}", ...)`. The `Categories` component lists categories in a
-`MudSimpleTable` and, for managers, shows a small form under it that creates or edits one. All three are
+`AppSimpleTable` and, for managers, shows a small form under it that creates or edits one. All three are
 built from pieces you've used several times now; type them out, and compare with
 [PriceList.razor](../course-validation/business/src/Erp.Web/Pages/Sales/PriceList.razor),
 [PricingDialog.razor](../course-validation/business/src/Erp.Web/Pages/Sales/PricingDialog.razor) and
 [Categories.razor](../course-validation/business/src/Erp.Web/Pages/Sales/Categories.razor) when you're done,
 skipping their VAT and SC/PWD columns, the "VAT treatment" select, the special-discount switch and the
 Special discounts tab: those arrive in lessons 20 and 21.
+
+These are the app's first tabs, and MudBlazor writes tab labels in capitals, with no setting to change it.
+Everything else in the app is sentence case, so one rule in `app.css`:
+
+```css
+/* MudBlazor writes tab labels in capitals, and has no setting for it; everything else here is sentence case. */
+.mud-tab {
+    text-transform: none;
+}
+```
 
 One line deserves a sentence. At the top of the price list:
 
@@ -1276,17 +1298,16 @@ why something isn't there yet.
 
 ### The menu
 
-In `NavMenu.razor`, the Sales group gets **Price list**, and Inventory gets its own group:
+In `NavMenu.razor`, Sales gets **Price list**, and Inventory gets its own heading, after Sales:
 
 ```razor
-<MudNavLink Href="price-list">Price list</MudNavLink>
+<MudNavLink Href="price-list" Icon="@Icons.Material.Outlined.Sell">Price list</MudNavLink>
 ```
 
 ```razor
 <AuthorizeView Roles="@Stock">
-    <MudNavGroup Title="Inventory" Icon="@Icons.Material.Filled.Inventory2" Expanded="true">
-        <MudNavLink Href="items">Items and stock</MudNavLink>
-    </MudNavGroup>
+    <MudText Typo="Typo.overline" Color="Color.Secondary" HtmlTag="div" Class="px-3 pt-4 pb-1">Inventory</MudText>
+    <MudNavLink Href="items" Icon="@Icons.Material.Outlined.Inventory2">Items and stock</MudNavLink>
 </AuthorizeView>
 ```
 

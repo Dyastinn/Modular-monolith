@@ -858,7 +858,34 @@ digits, so add this to `app.css`:
     font-variant-numeric: tabular-nums;
     white-space: nowrap;
 }
+
+/* Numbers in tables line up digit under digit. */
+.mud-table-root {
+    font-variant-numeric: tabular-nums;
+}
+
+/* Short values (ids, dates, amounts) stay on one line, so a row reads straight across; on a narrow screen the
+   table scrolls sideways inside its card instead. A cell of free text opts out with Class="wrap". */
+.mud-table-cell {
+    white-space: nowrap;
+}
+
+.mud-table-cell.wrap {
+    white-space: normal;
+    min-width: 16rem;
+}
+
+/* MudBlazor gives each compact cell 40px of side padding; 24px keeps rows airy and lets a nine-column list fit a
+   laptop screen. */
+.mud-table-dense * .mud-table-row .mud-table-cell {
+    padding-inline: 12px;
+}
 ```
+
+**Tabular numbers** give every digit the same width, so ₱75,000.00 and ₱1,120.00 line up column by column
+and the eye compares them at a glance. And a row should read straight across: an invoice number broken over two lines is
+read as two things. So table cells don't wrap; when the window is too narrow, MudBlazor's table scrolls sideways
+inside its own card, and the page around it stays still.
 
 `ApiClient` learns to fetch one page for a table. In `Services/ApiClient.cs`, add the envelope above the
 class, and one method inside it:
@@ -879,10 +906,126 @@ public async Task<TableData<T>> Page<T>(string url, TableState state)
 
 ### The order list
 
+Two new kinds of field arrive today, a drop-down list and a search box with suggestions, so `Shared/AppFields.cs`
+gets two more:
+
+```csharp
+public class AppSelect<T> : MudSelect<T>
+{
+    public AppSelect() { Variant = Variant.Outlined; Margin = Margin.Normal; }
+}
+
+public class AppAutocomplete<T> : MudAutocomplete<T>
+{
+    public AppAutocomplete() { Variant = Variant.Outlined; Margin = Margin.Normal; }
+}
+```
+
+And the first full table, the kind that pages through the server, joins lesson 07's `AppSimpleTable` in
+`Shared/AppTables.cs`:
+
+```csharp
+public class AppTable<T> : MudTable<T>
+{
+    public AppTable() { Outlined = true; Striped = true; Hover = true; Dense = true; }
+
+    // After a search or filter changes: page 1 of the new results (page 3 of the old ones may not exist).
+    public Task FirstPage()
+    {
+        if (CurrentPage == 0) return ReloadServerData();
+        NavigateTo(0);
+        return Task.CompletedTask;
+    }
+}
+```
+
+`FirstPage` fixes a quiet trap: you're on page 3, you type a new search, and the table asks for page 3 of results
+that have only one page. It shows "No orders match.", which is a lie.
+
+A list has one more need. You search for "Acme", go to page 2, open an order, and come back: the list should
+still say "Acme", page 2. And a link to that view, pasted to a colleague, should open it. Both work if the view
+lives in the **address**: `/sales-orders?search=Acme&page=2`. This helper keeps it there:
+
+```csharp
+// src/Erp.Web/Shared/ListAddress.cs
+using Microsoft.AspNetCore.Components;
+using MudBlazor;
+
+namespace Erp.Web.Shared;
+
+// Keeps a list's view in the address: its search, filters, page and page size. Back, a breadcrumb, a bookmark or a
+// link pasted to a colleague opens the list exactly as it was. One per list page (registered as transient).
+public sealed class ListAddress(NavigationManager nav, ListMemory memory)
+{
+    public const int DefaultPageSize = 10;
+    private string? _written;
+
+    // Changes when the address changed from outside (the menu, a home tile, Back): the page uses it as the table's
+    // @key, so the table starts again from the new address.
+    public int Version { get; private set; }
+
+    // ?page= counts from 1, like people do; the table counts from 0.
+    public static int PageIndex(int? page) => page is > 1 ? page.Value - 1 : 0;
+
+    // Called on every load: writes the view into the address without adding a step to the browser's history.
+    public void Save(TableState state, params (string Name, object? Value)[] filters)
+    {
+        var values = new Dictionary<string, object?>();
+        foreach (var (name, value) in filters)
+            values[name] = value is null or "" or false ? null : value;
+        values["page"] = state.Page > 0 ? state.Page + 1 : null;
+        values["size"] = state.PageSize != DefaultPageSize ? state.PageSize : null;
+
+        _written = nav.GetUriWithQueryParameters(values);
+        memory.Remember(nav.ToBaseRelativePath(_written));
+        if (_written != nav.Uri) nav.NavigateTo(_written, replace: true);
+    }
+
+    // Called from the page's OnParametersSet: an address this list didn't write means "show this instead".
+    public void Check()
+    {
+        if (_written is null || nav.Uri == _written) return;
+        _written = null;
+        Version++;
+    }
+}
+
+// The last address of each list in this browser tab, for the breadcrumbs: "Sales orders" goes back to the list as
+// you left it, not to an empty one.
+public sealed class ListMemory
+{
+    private readonly Dictionary<string, string> _last = new(StringComparer.OrdinalIgnoreCase);
+
+    public void Remember(string relativeUri) => _last[relativeUri.Split('?')[0]] = relativeUri;
+
+    public string Last(string path) => _last.GetValueOrDefault(path, path);
+}
+```
+
+Register both in `Erp.Web/Program.cs`, after `ApiClient`:
+
+```csharp
+builder.Services.AddScoped<ListMemory>();
+builder.Services.AddTransient<ListAddress>();
+```
+
+| Piece | What it does |
+|---|---|
+| `[SupplyParameterFromQuery]` on the page | Blazor fills a property from the address: `?search=Acme` sets `Search` |
+| `View.Save(state, ...)` in `Load` | After every load, writes the search, the filters, the page and the page size back into the address |
+| `replace: true` | Changes the address without adding a step to the browser's history, so Back still means "the page before" |
+| `GetUriWithQueryParameters` | Blazor's own way to set query values; `null` removes one, so an empty search leaves no `?search=` behind |
+| `@key="View.Version"` | When the address changes from outside (the menu, a home tile, Back), the table is rebuilt from it |
+| `ListMemory` | The last address of each list in this tab, for the breadcrumbs. `Transient` makes a fresh `ListAddress` for each page; `Scoped` keeps one memory for the whole tab |
+
+Like the fields, `AppTable<T>` is a `MudTable<T>`, so a page can keep a `MudTable<T>` reference to it
+(`@ref="_table"`) and call `ReloadServerData()` as usual.
+
 ```razor
 @* src/Erp.Web/Pages/Sales/Orders.razor *@
 @page "/sales-orders"
 @inject ApiClient Api
+@inject ListAddress View
 @inject NavigationManager Nav
 
 <PageTitle>Sales orders · ERP</PageTitle>
@@ -896,8 +1039,8 @@ public async Task<TableData<T>> Page<T>(string url, TableState state)
 </MudStack>
 
 <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
-    <MudStack Row="true" Spacing="4">
-        <AppTextField T="string" Value="_search" ValueChanged="OnSearch" Label="Order number or customer" DebounceInterval="400"
+    <MudStack Row="true" Spacing="4" Breakpoint="Breakpoint.Xs">
+        <AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Order number or customer" DebounceInterval="400"
                       Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Clearable="true" />
         <AppSelect T="string" Value="Status" ValueChanged="OnStatus" Label="Status" Clearable="true" Style="max-width:240px">
             @foreach (var s in Statuses)
@@ -908,7 +1051,8 @@ public async Task<TableData<T>> Page<T>(string url, TableState state)
     </MudStack>
 </MudPaper>
 
-<MudTable Outlined="true" T="SalesOrderSummary" @ref="_table" ServerData="Load" Hover="true" Dense="true"
+<AppTable T="SalesOrderSummary" @ref="_table" @key="View.Version" ServerData="Load"
+          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize"
           OnRowClick="Open" RowStyle="cursor:pointer">
     <HeaderContent>
         <MudTh>Order</MudTh>
@@ -918,31 +1062,40 @@ public async Task<TableData<T>> Page<T>(string url, TableState state)
         <MudTh>Created</MudTh>
     </HeaderContent>
     <RowTemplate>
-        <MudTd>@context.OrderNumber</MudTd>
-        <MudTd>@context.CustomerName</MudTd>
-        <MudTd><StatusChip Status="@context.Status" /></MudTd>
-        <MudTd Class="money">@Format.Peso(context.Total)</MudTd>
-        <MudTd>@Format.Date(context.CreatedUtc)</MudTd>
+        <MudTd DataLabel="Order">@context.OrderNumber</MudTd>
+        <MudTd DataLabel="Customer">@context.CustomerName</MudTd>
+        <MudTd DataLabel="Status"><StatusChip Status="@context.Status" /></MudTd>
+        <MudTd DataLabel="Total" Class="money">@Format.Peso(context.Total)</MudTd>
+        <MudTd DataLabel="Created">@Format.Date(context.CreatedUtc)</MudTd>
     </RowTemplate>
     <NoRecordsContent>No orders match.</NoRecordsContent>
     <PagerContent><MudTablePager /></PagerContent>
-</MudTable>
+</AppTable>
 
 @code {
+    // The list's view lives in the address (see ListAddress).
     [SupplyParameterFromQuery] public string? Status { get; set; }
+    [SupplyParameterFromQuery] public string? Search { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+    [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
 
     private static readonly string[] Statuses = ["Draft", "PendingApproval", "Approved", "Rejected", "Cancelled"];
     private static readonly string Sellers = $"{Roles.SalesRep},{Roles.SalesManager},{Roles.Admin}";
-    private MudTable<SalesOrderSummary> _table = default!;
-    private string? _search;
+    private AppTable<SalesOrderSummary> _table = default!;
 
-    private Task<TableData<SalesOrderSummary>> Load(TableState state, CancellationToken ct) =>
-        Api.Page<SalesOrderSummary>(Url.With("api/sales-orders", ("status", Status), ("search", _search)), state);
+    private Task<TableData<SalesOrderSummary>> Load(TableState state, CancellationToken ct)
+    {
+        View.Save(state, ("status", Status), ("search", Search));
+        return Api.Page<SalesOrderSummary>(Url.With("api/sales-orders", ("status", Status), ("search", Search)), state);
+    }
+
+    // A link to this list with other filters (the menu, a home tile, Back) shows them.
+    protected override void OnParametersSet() => View.Check();
 
     private void Open(TableRowClickEventArgs<SalesOrderSummary> row) => Nav.NavigateTo($"sales-orders/{row.Item!.Id}");
 
-    private Task OnSearch(string? text) { _search = text; return _table.ReloadServerData(); }
-    private Task OnStatus(string? status) { Status = status; return _table.ReloadServerData(); }
+    private Task OnSearch(string? text) { Search = text; return _table.FirstPage(); }
+    private Task OnStatus(string? status) { Status = status; return _table.FirstPage(); }
 }
 ```
 
@@ -951,6 +1104,14 @@ public async Task<TableData<T>> Page<T>(string url, TableState state)
   sell.
 - **`ServerData="Load"`** makes the table ask the server for each page, instead of downloading every order
   and paging in the browser. With 50,000 orders, that's the difference between instant and unusable.
+- **`DataLabel` on each cell** is for phones. On a narrow screen MudBlazor turns each row into a small card, one
+  value per line, and `DataLabel` puts the column's name beside each value. Without it you'd see "₱800.00" and
+  "Nov 14" with nothing to say which is which.
+- **`Breakpoint="Breakpoint.Xs"`** on the filter row does the same for the fields: side by side on a wide screen,
+  stacked on a phone, where side by side would squeeze the search box to a few letters.
+
+  ![The order list on a phone: the search box and status filter stacked, and each order shown as a small card with Order, Customer, Status, Total and Created beside their values](images/08-orders-phone.png)
+
 - **`DebounceInterval="400"`** waits until you stop typing for 0.4 seconds before searching, so typing
   "acme" sends one request, not four.
 - **`[SupplyParameterFromQuery] Status`** reads `?status=PendingApproval` from the address, so a link can
@@ -963,6 +1124,7 @@ public async Task<TableData<T>> Page<T>(string url, TableState state)
 @page "/sales-orders/{Id:long}"
 @inject ApiClient Api
 @inject NavigationManager Nav
+@inject ListMemory Lists
 
 <PageTitle>@(_order?.OrderNumber ?? "Order") · ERP</PageTitle>
 
@@ -971,6 +1133,8 @@ public async Task<TableData<T>> Page<T>(string url, TableState state)
     <MudProgressLinear Indeterminate="true" />
     return;
 }
+
+<MudBreadcrumbs Items="@([new BreadcrumbItem("Sales orders", Lists.Last("sales-orders")), new BreadcrumbItem(_order.OrderNumber, null, disabled: true)])" Class="pa-0 mb-2" />
 
 <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
     <MudText Typo="Typo.h4">@_order.OrderNumber</MudText>
@@ -982,7 +1146,7 @@ public async Task<TableData<T>> Page<T>(string url, TableState state)
     <MudItem xs="12" md="8">
         <MudPaper Class="pa-4" Outlined="true">
             <MudText Typo="Typo.h6" GutterBottom="true">@_order.CustomerName</MudText>
-            <MudSimpleTable Dense="true" Hover="true">
+            <AppSimpleTable>
                 <thead><tr><th>Item</th><th class="money">Quantity</th><th class="money">Unit price</th><th class="money">Amount</th></tr></thead>
                 <tbody>
                     @foreach (var line in _order.Lines)
@@ -996,7 +1160,7 @@ public async Task<TableData<T>> Page<T>(string url, TableState state)
                     }
                     <tr><td colspan="3"><b>Total</b></td><td class="money"><b>@Format.Peso(_order.Total)</b></td></tr>
                 </tbody>
-            </MudSimpleTable>
+            </AppSimpleTable>
         </MudPaper>
     </MudItem>
     <MudItem xs="12" md="4">
@@ -1017,10 +1181,18 @@ public async Task<TableData<T>> Page<T>(string url, TableState state)
     private async Task Load()
     {
         _order = await Api.Get<SalesOrderDetail>($"api/sales-orders/{Id}");
-        if (_order is null) Nav.NavigateTo("sales-orders");
+        if (_order is null) Nav.NavigateTo(Lists.Last("sales-orders"));
     }
 }
 ```
+
+The line above the title is a **breadcrumb**: "Sales orders / SO-2026-000012". It says where this page sits,
+and the first part is a link back to the list, as you left it: `Lists.Last` gives the address `ListAddress`
+last saved for it, search and page included. The browser's Back button works too, but only if you came from
+the list; someone who opened the order from a link in a message has no list behind them. Usability testing
+finds breadcrumbs help and never hurt, so every page that sits under a list gets one. The last part, the page
+you're on, isn't a link: clicking where you already are does nothing useful. Lists themselves don't need one,
+because the menu already highlights where you are.
 
 For now the page only shows the order. The next three lessons add a button each (Submit, then Approve,
 Reject and Cancel, then Edit) and the history grows a line each time. The `<MudSpacer />` in the header is
@@ -1047,9 +1219,13 @@ After, the whole page:
 @attribute [Authorize(Roles = $"{Roles.SalesRep},{Roles.SalesManager},{Roles.Admin}")]
 @inject ApiClient Api
 @inject NavigationManager Nav
+@inject ListMemory Lists
+@inject IDialogService Dialogs
 
 <PageTitle>New order · ERP</PageTitle>
 
+<NavigationLock OnBeforeInternalNavigation="ConfirmLeave" ConfirmExternalNavigation="Unsaved" />
+<MudBreadcrumbs Items="@Crumbs" Class="pa-0 mb-2" />
 <MudText Typo="Typo.h4" Class="mb-4">New sales order</MudText>
 
 <MudPaper Class="pa-4 mb-4" Outlined="true">
@@ -1068,7 +1244,7 @@ After, the whole page:
     <MudText Typo="Typo.h6" GutterBottom="true">Lines</MudText>
     @foreach (var line in _lines)
     {
-        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mb-2">
+        <MudStack Row="true" Spacing="3" Class="mb-2 align-start align-sm-center" Breakpoint="Breakpoint.Xs">
             <AppAutocomplete T="PriceListItem" Label="Item" @bind-Value="line.Item" SearchFunc="FindItems" Style="min-width:320px"
                              ToStringFunc="@(i => i is null ? null : $"{i.Sku} · {i.Name}")" DebounceInterval="300" />
             <AppNumericField T="decimal" Label="@($"Quantity{(line.Item is null ? "" : $" ({line.Item.Unit})")}")" @bind-Value="line.Quantity"
@@ -1087,11 +1263,13 @@ After, the whole page:
 </MudPaper>
 
 <MudStack Row="true" Spacing="2">
-    <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="!CanSave">Save draft</MudButton>
+    <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(!CanSave || Api.Busy)">Save draft</MudButton>
     <MudButton Href="sales-orders" Variant="Variant.Text">Back</MudButton>
 </MudStack>
 
 @code {
+    private List<BreadcrumbItem> Crumbs => [new("Sales orders", Lists.Last("sales-orders")), new("New order", null, disabled: true)];
+
     private sealed class Line
     {
         public PriceListItem? Item { get; set; }
@@ -1101,6 +1279,15 @@ After, the whole page:
 
     private Customer? _customer;
     private List<Line> _lines = [new()];
+
+    private string State => $"{_customer?.Id}|{string.Join(",", _lines.Select(l => $"{l.Item?.Id}x{l.Quantity}"))}";
+
+    // What the form held when it was loaded or last saved; leaving with anything else asks first.
+    private string _saved = "";
+    private bool Unsaved => State != _saved;
+    private Task ConfirmLeave(LocationChangingContext context) => UnsavedChanges.ConfirmLeave(Dialogs, context, Unsaved);
+
+    protected override void OnInitialized() => _saved = State;
 
     private bool CanSave => _customer is not null && _lines.Count > 0 && _lines.All(l => l.Item is not null && l.Quantity > 0);
 
@@ -1114,10 +1301,43 @@ After, the whole page:
     {
         var lines = _lines.Select(l => new { itemId = l.Item!.Id, quantity = l.Quantity }).ToList();
         if (await Api.Create("api/sales-orders", new { customerId = _customer!.Id, lines }, "Draft saved.") is { } id)
+        {
+            _saved = State;
             Nav.NavigateTo($"sales-orders/{id}");
+        }
     }
 }
 ```
+
+A form that's half filled in holds work. Click a menu link by mistake, and without a guard it's gone, with no way
+back. Blazor's **`NavigationLock`** can stop a navigation and ask first: `OnBeforeInternalNavigation` runs before
+any link inside the app is followed, and `ConfirmExternalNavigation` makes the browser itself ask before the tab
+is closed or reloaded. The page decides what "unsaved" means by comparing a snapshot of its fields (`State`) with
+the one it last saved. After a successful save, the snapshot is updated *before* moving on to the new order, so
+that move doesn't ask. The question is the same everywhere, so it lives in one place:
+
+```csharp
+// src/Erp.Web/Shared/UnsavedChanges.cs
+using Microsoft.AspNetCore.Components.Routing;
+using MudBlazor;
+
+namespace Erp.Web.Shared;
+
+// Asks before leaving a form whose changes weren't saved. A page compares a snapshot of its fields with the last
+// saved one, and hands NavigationLock this check.
+public static class UnsavedChanges
+{
+    public static async Task ConfirmLeave(IDialogService dialogs, LocationChangingContext context, bool unsaved)
+    {
+        if (!unsaved) return;
+        var leave = await dialogs.ShowMessageBoxAsync("Leave without saving?",
+            "Your changes haven't been saved. If you leave now, they're lost.", yesText: "Leave", cancelText: "Stay");
+        if (leave != true) context.PreventNavigation();
+    }
+}
+```
+
+"Stay" is the safe button: someone who wasn't expecting the question keeps their work.
 
 The `ISnackbar` we injected last time is gone: `ApiClient.Create` shows "Draft saved." itself, and the
 page goes straight to the new order.
@@ -1128,36 +1348,46 @@ again on the server. If the two ever disagree, the server wins, and the user see
 
 ### The menu and the home page
 
-In `NavMenu.razor`, the Sales group now opens the list (the list has the **New order** button):
+In `NavMenu.razor`, the Sales link now opens the list (the list has the **New order** button). Replace the
+**New sales order** link with:
 
 ```razor
-<MudNavLink Href="sales-orders">Sales orders</MudNavLink>
+<MudNavLink Href="sales-orders" Icon="@Icons.Material.Outlined.ReceiptLong">Sales orders</MudNavLink>
 ```
 
-And give the home page its first shortcut. A tile is a small card with a link:
+And give the home page its first shortcut. A tile is a small card, and the whole card is the link:
 
 ```razor
 @* src/Erp.Web/Shared/Tile.razor *@
+@* A shortcut on the home page. The whole tile is the link: a bigger target is easier to hit. *@
 @attribute [AllowAnonymous]
 
-<MudCard Elevation="1" Style="height:100%">
-    <MudCardContent>
-        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-            <MudIcon Icon="@Icon" Color="Color.Primary" />
-            <MudText Typo="Typo.h6">@Title</MudText>
+<MudLink Href="@Href" Underline="Underline.None" Color="Color.Inherit" Class="d-block mud-height-full">
+    <MudPaper Outlined="true" Class="tile pa-4 d-flex gap-4 mud-height-full">
+        <MudAvatar Color="Color.Primary" Variant="Variant.Outlined" Rounded="true"><MudIcon Icon="@Icon" /></MudAvatar>
+        <MudStack Spacing="0">
+            <MudText Typo="Typo.subtitle1">@Title</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">@Text</MudText>
         </MudStack>
-        <MudText Typo="Typo.body2" Class="mt-2">@Text</MudText>
-    </MudCardContent>
-    <MudCardActions>
-        <MudButton Href="@Href" Color="Color.Primary" Variant="Variant.Text">Open</MudButton>
-    </MudCardActions>
-</MudCard>
+    </MudPaper>
+</MudLink>
 
 @code {
     [Parameter] public string Title { get; set; } = "";
     [Parameter] public string Text { get; set; } = "";
     [Parameter] public string Href { get; set; } = "";
     [Parameter] public string Icon { get; set; } = "";
+}
+```
+
+Why the whole card, and not a small "Open" button inside it? A bigger target is faster to hit and easier on a
+touch screen, and nobody has to wonder which part is clickable. `MudLink` makes the card a link, `MudPaper
+Outlined` draws it, and `MudAvatar` puts the icon on a soft square. One line in `app.css` shows it reacts:
+
+```css
+/* A home tile shows it can be clicked. */
+.tile:hover {
+    border-color: var(--mud-palette-primary);
 }
 ```
 
@@ -1168,7 +1398,7 @@ under the subtitle and still inside `<AuthorizeView>`:
 <MudGrid>
     <AuthorizeView Roles="@SellerRoles">
         <MudItem xs="12" sm="6" md="4">
-            <Tile Title="New sales order" Text="Pick a customer, add lines, submit." Href="sales-orders/new" Icon="@Icons.Material.Filled.AddShoppingCart" />
+            <Tile Title="New sales order" Text="Pick a customer, add lines, submit." Href="sales-orders/new" Icon="@Icons.Material.Outlined.AddShoppingCart" />
         </MudItem>
     </AuthorizeView>
 </MudGrid>
@@ -1439,6 +1669,62 @@ public async Task Every_page_opens_without_an_error()
 `#blazor-error-ui` is the bar from lesson 01's `App.razor`; if it's visible, a page threw. This test catches
 exactly the cost we named above: a field the API renamed, which the app's copy of the shape still expects.
 Every later lesson that adds a screen adds its address to `pages`.
+
+And three for this lesson's promises about getting around: the breadcrumb leads back, the list comes back as you
+left it (and the menu starts it fresh), and a half-filled form asks before it's left. None needs an order to
+exist, so they pass on a fresh install too:
+
+```csharp
+// A page under a list says where it sits and leads back to the list in one click.
+[UiFact]
+public async Task The_breadcrumb_leads_back_to_the_list()
+{
+    var rep = await SignIn("rep@erp.local");
+    await rep.GotoAsync("/sales-orders/new");
+
+    await rep.Locator(".mud-breadcrumbs").GetByText("Sales orders").ClickAsync();
+
+    await rep.WaitForURLAsync(new Regex(@"/sales-orders$"));
+}
+
+// A list keeps its search in the address: the breadcrumb returns to it as it was, and the menu starts it fresh.
+// (No data needed: a search that matches nothing is still a search to come back to.)
+[UiFact]
+public async Task A_list_is_remembered_when_you_come_back_to_it()
+{
+    var rep = await SignIn("rep@erp.local");
+    await rep.GotoAsync("/sales-orders");
+    await rep.GetByLabel("Order number or customer").FillAsync("no such order");
+    await rep.WaitForURLAsync(new Regex("search=no"));
+
+    await rep.GetByRole(AriaRole.Link, new() { Name = "New order" }).ClickAsync();
+    await rep.Locator(".mud-breadcrumbs").GetByText("Sales orders").ClickAsync();
+
+    await rep.WaitForURLAsync(new Regex(@"/sales-orders\?search=no"));
+    (await rep.GetByLabel("Order number or customer").InputValueAsync()).Should().Be("no such order");
+
+    await rep.GetByRole(AriaRole.Link, new() { Name = "Sales orders" }).First.ClickAsync();
+    await rep.WaitForURLAsync(new Regex(@"/sales-orders$"));
+    (await rep.GetByLabel("Order number or customer").InputValueAsync()).Should().BeEmpty();
+}
+
+// A half-filled form asks before it's left; "Stay" keeps the work.
+[UiFact]
+public async Task Leaving_an_unsaved_order_asks_first()
+{
+    var rep = await SignIn("rep@erp.local");
+    await rep.GotoAsync("/sales-orders/new");
+    await rep.GetByLabel("Customer").First.FillAsync("Epsilon");
+    await rep.GetByText("Epsilon Retail").First.ClickAsync();
+
+    await rep.GetByRole(AriaRole.Link, new() { Name = "Customers" }).ClickAsync();
+    await rep.GetByText("Leave without saving?").WaitForAsync();
+    await rep.GetByRole(AriaRole.Button, new() { Name = "Stay" }).ClickAsync();
+
+    new Uri(rep.Url).AbsolutePath.Should().Be("/sales-orders/new");
+    (await rep.GetByLabel("Customer").First.InputValueAsync()).Should().Be("Epsilon Retail");
+}
+```
 
 ## How a request flows
 

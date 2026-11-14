@@ -399,7 +399,7 @@ The form for adding and editing is a dialog, like lesson 10's reason dialog, but
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
-        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="string.IsNullOrWhiteSpace(_name)">Save</MudButton>
+        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(string.IsNullOrWhiteSpace(_name) || Api.Busy)">Save</MudButton>
     </DialogActions>
 </MudDialog>
 
@@ -437,6 +437,7 @@ intact.
 @* src/Erp.Web/Pages/Sales/Customers.razor *@
 @page "/customers"
 @inject ApiClient Api
+@inject ListAddress View
 @inject IDialogService Dialogs
 
 <PageTitle>Customers · ERP</PageTitle>
@@ -449,10 +450,11 @@ intact.
     </AuthorizeView>
 </MudStack>
 
-<AppTextField T="string" Value="_search" ValueChanged="OnSearch" Label="Name or TIN" DebounceInterval="400" Clearable="true"
+<AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Name or TIN" DebounceInterval="400" Clearable="true"
               Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="mb-4" />
 
-<MudTable Outlined="true" T="Customer" @ref="_table" ServerData="Load" Hover="true" Dense="true">
+<AppTable T="Customer" @ref="_table" @key="View.Version" ServerData="Load"
+          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
     <HeaderContent>
         <MudTh>Name</MudTh>
         <MudTh>TIN</MudTh>
@@ -464,38 +466,48 @@ intact.
         <MudTh></MudTh>
     </HeaderContent>
     <RowTemplate>
-        <MudTd>
+        <MudTd DataLabel="Name">
             @context.Name
             @if (context.IsBlocked) { <MudChip T="string" Color="Color.Error" Size="Size.Small">Blocked</MudChip> }
         </MudTd>
-        <MudTd>@context.Tin</MudTd>
-        <MudTd Class="money">@Format.Peso(context.CreditLimit)</MudTd>
-        <MudTd Class="money">@Format.Peso(context.OutstandingBalance)</MudTd>
-        <MudTd Class="money">@Format.Peso(context.PendingTotal)</MudTd>
-        <MudTd Class="money">@Format.Peso(context.AvailableCredit)</MudTd>
-        <MudTd>@context.PaymentTermsDays days</MudTd>
+        <MudTd DataLabel="TIN">@context.Tin</MudTd>
+        <MudTd DataLabel="Credit limit" Class="money">@Format.Peso(context.CreditLimit)</MudTd>
+        <MudTd DataLabel="Owes" Class="money">@Format.Peso(context.OutstandingBalance)</MudTd>
+        <MudTd DataLabel="Awaiting approval" Class="money">@Format.Peso(context.PendingTotal)</MudTd>
+        <MudTd DataLabel="Available" Class="money">@Format.Peso(context.AvailableCredit)</MudTd>
+        <MudTd DataLabel="Terms">@context.PaymentTermsDays days</MudTd>
         <MudTd>
             <AuthorizeView Roles="@Managers" Context="auth">
-                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => Edit(context)" aria-label="Edit" />
-                <MudButton Size="Size.Small" OnClick="() => ToggleBlock(context)" Color="@(context.IsBlocked ? Color.Success : Color.Error)">
-                    @(context.IsBlocked ? "Unblock" : "Block")
-                </MudButton>
+                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" aria-label="Actions">
+                    <MudMenuItem OnClick="() => Edit(context)">Edit</MudMenuItem>
+                    <MudMenuItem OnClick="() => ToggleBlock(context)">@(context.IsBlocked ? "Unblock" : "Block")</MudMenuItem>
+                </MudMenu>
             </AuthorizeView>
         </MudTd>
     </RowTemplate>
     <NoRecordsContent>No customers match.</NoRecordsContent>
     <PagerContent><MudTablePager /></PagerContent>
-</MudTable>
+</AppTable>
 
 @code {
+    // The list's view lives in the address (see ListAddress).
+    [SupplyParameterFromQuery] public string? Search { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+    [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
+
     private static readonly string Managers = $"{Roles.SalesManager},{Roles.Admin}";
-    private MudTable<Customer> _table = default!;
-    private string? _search;
+    private AppTable<Customer> _table = default!;
 
-    private Task<TableData<Customer>> Load(TableState state, CancellationToken ct) =>
-        Api.Page<Customer>(Url.With("api/customers", ("search", _search)), state);
+    private Task<TableData<Customer>> Load(TableState state, CancellationToken ct)
+    {
+        View.Save(state, ("search", Search));
+        return Api.Page<Customer>(Url.With("api/customers", ("search", Search)), state);
+    }
 
-    private Task OnSearch(string? text) { _search = text; return _table.ReloadServerData(); }
+    // A link to this list with other filters (the menu, a home tile, Back) shows them.
+    protected override void OnParametersSet() => View.Check();
+
+    private Task OnSearch(string? text) { Search = text; return _table.FirstPage(); }
 
     private async Task Edit(Customer? customer)
     {
@@ -519,10 +531,10 @@ means the customer. Without it, the two `context`s clash and the page doesn't co
 The table shows exactly the three numbers the credit check uses: what they owe, what's awaiting approval,
 and what's left. When a rep asks "why was my order refused?", the manager can see the answer in one row.
 
-Then the links. In `NavMenu.razor`, inside the Sales group, after Sales orders:
+Then the links. In `NavMenu.razor`, under the Sales heading, after Sales orders:
 
 ```razor
-<MudNavLink Href="customers">Customers</MudNavLink>
+<MudNavLink Href="customers" Icon="@Icons.Material.Outlined.Groups">Customers</MudNavLink>
 ```
 
 In `OrderEditor.razor`, the line under the customer box can show the terms now:
@@ -637,7 +649,7 @@ Restart the app; the `AddCustomerDetails` migration runs. Sign in as `manager@er
 1. Click **New customer**. Add "Zeta Supplies", TIN `567-890-123-000`, ₱100,000 limit, 30 days. It appears in
    the list with ₱100,000.00 available.
 2. Type `567` in the search box. Only Zeta is left: version 2 searches by TIN.
-3. Click **Block** on Zeta. Then, as the rep, try to create an order for Zeta: the red snackbar says it's
+3. Open Zeta's **⋮** menu and choose **Block**. Then, as the rep, try to create an order for Zeta: the red snackbar says it's
    blocked. Unblock it as the manager, and the rep's order saves.
 4. Edit Beta Industries and raise its limit to ₱20,000. Its available credit becomes ₱15,500.
 

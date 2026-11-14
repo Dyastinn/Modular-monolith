@@ -391,14 +391,14 @@ On the order page, add `@inject IDialogService Dialogs` at the top, and the butt
 @if (_order.Status == "PendingApproval")
 {
     <AuthorizeView Roles="@Managers">
-        <MudButton OnClick="Reject" Variant="Variant.Outlined" Color="Color.Error">Reject</MudButton>
-        <MudButton OnClick="Approve" Variant="Variant.Filled" Color="Color.Success">Approve</MudButton>
+        <MudButton OnClick="Reject" Variant="Variant.Outlined" Color="Color.Error" Disabled="Api.Busy">Reject</MudButton>
+        <MudButton OnClick="Approve" Variant="Variant.Filled" Color="Color.Success" Disabled="Api.Busy">Approve</MudButton>
     </AuthorizeView>
 }
 @if (_order.Status is "Draft" or "PendingApproval" or "Approved")
 {
     <AuthorizeView Roles="@Sellers">
-        <MudButton OnClick="Cancel" Variant="Variant.Text" Color="Color.Error">Cancel order</MudButton>
+        <MudButton OnClick="Cancel" Variant="Variant.Text" Color="Color.Error" Disabled="Api.Busy">Cancel order</MudButton>
     </AuthorizeView>
 }
 ```
@@ -442,7 +442,7 @@ Managers need to find the orders waiting for them. On the home page, next to the
 ```razor
 <AuthorizeView Roles="@ManagerRoles">
     <MudItem xs="12" sm="6" md="4">
-        <Tile Title="Waiting for approval" Text="Orders above ₱50,000 that need you." Href="sales-orders?status=PendingApproval" Icon="@Icons.Material.Filled.HowToReg" />
+        <Tile Title="Waiting for approval" Text="Orders above ₱50,000 that need you." Href="sales-orders?status=PendingApproval" Icon="@Icons.Material.Outlined.HowToReg" />
     </MudItem>
 </AuthorizeView>
 ```

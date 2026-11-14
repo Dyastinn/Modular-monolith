@@ -14,6 +14,11 @@ public sealed class ApiClient(HttpClient http, ISnackbar snackbar, CookieAuthent
 {
     private sealed record Problem(string? Title, string? Detail, int? Status, string? Code);
     private sealed record Created(long Id);
+    private int _saving;
+
+    // True while a change is on its way to the server. Pages disable their action buttons meanwhile, so a double
+    // click can't send the same change twice.
+    public bool Busy => _saving > 0;
 
     public async Task<T?> Get<T>(string url)
     {
@@ -36,7 +41,10 @@ public sealed class ApiClient(HttpClient http, ISnackbar snackbar, CookieAuthent
     // For "create" calls: the API answers 201 with { id }.
     public async Task<long?> Create(string url, object body, string? success = null)
     {
-        var response = await http.PostAsJsonAsync(url, body);
+        HttpResponseMessage response;
+        _saving++;
+        try { response = await http.PostAsJsonAsync(url, body); }
+        finally { _saving--; }
         if (!response.IsSuccessStatusCode) return await Fail<long?>(response);
         if (success is not null) snackbar.Add(success, Severity.Success);
         return (await response.Content.ReadFromJsonAsync<Created>())!.Id;
@@ -45,7 +53,10 @@ public sealed class ApiClient(HttpClient http, ISnackbar snackbar, CookieAuthent
     private async Task<bool> Send(HttpMethod method, string url, object? body, string? success)
     {
         using var request = new HttpRequestMessage(method, url) { Content = body is null ? null : JsonContent.Create(body) };
-        var response = await http.SendAsync(request);
+        HttpResponseMessage response;
+        _saving++;
+        try { response = await http.SendAsync(request); }
+        finally { _saving--; }
         if (!response.IsSuccessStatusCode) return await Fail<bool>(response);
         if (success is not null) snackbar.Add(success, Severity.Success);
         return true;

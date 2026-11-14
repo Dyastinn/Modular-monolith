@@ -1,5 +1,6 @@
 @page "/purchase-orders/{Id:long}"
 @inject ApiClient Api
+@inject ListMemory Lists
 @inject UserDirectory Users
 @inject IDialogService Dialogs
 @inject NavigationManager Nav
@@ -12,6 +13,8 @@
     return;
 }
 
+<MudBreadcrumbs Items="@([new BreadcrumbItem("Purchase orders", Lists.Last("purchase-orders")), new BreadcrumbItem(_po.Number, null, disabled: true)])" Class="pa-0 mb-2" />
+
 <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
     <MudText Typo="Typo.h4">@_po.Number</MudText>
     <StatusChip Status="@_po.Status" />
@@ -22,31 +25,31 @@
             <MudButton Href="@($"purchase-orders/{Id}/edit")" Variant="Variant.Outlined">Edit</MudButton>
         </AuthorizeView>
         <AuthorizeView Roles="@Roles.Admin">
-            <MudButton OnClick="@(() => Act("approve", "Approved."))" Variant="Variant.Filled" Color="Color.Success">Approve</MudButton>
+            <MudButton OnClick="@(() => Act("approve", "Approved."))" Variant="Variant.Filled" Color="Color.Success" Disabled="Api.Busy">Approve</MudButton>
         </AuthorizeView>
     }
     @if (_po.Status == "Approved")
     {
         <AuthorizeView Roles="@Buyers">
-            <MudButton OnClick="@(() => Act("send", "Marked as sent to the supplier."))" Variant="Variant.Filled" Color="Color.Primary">Mark sent</MudButton>
+            <MudButton OnClick="@(() => Act("send", "Marked as sent to the supplier."))" Variant="Variant.Filled" Color="Color.Primary" Disabled="Api.Busy">Mark sent</MudButton>
         </AuthorizeView>
     }
     @if (_po.Status is "Approved" or "Sent" or "PartiallyReceived")
     {
         <AuthorizeView Roles="@Receivers">
-            <MudButton OnClick="Receive" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Inventory">Receive goods</MudButton>
+            <MudButton OnClick="Receive" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Inventory" Disabled="Api.Busy">Receive goods</MudButton>
         </AuthorizeView>
     }
     @if (_po.Status == "PartiallyReceived")
     {
         <AuthorizeView Roles="@Buyers">
-            <MudButton OnClick="@(() => Act("close", "Closed: the rest won't come."))" Variant="Variant.Outlined">Close short</MudButton>
+            <MudButton OnClick="CloseShort" Variant="Variant.Outlined" Disabled="Api.Busy">Close short</MudButton>
         </AuthorizeView>
     }
     @if (_po.Status is "Draft" or "Approved" or "Sent")
     {
         <AuthorizeView Roles="@Buyers">
-            <MudButton OnClick="@(() => Act("cancel", "Cancelled."))" Variant="Variant.Text" Color="Color.Error">Cancel</MudButton>
+            <MudButton OnClick="Cancel" Variant="Variant.Text" Color="Color.Error" Disabled="Api.Busy">Cancel</MudButton>
         </AuthorizeView>
     }
 </MudStack>
@@ -55,7 +58,7 @@
     <MudItem xs="12" md="8">
         <MudPaper Class="pa-4" Outlined="true">
             <MudText Typo="Typo.h6" GutterBottom="true">@_po.SupplierName</MudText>
-            <MudSimpleTable Dense="true">
+            <AppSimpleTable>
                 <thead><tr><th>Item</th><th class="money">Ordered</th><th class="money">Received</th><th class="money">To come</th><th class="money">Unit cost</th><th class="money">Amount</th></tr></thead>
                 <tbody>
                     @foreach (var l in _po.Lines)
@@ -71,7 +74,7 @@
                     }
                     <tr><td colspan="5"><b>Total</b></td><td class="money"><b>@Format.Peso(_po.Total)</b></td></tr>
                 </tbody>
-            </MudSimpleTable>
+            </AppSimpleTable>
         </MudPaper>
     </MudItem>
     <MudItem xs="12" md="4">
@@ -99,7 +102,7 @@
     private async Task Load()
     {
         _po = await Api.Get<PurchaseOrderDetail>($"api/purchase-orders/{Id}");
-        if (_po is null) { Nav.NavigateTo("purchase-orders"); return; }
+        if (_po is null) { Nav.NavigateTo(Lists.Last("purchase-orders")); return; }
         _createdBy = await Users.NameOf(_po.CreatedBy);
         _approvedBy = await Users.NameOf(_po.ApprovedBy);
     }
@@ -107,6 +110,23 @@
     private async Task Act(string action, string message)
     {
         if (await Api.Post($"api/purchase-orders/{Id}/{action}", success: message)) await Load();
+    }
+
+    // The two ends that can't be undone ask first.
+    private async Task CloseShort()
+    {
+        var confirmed = await Dialogs.ShowMessageBoxAsync("Close short",
+            $"Close {_po!.Number} with what has arrived? The rest is no longer expected. This can't be undone.",
+            yesText: "Close short", cancelText: "Keep waiting");
+        if (confirmed == true) await Act("close", "Closed: the rest won't come.");
+    }
+
+    private async Task Cancel()
+    {
+        var confirmed = await Dialogs.ShowMessageBoxAsync("Cancel purchase order",
+            $"Cancel {_po!.Number}? The supplier should be told separately. This can't be undone.",
+            yesText: "Cancel order", cancelText: "Keep it");
+        if (confirmed == true) await Act("cancel", "Cancelled.");
     }
 
     private async Task Receive()

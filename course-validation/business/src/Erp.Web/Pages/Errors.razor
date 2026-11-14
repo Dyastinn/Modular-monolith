@@ -35,7 +35,7 @@
 
         <AppTextField @bind-Value="_search" Label="Search" Immediate="true" Adornment="Adornment.Start"
                       AdornmentIcon="@Icons.Material.Filled.Search" Class="mb-4" />
-        <MudSimpleTable Dense="true" Hover="true" Outlined="true">
+        <AppSimpleTable Outlined="true">
             <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
             <tbody>
                 @foreach (var error in Filtered)
@@ -46,7 +46,7 @@
                     </tr>
                 }
             </tbody>
-        </MudSimpleTable>
+        </AppSimpleTable>
     }
 </MudContainer>
 
