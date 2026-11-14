@@ -800,7 +800,7 @@ receive dialog, so here it is in full:
                     <tr>
                         <td>@line.Line.Sku · @line.Line.ItemName</td>
                         <td class="money">@Format.Qty(line.Line.Outstanding) @line.Line.Unit</td>
-                        <td><MudNumericField T="decimal" @bind-Value="line.Arrived" Min="0" Max="line.Line.Outstanding" Style="max-width:140px" /></td>
+                        <td><AppNumericField T="decimal" @bind-Value="line.Arrived" Min="0" Max="line.Line.Outstanding" Style="max-width:140px" /></td>
                     </tr>
                 }
             </tbody>

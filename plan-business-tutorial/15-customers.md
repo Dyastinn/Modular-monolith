@@ -390,11 +390,11 @@ The form for adding and editing is a dialog, like lesson 10's reason dialog, but
 <MudDialog>
     <DialogContent>
         <MudStack Spacing="2" Style="min-width:420px">
-            <MudTextField @bind-Value="_name" Label="Name" Required="true" MaxLength="200" />
-            <MudTextField @bind-Value="_tin" Label="TIN" MaxLength="20" HelperText="Printed on invoices" />
-            <MudTextField @bind-Value="_address" Label="Address" Lines="2" MaxLength="500" />
-            <MudNumericField @bind-Value="_creditLimit" Label="Credit limit (₱)" Min="0" Format="N2" />
-            <MudNumericField @bind-Value="_terms" Label="Payment terms (days)" Min="0" Max="365" />
+            <AppTextField @bind-Value="_name" Label="Name" Required="true" MaxLength="200" />
+            <AppTextField @bind-Value="_tin" Label="TIN" MaxLength="20" HelperText="Printed on invoices" />
+            <AppTextField @bind-Value="_address" Label="Address" Lines="2" MaxLength="500" />
+            <AppNumericField @bind-Value="_creditLimit" Label="Credit limit (₱)" Min="0" Format="N2" />
+            <AppNumericField @bind-Value="_terms" Label="Payment terms (days)" Min="0" Max="365" />
         </MudStack>
     </DialogContent>
     <DialogActions>
@@ -449,10 +449,10 @@ intact.
     </AuthorizeView>
 </MudStack>
 
-<MudTextField T="string" Value="_search" ValueChanged="OnSearch" Label="Name or TIN" DebounceInterval="400" Clearable="true"
+<AppTextField T="string" Value="_search" ValueChanged="OnSearch" Label="Name or TIN" DebounceInterval="400" Clearable="true"
               Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="mb-4" />
 
-<MudTable T="Customer" @ref="_table" ServerData="Load" Hover="true" Dense="true">
+<MudTable Outlined="true" T="Customer" @ref="_table" ServerData="Load" Hover="true" Dense="true">
     <HeaderContent>
         <MudTh>Name</MudTh>
         <MudTh>TIN</MudTh>

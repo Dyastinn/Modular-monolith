@@ -1049,12 +1049,12 @@ public sealed record StockMovement(long Id, decimal Quantity, string Kind, strin
 </MudStack>
 
 <MudStack Row="true" Spacing="4" Class="mb-4">
-    <MudTextField T="string" Value="_search" ValueChanged="OnSearch" Label="SKU or name" DebounceInterval="400" Clearable="true"
+    <AppTextField T="string" Value="_search" ValueChanged="OnSearch" Label="SKU or name" DebounceInterval="400" Clearable="true"
                   Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
     <MudSwitch T="bool" Value="_activeOnly" ValueChanged="OnActive" Label="Active only" Color="Color.Primary" />
 </MudStack>
 
-<MudTable T="StockItem" @ref="_table" ServerData="Load" Hover="true" Dense="true">
+<MudTable Outlined="true" T="StockItem" @ref="_table" ServerData="Load" Hover="true" Dense="true">
     <HeaderContent>
         <MudTh>SKU</MudTh><MudTh>Name</MudTh><MudTh>Unit</MudTh>
         <MudTh Class="money">On hand</MudTh><MudTh Class="money">Reserved</MudTh><MudTh Class="money">Available</MudTh><MudTh></MudTh>
@@ -1129,10 +1129,10 @@ The three dialogs are short. The item form edits SKU only when it's new (the SKU
 <MudDialog>
     <DialogContent>
         <MudStack Spacing="2" Style="min-width:380px">
-            <MudTextField @bind-Value="_sku" Label="SKU" MaxLength="50" Disabled="Item is not null"
+            <AppTextField @bind-Value="_sku" Label="SKU" MaxLength="50" Disabled="Item is not null"
                           HelperText="@(Item is null ? "Can't be changed later" : null)" />
-            <MudTextField @bind-Value="_name" Label="Name" MaxLength="200" />
-            <MudTextField @bind-Value="_unit" Label="Unit" MaxLength="10" HelperText="pc, box, kg, m, L…" />
+            <AppTextField @bind-Value="_name" Label="Name" MaxLength="200" />
+            <AppTextField @bind-Value="_unit" Label="Unit" MaxLength="10" HelperText="pc, box, kg, m, L…" />
             <MudSwitch @bind-Value="_fractions" Label="Sold and counted in fractions (2.5 kg)" Color="Color.Primary" />
         </MudStack>
     </DialogContent>
@@ -1177,8 +1177,8 @@ The success message tells the clerk what happens next: Sales still has to price 
     <DialogContent>
         <MudStack Spacing="2" Style="min-width:380px">
             <MudText>On hand now: <b>@Format.Qty(Item.OnHand) @Item.Unit</b> (reserved @Format.Qty(Item.Reserved))</MudText>
-            <MudNumericField @bind-Value="_change" Label="@($"Change ({Item.Unit}): + found, − lost or damaged")" />
-            <MudTextField @bind-Value="_reason" Label="Reason" MaxLength="500" Lines="2" />
+            <AppNumericField @bind-Value="_change" Label="@($"Change ({Item.Unit}): + found, − lost or damaged")" />
+            <AppTextField @bind-Value="_reason" Label="Reason" MaxLength="500" Lines="2" />
             <MudText Typo="Typo.body2">After: @Format.Qty(Item.OnHand + _change) @Item.Unit</MudText>
         </MudStack>
     </DialogContent>
@@ -1211,7 +1211,7 @@ The success message tells the clerk what happens next: Sales still has to price 
 
 <MudDialog>
     <DialogContent>
-        <MudTable T="StockMovement" ServerData="Load" Dense="true" Hover="true" Elevation="0">
+        <MudTable Outlined="true" T="StockMovement" ServerData="Load" Dense="true" Hover="true" Elevation="0">
             <HeaderContent>
                 <MudTh>When</MudTh><MudTh>What</MudTh><MudTh Class="money">Quantity</MudTh><MudTh>Reference / reason</MudTh><MudTh>By</MudTh>
             </HeaderContent>

@@ -20,25 +20,15 @@
                     <MudIconButton Icon="@(_dark ? Icons.Material.Outlined.LightMode : Icons.Material.Outlined.DarkMode)" Color="Color.Inherit"
                                    OnClick="ToggleDarkMode" aria-label="@(_dark ? "Light mode" : "Dark mode")" />
                 </MudTooltip>
-                <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
-                    <ActivatorContent>
-                        <MudButton Variant="Variant.Text" Color="Color.Inherit" EndIcon="@Icons.Material.Outlined.ExpandMore" aria-label="Account"
-                                   OnClick="@(e => context.ToggleAsync(e))">
-                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                                <MudAvatar Size="Size.Small" Color="Color.Inherit" Variant="Variant.Outlined">@Initials(auth.User.Identity?.Name)</MudAvatar>
-                                <MudStack Spacing="0" AlignItems="AlignItems.Start" Class="d-none d-sm-flex">
-                                    <MudText Typo="Typo.body2">@auth.User.Identity?.Name</MudText>
-                                    <MudText Typo="Typo.caption" Style="opacity:.8">@Format.Words(RoleOf(auth))</MudText>
-                                </MudStack>
-                            </MudStack>
-                        </MudButton>
-                    </ActivatorContent>
-                    <ChildContent>
-                        <MudMenuItem Href="change-password" Icon="@Icons.Material.Outlined.Key">Change password</MudMenuItem>
-                        <MudDivider />
-                        <MudMenuItem OnClick="() => SignOut(false)" Icon="@Icons.Material.Outlined.Logout">Sign out</MudMenuItem>
-                        <MudMenuItem OnClick="() => SignOut(true)" Icon="@Icons.Material.Outlined.DevicesOther">Sign out everywhere</MudMenuItem>
-                    </ChildContent>
+                <MudMenu Label="@auth.User.Identity?.Name" StartIcon="@Icons.Material.Outlined.AccountCircle"
+                         EndIcon="@Icons.Material.Outlined.ExpandMore" Color="Color.Inherit" Variant="Variant.Text"
+                         AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                    <MudText Typo="Typo.body2" Class="px-4 pt-3">@auth.User.Identity?.Name</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="px-4 pb-3">@Format.Words(RoleOf(auth))</MudText>
+                    <MudDivider />
+                    <MudMenuItem Href="change-password" Icon="@Icons.Material.Outlined.Key">Change password</MudMenuItem>
+                    <MudMenuItem OnClick="() => SignOut(false)" Icon="@Icons.Material.Outlined.Logout">Sign out</MudMenuItem>
+                    <MudMenuItem OnClick="() => SignOut(true)" Icon="@Icons.Material.Outlined.DevicesOther">Sign out everywhere</MudMenuItem>
                 </MudMenu>
             </MudAppBar>
             <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="0" Variant="DrawerVariant.Responsive"
@@ -80,10 +70,6 @@
         _followSystem = false;
         await Js.InvokeVoidAsync("localStorage.setItem", ThemeKey, _dark ? "dark" : "light");
     }
-
-    // "Rita Reyes" → "RR": a face for the account button without storing a photo.
-    private static string Initials(string? name) =>
-        string.Concat((name ?? "?").Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(w => char.ToUpperInvariant(w[0])));
 
     private static string RoleOf(AuthenticationState state) =>
         state.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";

@@ -757,8 +757,8 @@ app.MapRazorComponents<Erp.Web.App>()
         <MudText Typo="Typo.h5" GutterBottom="true">Sign in</MudText>
         <EditForm Model="this" OnSubmit="SignIn">
             <MudStack Spacing="3">
-                <MudTextField @bind-Value="_email" Label="Email" InputType="InputType.Email" AutoFocus="true" Required="true" />
-                <MudTextField @bind-Value="_password" Label="Password" InputType="InputType.Password" Required="true" />
+                <AppTextField @bind-Value="_email" Label="Email" InputType="InputType.Email" AutoFocus="true" Required="true" />
+                <AppTextField @bind-Value="_password" Label="Password" InputType="InputType.Password" Required="true" />
                 @if (_error is not null)
                 {
                     <MudAlert Severity="Severity.Error" Dense="true">@_error</MudAlert>

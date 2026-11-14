@@ -897,18 +897,18 @@ public async Task<TableData<T>> Page<T>(string url, TableState state)
 
 <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
     <MudStack Row="true" Spacing="4">
-        <MudTextField T="string" Value="_search" ValueChanged="OnSearch" Label="Order number or customer" DebounceInterval="400"
+        <AppTextField T="string" Value="_search" ValueChanged="OnSearch" Label="Order number or customer" DebounceInterval="400"
                       Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Clearable="true" />
-        <MudSelect T="string" Value="Status" ValueChanged="OnStatus" Label="Status" Clearable="true" Style="max-width:240px">
+        <AppSelect T="string" Value="Status" ValueChanged="OnStatus" Label="Status" Clearable="true" Style="max-width:240px">
             @foreach (var s in Statuses)
             {
                 <MudSelectItem Value="s">@Format.Words(s)</MudSelectItem>
             }
-        </MudSelect>
+        </AppSelect>
     </MudStack>
 </MudPaper>
 
-<MudTable T="SalesOrderSummary" @ref="_table" ServerData="Load" Hover="true" Dense="true"
+<MudTable Outlined="true" T="SalesOrderSummary" @ref="_table" ServerData="Load" Hover="true" Dense="true"
           OnRowClick="Open" RowStyle="cursor:pointer">
     <HeaderContent>
         <MudTh>Order</MudTh>
@@ -1036,7 +1036,7 @@ name, and it searches as you type.
 Before:
 
 ```razor
-<MudNumericField T="long" Label="Customer id" @bind-Value="_customerId" Min="1" Style="max-width:200px" />
+<AppNumericField T="long" Label="Customer id" @bind-Value="_customerId" Min="1" Style="max-width:200px" />
 ```
 
 After, the whole page:
@@ -1053,7 +1053,7 @@ After, the whole page:
 <MudText Typo="Typo.h4" Class="mb-4">New sales order</MudText>
 
 <MudPaper Class="pa-4 mb-4" Outlined="true">
-    <MudAutocomplete T="Customer" Label="Customer" @bind-Value="_customer" SearchFunc="FindCustomers" ToStringFunc="c => c?.Name"
+    <AppAutocomplete T="Customer" Label="Customer" @bind-Value="_customer" SearchFunc="FindCustomers" ToStringFunc="c => c?.Name"
                      ResetValueOnEmptyText="true" DebounceInterval="300" />
     @if (_customer is not null)
     {
@@ -1069,9 +1069,9 @@ After, the whole page:
     @foreach (var line in _lines)
     {
         <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mb-2">
-            <MudAutocomplete T="PriceListItem" Label="Item" @bind-Value="line.Item" SearchFunc="FindItems" Style="min-width:320px"
+            <AppAutocomplete T="PriceListItem" Label="Item" @bind-Value="line.Item" SearchFunc="FindItems" Style="min-width:320px"
                              ToStringFunc="@(i => i is null ? null : $"{i.Sku} · {i.Name}")" DebounceInterval="300" />
-            <MudNumericField T="decimal" Label="@($"Quantity{(line.Item is null ? "" : $" ({line.Item.Unit})")}")" @bind-Value="line.Quantity"
+            <AppNumericField T="decimal" Label="@($"Quantity{(line.Item is null ? "" : $" ({line.Item.Unit})")}")" @bind-Value="line.Quantity"
                              Min="0" Step="@(line.Item?.AllowsFractions == true ? 0.5m : 1m)" Style="max-width:160px" />
             <MudText Class="money" Style="min-width:140px">@Format.Peso(line.Total)</MudText>
             <MudIconButton Icon="@Icons.Material.Filled.Delete" OnClick="() => _lines.Remove(line)" aria-label="Remove line" />

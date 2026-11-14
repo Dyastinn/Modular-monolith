@@ -339,7 +339,7 @@ A small page in the app: type a message, press the button, see the answer.
 <MudText Typo="Typo.h4" GutterBottom="true">Ping</MudText>
 
 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mb-4">
-    <MudTextField @bind-Value="_message" Label="Message" Immediate="true" />
+    <AppTextField @bind-Value="_message" Label="Message" Immediate="true" />
     <MudButton OnClick="Send" Variant="Variant.Filled" Color="Color.Primary">Send</MudButton>
 </MudStack>
 

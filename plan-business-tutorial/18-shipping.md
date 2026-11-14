@@ -536,7 +536,7 @@ The Shipments page:
     To ship an approved order, open it from <MudLink Href="sales-orders?status=Approved">Ready to ship</MudLink> and choose Ship.
 </MudText>
 
-<MudTable T="Shipment" ServerData="Load" Hover="true" Dense="true">
+<MudTable Outlined="true" T="Shipment" ServerData="Load" Hover="true" Dense="true">
     <HeaderContent>
         <MudTh>Shipment</MudTh><MudTh>Order</MudTh><MudTh>Lines</MudTh><MudTh>Shipped</MudTh><MudTh>By</MudTh>
     </HeaderContent>

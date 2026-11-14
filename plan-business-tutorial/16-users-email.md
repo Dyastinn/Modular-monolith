@@ -1082,9 +1082,9 @@ The "too many attempts" line is ready for [lesson 23](23-security-hardening.md)'
         <MudAlert Severity="Severity.Info" Class="mb-4">An administrator set a temporary password. Choose your own to continue.</MudAlert>
     }
     <MudStack Spacing="3">
-        <MudTextField @bind-Value="_current" Label="Current password" InputType="InputType.Password" />
-        <MudTextField @bind-Value="_new" Label="New password (at least 12 characters)" InputType="InputType.Password" />
-        <MudTextField @bind-Value="_repeat" Label="New password again" InputType="InputType.Password"
+        <AppTextField @bind-Value="_current" Label="Current password" InputType="InputType.Password" />
+        <AppTextField @bind-Value="_new" Label="New password (at least 12 characters)" InputType="InputType.Password" />
+        <AppTextField @bind-Value="_repeat" Label="New password again" InputType="InputType.Password"
                       Error="_repeat.Length > 0 && _repeat != _new" ErrorText="The two don't match." />
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save"
                    Disabled="_new.Length == 0 || _new != _repeat">Change password</MudButton>
@@ -1146,7 +1146,7 @@ password is already one only the admin and the user know.
         {
             <MudStack Spacing="3">
                 <MudText Typo="Typo.body2">Enter your email. If it belongs to an account, we'll send a reset code.</MudText>
-                <MudTextField @bind-Value="_email" Label="Email" InputType="InputType.Email" />
+                <AppTextField @bind-Value="_email" Label="Email" InputType="InputType.Email" />
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SendCode">Send code</MudButton>
             </MudStack>
         }
@@ -1154,8 +1154,8 @@ password is already one only the admin and the user know.
         {
             <MudStack Spacing="3">
                 <MudText Typo="Typo.body2">Check your email for the code, then choose a new password (at least 12 characters).</MudText>
-                <MudTextField @bind-Value="_code" Label="Reset code" />
-                <MudTextField @bind-Value="_password" Label="New password" InputType="InputType.Password" />
+                <AppTextField @bind-Value="_code" Label="Reset code" />
+                <AppTextField @bind-Value="_password" Label="New password" InputType="InputType.Password" />
                 @if (_error is not null) { <MudAlert Severity="Severity.Error" Dense="true">@_error</MudAlert> }
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Reset">Set new password</MudButton>
             </MudStack>
@@ -1278,9 +1278,9 @@ public sealed record SignInAttempt(long Id, string Email, long? UserId, string O
     <MudButton OnClick="() => Edit(null)" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PersonAdd">New user</MudButton>
 </MudStack>
 
-<MudTextField T="string" Value="_search" ValueChanged="OnSearch" Label="Name or email" DebounceInterval="400" Clearable="true" Class="mb-4" />
+<AppTextField T="string" Value="_search" ValueChanged="OnSearch" Label="Name or email" DebounceInterval="400" Clearable="true" Class="mb-4" />
 
-<MudTable T="User" @ref="_table" ServerData="Load" Hover="true" Dense="true">
+<MudTable Outlined="true" T="User" @ref="_table" ServerData="Load" Hover="true" Dense="true">
     <HeaderContent>
         <MudTh>Name</MudTh><MudTh>Email</MudTh><MudTh>Role</MudTh><MudTh>Status</MudTh><MudTh>Last sign-in</MudTh><MudTh></MudTh>
     </HeaderContent>
@@ -1350,17 +1350,17 @@ security-stamp interval from step 4.
 <MudDialog>
     <DialogContent>
         <MudStack Spacing="2" Style="min-width:400px">
-            <MudTextField @bind-Value="_email" Label="Email (they sign in with it)" InputType="InputType.Email" Disabled="User is not null" />
-            <MudTextField @bind-Value="_fullName" Label="Full name" MaxLength="100" />
-            <MudSelect T="string" @bind-Value="_role" Label="Role">
+            <AppTextField @bind-Value="_email" Label="Email (they sign in with it)" InputType="InputType.Email" Disabled="User is not null" />
+            <AppTextField @bind-Value="_fullName" Label="Full name" MaxLength="100" />
+            <AppSelect T="string" @bind-Value="_role" Label="Role">
                 @foreach (var r in Roles.All)
                 {
                     <MudSelectItem Value="r">@Format.Words(r)</MudSelectItem>
                 }
-            </MudSelect>
+            </AppSelect>
             @if (User is null)
             {
-                <MudTextField @bind-Value="_password" Label="Temporary password (at least 12 characters)" InputType="InputType.Password"
+                <AppTextField @bind-Value="_password" Label="Temporary password (at least 12 characters)" InputType="InputType.Password"
                               HelperText="Give it to them in person. They must change it when they first sign in." />
             }
         </MudStack>
@@ -1408,7 +1408,7 @@ lock them out.
             <MudText Typo="Typo.body2">
                 Sets a temporary password and unlocks the account. They must choose their own when they next sign in.
             </MudText>
-            <MudTextField @bind-Value="_password" Label="Temporary password (at least 12 characters)" InputType="InputType.Password" />
+            <AppTextField @bind-Value="_password" Label="Temporary password (at least 12 characters)" InputType="InputType.Password" />
         </MudStack>
     </DialogContent>
     <DialogActions>
@@ -1441,11 +1441,11 @@ lock them out.
 <MudText Typo="Typo.h4" Class="mb-4">Sign-in log</MudText>
 
 <MudStack Row="true" Spacing="4" Class="mb-4">
-    <MudTextField T="string" Value="_email" ValueChanged="OnEmail" Label="Email" DebounceInterval="400" Clearable="true" />
+    <AppTextField T="string" Value="_email" ValueChanged="OnEmail" Label="Email" DebounceInterval="400" Clearable="true" />
     <MudSwitch T="bool" Value="_failedOnly" ValueChanged="OnFailed" Label="Failed only" Color="Color.Error" />
 </MudStack>
 
-<MudTable T="SignInAttempt" @ref="_table" ServerData="Load" Dense="true" Hover="true" RowsPerPage="50">
+<MudTable Outlined="true" T="SignInAttempt" @ref="_table" ServerData="Load" Dense="true" Hover="true" RowsPerPage="50">
     <HeaderContent>
         <MudTh>When</MudTh><MudTh>Email</MudTh><MudTh>Outcome</MudTh><MudTh>From</MudTh>
     </HeaderContent>

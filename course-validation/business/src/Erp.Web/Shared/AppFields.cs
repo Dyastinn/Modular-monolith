@@ -9,25 +9,25 @@ namespace Erp.Web.Shared;
 
 public class AppTextField<T> : MudTextField<T>
 {
-    public AppTextField() { Variant = Variant.Outlined; Margin = Margin.Dense; }
+    public AppTextField() { Variant = Variant.Outlined; Margin = Margin.Normal; }
 }
 
 public class AppNumericField<T> : MudNumericField<T>
 {
-    public AppNumericField() { Variant = Variant.Outlined; Margin = Margin.Dense; }
+    public AppNumericField() { Variant = Variant.Outlined; Margin = Margin.Normal; }
 }
 
 public class AppSelect<T> : MudSelect<T>
 {
-    public AppSelect() { Variant = Variant.Outlined; Margin = Margin.Dense; }
+    public AppSelect() { Variant = Variant.Outlined; Margin = Margin.Normal; }
 }
 
 public class AppAutocomplete<T> : MudAutocomplete<T>
 {
-    public AppAutocomplete() { Variant = Variant.Outlined; Margin = Margin.Dense; }
+    public AppAutocomplete() { Variant = Variant.Outlined; Margin = Margin.Normal; }
 }
 
 public class AppDatePicker : MudDatePicker
 {
-    public AppDatePicker() { Variant = Variant.Outlined; Margin = Margin.Dense; }
+    public AppDatePicker() { Variant = Variant.Outlined; Margin = Margin.Normal; }
 }

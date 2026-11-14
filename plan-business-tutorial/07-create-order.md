@@ -769,7 +769,7 @@ The page that button opens, open to anyone, because the link must work even afte
             <MudAlert Severity="Severity.Warning" Class="mb-6">There is no error code @Code.</MudAlert>
         }
 
-        <MudTextField @bind-Value="_search" Label="Search" Immediate="true" Adornment="Adornment.Start"
+        <AppTextField @bind-Value="_search" Label="Search" Immediate="true" Adornment="Adornment.Start"
                       AdornmentIcon="@Icons.Material.Filled.Search" Class="mb-4" />
         <MudSimpleTable Dense="true" Hover="true">
             <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
@@ -886,7 +886,7 @@ form asks for ids. It's plain on purpose; [lesson 08](08-find-orders.md) gives i
 <MudText Typo="Typo.h4" Class="mb-4">New sales order</MudText>
 
 <MudPaper Class="pa-4 mb-4" Outlined="true">
-    <MudNumericField T="long" Label="Customer id" @bind-Value="_customerId" Min="1" Style="max-width:200px" />
+    <AppNumericField T="long" Label="Customer id" @bind-Value="_customerId" Min="1" Style="max-width:200px" />
 </MudPaper>
 
 <MudPaper Class="pa-4 mb-4" Outlined="true">
@@ -894,8 +894,8 @@ form asks for ids. It's plain on purpose; [lesson 08](08-find-orders.md) gives i
     @foreach (var line in _lines)
     {
         <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mb-2">
-            <MudNumericField T="long" Label="Item id" @bind-Value="line.ItemId" Min="1" Style="max-width:160px" />
-            <MudNumericField T="decimal" Label="Quantity" @bind-Value="line.Quantity" Min="0" Style="max-width:160px" />
+            <AppNumericField T="long" Label="Item id" @bind-Value="line.ItemId" Min="1" Style="max-width:160px" />
+            <AppNumericField T="decimal" Label="Quantity" @bind-Value="line.Quantity" Min="0" Style="max-width:160px" />
             <MudIconButton Icon="@Icons.Material.Filled.Delete" OnClick="() => _lines.Remove(line)" aria-label="Remove line" />
         </MudStack>
     }

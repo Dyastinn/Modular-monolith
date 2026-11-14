@@ -188,6 +188,31 @@ public sealed class BusinessFlowUiTests : IAsyncLifetime
         await Shot(admin, "admin-users");
     }
 
+    // The account button opens its menu, and signing out from it lands on the sign-in page.
+    [UiFact]
+    public async Task The_account_menu_opens_and_signs_out()
+    {
+        var rep = await SignIn("rep@erp.local");
+        await rep.GetByRole(AriaRole.Button, new() { Name = "Rita Reyes" }).ClickAsync();
+        await rep.GetByText("Sales rep").WaitForAsync();
+        await rep.GetByText("Sign out", new() { Exact = true }).ClickAsync();
+
+        await rep.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).WaitForAsync();
+    }
+
+    // The choice of dark mode is remembered in this browser: a reload keeps it.
+    [UiFact]
+    public async Task Dark_mode_is_remembered_after_a_reload()
+    {
+        var rep = await SignIn("rep@erp.local");
+        await rep.GetByRole(AriaRole.Button, new() { Name = "Dark mode" }).ClickAsync();
+        await rep.GetByRole(AriaRole.Button, new() { Name = "Light mode" }).WaitForAsync();
+
+        await rep.ReloadAsync();
+
+        await rep.GetByRole(AriaRole.Button, new() { Name = "Light mode" }).WaitForAsync();
+    }
+
     // A refusal names its code, and one click explains it: the way a compiler error's CS number does.
     [UiFact]
     public async Task A_refusal_shows_its_code_and_one_click_explains_it()

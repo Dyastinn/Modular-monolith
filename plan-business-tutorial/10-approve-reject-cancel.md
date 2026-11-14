@@ -357,7 +357,7 @@ Then a dialog we can reuse whenever a step needs a reason (voiding an invoice wi
 <MudDialog>
     <DialogContent>
         <MudText Class="mb-3">@Message</MudText>
-        <MudTextField @bind-Value="_reason" Label="Reason" Lines="3" MaxLength="500" Immediate="true" AutoFocus="true" />
+        <AppTextField @bind-Value="_reason" Label="Reason" Lines="3" MaxLength="500" Immediate="true" AutoFocus="true" />
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="() => Dialog.Cancel()">Back</MudButton>

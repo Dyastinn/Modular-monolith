@@ -380,11 +380,11 @@ On screen, `PriceListItem` in `Models.cs` gains `string TaxType`. The price list
 (`@Format.Words(context.TaxType)`), and `PricingDialog` gets a select above the "For sale" switch:
 
 ```razor
-<MudSelect T="string" @bind-Value="_taxType" Label="VAT treatment" HelperText="Printed on the invoice's VAT breakdown">
+<AppSelect T="string" @bind-Value="_taxType" Label="VAT treatment" HelperText="Printed on the invoice's VAT breakdown">
     <MudSelectItem Value="@("Vatable")">VATable</MudSelectItem>
     <MudSelectItem Value="@("ZeroRated")">Zero-rated</MudSelectItem>
     <MudSelectItem Value="@("VatExempt")">VAT-exempt</MudSelectItem>
-</MudSelect>
+</AppSelect>
 ```
 
 with `private string _taxType = "Vatable";`, loaded from `Item.TaxType` and sent as `taxType = _taxType`.
