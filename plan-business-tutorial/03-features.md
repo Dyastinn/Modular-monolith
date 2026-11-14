@@ -327,7 +327,35 @@ at `/api/ping`, without the endpoint knowing about the prefix. Not so hard, righ
 
 ## 6. Call it from a screen
 
-A small page in the app: type a message, press the button, see the answer.
+A small page in the app: type a message, press the button, see the answer. It has the app's first input
+field, so first let's decide, once, what every field looks like.
+
+MudBlazor's text field comes in three looks (`Variant`): an underline, a filled box, or an outlined box. We
+want the outlined box everywhere, with comfortable spacing. Writing `Variant="Variant.Outlined"` on every field
+of every page means a hundred places to remember, and one forgotten field looks out of place. MudBlazor 9 has
+no app-wide setting for it, so we make our own field: MudBlazor's, with our defaults set in its constructor.
+
+```csharp
+// src/Erp.Web/Shared/AppFields.cs
+using MudBlazor;
+
+namespace Erp.Web.Shared;
+
+// The app's input fields: MudBlazor's own, with one look decided here, once. Every page uses these instead of the
+// Mud* originals, so a form looks the same everywhere and changing the look is a change to this file.
+// They take every parameter the original takes; a page can still override the defaults when it must.
+// (MudBlazor 9 has no global setting for an input's variant, so the defaults live here.)
+
+public class AppTextField<T> : MudTextField<T>
+{
+    public AppTextField() { Variant = Variant.Outlined; Margin = Margin.Normal; }
+}
+```
+
+`AppTextField<T>` *is* a `MudTextField<T>`: it inherits every parameter, so `Label`, `@bind-Value` and the rest
+work exactly as in MudBlazor's documentation. The constructor only changes the starting values, and a page that
+passes `Variant` itself still wins. Later lessons add the other kinds of field to this file as they first need
+them. To remember it easily: a page never writes `<MudTextField>`, it writes `<AppTextField>`.
 
 ```razor
 @* src/Erp.Web/Pages/Ping.razor *@

@@ -396,6 +396,13 @@ we never write one.
 /* src/Erp.Web/wwwroot/css/app.css */
 html, body {
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Keyboard users always see where they are. */
+:focus-visible {
+    outline: 2px solid var(--mud-palette-primary);
+    outline-offset: 2px;
 }
 
 #blazor-error-ui {
@@ -406,16 +413,22 @@ html, body {
     right: 0;
     padding: 0.75rem 1.25rem;
     background: #fff3cd;
+    color: #3d2e00;
     box-shadow: 0 -1px 2px rgba(0, 0, 0, 0.2);
     z-index: 2000;
 }
 ```
+
+This file stays small on purpose. The look of the app (colours, fonts, corners, shadows) lives in the MudBlazor
+theme, coming in a moment, and CSS is only for what the theme can't say. `var(--mud-palette-primary)` is how
+CSS asks the theme for a colour, so the focus ring follows it, in light mode and in dark.
 
 ### Starting the app
 
 ```csharp
 // src/Erp.Web/Program.cs
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
+using MudBlazor;
 using MudBlazor.Services;
 
 // The browser half of the app. The server sends the page (App.razor); what runs here is Routes and everything below.
@@ -424,7 +437,8 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 // Same origin as the API, so every call goes back to the server that served the app.
 builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
 
-builder.Services.AddMudServices();
+// Messages appear bottom-right, where they never cover a page's title or its buttons.
+builder.Services.AddMudServices(o => o.SnackbarConfiguration.PositionClass = Defaults.Classes.Position.BottomRight);
 
 await builder.Build().RunAsync();
 ```
@@ -441,9 +455,11 @@ means "one for as long as the tab is open".
 @using Microsoft.AspNetCore.Components.Routing
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.AspNetCore.Components.WebAssembly.Http
+@using Microsoft.JSInterop
 @using MudBlazor
 @using Erp.Web
 @using Erp.Web.Layout
+@using Erp.Web.Shared
 ```
 
 `_Imports.razor` applies its `using` lines to every `.razor` file in the project, so pages stay short.
@@ -464,50 +480,227 @@ The **router** looks at the address and picks the page whose `@page` line matche
 frame around every page: the top bar, the menu on the left, and the page in the middle (`@Body`). If you
 came from WebForms, it's the master page.
 
+First, the look. A **theme** is MudBlazor's list of every colour, font size and corner radius the components
+use. Set it once, and every button, table and field follows. We write it in its own file, because it's long and
+it's design, not code:
+
+```csharp
+// src/Erp.Web/Layout/AppTheme.cs
+using MudBlazor;
+
+namespace Erp.Web.Layout;
+
+// One look for every screen: a deep-blue top bar, neutral greys, one blue for what you can act on, flat surfaces
+// with thin borders. Status colours (green, amber, red) are kept for meaning, never for decoration. The dark palette
+// is the same design at night: same roles, lighter blue and softer colours, so contrast stays readable.
+internal static class AppTheme
+{
+    private static readonly string[] Font = ["system-ui", "-apple-system", "Segoe UI", "Roboto", "Helvetica Neue", "Arial", "sans-serif"];
+
+    public static readonly MudTheme Theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#1d4ed8",
+            PrimaryDarken = "#1e40af",
+            PrimaryLighten = "#dbe6fe",
+            Secondary = "#475467",
+            Info = "#1d4ed8",
+            Success = "#067647",
+            Warning = "#b54708",
+            Error = "#c4320a",
+            Background = "#f6f7f9",
+            Surface = "#ffffff",
+            AppbarBackground = "#1e3a8a",
+            AppbarText = "#ffffff",
+            DrawerBackground = "#ffffff",
+            DrawerText = "#344054",
+            DrawerIcon = "#667085",
+            TextPrimary = "#101828",
+            TextSecondary = "#475467",
+            TextDisabled = "#98a2b3",
+            ActionDefault = "#475467",
+            Divider = "#e4e7ec",
+            DividerLight = "#f0f1f4",
+            LinesDefault = "#e4e7ec",
+            LinesInputs = "#d0d5dd",
+            TableLines = "#eaecf0",
+            TableHover = "#f5f7fb",
+            TableStriped = "#fafbfc",
+        },
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#7aa2ff",
+            PrimaryContrastText = "#0b1220",
+            PrimaryDarken = "#5b88f5",
+            PrimaryLighten = "#1d2b4f",
+            Secondary = "#a3abb9",
+            Info = "#7aa2ff",
+            Success = "#4ccf8a",
+            Warning = "#f5b14c",
+            Error = "#ff7a66",
+            Background = "#0f1218",
+            Surface = "#171b23",
+            AppbarBackground = "#172554",
+            AppbarText = "#ffffff",
+            DrawerBackground = "#171b23",
+            DrawerText = "#d0d5dd",
+            DrawerIcon = "#98a2b3",
+            TextPrimary = "#eceef2",
+            TextSecondary = "#a3abb9",
+            TextDisabled = "#667085",
+            ActionDefault = "#a3abb9",
+            Divider = "#2a303c",
+            DividerLight = "#222733",
+            LinesDefault = "#2a303c",
+            LinesInputs = "#3a4250",
+            TableLines = "#262b36",
+            TableHover = "#1e232d",
+            TableStriped = "#1a1e27",
+        },
+        Typography = new Typography
+        {
+            Default = new DefaultTypography { FontFamily = Font, FontSize = ".875rem", LineHeight = "1.5" },
+            H4 = new H4Typography { FontFamily = Font, FontSize = "1.5rem", FontWeight = "600", LineHeight = "1.3", LetterSpacing = "-.01em" },
+            H5 = new H5Typography { FontFamily = Font, FontSize = "1.125rem", FontWeight = "600", LineHeight = "1.4" },
+            H6 = new H6Typography { FontFamily = Font, FontSize = "1rem", FontWeight = "600", LineHeight = "1.4" },
+            Subtitle1 = new Subtitle1Typography { FontFamily = Font, FontSize = ".9375rem", FontWeight = "600" },
+            // Table headers use Subtitle2: a little smaller and bolder than the rows.
+            Subtitle2 = new Subtitle2Typography { FontFamily = Font, FontSize = ".8125rem", FontWeight = "600" },
+            Body1 = new Body1Typography { FontFamily = Font, FontSize = ".9375rem" },
+            Body2 = new Body2Typography { FontFamily = Font, FontSize = ".875rem" },
+            Button = new ButtonTypography { FontFamily = Font, FontSize = ".875rem", FontWeight = "500", TextTransform = "none", LetterSpacing = "0" },
+            Caption = new CaptionTypography { FontFamily = Font, FontSize = ".75rem" },
+            Overline = new OverlineTypography { FontFamily = Font, FontSize = ".6875rem", FontWeight = "600", LetterSpacing = ".06em" },
+        },
+        LayoutProperties = new LayoutProperties { DefaultBorderRadius = "8px", AppbarHeight = "56px", DrawerWidthLeft = "248px" },
+        Shadows = Flat(),
+    };
+
+    // Elevations 1–5 are what sits on the page (papers, tables, buttons): flat, separated by a hairline border.
+    // Menus, messages and dialogs use the higher ones and keep their shadow, because they float above the page.
+    private static Shadow Flat()
+    {
+        var shadow = new Shadow();
+        for (var level = 1; level <= 5; level++) shadow.Elevation[level] = "none";
+        return shadow;
+    }
+}
+```
+
+What each part decides:
+
+| Part | What it sets | Why |
+|---|---|---|
+| `PaletteLight` | Every colour in light mode, by role: `Primary` for what you can act on, `Background` and `Surface` for the page and its cards, `Lines…` for borders, `Success`/`Warning`/`Error` for status | Pages ask for a role (`Color.Primary`), never a colour code, so changing the brand is one line here |
+| `PaletteDark` | The same roles at night | A lighter blue and softer colours, so text stays readable on a dark background |
+| `Typography` | The fonts and sizes of each kind of text | The system's own font, sizes made for dense business screens, and buttons in sentence case instead of capitals |
+| `LayoutProperties` | Corner radius, top bar height, menu width | Slightly rounded, one consistent radius everywhere |
+| `Shadows` | How deep each "elevation" level looks | Levels 1–5 are what sits on the page, so they're flat and use a thin border; menus and dialogs use higher levels and keep their shadow, because they float above the page |
+
+Now the product's mark, a small component we can reuse:
+
+```razor
+@* src/Erp.Web/Shared/Brand.razor *@
+@* The product's name and mark, on the blue top bar. *@
+<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="@Class">
+    <MudAvatar Color="Color.Inherit" Variant="Variant.Outlined" Rounded="true" Size="Size.Small" aria-hidden="true">E</MudAvatar>
+    <MudText Typo="Typo.h6">ERP</MudText>
+</MudStack>
+
+@code {
+    [Parameter] public string? Class { get; set; }
+}
+```
+
+`Color.Inherit` means "the colour of the text around me", here the white of the top bar. And the frame itself:
+
 ```razor
 @* src/Erp.Web/Layout/MainLayout.razor *@
 @inherits LayoutComponentBase
+@inject IJSRuntime Js
 
-<MudThemeProvider Theme="Theme" />
+<MudThemeProvider @ref="_themeProvider" Theme="AppTheme.Theme" @bind-IsDarkMode="_dark" ObserveSystemDarkModeChange="_followSystem" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
 
 <MudLayout>
-    <MudAppBar Elevation="1" Dense="true">
-        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
+    <MudAppBar Elevation="0">
+        <MudIconButton Icon="@Icons.Material.Outlined.Menu" Color="Color.Inherit" Edge="Edge.Start"
                        OnClick="() => _drawerOpen = !_drawerOpen" aria-label="Menu" />
-        <MudText Typo="Typo.h6" Class="ml-2">ERP</MudText>
+        <MudButton Href="" Variant="Variant.Text" Color="Color.Inherit" Class="ml-1 px-2" aria-label="Home"><Brand /></MudButton>
+        <MudSpacer />
+        <MudTooltip Text="@(_dark ? "Light mode" : "Dark mode")">
+            <MudIconButton Icon="@(_dark ? Icons.Material.Outlined.LightMode : Icons.Material.Outlined.DarkMode)" Color="Color.Inherit"
+                           OnClick="ToggleDarkMode" aria-label="@(_dark ? "Light mode" : "Dark mode")" />
+        </MudTooltip>
     </MudAppBar>
-    <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="1">
+    <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="0" Variant="DrawerVariant.Responsive"
+               Class="border-r border-solid mud-border-lines-default">
         <NavMenu />
     </MudDrawer>
     <MudMainContent>
-        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-6">
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pt-8 pb-12 px-4 px-sm-8">
             @Body
         </MudContainer>
     </MudMainContent>
 </MudLayout>
 
 @code {
+    private const string ThemeKey = "erp.theme";
+    private MudThemeProvider _themeProvider = default!;
     private bool _drawerOpen = true;
+    private bool _dark;
+    private bool _followSystem = true;
 
-    private static readonly MudTheme Theme = new()
+    // Light or dark: the person's own choice if they made one (kept in this browser), otherwise the computer's setting.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        PaletteLight = new PaletteLight { Primary = "#1e5aa8", AppbarBackground = "#1e5aa8" }
-    };
+        if (!firstRender) return;
+        var saved = await Js.InvokeAsync<string?>("localStorage.getItem", ThemeKey);
+        _followSystem = saved is null;
+        _dark = saved is null ? await _themeProvider.GetSystemDarkModeAsync() : saved == "dark";
+        StateHasChanged();
+    }
+
+    private async Task ToggleDarkMode()
+    {
+        _dark = !_dark;
+        _followSystem = false;
+        await Js.InvokeVoidAsync("localStorage.setItem", ThemeKey, _dark ? "dark" : "light");
+    }
 }
 ```
 
 A Razor component is markup on top and C# in `@code` below. `@bind-Open` ties the drawer's open state to
-`_drawerOpen` both ways, so the menu button opens and closes it. `MudThemeProvider` applies the colors, once,
-for every page.
+`_drawerOpen` both ways, so the menu button opens and closes it. The four providers at the top are MudBlazor's
+plumbing: the theme, and the layers that menus, dialogs and messages appear in.
+
+| Piece | What it does |
+|---|---|
+| `MudAppBar Elevation="0"` | The deep-blue top bar, flat |
+| `DrawerVariant.Responsive` | The menu sits beside the page on a wide screen and slides over it on a phone |
+| `border-r border-solid mud-border-lines-default` | MudBlazor's own utility classes: a thin border on the right, in the theme's line colour. No CSS of ours |
+| `pt-8 pb-12 px-4 px-sm-8` | Spacing utilities: more room on a wide screen (`sm` and up) than on a phone |
+| `@bind-IsDarkMode` | Light or dark, for the whole app, in one boolean |
+| `GetSystemDarkModeAsync()` | Asks the browser whether the computer is set to dark mode |
+| `localStorage` | A little storage the browser keeps for this site. `IJSRuntime` calls the browser's own `localStorage.getItem`/`setItem` by name, so we don't write a line of JavaScript |
+
+Why remember the choice in the browser and not on the server? It's a preference about this screen, like the
+size of a window; it doesn't need to follow a person to another computer, and it must work on the sign-in page,
+before anyone is signed in. Notice `OnAfterRenderAsync`: calling the browser waits until the page is on the
+screen, because before that there's nothing to call.
 
 ```razor
 @* src/Erp.Web/Layout/NavMenu.razor *@
-<MudNavMenu>
-    <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Home</MudNavLink>
+<MudNavMenu Color="Color.Primary" Rounded="true" Margin="Margin.Dense" Class="pa-2">
+    <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.SpaceDashboard">Home</MudNavLink>
 </MudNavMenu>
 ```
 
-One link for now. Every feature lesson adds its own.
+`Color` and `Rounded` give the page you're on a rounded, tinted highlight, the way you find your place on a
+map. One link for now. Every feature lesson adds its own, under a small heading for its module.
 
 ```razor
 @* src/Erp.Web/Pages/Home.razor *@

@@ -1252,7 +1252,7 @@ at `/price-list`, a `MudTabs` with an **Items** tab (a server-paged `MudTable<Pr
 `api/price-list` with a search box and a "For sale only" switch; each row shows SKU, name, unit, category,
 price and "for sale", and a **Set price** button for managers) and a **Categories** tab holding a
 `<Categories />` component. **Set price** opens a `PricingDialog` with a price field, a category
-`MudSelect` filled from `api/item-categories`, and a "For sale" switch, which saves with
+`AppSelect` filled from `api/item-categories`, and a "For sale" switch, which saves with
 `Api.Put($"api/price-list/{Item.Id}", ...)`. The `Categories` component lists categories in a
 `MudSimpleTable` and, for managers, shows a small form under it that creates or edits one. All three are
 built from pieces you've used several times now; type them out, and compare with

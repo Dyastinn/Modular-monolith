@@ -672,7 +672,6 @@ Add these lines to `_Imports.razor`:
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.AspNetCore.Components.Authorization
 @using Erp.Web.Services
-@using Erp.Web.Shared
 @attribute [Authorize]
 ```
 

@@ -167,7 +167,7 @@ first, it stays `null`. So add the parameter, and let the title say which it is:
 ```
 
 An order's customer never changes (a different customer is a different order), so the customer box is
-locked when editing: add `Disabled="Id is not null"` to the customer `MudAutocomplete`. The Back button
+locked when editing: add `Disabled="Id is not null"` to the customer `AppAutocomplete`. The Back button
 goes back to wherever you came from: `Href="@(Id is null ? "sales-orders" : $"sales-orders/{Id}")"`.
 
 Then the code. When editing, load the order and turn its lines back into form lines:

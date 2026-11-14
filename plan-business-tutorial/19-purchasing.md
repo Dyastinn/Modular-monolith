@@ -778,7 +778,7 @@ The pages are built from parts you know:
 |---|---|
 | **Suppliers** (`/suppliers`) and its `SupplierDialog` | Customers and `CustomerDialog`, lesson 15 |
 | **Purchase orders** (`/purchase-orders`), with a status filter that reads `?status=` | The order list, lesson 08 |
-| **New / edit purchase order** (`/purchase-orders/new`, `/purchase-orders/{id}/edit`) | The order form, lessons 08 and 10, with a supplier picker, an item picker over `api/items?activeOnly=true`, a unit cost per line, an expected date (`MudDatePicker`) and notes |
+| **New / edit purchase order** (`/purchase-orders/new`, `/purchase-orders/{id}/edit`) | The order form, lessons 08 and 10, with a supplier picker, an item picker over `api/items?activeOnly=true`, a unit cost per line, an expected date (`AppDatePicker`) and notes |
 | **One purchase order** (`/purchase-orders/{id}`) | The order page, lesson 08, with buttons that show by status and role: Edit and Approve on a draft, Send once approved, **Receive** while goods are due, Close on a partly received order, Cancel before anything arrives |
 
 Type them out, then compare with the reference build's
