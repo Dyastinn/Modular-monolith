@@ -19,6 +19,10 @@ begin!
 Plus the SQL functions behind them, **Dapper** to call them, the rule that a sales rep sees only their own
 orders, and three screens: the order list, the order page, and the new-order form with search boxes.
 
+The order list at the end of this lesson, as a sales rep sees it (only their own orders):
+
+![The Sales orders list: a search box, a status filter, and rows with order number, customer, status chip, total and date](images/08-orders.png)
+
 ## Why we build it this way
 
 ### Why not EF Core for reads too?
@@ -37,6 +41,23 @@ filter, sort, give me page 3". So reads skip the domain entirely:
 | Goes through | The domain, with all its rules | Straight to the database |
 | Tool | EF Core | Dapper + SQL functions |
 | Returns | Usually nothing, or an id | A shape made for one screen |
+
+```mermaid
+flowchart LR
+  subgraph W["Writes (commands)"]
+    direction LR
+    CE["Endpoint"] --> CH["Command handler"] --> DM["Domain<br/>rules"] --> EF["EF Core"]
+  end
+  subgraph Q["Reads (queries)"]
+    direction LR
+    QE["Endpoint"] --> QH["Query handler"] --> DP["Dapper"]
+  end
+  EF --> T[("Tables")]
+  DP --> FN["SQL function<br/>sales.search_sales_orders"] --> T
+```
+
+Two roads into the same tables: the write road goes through every rule; the read road goes straight to SQL,
+which hands back exactly the columns one screen needs.
 
 This is the "query" half of CQRS-lite, and it's where it pays off. Now, let's be honest about the cost:
 the same idea ("an order's total") is now written twice, once in C# and once in SQL. A test at the end of this
@@ -1429,8 +1450,8 @@ sequenceDiagram
   participant PG as PostgreSQL
   B->>H: GET /api/sales-orders?search=acme&page=1&pageSize=10
   H->>D: who may this person see?
-  D-->>H: rep → own id; manager → null
-  H->>PG: search_sales_orders(..., @CreatedBy, 'acme', 1, 10); count_sales_orders(...)
+  D-->>H: rep → own id, manager → null
+  H->>PG: search_sales_orders(..., @CreatedBy, 'acme', 1, 10), count_sales_orders(...)
   PG-->>H: 10 rows + total
   H-->>B: { items, page, pageSize, totalCount, totalPages }
 ```

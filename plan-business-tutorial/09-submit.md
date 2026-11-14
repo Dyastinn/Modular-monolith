@@ -15,6 +15,10 @@ begin!
 - A lock that stops two submits for the same customer from both slipping past the credit limit.
 - A **Submit** button on the order page.
 
+After this lesson, a submitted order reserves its stock and, over ₱50,000, waits for a manager:
+
+![Order SO-2026-000008 with a Pending approval chip, one Server Rack line at ₱75,000, and a history that says when it was created and submitted](images/09-submitted.png)
+
 ## Why we build it this way
 
 ### Why reserve at submit
@@ -849,7 +853,7 @@ sequenceDiagram
   participant D as SalesOrder / Customer
   participant I as StockService (Inventory)
   H->>SC: BEGIN
-  H->>SC: load order; SELECT ... FOR UPDATE (customer); sum pending
+  H->>SC: load order, SELECT ... FOR UPDATE (customer), sum pending
   H->>D: order.Submit(customer, pending, now)
   loop each line
     H->>I: TryReserveAsync(item, qty, tx)

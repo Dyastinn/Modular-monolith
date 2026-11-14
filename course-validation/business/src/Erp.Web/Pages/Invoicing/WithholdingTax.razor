@@ -8,7 +8,7 @@
 <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
     <MudText Typo="Typo.h4">Withholding tax (BIR Form 2307)</MudText>
     <MudSpacer />
-    <MudNumericField T="int" Value="_year" ValueChanged="OnYear" Label="Year" Style="max-width:120px" />
+    <AppNumericField T="int" Value="_year" ValueChanged="OnYear" Label="Year" Style="max-width:120px" />
 </MudStack>
 <MudText Typo="Typo.body2" Class="mb-4">
     Tax customers withheld from their payments, and the certificates they've sent for it. Each 2307 is a credit against
@@ -21,7 +21,7 @@
 }
 else
 {
-    <MudSimpleTable Dense="true" Hover="true" Class="mb-6">
+    <MudSimpleTable Dense="true" Hover="true" Outlined="true" Class="mb-6">
         <thead>
             <tr><th>Customer</th><th>Quarter</th><th class="money">Withheld</th><th class="money">Certified</th><th class="money">Missing</th><th></th></tr>
         </thead>
@@ -33,7 +33,7 @@ else
                     <td>Q@(r.Quarter)</td>
                     <td class="money">@Format.Peso(r.Withheld)</td>
                     <td class="money">@Format.Peso(r.Certified)</td>
-                    <td class="money" style="@(r.Missing > 0 ? "color:#c62828" : "")">@Format.Peso(r.Missing)</td>
+                    <td class="@(r.Missing > 0 ? "money mud-error-text" : "money")">@Format.Peso(r.Missing)</td>
                     <td>
                         @if (r.Missing > 0)
                         {
@@ -47,7 +47,7 @@ else
     @if (_report.Summary.Count == 0) { <MudText Class="mb-6">No tax withheld in @_year.</MudText> }
 
     <MudText Typo="Typo.h6" GutterBottom="true">Certificates received</MudText>
-    <MudSimpleTable Dense="true" Hover="true">
+    <MudSimpleTable Dense="true" Hover="true" Outlined="true">
         <thead><tr><th>Customer</th><th>Quarter</th><th class="money">Amount</th><th>Reference</th><th>Received</th><th></th></tr></thead>
         <tbody>
             @foreach (var c in _report.Certificates)

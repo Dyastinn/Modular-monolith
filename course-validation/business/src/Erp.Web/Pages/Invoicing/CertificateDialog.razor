@@ -4,9 +4,9 @@
     <DialogContent>
         <MudStack Spacing="2" Style="min-width:380px">
             <MudText>Q@(Row.Quarter) @Year · still missing <b>@Format.Peso(Row.Missing)</b></MudText>
-            <MudNumericField @bind-Value="_amount" Label="Tax withheld on the certificate (₱)" Min="0" Format="N2" />
-            <MudTextField @bind-Value="_reference" Label="Reference" MaxLength="100" />
-            <MudDatePicker @bind-Date="_receivedOn" Label="Received on" MaxDate="DateTime.Today" />
+            <AppNumericField @bind-Value="_amount" Label="Tax withheld on the certificate (₱)" Min="0" Format="N2" />
+            <AppTextField @bind-Value="_reference" Label="Reference" MaxLength="100" />
+            <AppDatePicker @bind-Date="_receivedOn" Label="Received on" MaxDate="DateTime.Today" />
         </MudStack>
     </DialogContent>
     <DialogActions>

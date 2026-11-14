@@ -46,12 +46,82 @@ The name is a sentence about what the software does, with underscores for spaces
 list reads like a list of broken promises: "The home page is the app: failed." You know what broke before
 you open a file.
 
-### The kinds of tests, and when each one arrives
+### What kinds of tests are there?
 
-Not every check is the same size. A business rule ("a blocked customer can't order") needs no web server and
-no database, so its test runs in a millisecond. A race between two people needs a real database. A broken
-button needs a real browser. So we use different kinds, and each one arrives in the lesson that first needs
-it:
+If you've never written a test, the names can sound like jargon: unit, integration, end-to-end. They answer one
+question: **how much of the app does the test switch on?**
+
+Think of a car factory. You can check one bolt on a workbench. You can run the engine on a stand, with real
+fuel and real wires. Or you can take the whole car for a test drive on a real road. Each check catches
+different problems, and each one costs more time than the one before.
+
+| Kind | The car | In our app | What it catches | What it can't see |
+|---|---|---|---|---|
+| **Unit test** | One bolt, on the bench | One rule or class, alone: "a blocked customer can't order". No web server, no database | A wrong rule, a wrong calculation | Whether the pieces are wired together |
+| **Integration test** | The engine, on a stand | The real API, started in memory, answering a real HTTP request; from lesson 05 also a real PostgreSQL | Wrong wiring, a missing registration, a bad SQL query, a wrong status code | Whether the screen shows the answer properly |
+| **End-to-end test** | A test drive | A real browser clicking through the real screens of the running app | A broken button, a page that never loads | Which line of code is wrong, when it fails |
+
+Here is the same idea as a picture. Every box is a part of our app; the coloured ones are switched on for real
+in that kind of test, and the grey ones aren't used at all:
+
+```mermaid
+flowchart TB
+  subgraph U["Unit test"]
+    direction LR
+    u1["Browser"]:::off --> u2["Screens"]:::off --> u3["API endpoint"]:::off --> u4["Handler"]:::off --> u5["Business rule"]:::on --> u6[("Database")]:::off
+  end
+  subgraph I["Integration test"]
+    direction LR
+    i1["Browser"]:::off --> i2["Screens"]:::off --> i3["API endpoint"]:::on --> i4["Handler"]:::on --> i5["Business rule"]:::on --> i6[("Database")]:::on
+  end
+  subgraph E["End-to-end test"]
+    direction LR
+    e1["Browser"]:::on --> e2["Screens"]:::on --> e3["API endpoint"]:::on --> e4["Handler"]:::on --> e5["Business rule"]:::on --> e6[("Database")]:::on
+  end
+  U ~~~ I ~~~ E
+  classDef on fill:#2f855a,color:#fff,stroke:#22543d
+  classDef off fill:#e2e8f0,color:#718096,stroke:#cbd5e0,stroke-dasharray:4
+```
+
+Easy, right? The more a test switches on, the more it proves, and the slower and harder to read it gets
+when it fails. A failing unit test points at one rule. A failing browser test only says "something between
+the button and the database is wrong."
+
+So a healthy suite has many small tests and few big ones. People draw it as the **test pyramid**:
+
+![The test pyramid: many fast unit tests at the bottom, fewer integration tests in the middle, a few end-to-end browser tests at the top](images/test-pyramid.svg)
+
+Microsoft's advice says the same in one line: if a behaviour can be tested with either a unit test or an
+integration test, choose the unit test. The opposite shape, mostly slow browser tests and hardly any unit
+tests, has a name too, the *ice-cream cone*, and it's what a team ends up with when testing is left for the
+end. Our pyramid is fatter in the middle than the textbook one, and that's on purpose: a lot of our risk sits in
+SQL and in the wiring between modules, which only an integration test can see.
+
+To remember it easily: **unit = one piece, integration = the pieces together, end-to-end = what the user
+does.**
+
+### Other words you'll hear
+
+Testers also sort tests in other ways. You'll meet these words in job posts and code reviews, so here they
+are, once:
+
+- **Automated vs. manual.** An automated test is code that checks itself. A manual test is a person
+  clicking through. This course automates nearly everything, but every lesson still ends with "Let's run
+  it!": a short manual check, because a person notices things no test asked about ("this button is in a
+  strange place"). Exploring the app freely to find surprises is called **exploratory testing**.
+- **Functional vs. non-functional.** Functional tests check *what* the app does: the right total, the right
+  answer. Non-functional tests check *how well*: fast enough, secure, still standing with 500 users at once.
+  Most of our tests are functional; lesson 23 adds security checks. Load testing (many users at once) is
+  something this course leaves out, and [lesson 25](25-production-checklist.md) says when you'd add it.
+- **Regression test.** Any test you run again after a change, to prove nothing that used to work broke. In
+  practice that's the whole suite, every time. The word is also used for a test written right after fixing
+  a bug, so that bug can't come back.
+- **Smoke test.** A few quick checks right after starting or deploying the app: does it start, does the
+  home page load? If those fail, there's no point running the rest. Today's first test is one.
+
+### When each kind arrives
+
+We don't set up every kind today. Each one arrives in the lesson that first needs it:
 
 | Kind | What it proves | Speed | First in |
 |---|---|---|---|
@@ -59,15 +129,15 @@ it:
 | **Unit test** | One class or rule, alone | Under a millisecond | [Lesson 03](03-features.md) |
 | **Architecture test** | The module walls stand: who may reference whom, what may be public | Milliseconds | [Lesson 03](03-features.md) |
 | **Property-based test** | A rule holds for hundreds of generated inputs, not just the ones we thought of | Milliseconds | [Lesson 04](04-domain-model.md) |
-| **Database test** | Migrations, SQL functions and saved values are right | Seconds | [Lesson 05](05-database.md) |
-| **Browser test** | A real browser can click through the real screens | Seconds | [Lesson 06](06-sign-in.md) |
+| **Database test** | Migrations, SQL functions and saved values are right (integration tests with a real database) | Seconds | [Lesson 05](05-database.md) |
+| **End-to-end (browser) test** | A real browser can click through the real screens | Seconds | [Lesson 06](06-sign-in.md) |
 | **Race test** | Two people acting at the same instant can't break the rules | Seconds | [Lesson 09](09-submit.md) |
 | **Coverage and mutation testing** | Which code no test runs, and which bugs no test would notice | Minutes | [Lesson 11](11-update-order.md) |
 | **CI** | All of it, on a clean machine, on every push | Minutes | [Lesson 12](12-containers-ci.md) |
 
-Most of our tests will be unit tests, because most of our logic will live in the domain. A few will be
-integration tests, and only a handful will drive a browser. Fast tests at the bottom, slow ones at the top:
-people call that the **test pyramid**.
+Why start with integration tests, the middle of the pyramid? Because lesson 01 built no business rules yet,
+so there's no single piece to test alone. What we have is an app that starts and answers addresses, and
+checking that takes the whole app.
 
 ### Why from lesson 02, and not at the end
 
@@ -482,6 +552,8 @@ computer checks for you, every time.
 5. Pick three rows of the edge-case checklist and give an example of each for a sales order.
 6. What is a regression test? Name the one in this lesson and the bug it guards against.
 7. Why should most tests be unit tests, and only a few drive a browser?
+8. A test signs in, creates an order through the API and reads it back, without a browser. Which kind of test
+   is it, and name one bug it can't catch?
 
 And that's where this lesson ends. Your app now checks itself in a second, and you have a checklist for
 finding the bugs that hide at the edges. Next time, we write our first feature the way every feature will

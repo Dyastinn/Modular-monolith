@@ -11,9 +11,9 @@
     <MudButton OnClick="() => Edit(null)" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PersonAdd">New user</MudButton>
 </MudStack>
 
-<MudTextField T="string" Value="_search" ValueChanged="OnSearch" Label="Name or email" DebounceInterval="400" Clearable="true" Class="mb-4" />
+<AppTextField T="string" Value="_search" ValueChanged="OnSearch" Label="Name or email" DebounceInterval="400" Clearable="true" Class="mb-4" />
 
-<MudTable T="User" @ref="_table" ServerData="Load" Hover="true" Dense="true">
+<MudTable Outlined="true" T="User" @ref="_table" ServerData="Load" Hover="true" Dense="true">
     <HeaderContent>
         <MudTh>Name</MudTh><MudTh>Email</MudTh><MudTh>Role</MudTh><MudTh>Status</MudTh><MudTh>Last sign-in</MudTh><MudTh></MudTh>
     </HeaderContent>

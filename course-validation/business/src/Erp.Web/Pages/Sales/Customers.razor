@@ -12,10 +12,10 @@
     </AuthorizeView>
 </MudStack>
 
-<MudTextField T="string" Value="_search" ValueChanged="OnSearch" Label="Name or TIN" DebounceInterval="400" Clearable="true"
+<AppTextField T="string" Value="_search" ValueChanged="OnSearch" Label="Name or TIN" DebounceInterval="400" Clearable="true"
               Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="mb-4" />
 
-<MudTable T="Customer" @ref="_table" ServerData="Load" Hover="true" Dense="true">
+<MudTable Outlined="true" T="Customer" @ref="_table" ServerData="Load" Hover="true" Dense="true">
     <HeaderContent>
         <MudTh>Name</MudTh>
         <MudTh>TIN</MudTh>

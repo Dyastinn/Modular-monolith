@@ -3,12 +3,12 @@
 <MudDialog>
     <DialogContent>
         <MudStack Spacing="2" Style="min-width:420px">
-            <MudTextField @bind-Value="_name" Label="Name" MaxLength="200" />
-            <MudTextField @bind-Value="_tin" Label="TIN" MaxLength="20" />
-            <MudTextField @bind-Value="_address" Label="Address" Lines="2" MaxLength="500" />
-            <MudTextField @bind-Value="_email" Label="Email" InputType="InputType.Email" />
-            <MudTextField @bind-Value="_phone" Label="Phone" MaxLength="50" />
-            <MudNumericField @bind-Value="_terms" Label="Payment terms (days)" Min="0" Max="365" />
+            <AppTextField @bind-Value="_name" Label="Name" MaxLength="200" />
+            <AppTextField @bind-Value="_tin" Label="TIN" MaxLength="20" />
+            <AppTextField @bind-Value="_address" Label="Address" Lines="2" MaxLength="500" />
+            <AppTextField @bind-Value="_email" Label="Email" InputType="InputType.Email" />
+            <AppTextField @bind-Value="_phone" Label="Phone" MaxLength="50" />
+            <AppNumericField @bind-Value="_terms" Label="Payment terms (days)" Min="0" Max="365" />
         </MudStack>
     </DialogContent>
     <DialogActions>

@@ -21,6 +21,11 @@ Plus the `ShipmentRecorded` event that starts it all, a business calendar date f
 for every item, the company's registered details and tax setup with their own screen, and the Invoices and
 invoice screens.
 
+Here's where we're going: every shipment becomes an invoice like this one, by itself, with the VAT broken
+down the way the BIR asks:
+
+![Invoice SI-2026-000006: Epsilon Retail with its TIN, one Server Rack line, VATable sales ₱66,964.29, VAT ₱8,035.71, total ₱75,000, and Print, Record payment and Void buttons](images/20-invoice.png)
+
 ## Why we build it this way
 
 ### Billed by an event
@@ -58,6 +63,21 @@ stamped VOID.
 That's also why an invoice copies the customer's name, TIN and address, and each line's description, unit
 and price, at the moment it's issued. If the customer moves next year, last year's invoice still shows where
 the goods went.
+
+An invoice only ever moves forward. It's issued, it may be voided, and a void one may be replaced by a new
+one with a new number:
+
+```mermaid
+stateDiagram-v2
+  direction LR
+  [*] --> Issued: shipment recorded
+  Issued --> Void: Void(reason)
+  Void --> [*]: kept forever, stamped VOID
+  Void --> Reissued: Reissue
+  state "A new invoice, new number, Issued" as Reissued
+```
+
+There's no "edit" arrow, on purpose. (Lesson 21 adds the payment states between Issued and Paid.)
 
 ### The date on an invoice
 
@@ -837,6 +857,8 @@ await invoicing.EnsureReadyToInvoiceAsync(ct);
 
 `GetTaxPolicyAsync` waits for [lesson 22](22-special-discounts.md), where Sales needs the rate.
 
+![The Company and tax page: the seller's registered name, trade name, TIN and address; the tax regime and VAT rate; and the BIR permit fields](images/20-company.png)
+
 ## 7. Invoicing's database
 
 `InvoicingDbContext` follows Purchasing's: the `invoicing` schema, a static `Configure`, the outbox mapping,
@@ -1260,6 +1282,10 @@ browser opens a PDF from a plain link, with the sign-in cookie. The risk is a br
 link on its own and counting a print nobody made. The worst that does is mark a first copy REPRINT, which is
 the safe direction to be wrong in.
 
+Here's the top of the printed invoice:
+
+![The PDF invoice: the seller's name, VAT Reg TIN and address, SALES INVOICE, the buyer, number, dates and order, the lines, then VATable, VAT, zero-rated and exempt sales and the total due](images/20-invoice-pdf.png)
+
 ## 11. The screens
 
 `InvoiceSummary`, `InvoiceLine` and `InvoiceDetail` join `Models.cs`, without the payment fields for now.
@@ -1302,6 +1328,8 @@ order doesn't know its invoice's id (that's Invoicing's fact), so the button ope
 by order number. One click more, and no module wall crossed.
 
 The UI tests add `"/invoices"` to `pages`.
+
+![The Invoices list: number, customer, order, issued and due dates, a status chip, total and balance](images/20-invoices.png)
 
 ## 12. Tests
 
@@ -1472,11 +1500,11 @@ sequenceDiagram
   participant V as Invoicing (InvoiceIssuer)
   participant S as Sales (GetForInvoiceAsync)
   C->>I: POST /api/shipments (order 42)
-  I->>I: ship; Shipment.Record raises ShipmentCreated; COMMIT with outbox row
+  I->>I: ship, Shipment.Record raises ShipmentCreated, COMMIT with outbox row
   D->>V: ShipmentCreated, published as ShipmentRecorded(shipment 9, order 42)
   V->>V: live invoice for shipment 9? no
   V->>S: GetForInvoiceAsync(42) → lines, customer, terms
-  V->>V: BEGIN; UPDATE document_counter ... RETURNING → 17; check again; INSERT invoice SI-2026-000017; COMMIT
+  V->>V: BEGIN, UPDATE document_counter ... RETURNING → 17, check again, INSERT invoice SI-2026-000017, COMMIT
 ```
 
 ## Mistakes to avoid
@@ -1536,6 +1564,7 @@ podman exec -i erp-postgres psql -U postgres -d erp \
 6. At 7 a.m. in Manila, what date does a new invoice carry, and why?
 7. The VAT rate changes next year. Who changes it, where, and what happens to this year's invoices?
 8. Why does an order line copy the item's VAT treatment, and why does `TaxType` live in BuildingBlocks?
+9. Why do enums travel between the app and the API as names, and not as numbers?
 
 And that's where this lesson ends. Every shipment is billed by itself, the numbers stand up to an audit, and
 the customer gets a PDF that shows what the BIR asks for. Next time, the money comes in: payments, and the report that tells the

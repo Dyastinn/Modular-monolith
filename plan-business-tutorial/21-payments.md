@@ -22,6 +22,10 @@ two and a half hours. Are you ready? Let's begin!
 Plus the `PaymentRecorded` and `PaymentVoided` events, an **applied payments** table that makes Sales apply
 each payment exactly once, and the payment dialog, aging and withholding tax screens.
 
+By the end, an accountant records a payment in a dialog, and the invoice follows the money:
+
+![Invoice SI-2026-000006 with a Paid chip, balance due ₱0.00, and the payment listed: ₱75,000, cash, with the date](images/21-paid.png)
+
 ## Why we build it this way
 
 ### Two balances, one truth
@@ -32,6 +36,20 @@ Sales may not read Invoicing's tables, and Invoicing may not change Sales' custo
 
 So Invoicing announces each payment with an integration event, and Sales lowers the balance itself, like
 lesson 17's catalog copy. A voided payment is announced too, and Sales puts the amount back.
+
+```mermaid
+flowchart TB
+  subgraph INVC["Invoicing"]
+    P["Accountant records ₱500<br/>on SI-2026-000017"] --> INV["Invoice: Partly paid<br/>raises InvoicePaymentRecorded"]
+  end
+  INV -- "outbox, then<br/>PaymentRecorded(31, customer 1, ₱500)" --> H
+  subgraph SAL["Sales"]
+    H{"applied_payment 31<br/>already there?"} -- "no" --> C["Customer balance − ₱500<br/>+ row applied_payment 31"]
+    H -- "yes: a repeat delivery" --> X["do nothing"]
+  end
+```
+
+Each module changes only its own numbers, and the `applied_payment` row makes a second delivery harmless.
 
 ### Exactly once, from at least once
 
@@ -843,6 +861,10 @@ The menu's Invoicing group gets **Receivables aging** and, for accountants and a
 
 with `private static readonly string AccountantRoles = $"{Roles.Accountant},{Roles.Admin}";`.
 
+![The Payment dialog: the balance due, amount received, tax withheld with a note about BIR Form 2307, the date paid, the method and a reference](images/21-payment-dialog.png)
+
+![The Receivables aging report as of a date: per customer, not yet due, 1–30, 31–60, 61–90 and over 90 days, and the total](images/21-aging.png)
+
 ## 9. Tests
 
 The Invoicing unit tests reach fifteen: add `Payments_move_it_to_partly_paid_then_paid_and_tell_Sales`,
@@ -966,11 +988,11 @@ sequenceDiagram
   participant D as Outbox dispatcher
   participant S as Sales (PaymentRecordedHandler)
   A->>V: POST /api/invoices/17/payments { amount: 500, method: "Cash", ... }
-  V->>V: invoice.RecordPayment → PartiallyPaid; raises InvoicePaymentRecorded(31, customer 1, 500)
+  V->>V: invoice.RecordPayment → PartiallyPaid, raises InvoicePaymentRecorded(31, customer 1, 500)
   V->>O: INSERT payment, UPDATE invoice, INSERT outbox row (one transaction)
   D->>S: published as PaymentRecorded(31, 1, 500)
   S->>S: applied_payment 31 exists? no → Apply: deduct min(500, balance)
-  S->>S: INSERT applied_payment 31; UPDATE customer (one transaction)
+  S->>S: INSERT applied_payment 31, UPDATE customer (one transaction)
   D->>S: PaymentRecorded(31, ...) again, after a crash
   S->>S: applied_payment 31 exists → do nothing
 ```

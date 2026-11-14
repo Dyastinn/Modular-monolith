@@ -39,6 +39,27 @@ maps only `sales.*` tables, and Inventory's (in [lesson 09](09-submit.md)) only 
 query another module's tables, because its context doesn't even know they exist. The module wall reaches all
 the way into the database.
 
+```mermaid
+flowchart LR
+  subgraph App["One app (Erp.Api)"]
+    S["Sales module<br/>SalesDbContext · today"]
+    I["Inventory module<br/>from lesson 09"]
+    ID["Identity module<br/>from lesson 06"]
+  end
+  subgraph DB["PostgreSQL · one database"]
+    SS[("schema sales<br/>sales_order, customer, …")]
+    IS[("schema inventory<br/>item, stock, …")]
+    IDS[("schema identity<br/>users, roles, …")]
+  end
+  S --> SS
+  I --> IS
+  ID --> IDS
+  S -. "no: it can't even see them" .-x IS
+```
+
+One database is one thing to back up and one connection to share. Separate schemas keep each module's
+tables its own, so the walls from lesson 01 hold all the way down.
+
 ## 1. Install PostgreSQL
 
 On Windows, in PowerShell (you'll get one admin prompt):
@@ -212,11 +233,17 @@ dotnet add src/Modules/Sales/Erp.Modules.Sales package Microsoft.EntityFramework
 | `EFCore.NamingConventions` | Table and column names in `snake_case`, the PostgreSQL habit | Apache-2.0 |
 | `Microsoft.EntityFrameworkCore.Design` | What the `dotnet ef` command needs to generate migrations | MIT |
 
-The design package only matters while you develop, so mark it build-only in the `.csproj`:
+The design package only matters while you develop, and `dotnet add` knows it: open the Sales `.csproj` and
+you'll find it already marked build-only:
 
 ```xml
-<PackageReference Include="Microsoft.EntityFrameworkCore.Design" PrivateAssets="all" />
+<PackageReference Include="Microsoft.EntityFrameworkCore.Design">
+  <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+  <PrivateAssets>all</PrivateAssets>
+</PackageReference>
 ```
+
+`PrivateAssets="all"` means it stays inside Sales: it isn't copied into the app the customer runs.
 
 There's one wrinkle to fix right away. The PostgreSQL provider asks for EF Core "version 10.0.4 or newer".
 When a package gives a range like that, NuGet picks the **lowest** version that fits, so some projects would
@@ -507,8 +534,9 @@ internal static class DatabaseStartup
 The **scope** is there because the module databases are scoped services (each one holds a DbContext). A
 startup task has no HTTP request to provide a scope, so we make one.
 
-In `Program.cs`, call `builder.Services.AddSharedInfrastructure(builder.Configuration);` before
-`AddSalesModule()`, and `await app.InitializeDatabaseAsync();` right after `builder.Build()`.
+In `Program.cs`, add `using Erp.Shared.Infrastructure;` at the top, call
+`builder.Services.AddSharedInfrastructure(builder.Configuration);` before `AddSalesModule()`, and
+`await app.InitializeDatabaseAsync();` right after `builder.Build()`.
 
 These are the app's first log lines, and the analyzers from lesson 01 have an opinion: CA1848 suggests
 source-generated `[LoggerMessage]` methods instead of `log.LogInformation(...)`, and CA1873 warns that an
@@ -662,7 +690,7 @@ namespace Erp.Integration.Tests;
 public sealed class IntegrationCollection : ICollectionFixture<CustomWebAppFactory> { }
 ```
 
-In `HostTests` and `PingTests`, swap the fixture for the collection. Before:
+In `HostTests`, `PingTests` and `WiringTests`, swap the fixture for the collection. Before:
 
 ```csharp
 public class HostTests(CustomWebAppFactory factory) : IClassFixture<CustomWebAppFactory>
@@ -673,6 +701,15 @@ After:
 ```csharp
 [Collection("Integration")]
 public class HostTests(CustomWebAppFactory factory)
+```
+
+Miss one, and two apps race to create `erp_test`; one of them fails with "duplicate key value violates unique
+constraint pg_database_datname_index". The analyzers have an opinion too: CA1711 says a type name shouldn't end
+in `Collection` unless it's a list. Here it's xUnit's own naming convention, so say so in `tests/.editorconfig`:
+
+```ini
+# CA1711: "...Collection" is xUnit's naming convention for a collection definition, not a list type.
+dotnet_diagnostic.CA1711.severity = none
 ```
 
 One test will look inside Sales with its own `SalesDbContext`, which is internal. Lesson 03 already let the
@@ -835,7 +872,7 @@ After:
 ```csharp
 module.GetExportedTypes()
     // EF generates migrations as public classes.
-    .Where(t => !(t.Namespace ?? "").EndsWith(".Migrations"))
+    .Where(t => !(t.Namespace ?? "").EndsWith(".Migrations", StringComparison.Ordinal))
     .Select(t => t.FullName)
 ```
 

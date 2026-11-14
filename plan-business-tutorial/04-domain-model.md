@@ -942,6 +942,7 @@ the domain:
 
 ```csharp
 // tests/Erp.Modules.Sales.UnitTests/BoundaryTests.cs
+using System.Globalization;
 using AwesomeAssertions;
 using Erp.Modules.Sales.Domain;
 using Erp.Shared.BuildingBlocks;
@@ -958,7 +959,7 @@ public class MoneyAndQuantityBoundaryTests
     [InlineData("2.675", "2.68")]   // the classic double-rounding trap; decimal gets it right
     [InlineData("0", "0.00")]
     public void Money_rounds_half_a_centavo_away_from_zero(string amount, string expected) =>
-        new Money(decimal.Parse(amount)).Amount.Should().Be(decimal.Parse(expected));
+        new Money(decimal.Parse(amount, CultureInfo.InvariantCulture)).Amount.Should().Be(decimal.Parse(expected, CultureInfo.InvariantCulture));
 
     [Fact]
     public void Taking_away_more_money_than_there_is_fails() =>
@@ -971,7 +972,7 @@ public class MoneyAndQuantityBoundaryTests
     [InlineData("0.0001")]
     [InlineData("1.0005")]
     public void A_quantity_that_is_not_positive_or_has_four_decimals_is_refused(string value) =>
-        FluentActions.Invoking(() => new Quantity(decimal.Parse(value))).Should().Throw<DomainException>();
+        FluentActions.Invoking(() => new Quantity(decimal.Parse(value, CultureInfo.InvariantCulture))).Should().Throw<DomainException>();
 }
 
 public class LimitBoundaryTests
@@ -1023,7 +1024,10 @@ public class LimitBoundaryTests
 ```
 
 Notice how a `[Theory]` takes the numbers as strings and parses them: C# attributes can't hold a `decimal`,
-and a `double` would bring back exactly the rounding errors we're testing for.
+and a `double` would bring back exactly the rounding errors we're testing for. And notice
+`CultureInfo.InvariantCulture`: on a computer set to German or French, a plain `decimal.Parse("0.005")` reads
+the dot as a thousands separator and gets 5. The analyzers from lesson 01 warn about exactly this (`CA1305`),
+and from lesson 12 a warning fails the build.
 
 That last test is worth a closer look. An early version of `SetLines` cleared the lines first and then
 added the new ones, checking each as it went. A refused third line left the order with two lines, or none:
@@ -1258,7 +1262,7 @@ public void The_domain_does_not_depend_on_data_access_or_web()
 
     foreach (var module in Modules)
     {
-        var domainTypes = module.GetTypes().Where(t => (t.Namespace ?? "").EndsWith(".Domain"));
+        var domainTypes = module.GetTypes().Where(t => (t.Namespace ?? "").EndsWith(".Domain", StringComparison.Ordinal));
         foreach (var type in domainTypes)
         {
             var used = type.GetFields(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
@@ -1280,7 +1284,7 @@ public void The_domain_does_not_depend_on_data_access_or_web()
 public void Domain_state_changes_only_through_its_methods()
 {
     var setters = Modules.SelectMany(m => m.GetTypes())
-        .Where(t => (t.Namespace ?? "").EndsWith(".Domain"))
+        .Where(t => (t.Namespace ?? "").EndsWith(".Domain", StringComparison.Ordinal))
         .SelectMany(t => t.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly))
         .Where(p => p.SetMethod is { IsPublic: true } setter
                     && !setter.ReturnParameter.GetRequiredCustomModifiers().Contains(typeof(IsExternalInit)))

@@ -50,6 +50,25 @@ We split each feature in two, and pull the checks out of both:
 - The **validator** says what a well-formed request looks like. One **endpoint filter**, set once on the whole
   `/api` group, runs it before the endpoint. Written once, used everywhere, impossible to forget.
 
+Follow one request through the three pieces:
+
+```mermaid
+flowchart LR
+  R["POST /api/ping<br/>{ message: '' }"] --> F{"Validation filter<br/>(once, on /api)"}
+  F -- "malformed" --> B["400 + which field<br/>(the endpoint never runs)"]
+  F -- "well-formed" --> E["Endpoint<br/>HTTP in, HTTP out"]
+  E -- "PingQuery" --> H["Handler<br/>does the work"]
+  H -- "PingResult" --> E
+  E --> OK["200 OK"]
+  classDef bad fill:#fed7d7,stroke:#c53030,color:#742a2a
+  classDef good fill:#c6f6d5,stroke:#2f855a,color:#22543d
+  class B bad
+  class OK good
+```
+
+The handler never sees a bad request, and it never sees HTTP either. Each piece has one job, and you can
+test each one alone.
+
 There are two kinds of message, so the intent is always clear:
 
 | Kind | What it does | Example |

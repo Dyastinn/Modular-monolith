@@ -16,6 +16,10 @@ hour and a half. Are you ready? Let's begin!
 Plus a **Shipped** status for orders, the `Erp.Modules.Sales.Contracts` project, a **Ship** button on the
 order page, and a Shipments screen.
 
+When the clerk presses Ship, the order turns Shipped, and the history records who shipped it:
+
+![Order SO-2026-000008 with a Shipped chip; its history shows created, submitted, approved and shipped, with names and times](images/18-shipped.png)
+
 ## Why we build it this way
 
 ### Who owns shipping?
@@ -589,6 +593,10 @@ await Shot(clerk, "clerk-shipped");
 
 and `"/shipments"` joins `pages`.
 
+The Shipments list:
+
+![The Shipments list: shipment number, the order it shipped (a link), lines, when, and the clerk who shipped it](images/18-shipments.png)
+
 ## 7. Prove it: only once, and only when approved
 
 Orders can ship now, so the state machine has a sixth status. The status test from
@@ -658,7 +666,7 @@ sequenceDiagram
   C->>I: POST /api/shipments { salesOrderId: 42 }
   I->>DB: BEGIN
   I->>S: GetForShipmentAsync(42, tx)
-  S->>DB: SELECT ... FOR UPDATE (order 42); EnsureCanShip
+  S->>DB: SELECT ... FOR UPDATE (order 42), EnsureCanShip
   loop each line
     I->>DB: UPDATE inventory.item SET on_hand -= q, reserved -= q WHERE reserved >= q
   end

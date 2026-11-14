@@ -140,7 +140,9 @@ first-day steps in [lesson 25](plan-business-tutorial/25-production-checklist.md
 
 ## Status
 
-All five modules and their screens are built and tested (ROADMAP M1–M8). The container images build with
+All five modules and their screens are built and tested (ROADMAP M1–M9). Since M9 (2026-11-14) every design
+choice is checked against Microsoft's guidance and practitioners' sources in
+[BEST-PRACTICES-REVIEW.md](BEST-PRACTICES-REVIEW.md). The container images build with
 Podman, and the database, migrate and app containers were run together in Production mode on Podman; the full
 `podman compose up` (with Caddy and the backup container) hasn't been run yet, because no Compose program was
 installed here. The invoice follows RR 7-2024's

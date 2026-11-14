@@ -1,49 +1,45 @@
 @* Each person sees the parts of the system their role uses. The API enforces the same rules; hiding a link is
    only a convenience. *@
-<MudNavMenu>
-    <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Dashboard">Home</MudNavLink>
+<MudNavMenu Color="Color.Primary" Rounded="true" Margin="Margin.Dense" Class="pa-2">
+    <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.SpaceDashboard">Home</MudNavLink>
 
     <AuthorizeView Roles="@Sales">
-        <MudNavGroup Title="Sales" Icon="@Icons.Material.Filled.PointOfSale" Expanded="true">
-            <MudNavLink Href="sales-orders">Sales orders</MudNavLink>
-            <MudNavLink Href="customers">Customers</MudNavLink>
-            <MudNavLink Href="price-list">Price list</MudNavLink>
-        </MudNavGroup>
+        <MudText Typo="Typo.overline" Color="Color.Secondary" HtmlTag="div" Class="px-3 pt-4 pb-1">Sales</MudText>
+        <MudNavLink Href="sales-orders" Icon="@Icons.Material.Outlined.ReceiptLong">Sales orders</MudNavLink>
+        <MudNavLink Href="customers" Icon="@Icons.Material.Outlined.Groups">Customers</MudNavLink>
+        <MudNavLink Href="price-list" Icon="@Icons.Material.Outlined.Sell">Price list</MudNavLink>
     </AuthorizeView>
 
     <AuthorizeView Roles="@Stock">
-        <MudNavGroup Title="Inventory" Icon="@Icons.Material.Filled.Inventory2" Expanded="true">
-            <MudNavLink Href="items">Items and stock</MudNavLink>
-            <MudNavLink Href="shipments">Shipments</MudNavLink>
-        </MudNavGroup>
+        <MudText Typo="Typo.overline" Color="Color.Secondary" HtmlTag="div" Class="px-3 pt-4 pb-1">Inventory</MudText>
+        <MudNavLink Href="items" Icon="@Icons.Material.Outlined.Inventory2">Items and stock</MudNavLink>
+        <MudNavLink Href="shipments" Icon="@Icons.Material.Outlined.LocalShipping">Shipments</MudNavLink>
     </AuthorizeView>
 
     <AuthorizeView Roles="@Buying">
-        <MudNavGroup Title="Purchasing" Icon="@Icons.Material.Filled.ShoppingCart" Expanded="true">
-            <MudNavLink Href="purchase-orders">Purchase orders</MudNavLink>
-            <MudNavLink Href="suppliers">Suppliers</MudNavLink>
-        </MudNavGroup>
+        <MudText Typo="Typo.overline" Color="Color.Secondary" HtmlTag="div" Class="px-3 pt-4 pb-1">Purchasing</MudText>
+        <MudNavLink Href="purchase-orders" Icon="@Icons.Material.Outlined.ShoppingCart">Purchase orders</MudNavLink>
+        <MudNavLink Href="suppliers" Icon="@Icons.Material.Outlined.Factory">Suppliers</MudNavLink>
     </AuthorizeView>
 
     <AuthorizeView Roles="@Billing">
-        <MudNavGroup Title="Invoicing" Icon="@Icons.Material.Filled.ReceiptLong" Expanded="true">
-            <MudNavLink Href="invoices">Invoices</MudNavLink>
-            <MudNavLink Href="receivables-aging">Receivables aging</MudNavLink>
-            <AuthorizeView Roles="@Accounting" Context="accounting">
-                <MudNavLink Href="withholding-tax">Withholding tax (2307)</MudNavLink>
-                <MudNavLink Href="company">Company and tax</MudNavLink>
-            </AuthorizeView>
-        </MudNavGroup>
+        <MudText Typo="Typo.overline" Color="Color.Secondary" HtmlTag="div" Class="px-3 pt-4 pb-1">Invoicing</MudText>
+        <MudNavLink Href="invoices" Icon="@Icons.Material.Outlined.Description">Invoices</MudNavLink>
+        <MudNavLink Href="receivables-aging" Icon="@Icons.Material.Outlined.HourglassBottom">Receivables aging</MudNavLink>
+        <AuthorizeView Roles="@Accounting" Context="accounting">
+            <MudNavLink Href="withholding-tax" Icon="@Icons.Material.Outlined.AccountBalance">Withholding tax (2307)</MudNavLink>
+            <MudNavLink Href="company" Icon="@Icons.Material.Outlined.Business">Company and tax</MudNavLink>
+        </AuthorizeView>
     </AuthorizeView>
 
     <AuthorizeView Roles="@Roles.Admin">
-        <MudNavGroup Title="Administration" Icon="@Icons.Material.Filled.AdminPanelSettings" Expanded="true">
-            <MudNavLink Href="users">Users</MudNavLink>
-            <MudNavLink Href="sign-in-log">Sign-in log</MudNavLink>
-        </MudNavGroup>
+        <MudText Typo="Typo.overline" Color="Color.Secondary" HtmlTag="div" Class="px-3 pt-4 pb-1">Administration</MudText>
+        <MudNavLink Href="users" Icon="@Icons.Material.Outlined.ManageAccounts">Users</MudNavLink>
+        <MudNavLink Href="sign-in-log" Icon="@Icons.Material.Outlined.History">Sign-in log</MudNavLink>
     </AuthorizeView>
 
-    <MudNavLink Href="errors" Icon="@Icons.Material.Filled.HelpOutline">Error codes</MudNavLink>
+    <MudText Typo="Typo.overline" Color="Color.Secondary" HtmlTag="div" Class="px-3 pt-4 pb-1">Help</MudText>
+    <MudNavLink Href="errors" Icon="@Icons.Material.Outlined.HelpOutline">Error codes</MudNavLink>
 </MudNavMenu>
 
 @code {

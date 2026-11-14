@@ -1,5 +1,27 @@
 html, body {
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* Keyboard users always see where they are. */
+:focus-visible {
+    outline: 2px solid var(--mud-palette-primary);
+    outline-offset: 2px;
+}
+
+/* Numbers in tables line up digit under digit. */
+.mud-table-root {
+    font-variant-numeric: tabular-nums;
+}
+
+/* MudBlazor writes tab labels in capitals, and has no setting for it; everything else here is sentence case. */
+.mud-tab {
+    text-transform: none;
+}
+
+/* A home tile shows it can be clicked. */
+.tile:hover {
+    border-color: var(--mud-palette-primary);
 }
 
 .boot {

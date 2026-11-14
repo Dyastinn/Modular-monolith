@@ -621,7 +621,7 @@ sequenceDiagram
   B->>H: GET /
   H-->>B: the page (App.razor, written by the server)
   B->>H: GET /_framework/... (cached after the first visit)
-  Note over B: the app starts; the router shows Home
+  Note over B: the app starts, the router shows Home
   B->>H: GET /api/nothing
   H-->>B: 404
 ```

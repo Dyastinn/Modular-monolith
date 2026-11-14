@@ -5,19 +5,24 @@
 
 <PageTitle>Sign in · ERP</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.ExtraSmall" Class="mt-16">
-    <MudPaper Class="pa-8" Elevation="2">
-        <MudText Typo="Typo.h5" GutterBottom="true">Sign in</MudText>
+<MudContainer MaxWidth="MaxWidth.ExtraSmall" Class="d-flex align-center justify-center" Style="min-height:100vh">
+    <MudPaper Outlined="true" Class="pa-8 rounded-lg" Width="100%">
+        <Brand Class="mb-6" />
+        <MudText Typo="Typo.h5">Sign in</MudText>
+        <MudText Typo="Typo.body2" Class="mud-text-secondary mb-6">Use the email and password your administrator gave you.</MudText>
         <EditForm Model="this" OnSubmit="SignIn">
-            <MudStack Spacing="3">
-                <MudTextField @bind-Value="_email" Label="Email" InputType="InputType.Email" AutoFocus="true" Required="true" />
-                <MudTextField @bind-Value="_password" Label="Password" InputType="InputType.Password" Required="true" />
+            <MudStack Spacing="4">
+                <AppTextField @bind-Value="_email" Label="Email" InputType="InputType.Email" AutoFocus="true" Required="true"
+                              />
+                <AppTextField @bind-Value="_password" Label="Password" InputType="InputType.Password" Required="true"
+                              />
                 @if (_error is not null)
                 {
                     <MudAlert Severity="Severity.Error" Dense="true">@_error</MudAlert>
                 }
-                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy">Sign in</MudButton>
-                <MudLink Href="forgot-password" Typo="Typo.body2">Forgot your password?</MudLink>
+                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                           Size="Size.Large" Disabled="_busy">Sign in</MudButton>
+                <MudLink Href="forgot-password" Typo="Typo.body2" Class="text-center">Forgot your password?</MudLink>
             </MudStack>
         </EditForm>
     </MudPaper>

@@ -7,7 +7,7 @@
 <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
     <MudText Typo="Typo.h4">Receivables aging</MudText>
     <MudSpacer />
-    <MudDatePicker Date="_asOf" DateChanged="OnDate" Label="As of" Style="max-width:200px" />
+    <AppDatePicker Date="_asOf" DateChanged="OnDate" Label="As of" Style="max-width:200px" />
 </MudStack>
 
 @if (_report is null)
@@ -16,7 +16,7 @@
 }
 else
 {
-    <MudSimpleTable Dense="true" Hover="true">
+    <MudSimpleTable Dense="true" Hover="true" Outlined="true">
         <thead>
             <tr><th>Customer</th><th class="money">Not yet due</th><th class="money">1–30 days</th><th class="money">31–60</th>
                 <th class="money">61–90</th><th class="money">Over 90</th><th class="money">Total</th></tr>
@@ -33,7 +33,7 @@ else
                     <td class="money">@Format.Peso(r.Days1To30)</td>
                     <td class="money">@Format.Peso(r.Days31To60)</td>
                     <td class="money">@Format.Peso(r.Days61To90)</td>
-                    <td class="money" style="@(r.Over90 > 0 ? "color:#c62828" : "")">@Format.Peso(r.Over90)</td>
+                    <td class="@(r.Over90 > 0 ? "money mud-error-text" : "money")">@Format.Peso(r.Over90)</td>
                     <td class="money">@Format.Peso(r.Total)</td>
                 </tr>
             }

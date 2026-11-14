@@ -20,6 +20,10 @@ as always; we only fill the gaps it leaves. About two hours. Are you ready? Let'
 Plus three roles (InventoryClerk, Purchaser, Accountant), password-reset email with **MailKit**, and the
 screens: Users, Sign-in log, Change password and Forgot password.
 
+The administration screen at the end of this lesson:
+
+![The Users list: name, email, role, an Active chip and the last sign-in for each of the six staff accounts, with a New user button](images/16-users.png)
+
 ## Why we build it this way
 
 ### Self sign-up stays blocked
@@ -1513,6 +1517,15 @@ change it, a disabled user can't sign in, and the sign-in log shows both outcome
 `/api/users`, and an admin gets a 422 for disabling themselves; and a five-letter temporary password is
 refused by Identity's policy with a 422.
 
+This is the sign-in log, newest first:
+
+![The Sign-in log: when, email, a green Succeeded or red Failed chip, and the address each attempt came from](images/16-sign-in-log.png)
+
+And the safety rule in action: an admin who tries to disable their own account gets the rule's code, and one
+click explains it:
+
+![A red message on the Users page: You can't disable your own account (IDENTITY-0003)](images/16-refused-with-code.png)
+
 ## 12. Prove it: who may manage whom
 
 The account rules are unit-tested in `StaffAccountRulesTests` above. Two more promises need the whole app.
@@ -1606,10 +1619,10 @@ sequenceDiagram
   A->>API: POST (cookie, role Admin)
   API->>UM: find user 7, their role, count active admins
   API->>R: EnsureCanDisable(me, 7, role, admins)
-  API->>UM: IsDisabled = true; UpdateSecurityStamp
+  API->>UM: IsDisabled = true, UpdateSecurityStamp
   U->>API: any request, within a minute
   Note over U,API: stamp no longer matches → 401
-  U->>U: back to the sign-in page; "This account is disabled."
+  U->>U: back to the sign-in page, "This account is disabled."
 ```
 
 ## Mistakes to avoid

@@ -1,6 +1,7 @@
 using Erp.Web.Services;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
+using MudBlazor;
 using MudBlazor.Services;
 
 // The browser half of the app. The server renders the page (App.razor); what runs here is Routes and everything below.
@@ -16,6 +17,7 @@ builder.Services.AddCascadingAuthenticationState();
 builder.Services.AddScoped<CookieAuthenticationStateProvider>();
 builder.Services.AddScoped<AuthenticationStateProvider>(sp => sp.GetRequiredService<CookieAuthenticationStateProvider>());
 
-builder.Services.AddMudServices();
+// Messages appear bottom-right, where they never cover a page's title or its buttons.
+builder.Services.AddMudServices(o => o.SnackbarConfiguration.PositionClass = Defaults.Classes.Position.BottomRight);
 
 await builder.Build().RunAsync();

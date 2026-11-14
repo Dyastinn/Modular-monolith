@@ -18,6 +18,11 @@ ready? Let's begin!
 
 We'll also say goodbye to `/ping`. It did its job.
 
+Here's the screen you'll have at the end: a sales rep picks a customer, adds lines, and sees the total and
+whether a manager must approve it.
+
+![The New sales order form: customer Epsilon Retail with its available credit, one line for a Server Rack, a total of ₱75,000 and a note that a manager approves orders over ₱50,000](images/07-new-order.png)
+
 ## Why we build it this way
 
 ### A handler with no business `if`s
@@ -56,6 +61,27 @@ asked for doesn't exist". `POST /api/sales-orders` exists; what's wrong is an id
 server understood the request but can't carry it out: that's exactly what 422 means. And notice that only
 two rows are exceptions: a bad request and a missing order are everyday events, so they're answered without
 throwing anything.
+
+Here are the same answers as a path that a request travels. Each gate can stop it, and each stop has its own
+status and code:
+
+```mermaid
+flowchart TD
+  R["POST /api/sales-orders"] --> V{"Validation filter:<br/>is it well-formed?"}
+  V -- "no lines, quantity 0" --> A400["400 · ERP-0001<br/>names the field"]
+  V -- "yes" --> H["Handler loads the customer and items"]
+  H -- "an id in the body doesn't exist" --> A422a["422 · SALES-0018 / 0019"]
+  H --> D{"Domain:<br/>do the rules allow it?"}
+  D -- "blocked, over the credit limit" --> A422b["422 · the rule's own code<br/>SALES-0002, SALES-0003"]
+  D -- "yes" --> S["Save"] --> A201["201 Created · { id }"]
+  H -. "a bug anywhere" .-> A500["500 · ERP-0008<br/>no internals shown"]
+  classDef bad fill:#fed7d7,stroke:#c53030,color:#742a2a
+  classDef good fill:#c6f6d5,stroke:#2f855a,color:#22543d
+  classDef bug fill:#feebc8,stroke:#c05621,color:#7b341e
+  class A400,A422a,A422b bad
+  class A201 good
+  class A500 bug
+```
 
 ## 1. The clock, and a document number
 
@@ -697,6 +723,12 @@ This is where the Problem Details from step 4 pay off. The API already wrote a s
 "(SALES-0002)". The snackbar's button, **What does this mean?**, opens that code's page. The page itself never
 deals with status codes: a call either returns what it asked for, or `null`/`false` after the user has been
 told why.
+
+Here's how that looks when a rep picks a blocked customer, and the page the button opens:
+
+![A red message: Customer Gamma Traders is blocked and cannot place orders (SALES-0002), with a What does this mean? button](images/07-refused-with-code.png)
+
+![The Error codes page for SALES-0002: the customer is blocked, and what to do about it, above a searchable list of every code](images/07-error-page.png)
 
 The page that button opens, open to anyone, because the link must work even after the session has ended:
 

@@ -5,8 +5,8 @@
     <DialogContent>
         <MudStack Spacing="2" Style="min-width:380px">
             <MudText>On hand now: <b>@Format.Qty(Item.OnHand) @Item.Unit</b> (reserved @Format.Qty(Item.Reserved))</MudText>
-            <MudNumericField @bind-Value="_change" Label="@($"Change ({Item.Unit}): + found, − lost or damaged")" />
-            <MudTextField @bind-Value="_reason" Label="Reason" MaxLength="500" Lines="2" />
+            <AppNumericField @bind-Value="_change" Label="@($"Change ({Item.Unit}): + found, − lost or damaged")" />
+            <AppTextField @bind-Value="_reason" Label="Reason" MaxLength="500" Lines="2" />
             <MudText Typo="Typo.body2">After: @Format.Qty(Item.OnHand + _change) @Item.Unit</MudText>
         </MudStack>
     </DialogContent>

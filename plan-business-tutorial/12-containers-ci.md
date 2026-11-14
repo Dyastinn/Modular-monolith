@@ -48,6 +48,21 @@ inside, and nothing gets lost between the factory and the port.
 Images come from a **registry**, a library of images. `docker.io/library/postgres:18` means: the Docker Hub
 registry, its official `postgres` image, version 18. Download once, run as often as you like.
 
+Here's what happens when you type `dotnet test` from this lesson on:
+
+```mermaid
+flowchart LR
+  T["dotnet test"] --> TC["Testcontainers<br/>(inside the tests)"]
+  TC -- "1. pull once" --> REG[("Registry<br/>docker.io/library/postgres:18")]
+  TC -- "2. start" --> P["Podman"]
+  P --> C["Container: a fresh PostgreSQL 18<br/>empty, on a random port"]
+  T -- "3. run every test against it" --> C
+  TC -- "4. throw it away" --> C
+```
+
+Nothing to install, nothing left behind, and every run starts from the same clean database, on your machine
+and on the CI server alike.
+
 ### Why Podman
 
 You've probably heard of Docker. **Podman** runs the same images, the same way, and we use it for three

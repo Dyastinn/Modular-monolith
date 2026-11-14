@@ -7,11 +7,11 @@
 <MudText Typo="Typo.h4" Class="mb-4">Sign-in log</MudText>
 
 <MudStack Row="true" Spacing="4" Class="mb-4">
-    <MudTextField T="string" Value="_email" ValueChanged="OnEmail" Label="Email" DebounceInterval="400" Clearable="true" />
+    <AppTextField T="string" Value="_email" ValueChanged="OnEmail" Label="Email" DebounceInterval="400" Clearable="true" />
     <MudSwitch T="bool" Value="_failedOnly" ValueChanged="OnFailed" Label="Failed only" Color="Color.Error" />
 </MudStack>
 
-<MudTable T="SignInAttempt" @ref="_table" ServerData="Load" Dense="true" Hover="true" RowsPerPage="50">
+<MudTable Outlined="true" T="SignInAttempt" @ref="_table" ServerData="Load" Dense="true" Hover="true" RowsPerPage="50">
     <HeaderContent>
         <MudTh>When</MudTh><MudTh>Email</MudTh><MudTh>Outcome</MudTh><MudTh>From</MudTh>
     </HeaderContent>

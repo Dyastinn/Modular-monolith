@@ -13,12 +13,12 @@
 </MudStack>
 
 <MudStack Row="true" Spacing="4" Class="mb-4">
-    <MudTextField T="string" Value="_search" ValueChanged="OnSearch" Label="SKU or name" DebounceInterval="400" Clearable="true"
+    <AppTextField T="string" Value="_search" ValueChanged="OnSearch" Label="SKU or name" DebounceInterval="400" Clearable="true"
                   Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
     <MudSwitch T="bool" Value="_activeOnly" ValueChanged="OnActive" Label="Active only" Color="Color.Primary" />
 </MudStack>
 
-<MudTable T="StockItem" @ref="_table" ServerData="Load" Hover="true" Dense="true">
+<MudTable Outlined="true" T="StockItem" @ref="_table" ServerData="Load" Hover="true" Dense="true">
     <HeaderContent>
         <MudTh>SKU</MudTh><MudTh>Name</MudTh><MudTh>Unit</MudTh>
         <MudTh Class="money">On hand</MudTh><MudTh Class="money">Reserved</MudTh><MudTh Class="money">Available</MudTh><MudTh></MudTh>

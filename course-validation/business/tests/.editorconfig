@@ -4,3 +4,5 @@ dotnet_diagnostic.CA1707.severity = none
 # xUnit1051 asks every call to pass TestContext.Current.CancellationToken, so a cancelled run stops a little sooner.
 # These tests finish in milliseconds against an in-memory server; a token on every line would bury what each one checks.
 dotnet_diagnostic.xUnit1051.severity = none
+# CA1711: "...Collection" is xUnit's naming convention for a collection definition, not a list type.
+dotnet_diagnostic.CA1711.severity = none

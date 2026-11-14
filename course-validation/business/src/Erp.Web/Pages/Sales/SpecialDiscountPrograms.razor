@@ -27,10 +27,10 @@
     <MudPaper Class="pa-4 ma-4" Outlined="true">
         <MudText Typo="Typo.subtitle1" GutterBottom="true">@(_editing is null ? "New program" : $"Edit {_editing.Name}")</MudText>
         <MudStack Row="true" Spacing="3" AlignItems="AlignItems.End" Wrap="Wrap.Wrap">
-            <MudTextField @bind-Value="_code" Label="Code" MaxLength="20" Disabled="_editing is not null" Style="max-width:100px" />
-            <MudTextField @bind-Value="_name" Label="Name" MaxLength="50" />
-            <MudTextField @bind-Value="_idLabel" Label="ID asked for" MaxLength="50" />
-            <MudNumericField @bind-Value="_percent" Label="Rate (%)" Min="0.01m" Max="99.99m" Style="max-width:110px" />
+            <AppTextField @bind-Value="_code" Label="Code" MaxLength="20" Disabled="_editing is not null" Style="max-width:100px" />
+            <AppTextField @bind-Value="_name" Label="Name" MaxLength="50" />
+            <AppTextField @bind-Value="_idLabel" Label="ID asked for" MaxLength="50" />
+            <AppNumericField @bind-Value="_percent" Label="Rate (%)" Min="0.01m" Max="99.99m" Style="max-width:110px" />
             <MudSwitch @bind-Value="_vatExempt" Label="VAT-exempt" Color="Color.Primary" />
             <MudSwitch @bind-Value="_active" Label="Offered" Color="Color.Primary" />
             <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary"

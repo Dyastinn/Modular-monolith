@@ -20,6 +20,16 @@ Plus three dev users to sign in with, one per role, a way for any handler to ask
 touching HTTP, and the screens: a **sign-in page**, an account menu with "sign out" and "sign out
 everywhere", and a rule that every page needs a signed-in user.
 
+By the end, the app has its sign-in page, and greets each person by name with a menu that shows only what
+their role may use:
+
+![The sign-in page: email, password, a Sign in button and a Forgot your password link](images/06-sign-in.png)
+
+![The home page after a sales rep signs in: "Good day, Rita Reyes" and a menu with Sales, Inventory and Error codes](images/06-home.png)
+
+Every picture in this course is taken from the finished app, so now and then a screen shows a menu item or
+a button that a later lesson adds. The part the lesson builds always looks like this.
+
 ## Why we build it this way
 
 ### The pain of writing your own
@@ -70,6 +80,22 @@ Now, let's be honest about the costs:
 Identity does both. If a request carries an `Authorization: Bearer ...` header, it checks the token;
 otherwise, it looks for the cookie. To remember it easily: a browser shows its wristband (the cookie), and
 everyone else shows their ticket (the bearer token).
+
+```mermaid
+flowchart LR
+  subgraph Browser["Our app, in a browser"]
+    BC["Sends the cookie<br/>on every call, by itself"]
+  end
+  subgraph Other["A mobile app, a script, curl"]
+    OT["Sends Authorization: Bearer token<br/>refreshes it when it expires"]
+  end
+  BC --> ID{"Identity<br/>who is this?"}
+  OT --> ID
+  ID -- "a known user, a role" --> EP["The endpoint runs"]
+  ID -- "no cookie, no valid token" --> N["401 Not signed in"]
+  classDef bad fill:#fed7d7,stroke:#c53030,color:#742a2a
+  class N bad
+```
 
 Our app and API share one address (lesson 01), so the browser sends the cookie with every API call on its
 own. There's no token for the app to store, refresh or leak. And `SameSite=Strict` (step 4) means another
@@ -1241,7 +1267,7 @@ sequenceDiagram
   participant B as Browser
   participant H as Erp.Api
   B->>H: GET /ping (a page of the app)
-  H-->>B: the app's page (App.razor); the app starts
+  H-->>B: the app's page (App.razor), the app starts
   B->>H: GET /api/auth/me
   H-->>B: 401
   Note over B: RedirectToLogin → /login?returnUrl=ping

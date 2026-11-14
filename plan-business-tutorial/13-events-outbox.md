@@ -44,7 +44,7 @@ sequenceDiagram
   participant DB as PostgreSQL
   participant W as Outbox dispatcher
   participant A as Audit handler
-  H->>DB: BEGIN; UPDATE order; UPDATE customer; INSERT outbox_message; COMMIT
+  H->>DB: BEGIN, UPDATE order, UPDATE customer, INSERT outbox_message, COMMIT
   loop every few seconds
     W->>DB: take waiting messages
     W->>A: deliver SalesOrderApproved

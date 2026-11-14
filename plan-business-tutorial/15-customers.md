@@ -16,6 +16,10 @@ second version. About an hour and a half. Are you ready? Let's begin!
 
 Plus three new facts about every customer, `sales.search_customers` version 2, and a **Customers** screen.
 
+The Customers screen you'll build, with the credit each customer has left and who is blocked:
+
+![The Customers list: name, TIN, credit limit, balance, pending orders, available credit, payment terms, and a red Blocked chip on Gamma Traders](images/15-customers.png)
+
 ## Why we build it this way
 
 ### What a customer needs for invoicing

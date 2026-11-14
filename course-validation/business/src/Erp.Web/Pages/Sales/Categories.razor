@@ -24,14 +24,14 @@
     <MudPaper Class="pa-4 ma-4" Outlined="true">
         <MudText Typo="Typo.subtitle1" GutterBottom="true">@(_editing is null ? "New category" : $"Edit {_editing.Name}")</MudText>
         <MudStack Row="true" Spacing="3" AlignItems="AlignItems.End" Wrap="Wrap.Wrap">
-            <MudTextField @bind-Value="_name" Label="Name" MaxLength="100" />
-            <MudNumericField @bind-Value="_max" Label="Max per order" Min="1" />
-            <MudSelect T="string" @bind-Value="_role" Label="Only for role" Clearable="true" Style="min-width:200px">
+            <AppTextField @bind-Value="_name" Label="Name" MaxLength="100" />
+            <AppNumericField @bind-Value="_max" Label="Max per order" Min="1" />
+            <AppSelect T="string" @bind-Value="_role" Label="Only for role" Clearable="true" Style="min-width:200px">
                 @foreach (var r in Roles.All)
                 {
                     <MudSelectItem Value="r">@Format.Words(r)</MudSelectItem>
                 }
-            </MudSelect>
+            </AppSelect>
             <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="string.IsNullOrWhiteSpace(_name)">Save</MudButton>
             @if (_editing is not null) { <MudButton OnClick="() => Start(null)">Cancel</MudButton> }
         </MudStack>

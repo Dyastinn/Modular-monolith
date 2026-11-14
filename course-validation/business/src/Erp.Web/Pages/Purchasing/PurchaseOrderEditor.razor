@@ -10,10 +10,10 @@
 
 <MudPaper Class="pa-4 mb-4" Outlined="true">
     <MudStack Spacing="3">
-        <MudAutocomplete T="Supplier" Label="Supplier" @bind-Value="_supplier" SearchFunc="FindSuppliers" ToStringFunc="s => s?.Name"
+        <AppAutocomplete T="Supplier" Label="Supplier" @bind-Value="_supplier" SearchFunc="FindSuppliers" ToStringFunc="s => s?.Name"
                          DebounceInterval="300" />
-        <MudDatePicker Label="Expected delivery" @bind-Date="_expected" Clearable="true" />
-        <MudTextField @bind-Value="_notes" Label="Notes" Lines="2" MaxLength="1000" />
+        <AppDatePicker Label="Expected delivery" @bind-Date="_expected" Clearable="true" />
+        <AppTextField @bind-Value="_notes" Label="Notes" Lines="2" MaxLength="1000" />
     </MudStack>
 </MudPaper>
 
@@ -22,10 +22,10 @@
     @foreach (var line in _lines)
     {
         <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mb-2">
-            <MudAutocomplete T="StockItem" Label="Item" @bind-Value="line.Item" SearchFunc="FindItems" Style="min-width:320px"
+            <AppAutocomplete T="StockItem" Label="Item" @bind-Value="line.Item" SearchFunc="FindItems" Style="min-width:320px"
                              ToStringFunc="@(i => i is null ? null : $"{i.Sku} · {i.Name}")" DebounceInterval="300" />
-            <MudNumericField T="decimal" Label="@($"Quantity{(line.Item is null ? "" : $" ({line.Item.Unit})")}")" @bind-Value="line.Quantity" Min="0" Style="max-width:160px" />
-            <MudNumericField T="decimal" Label="Unit cost (₱)" @bind-Value="line.UnitCost" Min="0" Format="N2" Style="max-width:160px" />
+            <AppNumericField T="decimal" Label="@($"Quantity{(line.Item is null ? "" : $" ({line.Item.Unit})")}")" @bind-Value="line.Quantity" Min="0" Style="max-width:160px" />
+            <AppNumericField T="decimal" Label="Unit cost (₱)" @bind-Value="line.UnitCost" Min="0" Format="N2" Style="max-width:160px" />
             <MudText Class="money" Style="min-width:140px">@Format.Peso(line.Total)</MudText>
             <MudIconButton Icon="@Icons.Material.Filled.Delete" OnClick="() => _lines.Remove(line)" aria-label="Remove line" />
         </MudStack>

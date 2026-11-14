@@ -19,7 +19,7 @@
     {
         if (Selected is { } selected)
         {
-            <MudPaper Class="pa-4 mb-6" Elevation="2">
+            <MudPaper Class="pa-4 mb-6" Outlined="true">
                 <MudText Typo="Typo.overline">@selected.Code</MudText>
                 <MudText Typo="Typo.h6" GutterBottom="true">@selected.Title</MudText>
                 <MudText Typo="Typo.body1"><strong>What to do:</strong> @selected.Fix</MudText>
@@ -33,9 +33,9 @@
             <MudAlert Severity="Severity.Warning" Class="mb-6">There is no error code @Code.</MudAlert>
         }
 
-        <MudTextField @bind-Value="_search" Label="Search" Immediate="true" Adornment="Adornment.Start"
+        <AppTextField @bind-Value="_search" Label="Search" Immediate="true" Adornment="Adornment.Start"
                       AdornmentIcon="@Icons.Material.Filled.Search" Class="mb-4" />
-        <MudSimpleTable Dense="true" Hover="true">
+        <MudSimpleTable Dense="true" Hover="true" Outlined="true">
             <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
             <tbody>
                 @foreach (var error in Filtered)

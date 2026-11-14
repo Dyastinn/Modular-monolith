@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 420" width="760" height="420" font-family="Segoe UI, Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">The test pyramid</title>
+  <desc id="d">Many fast unit tests at the bottom, fewer integration tests in the middle, a handful of end-to-end browser tests at the top. Counts are the finished course's.</desc>
+  <rect width="760" height="420" rx="12" fill="#ffffff"/>
+
+  <!-- layers: bottom to top -->
+  <polygon points="60,370 500,370 445,270 115,270" fill="#2f855a"/>
+  <polygon points="115,262 445,262 390,162 170,162" fill="#3182ce"/>
+  <polygon points="170,154 390,154 280,40" fill="#d69e2e"/>
+
+  <g fill="#ffffff" text-anchor="middle">
+    <text x="280" y="312" font-size="22" font-weight="700">Unit tests</text>
+    <text x="280" y="340" font-size="15">175 · one rule or class · &lt; 1 ms each</text>
+    <text x="280" y="205" font-size="20" font-weight="700">Integration tests</text>
+    <text x="280" y="232" font-size="15">114 · real API + PostgreSQL</text>
+    <text x="280" y="118" font-size="17" font-weight="700">End-to-end</text>
+    <text x="280" y="140" font-size="14">8 · real browser</text>
+  </g>
+
+  <!-- side arrows -->
+  <g stroke="#4a5568" stroke-width="2.5" fill="none">
+    <line x1="560" y1="360" x2="560" y2="60"/>
+    <polyline points="550,74 560,58 570,74"/>
+  </g>
+  <g fill="#2d3748" font-size="15">
+    <text x="580" y="70" font-weight="700">Slower</text>
+    <text x="580" y="90">Costlier to write and fix</text>
+    <text x="580" y="110">Closer to what users see</text>
+    <text x="580" y="200" font-weight="700">Write fewer</text>
+    <text x="580" y="220">the higher you go</text>
+    <text x="580" y="320" font-weight="700">Faster</text>
+    <text x="580" y="340">Points at the exact line</text>
+    <text x="580" y="360">Most of the suite</text>
+  </g>
+  <text x="380" y="405" text-anchor="middle" fill="#718096" font-size="13">Counts are the finished course's; unit includes the 14 architecture tests.</text>
+</svg>

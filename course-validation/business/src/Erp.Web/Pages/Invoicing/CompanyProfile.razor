@@ -25,28 +25,28 @@
     <MudItem xs="12" md="6">
         <MudPaper Class="pa-4" Outlined="true">
             <MudText Typo="Typo.h6" GutterBottom="true">Seller</MudText>
-            <MudTextField @bind-Value="_name" Label="Registered name" MaxLength="200" />
-            <MudTextField @bind-Value="_tradeName" Label="Trade name (optional)" MaxLength="200" />
-            <MudTextField @bind-Value="_tin" Label="TIN with branch code" Placeholder="123-456-789-00000" MaxLength="20" />
-            <MudTextField @bind-Value="_address" Label="Registered address" MaxLength="500" Lines="2" />
-            <MudTextField @bind-Value="_title" Label="Invoice title" HelperText="Must contain the word &quot;Invoice&quot;" MaxLength="50" />
+            <AppTextField @bind-Value="_name" Label="Registered name" MaxLength="200" />
+            <AppTextField @bind-Value="_tradeName" Label="Trade name (optional)" MaxLength="200" />
+            <AppTextField @bind-Value="_tin" Label="TIN with branch code" Placeholder="123-456-789-00000" MaxLength="20" />
+            <AppTextField @bind-Value="_address" Label="Registered address" MaxLength="500" Lines="2" />
+            <AppTextField @bind-Value="_title" Label="Invoice title" HelperText="Must contain the word &quot;Invoice&quot;" MaxLength="50" />
         </MudPaper>
     </MudItem>
     <MudItem xs="12" md="6">
         <MudPaper Class="pa-4 mb-4" Outlined="true">
             <MudText Typo="Typo.h6" GutterBottom="true">Tax</MudText>
-            <MudSelect T="string" @bind-Value="_regime" Label="Registered as">
+            <AppSelect T="string" @bind-Value="_regime" Label="Registered as">
                 <MudSelectItem Value="@("Vat")">VAT-registered</MudSelectItem>
                 <MudSelectItem Value="@("PercentageTax")">Non-VAT, subject to percentage tax</MudSelectItem>
                 <MudSelectItem Value="@("Exempt")">Non-VAT, exempt from both</MudSelectItem>
-            </MudSelect>
-            <MudNumericField @bind-Value="_vatPercent" Label="VAT rate (%)" Min="0" Max="99.99m" Format="0.##" Disabled="@(_regime != "Vat")" />
+            </AppSelect>
+            <AppNumericField @bind-Value="_vatPercent" Label="VAT rate (%)" Min="0" Max="99.99m" Format="0.##" Disabled="@(_regime != "Vat")" />
         </MudPaper>
         <MudPaper Class="pa-4" Outlined="true">
             <MudText Typo="Typo.h6" GutterBottom="true">BIR permit (after the system is registered)</MudText>
-            <MudTextField @bind-Value="_permit" Label="PTU or Acknowledgement Certificate Control No." MaxLength="100" />
-            <MudTextField @bind-Value="_series" Label="Approved series range" MaxLength="100" />
-            <MudTextField @bind-Value="_dateIssued" Label="Date issued (mm/dd/yyyy)" MaxLength="10" />
+            <AppTextField @bind-Value="_permit" Label="PTU or Acknowledgement Certificate Control No." MaxLength="100" />
+            <AppTextField @bind-Value="_series" Label="Approved series range" MaxLength="100" />
+            <AppTextField @bind-Value="_dateIssued" Label="Date issued (mm/dd/yyyy)" MaxLength="10" />
         </MudPaper>
     </MudItem>
 </MudGrid>

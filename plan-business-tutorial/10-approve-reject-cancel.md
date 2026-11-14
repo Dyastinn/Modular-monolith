@@ -19,6 +19,10 @@ same moment, the second one is told "someone else changed this, reload", instead
 first one's work. And the buttons for all three on the order page, with a dialog that asks for the
 rejection reason.
 
+The same order, opened by a sales manager: the Approve and Reject buttons appear only for them.
+
+![A pending order seen by the sales manager, with Reject and Approve buttons next to the order number](images/10-pending-for-manager.png)
+
 ## Why we build it this way
 
 ### The rules are already written
@@ -42,6 +46,20 @@ approve a different ₱60,000 order for Epsilon, at the same moment.
 Epsilon should owe ₱120,000. It owes ₱60,000. Manager B's save wrote over Manager A's, and nobody got an
 error. That's a **lost update**, and in an ERP it's real money.
 
+```mermaid
+sequenceDiagram
+  participant A as Manager A
+  participant DB as customer row (Epsilon)
+  participant B as Manager B
+  A->>DB: load: owes ₱0
+  B->>DB: load: owes ₱0
+  Note over A: approve: 0 + 60,000
+  Note over B: approve: 0 + 60,000
+  A->>DB: save: owes ₱60,000
+  B->>DB: save: owes ₱60,000
+  Note over DB: should be ₱120,000.<br/>A's change is gone, and nobody was told
+```
+
 The same thing can happen to an order: one manager approves it while another rejects it, both from the same
 "pending" copy, and whoever saves last wins.
 
@@ -55,6 +73,22 @@ So at time 3, Manager A's save matches and changes the row, and with it the `xmi
 for the *old* version, matches nothing, and EF throws a `DbUpdateConcurrencyException`. We turn that into a
 **409 Conflict**: "someone else changed this; reload and try again". Manager B reloads, sees ₱60,000 owed,
 approves again, and Epsilon correctly owes ₱120,000.
+
+```mermaid
+sequenceDiagram
+  participant A as Manager A
+  participant DB as customer row (Epsilon)
+  participant B as Manager B
+  A->>DB: load: owes ₱0, version 7
+  B->>DB: load: owes ₱0, version 7
+  A->>DB: UPDATE ... WHERE xmin = 7
+  Note over DB: matches: owes ₱60,000, now version 8
+  B->>DB: UPDATE ... WHERE xmin = 7
+  Note over DB: no row has version 7 any more: 0 rows changed
+  DB-->>B: 409 Conflict · ERP-0003
+  B->>DB: reload: owes ₱60,000, version 8
+  B->>DB: approve again: owes ₱120,000 ✓
+```
 
 To remember it easily: it's like editing a shared document that warns you "this file changed since you
 opened it", instead of letting you overwrite it.
@@ -530,7 +564,7 @@ sequenceDiagram
   E->>H: ApproveSalesOrderCommand(7)
   H->>DB: load order 7 and its customer (with their xmin)
   H->>D: order.Approve(manager, customer, now)
-  H->>DB: UPDATE sales_order ... WHERE xmin = v1; UPDATE customer ... WHERE xmin = v2
+  H->>DB: UPDATE sales_order ... WHERE xmin = v1, UPDATE customer ... WHERE xmin = v2
   alt someone changed either row first
     DB-->>M: 409 Conflict
   else

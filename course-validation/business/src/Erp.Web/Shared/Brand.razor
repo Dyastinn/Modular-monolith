@@ -1,0 +1,11 @@
+@* The product's name and mark: in the top bar (on blue, so drawn in white) and on the sign-in pages. *@
+<MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="@Class">
+    <MudAvatar Color="@(OnBar ? Color.Inherit : Color.Primary)" Variant="@(OnBar ? Variant.Outlined : Variant.Filled)"
+               Rounded="true" Size="Size.Small" aria-hidden="true">E</MudAvatar>
+    <MudText Typo="Typo.h6">ERP</MudText>
+</MudStack>
+
+@code {
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public bool OnBar { get; set; }
+}

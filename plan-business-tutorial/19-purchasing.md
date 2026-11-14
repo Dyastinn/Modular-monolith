@@ -20,6 +20,12 @@ the work now. About two hours. Are you ready? Let's begin!
 Plus two new windows on Inventory's island (`IItemCatalog` and `IStockReceiving`), and the Suppliers,
 Purchase orders, purchase order and Receive screens.
 
+The purchase order form, and the supplier list behind it:
+
+![The New purchase order form: supplier, expected delivery, notes, and lines with item, quantity and unit cost](images/19-new-purchase-order.png)
+
+![The Suppliers list: name, TIN, email, phone, payment terms, and Edit and Deactivate actions](images/19-suppliers.png)
+
 ## Why we build it this way
 
 ### A purchase order's life
@@ -960,8 +966,8 @@ sequenceDiagram
   P->>D: Receive([(7, 4)]) → [(item 5, 4)], status PartiallyReceived
   P->>DB: BEGIN
   P->>I: ReceiveAsync(item 5, 4, "PO-2026-000003", clerk, tx)
-  I->>DB: UPDATE inventory.item SET on_hand += 4; INSERT stock_movement (Receipt)
-  P->>DB: UPDATE purchase_order_line; UPDATE purchase_order ... WHERE xmin = v
+  I->>DB: UPDATE inventory.item SET on_hand += 4, INSERT stock_movement (Receipt)
+  P->>DB: UPDATE purchase_order_line, UPDATE purchase_order ... WHERE xmin = v
   P->>DB: COMMIT
 ```
 

@@ -8,17 +8,17 @@
 <MudText Typo="Typo.body2" Class="mb-4">Every shipment is invoiced automatically, a few seconds after it leaves.</MudText>
 
 <MudStack Row="true" Spacing="4" Class="mb-4" Wrap="Wrap.Wrap">
-    <MudTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Invoice, order or customer" DebounceInterval="400" Clearable="true" />
-    <MudSelect T="string" Value="_status" ValueChanged="OnStatus" Label="Status" Clearable="true" Style="max-width:200px">
+    <AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Invoice, order or customer" DebounceInterval="400" Clearable="true" />
+    <AppSelect T="string" Value="_status" ValueChanged="OnStatus" Label="Status" Clearable="true" Style="max-width:200px">
         @foreach (var s in Statuses)
         {
             <MudSelectItem Value="s">@Format.Words(s)</MudSelectItem>
         }
-    </MudSelect>
+    </AppSelect>
     <MudSwitch T="bool" Value="OverdueOnly" ValueChanged="OnOverdue" Label="Overdue only" Color="Color.Error" />
 </MudStack>
 
-<MudTable T="InvoiceSummary" @ref="_table" ServerData="Load" Hover="true" Dense="true" OnRowClick="Open" RowStyle="cursor:pointer">
+<MudTable Outlined="true" T="InvoiceSummary" @ref="_table" ServerData="Load" Hover="true" Dense="true" OnRowClick="Open" RowStyle="cursor:pointer">
     <HeaderContent>
         <MudTh>Invoice</MudTh><MudTh>Customer</MudTh><MudTh>Order</MudTh><MudTh>Issued</MudTh><MudTh>Due</MudTh>
         <MudTh>Status</MudTh><MudTh Class="money">Total</MudTh><MudTh Class="money">Balance</MudTh>

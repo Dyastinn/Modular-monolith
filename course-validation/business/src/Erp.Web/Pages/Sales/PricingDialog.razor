@@ -4,18 +4,18 @@
     <DialogContent>
         <MudStack Spacing="2" Style="min-width:380px">
             <MudText>@Item.Name (@Item.Unit)</MudText>
-            <MudNumericField @bind-Value="_price" Label="@($"Price per {Item.Unit} (₱)")" Min="0" Format="N2" />
-            <MudSelect T="long?" @bind-Value="_categoryId" Label="Category">
+            <AppNumericField @bind-Value="_price" Label="@($"Price per {Item.Unit} (₱)")" Min="0" Format="N2" />
+            <AppSelect T="long?" @bind-Value="_categoryId" Label="Category">
                 @foreach (var c in _categories)
                 {
                     <MudSelectItem T="long?" Value="c.Id">@c.Name</MudSelectItem>
                 }
-            </MudSelect>
-            <MudSelect T="string" @bind-Value="_taxType" Label="VAT treatment" HelperText="Printed on the invoice's VAT breakdown">
+            </AppSelect>
+            <AppSelect T="string" @bind-Value="_taxType" Label="VAT treatment" HelperText="Printed on the invoice's VAT breakdown">
                 <MudSelectItem Value="@("Vatable")">VATable</MudSelectItem>
                 <MudSelectItem Value="@("ZeroRated")">Zero-rated</MudSelectItem>
                 <MudSelectItem Value="@("VatExempt")">VAT-exempt</MudSelectItem>
-            </MudSelect>
+            </AppSelect>
             <MudSwitch @bind-Value="_discountEligible" Label="Qualifies for special discounts (senior citizen, PWD...)" Color="Color.Primary" />
             <MudSwitch @bind-Value="_forSale" Label="For sale" Color="Color.Primary" />
         </MudStack>

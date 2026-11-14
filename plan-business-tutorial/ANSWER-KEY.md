@@ -7,7 +7,7 @@ Try each question first, out loud or on paper, and only then come here. Getting 
 seeing why plants it far deeper than reading the right one. Look first, and you get the warm feeling of
 understanding without the understanding.
 
-**Jump to:** [01](#lesson-01--solution-setup) · [02](#lesson-02--testing) · [03](#lesson-03--mediator) ·
+**Jump to:** [01](#lesson-01--solution-setup) · [02](#lesson-02--testing) · [03](#lesson-03--features) ·
 [04](#lesson-04--domain-model) · [05](#lesson-05--database) · [06](#lesson-06--sign-in) ·
 [07](#lesson-07--create-an-order) · [08](#lesson-08--find-orders) · [09](#lesson-09--submit) ·
 [10](#lesson-10--approve-reject-cancel) · [11](#lesson-11--update-an-order) ·
@@ -77,7 +77,8 @@ For example: *at the limit*, an order of exactly ₱50,000 (approved) and ₱50,
 order example are right.
 
 **6. What is a regression test? Name the one in this lesson and the bug it guards against.**
-A test written after a bug so it can't come back. `The_component_library_files_are_served` guards against the
+Any test rerun after a change to prove nothing broke; in the narrow sense, a test written after a bug so it
+can't come back. `The_component_library_files_are_served` guards against the
 `ReferenceOutputAssembly="false"` reference that once left the app without MudBlazor's CSS and JS.
 
 **7. Why should most tests be unit tests, and only a few drive a browser?**
@@ -85,38 +86,46 @@ Unit tests run in microseconds, never flake, and a failure names one rule. Brows
 take seconds each, and break for reasons unrelated to the rule (timing, layout). Test rules underneath; keep a
 few browser tests for the main flows.
 
-## Lesson 03 — Mediator
+**8. A test creates an order through the API and reads it back, without a browser. Which kind, and what can't
+it catch?**
+An integration test: the API, the handlers, the rules and the database all run for real, but no screen does.
+It can't catch a bug in the page itself: a button that calls the wrong address, a total shown in the wrong
+place, a form that never sends the discount. That's what the end-to-end tests are for.
 
-**1. Why does the generator need `InternalsVisibleTo("Erp.Api")`? Why is granting it to the host safe, but
-granting it to another module not?**
-The generator runs in the host and writes code that names each module's internal messages and handlers;
-without access, that code doesn't compile (`CS0122`). The host already references every module, and wiring
-them is its job. Another module seeing those internals would knock down the wall between two islands.
+## Lesson 03 — Features
+
+**1. Why does the endpoint call its handler directly, instead of through a mediator? When would a mediator earn
+its place?**
+Our requests arrive only over HTTP, and ASP.NET Core already has the hook that runs code around every request:
+the endpoint filter. Calling the handler directly means "Go to definition" lands on the code that runs, and no
+module has to open its internals to the host. A mediator earns its place when the same request arrives from
+several places (HTTP, a background job, a queue) and every path needs the same checks.
 
 **2. You forget `includeInternalTypes: true`. What happens when you send an empty message?**
-The validator is never found, so it never runs. The empty message reaches the handler and comes back as
-`pong: `, with no error at all.
+The validator is never registered, so the filter finds nothing to run. The empty message reaches the handler
+and comes back as `pong: `, with no error at all.
 
-**3. Why is `LoggingBehavior` registered before `ValidationBehavior`?**
-Behaviors run outermost first. With logging outside, it also records requests that fail validation.
+**3. Why is the validation filter set once on the `/api` group, instead of on each endpoint?**
+So no endpoint can forget it. A new endpoint is validated the moment it's mapped into the group; there's
+nothing to remember.
 
 **4. What's the difference between a command and a query, and why tell them apart?**
 A command changes something; a query only reads. Telling them apart lets each use the right tool (EF Core and
 the domain for commands, Dapper for queries) and makes it obvious which requests are safe to repeat.
 
-**5. Name one real cost of the mediator pattern.**
-Indirection: from an endpoint you can't click straight through to the code that runs; you follow the
-message type to its handler. Keeping the handler in the same file as its message softens it.
+**5. Why does a bad request get a 400 answer instead of an exception?**
+A malformed request is an everyday event, not an exceptional one. The filter answers it directly with the
+field errors, without the cost and noise of throwing and catching.
 
-**6. The unit test for `PingValidator` passes, but the API still answers `pong: ` to an empty message. What's
-wrong, and which test catches it?**
+**6. The unit test for `PingQueryValidator` passes, but the API still answers `pong: ` to an empty message.
+What's wrong, and which test catches it?**
 The validator works but never runs: most likely `includeInternalTypes: true` is missing, so
-`AddValidatorsFromAssembly` never registers it (or the behavior isn't in the pipeline). The integration test
-`An_empty_message_never_reaches_the_handler` catches it, because it sends a real request.
+`AddValidatorsFromAssembly` never registers it (or the `/api` group lost `.ValidateRequests()`). The
+integration test `An_empty_message_is_a_400_that_names_the_field` catches it, because it sends a real request.
 
 **7. What does an architecture test check that the compiler doesn't? Give two examples.**
-Rules about how the code is built: a module exposes only its entry class; `InternalsVisibleTo` goes only to the
-host and tests; code is grouped by feature, not by technical layer. The compiler accepts all of those
+Rules about how the code is built: a module exposes only its entry class; `InternalsVisibleTo` goes only to
+test projects; code is grouped by feature, not by technical layer. The compiler accepts all of those
 violations.
 
 ## Lesson 04 — Domain model
@@ -259,13 +268,16 @@ The request is the HTTP contract; the command is the internal message. Today the
 differ, a renamed field or one the command shouldn't trust, without either side breaking.
 
 **4. Blocked customer, empty order, unknown item: which status each?**
-Blocked: 422 (a business rule said no). Empty: 400 (the validator, malformed). Unknown item: 404 (something
-it refers to doesn't exist).
+Blocked: 422 with `SALES-0002` (a business rule said no). Empty: 400 with `ERP-0001` (the validator,
+malformed). Unknown item: 422 with `SALES-0019`: the item's id is inside the body, so the address itself was
+fine; a 404 is only for the thing named in the URL.
 
-**5. Why a `traceId` in the error body?**
-A user can quote it, and you can find that exact request's logs and trace.
+**5. An error body has a `code` and a `traceId`. What does each tell you, and why both?**
+The code says *what kind* of error it is, the same for everyone who meets it, with its fix on the catalog
+page. The trace id says *which request* it was, so you can find that one request's logs and trace. The code
+explains; the trace id locates.
 
-**6. Why Swagger only in Development?**
+**6. Why are the API description and its page only turned on in Development?**
 A production server shouldn't advertise its API to strangers.
 
 **7. Half a widget is a 422, but a quantity of 1.2345 is a 400. Why the difference?**
@@ -503,12 +515,13 @@ database found no schema, because the app hadn't started yet.
 Logs: what happened, in words. Traces: where did the time go in this one request. Metrics: how much, how
 often, how fast, over time.
 
-**2. Why separate "rejected" from "error"?**
-A blocked customer is the system working. Counting it as an error makes the error rate and its alerts
-meaningless.
+**2. A blocked customer and a crash: how does the request metric tell them apart, and why must your alerts?**
+By the status code tag on `http.server.request.duration`: a blocked customer is a 4xx, a crash a 5xx. A 4xx is
+the system working, so alerting on it makes the alerts meaningless; the error code says which rejection it was.
 
-**3. Why did the telemetry behavior move to Infrastructure?**
-It uses OpenTelemetry types that modules must not depend on. BuildingBlocks stays light.
+**3. Every request is traced without touching an endpoint. Where, and what's left to measure ourselves?**
+In ASP.NET Core's OpenTelemetry instrumentation, which spans and times every request. What it can't see is
+work outside a request: the outbox dispatcher, which gets the app's own `ActivitySource` and `Meter`.
 
 **4. `/health/live` vs `/health/ready`?**
 Live: the process answers. Ready: it can reach the database. A database blip shouldn't make something restart
@@ -584,8 +597,9 @@ Sales reads names and units constantly. A copy keeps Sales fast and working even
 avoids SQL across schemas.
 
 **3. Domain event vs integration event?**
-A domain event is handled inside its module and is internal. An integration event is handled by other
-modules; it lives in the Contracts project, public, with plain types.
+A domain event is internal, in the module's own words and types, and handled inside the module. An
+integration event is public, in the Contracts project, with plain types, and handled by other modules. A
+domain event handler in the owning module maps one to the other.
 
 **4. Why carry the full item?**
 So the handler can apply it twice, or late, and still end up right: an idempotent upsert.
@@ -595,7 +609,9 @@ The outbox writes the event during `SaveChanges`, before an identity column woul
 must carry the real id.
 
 **6. Sales never hears about a new item, with no error. First check?**
-That the Contracts assembly is in the Mediator's `options.Assemblies`.
+That Sales registered its handler: `services.AddScoped<IIntegrationEventHandler<ItemCatalogChanged>, ItemCatalogChangedHandler>()`
+in `AddSalesModule`. Without it the publisher finds nobody and the message is marked processed.
+`Every_event_handler_class_is_registered` names the missing class.
 
 **7. Why does the seed end with `setval`?**
 Explicit ids don't advance the sequence; without it, the first real item would collide with id 1.
@@ -669,7 +685,8 @@ It's the last MIT release. 6.5 and later are AGPL-3.0, which would bind every bu
 at runtime.
 
 **6. At 7 a.m. in Manila, what date?**
-Today's local date, from `IClock.Today` in `Company:TimeZone`. In UTC it's still yesterday.
+Today's date in Manila, from `time.Today()`: the host's `CompanyTimeProvider` uses `Company:TimeZone` as its
+local zone. In UTC it's still yesterday (11 p.m.), and the invoice must carry the business's date.
 
 **7. The VAT rate changes. Who changes it, where, and what happens to old invoices?**
 The accountant, on **Invoicing → Company and tax**: no developer, no restart, and the change records who made

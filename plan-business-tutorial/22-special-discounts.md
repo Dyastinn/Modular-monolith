@@ -18,6 +18,11 @@ Are you ready? Let's begin!
 Plus a "qualifies for special discounts" switch per item in the price list, a **Special discounts** tab next
 to Categories, a discount dialog on the order, and the discount block on the invoice.
 
+The lesson's worked example, in the app: 28 Gadgets at ₱40 come to ₱1,120 with VAT. A senior citizen pays
+₱800.
+
+![A draft order for 28 Gadgets: gross ₱1,120, less VAT exemption ₱120, less 20% senior citizen discount ₱200, total ₱800, with the holder's name and OSCA ID beside it](images/22-discounted-order.png)
+
 ## Why we build it this way
 
 ### What the law asks
@@ -52,6 +57,18 @@ same amount. Two calculations, one in each module, would drift the first time so
 there's one, in BuildingBlocks, and both modules call it.
 
 To remember it easily: VAT out first, discount second, and the same calculator on both sides of the counter.
+
+Here's that calculator, on the lesson's example, ₱1,120 of medicine sold to a senior citizen at 12% VAT:
+
+```mermaid
+flowchart LR
+  G["₱1,120.00<br/>price with VAT"] -- "÷ 1.12<br/>remove the VAT" --> N["₱1,000.00<br/>VAT exemption: ₱120.00"]
+  N -- "− 20%<br/>the discount" --> T["₱800.00<br/>discount: ₱200.00"]
+  T --> O["Order total ₱800.00"]
+  T --> I["Invoice total ₱800.00"]
+  classDef good fill:#c6f6d5,stroke:#2f855a,color:#22543d
+  class O,I good
+```
 
 ### What's a program, and what qualifies
 
@@ -436,6 +453,8 @@ Each eligible line gets a `* ` before its description, and the totals gain "Less
 [SpecialDiscountPrograms.razor](../course-validation/business/src/Erp.Web/Pages/Sales/SpecialDiscountPrograms.razor);
 the API client gains a `Delete(url, success)` next to `Put`.
 
+![The Special discount dialog: program Senior citizen, the holder's name as on the ID, and the OSCA ID number](images/22-discount-dialog.png)
+
 ## 8. Tests
 
 Sales' unit tests get a `SpecialDiscountTests` class:
@@ -567,11 +586,11 @@ sequenceDiagram
   participant V as Invoicing
   R->>S: PUT /api/sales-orders/42/special-discount { "SC", "Lola Basyang", "OSCA-0001" }
   S->>V: IInvoicingSetup.GetTaxPolicyAsync → VAT 12%
-  S->>S: program.Grant → SpecialDiscount(20%, VAT 12% removed); order.Apply → ₱120 + ₱200 stored; total ₱900
+  S->>S: program.Grant → SpecialDiscount(20%, VAT 12% removed), order.Apply → ₱120 + ₱200 stored, total ₱900
   R->>S: POST /submit → credit check and balance use ₱900
   Note over S,V: shipped → ShipmentRecorded → issuer
   V->>S: GetForInvoiceAsync(42) → lines with eligibility, the SpecialDiscount
-  V->>V: same SpecialDiscount.Apply → ₱120 + ₱200; invoice total ₱900
+  V->>V: same SpecialDiscount.Apply → ₱120 + ₱200, invoice total ₱900
 ```
 
 ## Mistakes to avoid

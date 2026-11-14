@@ -448,10 +448,31 @@ A development tool that shows logs, traces and metrics live. Not for production.
 A check written down once and run forever. Arrange, act, assert.
 
 **Unit test** (03)
-Tests one class or rule alone, with no database or web server. Fast.
+Tests one class or rule alone, with no database or web server. Fast. *Picture: one bolt, checked on the
+workbench.*
 
 **Integration test** (02)
-Runs the whole API in memory and sends it real requests; from lesson 05, against a real PostgreSQL database.
+Tests pieces working together: here, the whole API run in memory and sent real requests; from lesson 05,
+against a real PostgreSQL database. *Picture: the engine, running on a stand.*
+
+**End-to-end test** (02, 06)
+Tests the app the way a user uses it: a real browser clicking through the real screens of the running app.
+Ours are the browser tests. *Picture: a test drive.*
+
+**Test pyramid** (02)
+The shape of a healthy suite: many fast unit tests, fewer integration tests, a handful of end-to-end tests.
+Upside down, mostly slow browser tests, it's called the *ice-cream cone*.
+
+**Manual / exploratory testing** (02)
+A person checking by hand. Exploratory testing is using the app freely, looking for surprises no test asked
+about. Every lesson's "Let's run it!" is one.
+
+**Functional / non-functional test** (02)
+Functional: does it do the right thing (the right total)? Non-functional: does it do it well enough (fast,
+secure, under load)?
+
+**Smoke test** (02)
+A few quick checks that the app starts and its front page loads. If they fail, nothing else is worth running.
 
 **`WebApplicationFactory`** (02)
 Starts the API inside a test without a web server.
@@ -464,7 +485,8 @@ An input or moment at a boundary: empty, zero, exactly at a limit, one step past
 someone else's data. Where bugs live.
 
 **Regression test** (02)
-A test written after a bug, so that bug can't come back.
+Any test rerun after a change, to prove nothing that worked before broke (in practice, the whole suite). Also
+a test written right after fixing a bug, so that bug can't come back.
 
 **Test fixture / collection** (02, 05)
 Something xUnit creates once and shares between tests, like the app; a collection makes classes share one

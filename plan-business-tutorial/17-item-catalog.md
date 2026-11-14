@@ -21,6 +21,13 @@ the sales manager gets a price list. About two and a half hours. Are you ready? 
 Plus the first **integration event**, `ItemCatalogChanged`, which travels from Inventory to Sales through the
 outbox, and three screens: Items and stock, Price list, and Categories.
 
+Two screens, one per module. Inventory's list of items and stock, and Sales' price list built from the copy
+it keeps:
+
+![Items and stock: SKU, name, unit, on hand, reserved and available for each item, with a New item button](images/17-items.png)
+
+![The Price list: each item with its unit, category, price, VAT treatment, whether it is for sale, and a Set price button](images/17-price-list.png)
+
 ## Why we build it this way
 
 ### One owner per fact
@@ -67,6 +74,28 @@ Here's the difference between the two kinds of message:
 
 An integration event is part of the module's service window, so it's written like the contract interfaces:
 plain types, no domain objects from another island.
+
+```mermaid
+flowchart TB
+  subgraph INV["Inventory module"]
+    direction LR
+    I["Item.Rename(...)"] -- "raises" --> DE["ItemChanged<br/>domain event · internal"]
+    DE --> OB[("inventory.outbox_message<br/>same transaction")]
+    OB -- "outbox dispatcher" --> MAP["PublishItemCatalogChanged<br/>maps to plain types"]
+  end
+  subgraph WIN["Inventory.Contracts"]
+    direction LR
+    IE["ItemCatalogChanged<br/>integration event · public"]
+  end
+  subgraph SAL["Sales module"]
+    direction LR
+    H["ItemCatalogChangedHandler"] --> COPY[("sales.item<br/>Sales' copy")]
+  end
+  MAP --> IE --> H
+```
+
+Inventory speaks its own language inside its island and translates once, at the window. Sales only ever sees
+the window.
 
 ### The event must carry the id
 
@@ -1418,7 +1447,7 @@ sequenceDiagram
   participant D as Outbox dispatcher
   participant S as Sales (ItemCatalogChangedHandler)
   C->>I: POST /api/items { sku: "GEN-004", ... }
-  I->>I: nextval(item_id_seq) → 6; Item.Create raises ItemCatalogChanged(6, ...)
+  I->>I: nextval(item_id_seq) → 6, Item.Create raises ItemCatalogChanged(6, ...)
   I->>IO: INSERT item + INSERT outbox row (one transaction)
   I-->>C: 201 { id: 6 }
   D->>IO: take the message (a moment later)

@@ -317,7 +317,7 @@ adds its screen. Every lesson from 02 proves itself with tests.
 `search_customers.v2`); the reference squashes each module to `InitialCreate` + `AddReadFunctions` with each
 function at its final shape as `v1`. The resulting schema is identical.
 
-### M9 — Best-practices alignment ⬜ code · ⬜ lessons (decided 2026-11-13)
+### M9 — Best-practices alignment ✅ (decided 2026-11-13, done 2026-11-14)
 
 Every locked decision was checked against what Microsoft and established .NET practitioners actually do, with
 sources: [BEST-PRACTICES-REVIEW.md](BEST-PRACTICES-REVIEW.md). User decisions: every **Change** item is accepted;
@@ -330,26 +330,26 @@ App; errors gain stable, documented codes.
       validates only public models in the host and **silently skips** internal ones and module endpoints;
       xUnit v3 4.0.3 + FsCheck.Xunit.v3 3.6.0 + Stryker.NET 5.1.0 (`--test-runner mtp`, preview) +
       `coverlet.MTP` 10.1.0 all work, given `global.json` opts into Microsoft.Testing.Platform
-- [ ] `IClock` → `TimeProvider` (+ `FakeTimeProvider` in tests)
-- [ ] Error codes: `ErrorCode`, one catalog per module, `DomainException(ErrorCode)`, `code` and `type` in every
+- [x] `IClock` → `TimeProvider` (+ `FakeTimeProvider` in tests)
+- [x] Error codes: `ErrorCode`, one catalog per module, `DomainException(ErrorCode)`, `code` and `type` in every
       problem response; tests that codes are unique, documented and used
-- [ ] Domain events stay in the module; integration events in Contracts are mapped from them; the outbox delivers
+- [x] Domain events stay in the module; integration events in Contracts are mapped from them; the outbox delivers
       to `IIntegrationEventHandler<T>` registered by each module (no Mediator)
-- [ ] Mediator removed: handlers injected into endpoints, `ValidationFilter<T>` (no exception for a bad request),
+- [x] Mediator removed: handlers injected into endpoints, `ValidationFilter<T>` (no exception for a bad request),
       `TelemetryBehavior` removed (ASP.NET Core instrumentation covers it)
-- [ ] Carter removed: each module exposes `MapXxxEndpoints()` beside `AddXxxModule()`, with `MapGroup`
-- [ ] `NotFoundException` removed: handlers return `null`, endpoints return `TypedResults`
-- [ ] `InternalsVisibleTo Erp.Api` removed; architecture tests allow test projects only, check `Erp.Api` uses
+- [x] Carter removed: each module exposes `MapXxxEndpoints()` beside `AddXxxModule()`, with `MapGroup`
+- [x] `NotFoundException` removed: handlers return `null`, endpoints return `TypedResults`
+- [x] `InternalsVisibleTo Erp.Api` removed; architecture tests allow test projects only, check `Erp.Api` uses
       only public module types, and enforce the CQRS split (no DbContext in a query handler, no Dapper in a
       command handler)
-- [ ] Swashbuckle → `Microsoft.AspNetCore.OpenApi`
-- [ ] xUnit v3 + FsCheck.Xunit.v3 + `coverlet.MTP`; `global.json` opts into Microsoft.Testing.Platform
-- [ ] Build hygiene: analyzers, warnings as errors in CI, `.editorconfig`
-- [ ] Blazor Web App with interactive WebAssembly; `/errors/{code}` catalog page
-- [ ] Lessons: 03 rewritten (features, handlers, validation filter, error codes); post-office analogy moves to
+- [x] Swashbuckle → `Microsoft.AspNetCore.OpenApi`
+- [x] xUnit v3 + FsCheck.Xunit.v3 + `coverlet.MTP`; `global.json` opts into Microsoft.Testing.Platform
+- [x] Build hygiene: analyzers, warnings as errors in CI, `.editorconfig`
+- [x] Blazor Web App with interactive WebAssembly; `/errors/{code}` catalog page
+- [x] Lessons: 03 rewritten (features, handlers, validation filter, error codes); post-office analogy moves to
       the dispatcher in 13; every feature lesson's endpoint and handler code; 01, 02, 06, 13, 14, 22 for their
       specific changes; GLOSSARY, ANSWER-KEY
-- [ ] Rules: CLAUDE.md §3–5, README, THIRD-PARTY-NOTICES
+- [x] Rules: CLAUDE.md §3–5, README, THIRD-PARTY-NOTICES
 
 ---
 
@@ -420,3 +420,20 @@ App; errors gain stable, documented codes.
   own. Not run: `podman compose up` (no Compose program installed; download was declined), CI on GitHub (nothing
   pushed). **159 unit + 9 architecture + 103 integration + 6 UI tests pass** (UI against a running app on Linux
   with Playwright's Chromium).
+- **2026-11-13/14** — M9, best-practices alignment (user decisions; evidence in
+  [BEST-PRACTICES-REVIEW.md](BEST-PRACTICES-REVIEW.md)). Code: no mediator (endpoints call `internal` handlers
+  registered by hand in `AddXModule`; each module's public surface is `AddXModule` + `MapXEndpoints`); Carter,
+  Swashbuckle, `NotFoundException`, `IClock` and `TelemetryBehavior` removed; FluentValidation runs in one
+  endpoint filter on `/api` (400 `ERP-0001`, no exception); `TypedResults` unions, `Microsoft.AspNetCore.OpenApi` +
+  Scalar; `TimeProvider`/`CompanyTimeProvider`/`FakeTimeProvider`; domain events internal, mapped to Contracts
+  integration events delivered by the outbox through `IIntegrationEventPublisher`; stable error codes (`ERP-`,
+  `SALES-`, `INVENTORY-`, `PURCHASING-`, `INVOICING-`, `IDENTITY-`, numbered in the order the lessons introduce
+  them) with `/api/errors` and an `/errors/{code}` page; Blazor Web App (global interactive WebAssembly, no
+  prerender); xUnit v3 on Microsoft.Testing.Platform, `coverlet.MTP`, Stryker `test-runner: mtp` (94.09%, same as
+  before); analyzers at `latest-recommended`, warnings as errors in CI. **Behaviour changes:** an unknown id inside
+  a request body is now a coded 422 (was 404); an unknown page is the app's own 404; outbox rows now hold the
+  domain event type names (`ShipmentCreated`, `InvoicePaymentRecorded`, …), so unprocessed rows from before the
+  change won't deliver: drain the outbox before upgrading. Lessons: 03 rewritten as "Features" (03-mediator.md
+  removed), every lesson's endpoints, handlers, registrations, codes and test output updated; lesson 20 gains
+  question 9 (it was only in the answer key). **161 unit + 14 architecture + 114 integration tests pass, 8 UI
+  tests pass against the running app**; lessons 01–03 rebuilt from scratch and match their counts.

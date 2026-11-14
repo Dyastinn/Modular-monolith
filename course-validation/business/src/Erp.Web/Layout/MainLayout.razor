@@ -1,35 +1,52 @@
 @inherits LayoutComponentBase
 @inject CookieAuthenticationStateProvider Auth
 @inject NavigationManager Nav
+@inject IJSRuntime Js
 
-<MudThemeProvider Theme="Theme" />
+<MudThemeProvider @ref="_themeProvider" Theme="AppTheme.Theme" @bind-IsDarkMode="_dark" ObserveSystemDarkModeChange="_followSystem" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
 
 <AuthorizeView>
-    <Authorized>
+    <Authorized Context="auth">
         <MudLayout>
-            <MudAppBar Elevation="1" Dense="true">
-                <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
+            <MudAppBar Elevation="0">
+                <MudIconButton Icon="@Icons.Material.Outlined.Menu" Color="Color.Inherit" Edge="Edge.Start"
                                OnClick="() => _drawerOpen = !_drawerOpen" aria-label="Menu" />
-                <MudText Typo="Typo.h6" Class="ml-2">ERP</MudText>
+                <MudButton Href="" Variant="Variant.Text" Color="Color.Inherit" Class="ml-1 px-2" aria-label="Home"><Brand OnBar="true" /></MudButton>
                 <MudSpacer />
-                <MudMenu Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Inherit" AnchorOrigin="Origin.BottomRight"
-                         aria-label="Account">
-                    <MudText Typo="Typo.body2" Class="px-4 pt-2">@context.User.Identity?.Name</MudText>
-                    <MudText Typo="Typo.caption" Class="px-4 pb-2">@Format.Words(RoleOf(context))</MudText>
-                    <MudDivider />
-                    <MudMenuItem Href="change-password">Change password</MudMenuItem>
-                    <MudMenuItem OnClick="() => SignOut(false)">Sign out</MudMenuItem>
-                    <MudMenuItem OnClick="() => SignOut(true)">Sign out everywhere</MudMenuItem>
+                <MudTooltip Text="@(_dark ? "Light mode" : "Dark mode")">
+                    <MudIconButton Icon="@(_dark ? Icons.Material.Outlined.LightMode : Icons.Material.Outlined.DarkMode)" Color="Color.Inherit"
+                                   OnClick="ToggleDarkMode" aria-label="@(_dark ? "Light mode" : "Dark mode")" />
+                </MudTooltip>
+                <MudMenu AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                    <ActivatorContent>
+                        <MudButton Variant="Variant.Text" Color="Color.Inherit" EndIcon="@Icons.Material.Outlined.ExpandMore" aria-label="Account"
+                                   OnClick="@(e => context.ToggleAsync(e))">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudAvatar Size="Size.Small" Color="Color.Inherit" Variant="Variant.Outlined">@Initials(auth.User.Identity?.Name)</MudAvatar>
+                                <MudStack Spacing="0" AlignItems="AlignItems.Start" Class="d-none d-sm-flex">
+                                    <MudText Typo="Typo.body2">@auth.User.Identity?.Name</MudText>
+                                    <MudText Typo="Typo.caption" Style="opacity:.8">@Format.Words(RoleOf(auth))</MudText>
+                                </MudStack>
+                            </MudStack>
+                        </MudButton>
+                    </ActivatorContent>
+                    <ChildContent>
+                        <MudMenuItem Href="change-password" Icon="@Icons.Material.Outlined.Key">Change password</MudMenuItem>
+                        <MudDivider />
+                        <MudMenuItem OnClick="() => SignOut(false)" Icon="@Icons.Material.Outlined.Logout">Sign out</MudMenuItem>
+                        <MudMenuItem OnClick="() => SignOut(true)" Icon="@Icons.Material.Outlined.DevicesOther">Sign out everywhere</MudMenuItem>
+                    </ChildContent>
                 </MudMenu>
             </MudAppBar>
-            <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="1">
+            <MudDrawer @bind-Open="_drawerOpen" ClipMode="DrawerClipMode.Always" Elevation="0" Variant="DrawerVariant.Responsive"
+                       Class="border-r border-solid mud-border-lines-default">
                 <NavMenu />
             </MudDrawer>
             <MudMainContent>
-                <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="py-6">
+                <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pt-8 pb-12 px-4 px-sm-8">
                     @Body
                 </MudContainer>
             </MudMainContent>
@@ -41,12 +58,32 @@
 </AuthorizeView>
 
 @code {
+    private const string ThemeKey = "erp.theme";
+    private MudThemeProvider _themeProvider = default!;
     private bool _drawerOpen = true;
+    private bool _dark;
+    private bool _followSystem = true;
 
-    private static readonly MudTheme Theme = new()
+    // Light or dark: the person's own choice if they made one (kept in this browser), otherwise the computer's setting.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        PaletteLight = new PaletteLight { Primary = "#1e5aa8", AppbarBackground = "#1e5aa8" }
-    };
+        if (!firstRender) return;
+        var saved = await Js.InvokeAsync<string?>("localStorage.getItem", ThemeKey);
+        _followSystem = saved is null;
+        _dark = saved is null ? await _themeProvider.GetSystemDarkModeAsync() : saved == "dark";
+        StateHasChanged();
+    }
+
+    private async Task ToggleDarkMode()
+    {
+        _dark = !_dark;
+        _followSystem = false;
+        await Js.InvokeVoidAsync("localStorage.setItem", ThemeKey, _dark ? "dark" : "light");
+    }
+
+    // "Rita Reyes" → "RR": a face for the account button without storing a photo.
+    private static string Initials(string? name) =>
+        string.Concat((name ?? "?").Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(w => char.ToUpperInvariant(w[0])));
 
     private static string RoleOf(AuthenticationState state) =>
         state.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";

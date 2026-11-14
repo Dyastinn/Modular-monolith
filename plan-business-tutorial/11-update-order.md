@@ -13,6 +13,10 @@ and nothing else. About an hour. Are you ready? Let's begin!
   other.
 - An **Edit** button, and the order form learning to edit as well as create.
 
+The edit screen is the new-order form again, filled in with the draft's lines:
+
+![The Edit SO-2026-000008 form: the customer, one Server Rack line and the total, with Save draft and Back buttons](images/11-edit-order.png)
+
 ## Why we build it this way
 
 ### Replace, don't patch
@@ -477,8 +481,8 @@ sequenceDiagram
   participant DB as PostgreSQL
   A->>DB: load draft 7 (xmin = 100)
   B->>DB: load draft 7 (xmin = 100)
-  A->>DB: delete/insert lines; UPDATE sales_order ... WHERE xmin = 100  → 1 row (xmin becomes 101)
-  B->>DB: delete/insert lines; UPDATE sales_order ... WHERE xmin = 100  → 0 rows
+  A->>DB: delete/insert lines, UPDATE sales_order ... WHERE xmin = 100  → 1 row (xmin becomes 101)
+  B->>DB: delete/insert lines, UPDATE sales_order ... WHERE xmin = 100  → 0 rows
   DB-->>B: 409 Conflict: reload and try again
 ```
 

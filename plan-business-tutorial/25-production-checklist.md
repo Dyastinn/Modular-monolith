@@ -168,6 +168,7 @@ when you feel the pain it solves, not before.
 | A second app server behind a load balancer | One server can't keep up, or a few seconds of downtime per upgrade cost too much | Mostly ready: sign-in keys are shared through the database, and the dispatcher's `SKIP LOCKED` lets two servers share the work. Per-server rate limits become per-server, though |
 | Kubernetes | The business runs many apps on a cluster already | Compose on one host is the whole requirement. The same images run on a cluster unchanged |
 | Microservices | Separate teams need to release separately | Our modules are already islands with one service window each, so a split would be mechanical. It would also bring network failures and no shared transaction |
+| Load testing (Apache JMeter, Apache-2.0) | Many more people will use it at once than today, or a page is reported slow and you need to know at how many users it breaks | One company's staff on one server is far below what ASP.NET Core and PostgreSQL handle. The traces from lesson 14 already show which request is slow, and why |
 | OpenIddict (Apache-2.0) | Other companies' apps must sign in *your* users (single sign-on, OAuth), or a machine client needs client credentials | Identity covers our own users and programs |
 
 To remember it easily: every tool is the answer to a question. If nobody's asking the question yet, the tool

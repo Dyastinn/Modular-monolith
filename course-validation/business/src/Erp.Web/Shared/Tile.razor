@@ -1,17 +1,13 @@
-@attribute [AllowAnonymous]
-
-<MudCard Elevation="1" Style="height:100%">
-    <MudCardContent>
-        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-            <MudIcon Icon="@Icon" Color="Color.Primary" />
-            <MudText Typo="Typo.h6">@Title</MudText>
+@* A shortcut on the home page. The whole tile is the link: a bigger target is easier to hit. *@
+<MudLink Href="@Href" Underline="Underline.None" Color="Color.Inherit" Class="d-block mud-height-full">
+    <MudPaper Outlined="true" Class="tile pa-4 d-flex gap-4 mud-height-full">
+        <MudAvatar Color="Color.Primary" Variant="Variant.Outlined" Rounded="true"><MudIcon Icon="@Icon" /></MudAvatar>
+        <MudStack Spacing="0">
+            <MudText Typo="Typo.subtitle1">@Title</MudText>
+            <MudText Typo="Typo.body2" Color="Color.Secondary">@Text</MudText>
         </MudStack>
-        <MudText Typo="Typo.body2" Class="mt-2">@Text</MudText>
-    </MudCardContent>
-    <MudCardActions>
-        <MudButton Href="@Href" Color="Color.Primary" Variant="Variant.Text">Open</MudButton>
-    </MudCardActions>
-</MudCard>
+    </MudPaper>
+</MudLink>
 
 @code {
     [Parameter] public string Title { get; set; } = "";

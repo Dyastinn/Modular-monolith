@@ -9,33 +9,33 @@
     <MudGrid>
         <AuthorizeView Roles="@SellerRoles">
             <MudItem xs="12" sm="6" md="4">
-                <Tile Title="New sales order" Text="Pick a customer, add lines, submit." Href="sales-orders/new" Icon="@Icons.Material.Filled.AddShoppingCart" />
+                <Tile Title="New sales order" Text="Pick a customer, add lines, submit." Href="sales-orders/new" Icon="@Icons.Material.Outlined.AddShoppingCart" />
             </MudItem>
         </AuthorizeView>
         <AuthorizeView Roles="@ManagerRoles">
             <MudItem xs="12" sm="6" md="4">
-                <Tile Title="Waiting for approval" Text="Orders above ₱50,000 that need you." Href="sales-orders?status=PendingApproval" Icon="@Icons.Material.Filled.HowToReg" />
+                <Tile Title="Waiting for approval" Text="Orders above ₱50,000 that need you." Href="sales-orders?status=PendingApproval" Icon="@Icons.Material.Outlined.HowToReg" />
             </MudItem>
         </AuthorizeView>
         <AuthorizeView Roles="@ClerkRoles">
             <MudItem xs="12" sm="6" md="4">
-                <Tile Title="Ready to ship" Text="Approved orders waiting for the warehouse." Href="sales-orders?status=Approved" Icon="@Icons.Material.Filled.LocalShipping" />
+                <Tile Title="Ready to ship" Text="Approved orders waiting for the warehouse." Href="sales-orders?status=Approved" Icon="@Icons.Material.Outlined.LocalShipping" />
             </MudItem>
             <MudItem xs="12" sm="6" md="4">
-                <Tile Title="Goods to receive" Text="Purchase orders on their way." Href="purchase-orders?status=Sent" Icon="@Icons.Material.Filled.Inventory" />
+                <Tile Title="Goods to receive" Text="Purchase orders on their way." Href="purchase-orders?status=Sent" Icon="@Icons.Material.Outlined.Inventory" />
             </MudItem>
         </AuthorizeView>
         <AuthorizeView Roles="@BuyerRoles">
             <MudItem xs="12" sm="6" md="4">
-                <Tile Title="New purchase order" Text="Restock from a supplier." Href="purchase-orders/new" Icon="@Icons.Material.Filled.ShoppingCart" />
+                <Tile Title="New purchase order" Text="Restock from a supplier." Href="purchase-orders/new" Icon="@Icons.Material.Outlined.ShoppingCart" />
             </MudItem>
         </AuthorizeView>
         <AuthorizeView Roles="@AccountantRoles">
             <MudItem xs="12" sm="6" md="4">
-                <Tile Title="Overdue invoices" Text="Past their due date and not fully paid." Href="invoices?overdueOnly=true" Icon="@Icons.Material.Filled.Alarm" />
+                <Tile Title="Overdue invoices" Text="Past their due date and not fully paid." Href="invoices?overdueOnly=true" Icon="@Icons.Material.Outlined.Alarm" />
             </MudItem>
             <MudItem xs="12" sm="6" md="4">
-                <Tile Title="Receivables aging" Text="Who owes what, and how late." Href="receivables-aging" Icon="@Icons.Material.Filled.Assessment" />
+                <Tile Title="Receivables aging" Text="Who owes what, and how late." Href="receivables-aging" Icon="@Icons.Material.Outlined.Assessment" />
             </MudItem>
         </AuthorizeView>
     </MudGrid>

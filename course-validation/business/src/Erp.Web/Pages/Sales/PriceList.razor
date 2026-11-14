@@ -13,10 +13,10 @@
 <MudTabs Elevation="0" Outlined="true" Class="mb-4">
     <MudTabPanel Text="Items">
         <MudStack Row="true" Spacing="4" Class="pa-4">
-            <MudTextField T="string" Value="_search" ValueChanged="OnSearch" Label="SKU or name" DebounceInterval="400" Clearable="true" />
+            <AppTextField T="string" Value="_search" ValueChanged="OnSearch" Label="SKU or name" DebounceInterval="400" Clearable="true" />
             <MudSwitch T="bool" Value="_forSaleOnly" ValueChanged="OnForSale" Label="For sale only" Color="Color.Primary" />
         </MudStack>
-        <MudTable T="PriceListItem" @ref="_table" ServerData="Load" Hover="true" Dense="true">
+        <MudTable Outlined="true" T="PriceListItem" @ref="_table" ServerData="Load" Hover="true" Dense="true">
             <HeaderContent>
                 <MudTh>SKU</MudTh><MudTh>Name</MudTh><MudTh>Unit</MudTh><MudTh>Category</MudTh>
                 <MudTh Class="money">Price</MudTh><MudTh>VAT</MudTh><MudTh>SC/PWD</MudTh><MudTh>For sale</MudTh><MudTh></MudTh>
