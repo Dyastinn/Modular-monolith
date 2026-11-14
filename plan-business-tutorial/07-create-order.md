@@ -822,6 +822,16 @@ and give the snackbar somewhere to appear, in `MainLayout.razor` under `<MudPopo
 <MudSnackbarProvider />
 ```
 
+By default MudBlazor shows messages top-right, which is exactly where a page keeps its title and its main
+button, so a message would cover the very button you might press next. Put them bottom-right, in
+`Erp.Web/Program.cs`:
+
+```csharp
+builder.Services.AddMudServices(o => o.SnackbarConfiguration.PositionClass = Defaults.Classes.Position.BottomRight);
+```
+
+(with `using MudBlazor;` at the top).
+
 The page will be for sellers only, and that check needs the role names. The app must not reference
 BuildingBlocks (that would pull FluentValidation and the domain's types into the browser), so it compiles just
 the one file. In `Erp.Web.csproj`:

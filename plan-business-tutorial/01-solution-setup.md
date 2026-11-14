@@ -428,7 +428,6 @@ CSS asks the theme for a colour, so the focus ring follows it, in light mode and
 ```csharp
 // src/Erp.Web/Program.cs
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
-using MudBlazor;
 using MudBlazor.Services;
 
 // The browser half of the app. The server sends the page (App.razor); what runs here is Routes and everything below.
@@ -437,8 +436,7 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 // Same origin as the API, so every call goes back to the server that served the app.
 builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(builder.HostEnvironment.BaseAddress) });
 
-// Messages appear bottom-right, where they never cover a page's title or its buttons.
-builder.Services.AddMudServices(o => o.SnackbarConfiguration.PositionClass = Defaults.Classes.Position.BottomRight);
+builder.Services.AddMudServices();
 
 await builder.Build().RunAsync();
 ```
@@ -622,8 +620,6 @@ Now the product's mark, a small component we can reuse:
 
 <MudThemeProvider @ref="_themeProvider" Theme="AppTheme.Theme" @bind-IsDarkMode="_dark" ObserveSystemDarkModeChange="_followSystem" />
 <MudPopoverProvider />
-<MudDialogProvider />
-<MudSnackbarProvider />
 
 <MudLayout>
     <MudAppBar Elevation="0">
@@ -674,8 +670,9 @@ Now the product's mark, a small component we can reuse:
 ```
 
 A Razor component is markup on top and C# in `@code` below. `@bind-Open` ties the drawer's open state to
-`_drawerOpen` both ways, so the menu button opens and closes it. The four providers at the top are MudBlazor's
-plumbing: the theme, and the layers that menus, dialogs and messages appear in.
+`_drawerOpen` both ways, so the menu button opens and closes it. The two providers at the top are MudBlazor's
+plumbing: `MudThemeProvider` applies the theme, and `MudPopoverProvider` is the layer where anything that pops
+up is drawn, like the dark-mode button's tooltip. Each appears once, here.
 
 | Piece | What it does |
 |---|---|

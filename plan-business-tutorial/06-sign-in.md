@@ -857,9 +857,8 @@ bare page (the sign-in form) for everyone else. The top bar gets an account menu
 }
 ```
 
-Inside `<AuthorizeView>`, `context` is the signed-in user. **`MudPopoverProvider`** is where MudBlazor draws
-anything that pops up, like the account menu; it appears once, here. And **Sign out everywhere** is the
-endpoint from step 6, one click away.
+Inside `<AuthorizeView>`, `context` is the signed-in user. The account menu pops up in lesson 01's
+`MudPopoverProvider` layer. And **Sign out everywhere** is the endpoint from step 6, one click away.
 
 Last, the home page greets the person by name. In `Home.razor`:
 
