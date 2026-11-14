@@ -13,30 +13,28 @@
     return;
 }
 
-<MudBreadcrumbs Items="@([new BreadcrumbItem("Invoices", Lists.Last("invoices")), new BreadcrumbItem(_invoice.Number, null, disabled: true)])" Class="pa-0 mb-2" />
-
-<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
-    <MudText Typo="Typo.h4">@_invoice.Number</MudText>
-    <StatusChip Status="@_invoice.Status" />
-    <MudSpacer />
-    <MudButton Href="@($"api/invoices/{Id}/pdf")" Target="_blank" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.PictureAsPdf">
-        @(_invoice.PrintCount == 0 ? "Print" : "Reprint")
-    </MudButton>
-    <AuthorizeView Roles="@Accountants">
-        @if (_invoice.Status is "Issued" or "PartiallyPaid")
-        {
-            <MudButton OnClick="RecordPayment" Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Payments" Disabled="Api.Busy">Record payment</MudButton>
-        }
-        @if (_invoice.Status == "Issued")
-        {
-            <MudButton OnClick="Void" Variant="Variant.Text" Color="Color.Error" Disabled="Api.Busy">Void</MudButton>
-        }
-        @if (_invoice.Status == "Void")
-        {
-            <MudButton OnClick="Reissue" Variant="Variant.Filled" Color="Color.Primary" Disabled="Api.Busy">Issue a replacement</MudButton>
-        }
-    </AuthorizeView>
-</MudStack>
+<PageHeader Title="@_invoice.Number" Trail="@([new BreadcrumbItem("Invoices", Lists.Last("invoices")), new BreadcrumbItem(_invoice.Number, null, disabled: true)])">
+    <Status><StatusChip Status="@_invoice.Status" Live="true" /></Status>
+    <Actions>
+        <MudButton Href="@($"api/invoices/{Id}/pdf")" Target="_blank" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.PictureAsPdf">
+            @(_invoice.PrintCount == 0 ? "Print" : "Reprint")
+        </MudButton>
+        <AuthorizeView Roles="@Accountants">
+            @if (_invoice.Status is "Issued" or "PartiallyPaid")
+            {
+                <MudButton OnClick="RecordPayment" Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Payments" Disabled="Api.Busy">Record payment</MudButton>
+            }
+            @if (_invoice.Status == "Issued")
+            {
+                <MudButton OnClick="Void" Variant="Variant.Text" Color="Color.Error" Disabled="Api.Busy">Void</MudButton>
+            }
+            @if (_invoice.Status == "Void")
+            {
+                <MudButton OnClick="Reissue" Variant="Variant.Filled" Color="Color.Primary" Disabled="Api.Busy">Issue a replacement</MudButton>
+            }
+        </AuthorizeView>
+    </Actions>
+</PageHeader>
 
 @if (_invoice.VoidReason is not null)
 {
@@ -49,43 +47,46 @@
             <MudText Typo="Typo.h6">@_invoice.CustomerName</MudText>
             <MudText Typo="Typo.body2">@(_invoice.CustomerTin is null ? "" : $"TIN {_invoice.CustomerTin} · ")@_invoice.CustomerAddress</MudText>
             <MudText Typo="Typo.body2" Class="mb-3">Order @_invoice.OrderNumber · Issued @Format.Date(_invoice.IssueDate) · Due @Format.Date(_invoice.DueDate)</MudText>
-            <AppSimpleTable>
-                <thead><tr><th>Description</th><th class="money">Quantity</th><th class="money">Unit price</th><th class="money">Amount</th></tr></thead>
-                <tbody>
-                    @foreach (var l in _invoice.Lines)
+            <MudDataGrid T="InvoiceLine" Items="_invoice.Lines"
+                         Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None">
+                <Columns>
+                    <TemplateColumn Title="Description" CellClass="wrap">
+                        <CellTemplate>
+                            @(context.Item.SpecialDiscountEligible && _invoice.SpecialDiscount is not null ? "* " : "")@context.Item.Description
+                            @(context.Item.TaxType == "Vatable" ? "" : $"({Format.Words(context.Item.TaxType).ToLower()})")
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Quantity" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Qty(context.Item.Quantity) @context.Item.Unit</CellTemplate></TemplateColumn>
+                    <MoneyColumn Title="Unit price" Amount="x => x.UnitPrice" />
+                    <MoneyColumn Title="Amount" Amount="x => x.LineTotal" />
+                </Columns>
+            </MudDataGrid>
+            <Totals>
+                @if (_invoice.TaxRegime == "Vat")
+                {
+                    <TotalLine Label="VATable sales" Amount="_invoice.VatableSales" />
+                    <TotalLine Label="@($"VAT ({(_invoice.VatRate * 100).ToString("0.##")}%)")" Amount="_invoice.VatAmount" />
+                    <TotalLine Label="Zero-rated sales" Amount="_invoice.ZeroRatedSales" />
+                    <TotalLine Label="VAT-exempt sales" Amount="_invoice.VatExemptSales" />
+                }
+                else if (_invoice.TaxRegime == "PercentageTax")
+                {
+                    <TotalLine Label="Sales subject to percentage tax" Amount="_invoice.GrossSales - _invoice.VatExemptSales" />
+                    <TotalLine Label="Exempt sales" Amount="_invoice.VatExemptSales" />
+                }
+                @if (_invoice.SpecialDiscount is { } d)
+                {
+                    @if (d.VatExemption > 0)
                     {
-                        <tr>
-                            <td>@(l.SpecialDiscountEligible && _invoice.SpecialDiscount is not null ? "* " : "")@l.Description @(l.TaxType == "Vatable" ? "" : $"({Format.Words(l.TaxType).ToLower()})")</td>
-                            <td class="money">@Format.Qty(l.Quantity) @l.Unit</td>
-                            <td class="money">@Format.Peso(l.UnitPrice)</td>
-                            <td class="money">@Format.Peso(l.LineTotal)</td>
-                        </tr>
+                        <TotalLine Label="Less: VAT exemption (* items)" Amount="d.VatExemption" />
                     }
-                    @if (_invoice.TaxRegime == "Vat")
-                    {
-                        <tr><td colspan="3">VATable sales</td><td class="money">@Format.Peso(_invoice.VatableSales)</td></tr>
-                        <tr><td colspan="3">VAT (@((_invoice.VatRate * 100).ToString("0.##"))%)</td><td class="money">@Format.Peso(_invoice.VatAmount)</td></tr>
-                        <tr><td colspan="3">Zero-rated sales</td><td class="money">@Format.Peso(_invoice.ZeroRatedSales)</td></tr>
-                        <tr><td colspan="3">VAT-exempt sales</td><td class="money">@Format.Peso(_invoice.VatExemptSales)</td></tr>
-                    }
-                    else if (_invoice.TaxRegime == "PercentageTax")
-                    {
-                        <tr><td colspan="3">Sales subject to percentage tax</td><td class="money">@Format.Peso(_invoice.GrossSales - _invoice.VatExemptSales)</td></tr>
-                        <tr><td colspan="3">Exempt sales</td><td class="money">@Format.Peso(_invoice.VatExemptSales)</td></tr>
-                    }
-                    @if (_invoice.SpecialDiscount is { } d)
-                    {
-                        @if (d.VatExemption > 0)
-                        {
-                            <tr><td colspan="3">Less: VAT exemption (* items)</td><td class="money">@Format.Peso(d.VatExemption)</td></tr>
-                        }
-                        <tr><td colspan="3">Less: @Format.Percent(d.Rate) @d.Program.ToLower() discount · @d.HolderName, @d.IdLabel @d.IdNumber</td><td class="money">@Format.Peso(d.Discount)</td></tr>
-                    }
-                    <tr><td colspan="3"><b>Total</b></td><td class="money"><b>@Format.Peso(_invoice.Total)</b></td></tr>
-                    <tr><td colspan="3">Paid</td><td class="money">@Format.Peso(_invoice.AmountPaid)</td></tr>
-                    <tr><td colspan="3"><b>Balance due</b></td><td class="money"><b>@Format.Peso(_invoice.BalanceDue)</b></td></tr>
-                </tbody>
-            </AppSimpleTable>
+                    <TotalLine Label="@($"Less: {Format.Percent(d.Rate)} {d.Program.ToLower()} discount · {d.HolderName}, {d.IdLabel} {d.IdNumber}")" Amount="d.Discount" />
+                }
+                <MudDivider Class="my-1" />
+                <TotalLine Label="Total" Amount="_invoice.Total" Strong="true" />
+                <TotalLine Label="Paid" Amount="_invoice.AmountPaid" />
+                <TotalLine Label="Balance due" Amount="_invoice.BalanceDue" Strong="true" />
+            </Totals>
         </MudPaper>
     </MudItem>
     <MudItem xs="12" md="4">
@@ -98,13 +99,13 @@
             @foreach (var p in _invoice.Payments)
             {
                 <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
-                    <div>
-                        <MudText Typo="Typo.body2" Style="@(p.VoidedUtc is null ? "" : "text-decoration:line-through")">
+                    <MudStack Spacing="0">
+                        <MudText Typo="Typo.body2" Class="@(p.VoidedUtc is null ? "" : "voided")">
                             @Format.Peso(p.Amount) · @Format.Words(p.Method) · @Format.Date(p.PaidOn)
                             @(p.TaxWithheld > 0 ? $" + {Format.Peso(p.TaxWithheld)} withheld (2307)" : "")
                         </MudText>
                         <MudText Typo="Typo.caption">@p.Reference @(p.VoidReason is null ? "" : $"(void: {p.VoidReason})")</MudText>
-                    </div>
+                    </MudStack>
                     <MudSpacer />
                     @if (p.VoidedUtc is null)
                     {

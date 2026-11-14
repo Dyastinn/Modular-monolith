@@ -461,3 +461,17 @@ App; errors gain stable, documented codes.
   (`NavigationLock`); password fields can be shown (`AppPasswordField`). Found on the way: no lesson ever changed
   the Ship message to mention the invoice (lesson 20 now does). Two new UI tests were rewritten to need no existing
   orders, so they pass on a fresh install. **289 + 14 UI tests pass.**
+- **2026-11-15** — MudBlazor and testing pass (user requests). Every table is `MudDataGrid` (no raw HTML anywhere);
+  MudBlazor components are used as they are, never subclassed (the `App*` wrappers are gone: MudBlazor 9 removed
+  `MudGlobal.InputDefaults`, and its migration guide lists parameters on each component first); shared behaviour lives
+  in components that hold MudBlazor's (`PageHeader`, `PasswordField`, `MoneyColumn`, `Totals`, `Crumbs`) or in an
+  extension method (`GridPaging.FirstPage`). Accessibility fixes found by the browser tests: a `main` landmark, a
+  named breadcrumb `nav`, a live status chip, named "⋮" buttons (`AriaLabel`), announced sign-in errors, typeable
+  dates. Browser tests rewritten to Playwright's rules: role-and-name locators, `Expect` everywhere, no clock waits,
+  a trace kept for each failure. New guide [MUDBLAZOR.md](plan-business-tutorial/MUDBLAZOR.md), with a Playwright
+  recipe for each component. Lessons 06–19 rebuilt step by step from their text (every one green); lessons 20–25,
+  which build from the pattern and link the reference, checked snippet by snippet against the app. About 30 lesson
+  defects fixed on the way, among them: a package lesson 07 never added, a test that needed lesson 08's endpoint,
+  a dialog provider added two lessons after the first dialog, a stale error-handler line (10), a missing framework
+  reference (17), `TaxRegime` defined in two places (20), xUnit v2 signatures (23, 24), culture-sensitive parsing
+  (06, 09, 16, 20, 22). **289 + 14 UI tests pass.**

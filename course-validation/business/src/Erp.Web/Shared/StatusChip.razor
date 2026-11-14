@@ -1,8 +1,10 @@
-@* One look for a status everywhere: green when done, amber when someone must act, grey when over. *@
-<MudChip T="string" Size="Size.Small" Color="ColorOf(Status)" Variant="Variant.Text">@Format.Words(Status)</MudChip>
+@* One look for a status everywhere: green when done, amber when someone must act, grey when over.
+   Live: the page's own status, a role="status" region, so a screen reader announces it when an action changes it. *@
+<MudChip T="string" Size="Size.Small" Color="ColorOf(Status)" Variant="Variant.Text" role="@(Live ? "status" : null)">@Format.Words(Status)</MudChip>
 
 @code {
     [Parameter, EditorRequired] public string Status { get; set; } = "";
+    [Parameter] public bool Live { get; set; }
 
     private static Color ColorOf(string status) => status switch
     {

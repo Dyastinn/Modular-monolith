@@ -774,25 +774,22 @@ and `StatusChip` learns the new statuses: `"Received"` green; `"PartiallyReceive
 
 The pages are built from parts you know:
 
-The expected date is the app's first date field, so `Shared/AppFields.cs` gets its last member:
-
-```csharp
-public class AppDatePicker : MudDatePicker
-{
-    public AppDatePicker() { Variant = Variant.Outlined; Margin = Margin.Normal; }
-}
-```
+The expected date is the app's first date field, a `MudDatePicker`. Besides the two settings every field has, it
+gets `Editable="true"`. By default a MudBlazor date field only opens a calendar; `Editable` lets people type
+"12/31/2026" too, which is faster for anyone entering dates all day and the way in for someone using only a
+keyboard. The calendar button stays for those who'd rather pick.
 
 | Page | Built like |
 |---|---|
 | **Suppliers** (`/suppliers`) and its `SupplierDialog` | Customers and `CustomerDialog`, lesson 15 |
 | **Purchase orders** (`/purchase-orders`), with a status filter that reads `?status=` | The order list, lesson 08, its view kept in the address |
-| **New / edit purchase order** (`/purchase-orders/new`, `/purchase-orders/{id}/edit`) | The order form, lessons 08 and 11 (its breadcrumb too), with a supplier picker, an item picker over `api/items?activeOnly=true`, a unit cost per line, an expected date (`AppDatePicker`) and notes. Its unsaved-changes snapshot covers the supplier, the date, the notes and each line's item, quantity and cost |
+| **New / edit purchase order** (`/purchase-orders/new`, `/purchase-orders/{id}/edit`) | The order form, lessons 08 and 11 (its breadcrumb too), with a supplier picker, an item picker over `api/items?activeOnly=true`, a unit cost per line, an expected date (`MudDatePicker`, editable) and notes. Its unsaved-changes snapshot covers the supplier, the date, the notes and each line's item, quantity and cost |
 | **One purchase order** (`/purchase-orders/{id}`) | The order page, lesson 08, breadcrumb included, with buttons that show by status and role: Edit and Approve on a draft, Send once approved, **Receive** while goods are due, Close on a partly received order, Cancel before anything arrives. Close and Cancel can't be undone, so each asks first, the way Ship does in lesson 18, naming the purchase order and what happens |
 
 Type them out, then compare with the reference build's
 [Purchasing pages](../course-validation/business/src/Erp.Web/Pages/Purchasing/). The one new idea is the
-receive dialog, so here it is in full:
+receive dialog, so here it is in full. Its grid holds a field in each row: a `TemplateColumn` can hold any
+component, and `@bind-Value="context.Item.Arrived"` writes straight into the row's `Entry`:
 
 ```razor
 @* src/Erp.Web/Pages/Purchasing/ReceiveDialog.razor *@
@@ -801,19 +798,21 @@ receive dialog, so here it is in full:
 @* Count what actually arrived. Partial deliveries are normal: the order stays open for the rest. *@
 <MudDialog>
     <DialogContent>
-        <AppSimpleTable>
-            <thead><tr><th>Item</th><th class="money">Still to come</th><th>Arrived now</th></tr></thead>
-            <tbody>
-                @foreach (var line in _lines)
-                {
-                    <tr>
-                        <td>@line.Line.Sku · @line.Line.ItemName</td>
-                        <td class="money">@Format.Qty(line.Line.Outstanding) @line.Line.Unit</td>
-                        <td><AppNumericField T="decimal" @bind-Value="line.Arrived" Min="0" Max="line.Line.Outstanding" Style="max-width:140px" /></td>
-                    </tr>
-                }
-            </tbody>
-        </AppSimpleTable>
+        <MudDataGrid T="Entry" Items="_lines"
+                     Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None">
+            <Columns>
+                <TemplateColumn Title="Item"><CellTemplate>@context.Item.Line.Sku · @context.Item.Line.ItemName</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Still to come" HeaderClass="money" CellClass="money">
+                    <CellTemplate>@Format.Qty(context.Item.Line.Outstanding) @context.Item.Line.Unit</CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Arrived now">
+                    <CellTemplate>
+                        <MudNumericField T="decimal" @bind-Value="context.Item.Arrived" Min="0" Max="context.Item.Line.Outstanding" Style="max-width:140px"
+                                         Variant="Variant.Outlined" Margin="Margin.Normal" />
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+        </MudDataGrid>
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
@@ -915,7 +914,7 @@ add `"/suppliers"`, `"/purchase-orders"` and `"/purchase-orders/new"` to `pages`
 line:
 
 ```csharp
-(await rep.GetByText("Purchasing").CountAsync()).Should().Be(0);
+await Expect(menu.GetByText("Purchasing")).ToHaveCountAsync(0);
 ```
 
 ### A refused line, and nothing half-done

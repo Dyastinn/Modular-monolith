@@ -689,7 +689,7 @@ internal sealed record CurrentUserDto(long Id, string Username, string Role);
 
 internal sealed class GetCurrentUserHandler(ICurrentUser user)
 {
-    public Task<CurrentUserDto> HandleAsync(GetCurrentUserQuery query, CancellationToken ct) =>
+    public Task<CurrentUserDto> HandleAsync(CancellationToken ct) =>
         Task.FromResult(new CurrentUserDto(user.UserId, user.Username, user.Role));
 }
 ```
@@ -1042,7 +1042,7 @@ public sealed record CurrentUser(long Id, string Username, string FullName, stri
 ```csharp
 private static ClaimsPrincipal Principal(CurrentUser user) => new(new ClaimsIdentity(
 [
-    new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+    new Claim(ClaimTypes.NameIdentifier, user.Id.ToString(CultureInfo.InvariantCulture)),
     new Claim(ClaimTypes.Name, user.FullName),
     new Claim(ClaimTypes.Email, user.Username),
     new Claim(ClaimTypes.Role, user.Role),
@@ -1082,10 +1082,10 @@ The "too many attempts" line is ready for [lesson 23](23-security-hardening.md)'
         <MudAlert Severity="Severity.Info" Class="mb-4">An administrator set a temporary password. Choose your own to continue.</MudAlert>
     }
     <MudStack Spacing="3">
-        <AppPasswordField @bind-Value="_current" Label="Current password" />
-        <AppPasswordField @bind-Value="_new" Label="New password (at least 12 characters)" />
-        <AppPasswordField @bind-Value="_repeat" Label="New password again"
-                      Error="_repeat.Length > 0 && _repeat != _new" ErrorText="The two don't match." />
+        <PasswordField @bind-Value="_current" Label="Current password" />
+        <PasswordField @bind-Value="_new" Label="New password (at least 12 characters)" />
+        <PasswordField @bind-Value="_repeat" Label="New password again"
+                       Error="_repeat.Length > 0 && _repeat != _new" ErrorText="The two don't match." />
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Save"
                    Disabled="@(_new.Length == 0 || _new != _repeat || Api.Busy)">Change password</MudButton>
     </MudStack>
@@ -1147,7 +1147,8 @@ password is already one only the admin and the user know.
         {
             <MudStack Spacing="3">
                 <MudText Typo="Typo.body2">Enter your email. If it belongs to an account, we'll send a reset code.</MudText>
-                <AppTextField @bind-Value="_email" Label="Email" InputType="InputType.Email" />
+                <MudTextField @bind-Value="_email" Label="Email" InputType="InputType.Email"
+                              Variant="Variant.Outlined" Margin="Margin.Normal" />
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SendCode">Send code</MudButton>
             </MudStack>
         }
@@ -1155,9 +1156,10 @@ password is already one only the admin and the user know.
         {
             <MudStack Spacing="3">
                 <MudText Typo="Typo.body2">Check your email for the code, then choose a new password (at least 12 characters).</MudText>
-                <AppTextField @bind-Value="_code" Label="Reset code" />
-                <AppPasswordField @bind-Value="_password" Label="New password" />
-                @if (_error is not null) { <MudAlert Severity="Severity.Error" Dense="true">@_error</MudAlert> }
+                <MudTextField @bind-Value="_code" Label="Reset code"
+                              Variant="Variant.Outlined" Margin="Margin.Normal" />
+                <PasswordField @bind-Value="_password" Label="New password" />
+                @if (_error is not null) { <MudAlert Severity="Severity.Error" Dense="true" role="alert">@_error</MudAlert> }
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Reset">Set new password</MudButton>
             </MudStack>
         }
@@ -1274,41 +1276,44 @@ public sealed record SignInAttempt(long Id, string Email, long? UserId, string O
 
 <PageTitle>Users · ERP</PageTitle>
 
-<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
-    <MudText Typo="Typo.h4">Users</MudText>
-    <MudSpacer />
-    <MudButton OnClick="() => Edit(null)" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PersonAdd">New user</MudButton>
-</MudStack>
+<PageHeader Title="Users">
+    <Actions>
+        <MudButton OnClick="() => Edit(null)" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PersonAdd">New user</MudButton>
+    </Actions>
+</PageHeader>
 
-<AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Name or email" DebounceInterval="400" Clearable="true" Class="mb-4" />
+<MudTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Name or email" DebounceInterval="400" Clearable="true" Class="mb-4"
+              Variant="Variant.Outlined" Margin="Margin.Normal" />
 
-<AppTable T="User" @ref="_table" @key="View.Version" ServerData="Load"
-          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
-    <HeaderContent>
-        <MudTh>Name</MudTh><MudTh>Email</MudTh><MudTh>Role</MudTh><MudTh>Status</MudTh><MudTh>Last sign-in</MudTh><MudTh></MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="Name">@context.FullName</MudTd>
-        <MudTd DataLabel="Email">@context.Email</MudTd>
-        <MudTd DataLabel="Role">@Format.Words(context.Role)</MudTd>
-        <MudTd DataLabel="Status">
-            @if (context.IsDisabled) { <MudChip T="string" Size="Size.Small" Color="Color.Default">Disabled</MudChip> }
-            else if (context.LockedOutUntil is not null) { <MudChip T="string" Size="Size.Small" Color="Color.Error">Locked out</MudChip> }
-            else if (context.MustChangePassword) { <MudChip T="string" Size="Size.Small" Color="Color.Warning">Temporary password</MudChip> }
-            else { <MudChip T="string" Size="Size.Small" Color="Color.Success">Active</MudChip> }
-        </MudTd>
-        <MudTd DataLabel="Last sign-in">@Format.Date(context.LastSignIn)</MudTd>
-        <MudTd>
-            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" aria-label="Actions">
-                <MudMenuItem OnClick="() => Edit(context)">Edit name and role</MudMenuItem>
-                <MudMenuItem OnClick="() => ResetPassword(context)">Reset password</MudMenuItem>
-                <MudMenuItem OnClick="() => ToggleDisabled(context)">@(context.IsDisabled ? "Enable" : "Disable")</MudMenuItem>
-            </MudMenu>
-        </MudTd>
-    </RowTemplate>
+<MudDataGrid T="User" @ref="_table" @key="View.Version" ServerData="Load"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
+    <Columns>
+        <PropertyColumn Property="x => x.FullName" Title="Name" />
+        <PropertyColumn Property="x => x.Email" Title="Email" />
+        <TemplateColumn Title="Role"><CellTemplate>@Format.Words(context.Item.Role)</CellTemplate></TemplateColumn>
+        <TemplateColumn Title="Status">
+            <CellTemplate>
+                @if (context.Item.IsDisabled) { <MudChip T="string" Size="Size.Small" Color="Color.Default">Disabled</MudChip> }
+                else if (context.Item.LockedOutUntil is not null) { <MudChip T="string" Size="Size.Small" Color="Color.Error">Locked out</MudChip> }
+                else if (context.Item.MustChangePassword) { <MudChip T="string" Size="Size.Small" Color="Color.Warning">Temporary password</MudChip> }
+                else { <MudChip T="string" Size="Size.Small" Color="Color.Success">Active</MudChip> }
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Last sign-in"><CellTemplate>@Format.Date(context.Item.LastSignIn)</CellTemplate></TemplateColumn>
+        <TemplateColumn Title="">
+            <CellTemplate>
+                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" AriaLabel="Actions">
+                    <MudMenuItem OnClick="() => Edit(context.Item)">Edit name and role</MudMenuItem>
+                    <MudMenuItem OnClick="() => ResetPassword(context.Item)">Reset password</MudMenuItem>
+                    <MudMenuItem OnClick="() => ToggleDisabled(context.Item)">@(context.Item.IsDisabled ? "Enable" : "Disable")</MudMenuItem>
+                </MudMenu>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
     <NoRecordsContent>No users match.</NoRecordsContent>
-    <PagerContent><MudTablePager /></PagerContent>
-</AppTable>
+    <PagerContent><MudDataGridPager T="User" /></PagerContent>
+</MudDataGrid>
 
 @code {
     // The list's view lives in the address (see ListAddress).
@@ -1316,9 +1321,9 @@ public sealed record SignInAttempt(long Id, string Email, long? UserId, string O
     [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
     [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
 
-    private AppTable<User> _table = default!;
+    private MudDataGrid<User> _table = default!;
 
-    private Task<TableData<User>> Load(TableState state, CancellationToken ct)
+    private Task<GridData<User>> Load(GridState<User> state, CancellationToken ct)
     {
         View.Save(state, ("search", Search));
         return Api.Page<User>(Url.With("api/users", ("search", Search)), state);
@@ -1363,18 +1368,20 @@ security-stamp interval from step 4.
 <MudDialog>
     <DialogContent>
         <MudStack Spacing="2" Style="min-width:400px">
-            <AppTextField @bind-Value="_email" Label="Email (they sign in with it)" InputType="InputType.Email" Disabled="User is not null" />
-            <AppTextField @bind-Value="_fullName" Label="Full name" MaxLength="100" />
-            <AppSelect T="string" @bind-Value="_role" Label="Role">
+            <MudTextField @bind-Value="_email" Label="Email (they sign in with it)" InputType="InputType.Email" Disabled="User is not null"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_fullName" Label="Full name" MaxLength="100"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudSelect T="string" Variant="Variant.Outlined" Margin="Margin.Normal" @bind-Value="_role" Label="Role">
                 @foreach (var r in Roles.All)
                 {
                     <MudSelectItem Value="r">@Format.Words(r)</MudSelectItem>
                 }
-            </AppSelect>
+            </MudSelect>
             @if (User is null)
             {
-                <AppPasswordField @bind-Value="_password" Label="Temporary password (at least 12 characters)"
-                              HelperText="Give it to them in person. They must change it when they first sign in." />
+                <PasswordField @bind-Value="_password" Label="Temporary password (at least 12 characters)"
+                               HelperText="Give it to them in person. They must change it when they first sign in." />
             }
         </MudStack>
     </DialogContent>
@@ -1421,7 +1428,7 @@ lock them out.
             <MudText Typo="Typo.body2">
                 Sets a temporary password and unlocks the account. They must choose their own when they next sign in.
             </MudText>
-            <AppPasswordField @bind-Value="_password" Label="Temporary password (at least 12 characters)" />
+            <PasswordField @bind-Value="_password" Label="Temporary password (at least 12 characters)" />
         </MudStack>
     </DialogContent>
     <DialogActions>
@@ -1452,29 +1459,26 @@ lock them out.
 
 <PageTitle>Sign-in log · ERP</PageTitle>
 
-<MudText Typo="Typo.h4" Class="mb-4">Sign-in log</MudText>
+<PageHeader Title="Sign-in log" />
 
 <MudStack Row="true" Spacing="4" Class="mb-4" Breakpoint="Breakpoint.Xs">
-    <AppTextField T="string" Value="Email" ValueChanged="OnEmail" Label="Email" DebounceInterval="400" Clearable="true" />
+    <MudTextField T="string" Value="Email" ValueChanged="OnEmail" Label="Email" DebounceInterval="400" Clearable="true"
+                  Variant="Variant.Outlined" Margin="Margin.Normal" />
     <MudSwitch T="bool" Value="FailedOnly" ValueChanged="OnFailed" Label="Failed only" Color="Color.Error" />
 </MudStack>
 
-<AppTable T="SignInAttempt" @ref="_table" @key="View.Version" ServerData="Load"
-          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? 50">
-    <HeaderContent>
-        <MudTh>When</MudTh><MudTh>Email</MudTh><MudTh>Outcome</MudTh><MudTh>From</MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="When">@Format.Date(context.OccurredUtc)</MudTd>
-        <MudTd DataLabel="Email">@context.Email</MudTd>
-        <MudTd DataLabel="Outcome">
-            <MudChip T="string" Size="Size.Small" Color="@(context.Outcome == "Succeeded" ? Color.Success : Color.Error)">@Format.Words(context.Outcome)</MudChip>
-        </MudTd>
-        <MudTd DataLabel="From">@context.IpAddress</MudTd>
-    </RowTemplate>
+<MudDataGrid T="SignInAttempt" @ref="_table" @key="View.Version" ServerData="Load"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? 50">
+    <Columns>
+        <TemplateColumn Title="When"><CellTemplate>@Format.Date(context.Item.OccurredUtc)</CellTemplate></TemplateColumn>
+        <PropertyColumn Property="x => x.Email" Title="Email" />
+        <TemplateColumn Title="Outcome"><CellTemplate><MudChip T="string" Size="Size.Small" Color="@(context.Item.Outcome == "Succeeded" ? Color.Success : Color.Error)">@Format.Words(context.Item.Outcome)</MudChip></CellTemplate></TemplateColumn>
+        <PropertyColumn Property="x => x.IpAddress" Title="From" />
+    </Columns>
     <NoRecordsContent>No sign-in attempts match.</NoRecordsContent>
-    <PagerContent><MudTablePager PageSizeOptions="new[] { 50, 100 }" /></PagerContent>
-</AppTable>
+    <PagerContent><MudDataGridPager T="SignInAttempt" PageSizeOptions="new[] { 50, 100 }" /></PagerContent>
+</MudDataGrid>
 
 @code {
     // The list's view lives in the address (see ListAddress).
@@ -1483,9 +1487,9 @@ lock them out.
     [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
     [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
 
-    private AppTable<SignInAttempt> _table = default!;
+    private MudDataGrid<SignInAttempt> _table = default!;
 
-    private Task<TableData<SignInAttempt>> Load(TableState state, CancellationToken ct)
+    private Task<GridData<SignInAttempt>> Load(GridState<SignInAttempt> state, CancellationToken ct)
     {
         View.Save(state, ("email", Email), ("failedOnly", FailedOnly));
         return Api.Page<SignInAttempt>(Url.With("api/sign-in-attempts", ("email", Email), ("failedOnly", FailedOnly)), state);
@@ -1519,21 +1523,54 @@ private static readonly string Sales = Join(Roles.SalesRep, Roles.SalesManager, 
 
 ### The tests
 
-In the UI tests, add `"/users"`, `"/sign-in-log"` and `"/change-password"` to `pages`, and one more test:
+In the UI tests, add `"/users"`, `"/sign-in-log"` and `"/change-password"` to `pages`, and two more tests. The
+first checks the menu itself (`GetByRole(AriaRole.Navigation)`): "Administration" mustn't be anywhere in it for a
+rep. `ToHaveCountAsync(0)` waits a moment before it agrees, so a heading that appears late still fails the test:
 
 ```csharp
 [UiFact]
 public async Task A_rep_does_not_see_administration()
 {
     var rep = await SignIn("rep@erp.local");
-    (await rep.GetByText("Administration").CountAsync()).Should().Be(0);
+    var menu = rep.GetByRole(AriaRole.Navigation);
+    await Expect(menu.GetByText("Administration")).ToHaveCountAsync(0);
 
     var admin = await SignIn("admin@erp.local");
     await admin.GotoAsync("/users");
-    await admin.GetByText("rep@erp.local").WaitForAsync();
+    await Expect(admin.GetByRole(AriaRole.Row).Filter(new() { HasText = "rep@erp.local" })).ToBeVisibleAsync();
     await Shot(admin, "admin-users");
 }
 ```
+
+The second walks the error-code promise from lesson 07 end to end: an admin tries to disable their own account,
+the refusal shows its code, and one click explains it:
+
+```csharp
+// A refusal names its code, and one click explains it: the way a compiler error's CS number does.
+[UiFact]
+public async Task A_refusal_shows_its_code_and_one_click_explains_it()
+{
+    var admin = await SignIn("admin@erp.local");
+    await admin.GotoAsync("/users");
+    var own = admin.GetByRole(AriaRole.Row).Filter(new() { HasText = "admin@erp.local" });
+    await own.GetByRole(AriaRole.Button, new() { Name = "Actions" }).ClickAsync();
+    await admin.GetByRole(AriaRole.Menuitem, new() { Name = "Disable" }).ClickAsync();
+
+    await Expect(admin.GetByRole(AriaRole.Alert)).ToContainTextAsync("(IDENTITY-0003)");
+    await Shot(admin, "error-with-code");
+    await admin.GetByRole(AriaRole.Button, new() { Name = "What does this mean?" }).ClickAsync();
+
+    await Expect(admin.GetByRole(AriaRole.Heading, new() { Name = "You can't disable your own account" })).ToBeVisibleAsync();
+    await Expect(admin.GetByText("What to do", new() { Exact = true })).ToBeVisibleAsync();
+    await Shot(admin, "error-explained");
+}
+```
+
+The row's **⋮** button is found by its name, "Actions", inside the admin's own row. That name comes from
+`AriaLabel="Actions"` on the `MudMenu`, and this test is how we found out it matters: an earlier version put
+`aria-label` on the menu instead, MudBlazor put it on the wrapper rather than on the button, and the button had
+no name at all. A screen reader said "button", nothing more; the test couldn't find it either. Use the
+component's own `AriaLabel` parameter whenever it has one.
 
 And an integration test class, [UserAdministrationTests.cs](../course-validation/business/tests/Erp.Integration.Tests/UserAdministrationTests.cs),
 that proves through the real API: a new user's `/api/auth/me` says `mustChangePassword: true` until they
@@ -1585,7 +1622,7 @@ public class LaterModuleEdgeCaseTests(CustomWebAppFactory factory)
     {
         var email = await factory.CreateUserAsync(Roles.SalesRep);
         var client = factory.CreateClient();
-        var tokens = await factory.LoginAsync(client, email);
+        var tokens = await CustomWebAppFactory.LoginAsync(client, email);
         client.DefaultRequestHeaders.Authorization = new("Bearer", tokens.AccessToken);
         var me = await client.GetFromJsonAsync<Me>("/api/auth/me");
 
@@ -1628,8 +1665,8 @@ signed-in clerk back to the sign-in page, forever.
 | `A_new_user_must_change_the_temporary_password_and_a_disabled_user_is_refused`, `Only_an_admin_manages_users_and_nobody_disables_themselves`, `A_weak_temporary_password_is_refused_by_the_policy` | Through HTTP | The reference build's `UserAdministrationTests.cs` |
 
 Add `/users` and `/sign-in-log` to `pages` in `Every_page_opens_without_an_error`, and in the browser
-tests, one more: `A_rep_does_not_see_administration`, which signs in as the rep and checks the menu has no
-**Users** link. ([Lesson 19](19-purchasing.md) extends it to purchasing.)
+tests, two more: `A_rep_does_not_see_administration`, which signs in as the rep and checks the menu has no
+**Administration** heading, and `A_refusal_shows_its_code_and_one_click_explains_it`. ([Lesson 19](19-purchasing.md) extends it to purchasing.)
 
 ## How a request flows
 

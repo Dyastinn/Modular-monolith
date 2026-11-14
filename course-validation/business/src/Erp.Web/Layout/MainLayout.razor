@@ -35,7 +35,8 @@
                        Class="border-r border-solid mud-border-lines-default">
                 <NavMenu />
             </MudDrawer>
-            <MudMainContent>
+            @* role="main": the page's main landmark, so a screen reader (and a test) can go straight to the content. *@
+            <MudMainContent role="main">
                 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pt-8 pb-12 px-4 px-sm-8">
                     @Body
                 </MudContainer>

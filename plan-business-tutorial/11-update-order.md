@@ -163,27 +163,27 @@ first, it stays `null`. So add the parameter, and let the title say which it is:
 ```razor
 <PageTitle>@(Id is null ? "New order" : "Edit order") · ERP</PageTitle>
 
-<MudText Typo="Typo.h4" Class="mb-4">@(Id is null ? "New sales order" : $"Edit {_orderNumber}")</MudText>
+<PageHeader Title="@(Id is null ? "New sales order" : $"Edit {_orderNumber}")" Trail="@Trail" />
 ```
 
 The breadcrumb learns the second address too, and when editing it passes through the order itself, so one click
 goes back to it. Before:
 
 ```csharp
-private List<BreadcrumbItem> Crumbs => [new("Sales orders", Lists.Last("sales-orders")), new("New order", null, disabled: true)];
+private List<BreadcrumbItem> Trail => [new("Sales orders", Lists.Last("sales-orders")), new("New order", null, disabled: true)];
 ```
 
 After, under the `Id` parameter (it reads `_orderNumber`, which the code below fills in):
 
 ```csharp
 // Where this page sits: under the list, and under the order itself when editing one.
-private List<BreadcrumbItem> Crumbs => Id is null
+private List<BreadcrumbItem> Trail => Id is null
     ? [new("Sales orders", Lists.Last("sales-orders")), new("New order", null, disabled: true)]
     : [new("Sales orders", Lists.Last("sales-orders")), new(_orderNumber ?? "Order", $"sales-orders/{Id}"), new("Edit", null, disabled: true)];
 ```
 
 An order's customer never changes (a different customer is a different order), so the customer box is
-locked when editing: add `Disabled="Id is not null"` to the customer `AppAutocomplete`. The Back button
+locked when editing: add `Disabled="Id is not null"` to the customer `MudAutocomplete`. The Back button
 goes back to wherever you came from: `Href="@(Id is null ? "sales-orders" : $"sales-orders/{Id}")"`.
 
 Then the code. When editing, load the order and turn its lines back into form lines. This replaces lesson 08's
@@ -304,6 +304,13 @@ Through HTTP, the two saves would almost never overlap. Here, two scopes are two
 order *before* either saves, exactly the moment that matters. Delete the `SaveChangesAsync` override from
 step 1 and run it: it fails, because Bob's save goes through. Put the override back: it passes. That's how you
 know a test really guards the thing it's named after.
+
+In `Another_reps_order_is_404_for_reading_submitting_and_editing`, the edit joins the read and the submit:
+
+```csharp
+(await other.PutAsJsonAsync($"/api/sales-orders/{id}", new { lines = new[] { new { itemId = 1, quantity = 2 } } }))
+    .StatusCode.Should().Be(HttpStatusCode.NotFound);
+```
 
 And the edges of editing, in `SalesOrderEdgeCaseTests` (the reference build has them):
 

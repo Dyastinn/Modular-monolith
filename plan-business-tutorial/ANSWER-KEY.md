@@ -253,6 +253,11 @@ Different answers let an attacker try emails and learn which ones are staff acco
 By its role and accessible name (`GetByRole(AriaRole.Button, new() { Name = "Sign in" })`), the way a person
 finds it. A CSS class is a styling detail that changes for reasons unrelated to whether the button works.
 
+**12. Why `await Expect(field).ToHaveValueAsync("Acme")` and not `(await field.InputValueAsync()).Should().Be("Acme")`?**
+`InputValueAsync` reads the box once, at that instant; if Blazor hasn't redrawn it yet, the test fails although the
+app is fine, and only sometimes, which is worse. `Expect` keeps checking until the value is there (up to 5
+seconds), and if it never comes, says what it was waiting for.
+
 ## Lesson 07 — Create an order
 
 **1. Validator or domain: "quantity is positive", "customer isn't blocked", "at most 5 Controlled"?**

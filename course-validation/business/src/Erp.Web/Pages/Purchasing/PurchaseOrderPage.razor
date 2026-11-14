@@ -13,68 +13,63 @@
     return;
 }
 
-<MudBreadcrumbs Items="@([new BreadcrumbItem("Purchase orders", Lists.Last("purchase-orders")), new BreadcrumbItem(_po.Number, null, disabled: true)])" Class="pa-0 mb-2" />
-
-<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
-    <MudText Typo="Typo.h4">@_po.Number</MudText>
-    <StatusChip Status="@_po.Status" />
-    <MudSpacer />
-    @if (_po.Status == "Draft")
-    {
-        <AuthorizeView Roles="@Buyers">
-            <MudButton Href="@($"purchase-orders/{Id}/edit")" Variant="Variant.Outlined">Edit</MudButton>
-        </AuthorizeView>
-        <AuthorizeView Roles="@Roles.Admin">
-            <MudButton OnClick="@(() => Act("approve", "Approved."))" Variant="Variant.Filled" Color="Color.Success" Disabled="Api.Busy">Approve</MudButton>
-        </AuthorizeView>
-    }
-    @if (_po.Status == "Approved")
-    {
-        <AuthorizeView Roles="@Buyers">
-            <MudButton OnClick="@(() => Act("send", "Marked as sent to the supplier."))" Variant="Variant.Filled" Color="Color.Primary" Disabled="Api.Busy">Mark sent</MudButton>
-        </AuthorizeView>
-    }
-    @if (_po.Status is "Approved" or "Sent" or "PartiallyReceived")
-    {
-        <AuthorizeView Roles="@Receivers">
-            <MudButton OnClick="Receive" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Inventory" Disabled="Api.Busy">Receive goods</MudButton>
-        </AuthorizeView>
-    }
-    @if (_po.Status == "PartiallyReceived")
-    {
-        <AuthorizeView Roles="@Buyers">
-            <MudButton OnClick="CloseShort" Variant="Variant.Outlined" Disabled="Api.Busy">Close short</MudButton>
-        </AuthorizeView>
-    }
-    @if (_po.Status is "Draft" or "Approved" or "Sent")
-    {
-        <AuthorizeView Roles="@Buyers">
-            <MudButton OnClick="Cancel" Variant="Variant.Text" Color="Color.Error" Disabled="Api.Busy">Cancel</MudButton>
-        </AuthorizeView>
-    }
-</MudStack>
+<PageHeader Title="@_po.Number" Trail="@([new BreadcrumbItem("Purchase orders", Lists.Last("purchase-orders")), new BreadcrumbItem(_po.Number, null, disabled: true)])">
+    <Status><StatusChip Status="@_po.Status" Live="true" /></Status>
+    <Actions>
+        @if (_po.Status == "Draft")
+        {
+            <AuthorizeView Roles="@Buyers">
+                <MudButton Href="@($"purchase-orders/{Id}/edit")" Variant="Variant.Outlined">Edit</MudButton>
+            </AuthorizeView>
+            <AuthorizeView Roles="@Roles.Admin">
+                <MudButton OnClick="@(() => Act("approve", "Approved."))" Variant="Variant.Filled" Color="Color.Success" Disabled="Api.Busy">Approve</MudButton>
+            </AuthorizeView>
+        }
+        @if (_po.Status == "Approved")
+        {
+            <AuthorizeView Roles="@Buyers">
+                <MudButton OnClick="@(() => Act("send", "Marked as sent to the supplier."))" Variant="Variant.Filled" Color="Color.Primary" Disabled="Api.Busy">Mark sent</MudButton>
+            </AuthorizeView>
+        }
+        @if (_po.Status is "Approved" or "Sent" or "PartiallyReceived")
+        {
+            <AuthorizeView Roles="@Receivers">
+                <MudButton OnClick="Receive" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Inventory" Disabled="Api.Busy">Receive goods</MudButton>
+            </AuthorizeView>
+        }
+        @if (_po.Status == "PartiallyReceived")
+        {
+            <AuthorizeView Roles="@Buyers">
+                <MudButton OnClick="CloseShort" Variant="Variant.Outlined" Disabled="Api.Busy">Close short</MudButton>
+            </AuthorizeView>
+        }
+        @if (_po.Status is "Draft" or "Approved" or "Sent")
+        {
+            <AuthorizeView Roles="@Buyers">
+                <MudButton OnClick="Cancel" Variant="Variant.Text" Color="Color.Error" Disabled="Api.Busy">Cancel</MudButton>
+            </AuthorizeView>
+        }
+    </Actions>
+</PageHeader>
 
 <MudGrid>
     <MudItem xs="12" md="8">
         <MudPaper Class="pa-4" Outlined="true">
             <MudText Typo="Typo.h6" GutterBottom="true">@_po.SupplierName</MudText>
-            <AppSimpleTable>
-                <thead><tr><th>Item</th><th class="money">Ordered</th><th class="money">Received</th><th class="money">To come</th><th class="money">Unit cost</th><th class="money">Amount</th></tr></thead>
-                <tbody>
-                    @foreach (var l in _po.Lines)
-                    {
-                        <tr>
-                            <td>@l.Sku · @l.ItemName</td>
-                            <td class="money">@Format.Qty(l.Quantity) @l.Unit</td>
-                            <td class="money">@Format.Qty(l.ReceivedQuantity)</td>
-                            <td class="money">@Format.Qty(l.Outstanding)</td>
-                            <td class="money">@Format.Peso(l.UnitCost)</td>
-                            <td class="money">@Format.Peso(l.LineTotal)</td>
-                        </tr>
-                    }
-                    <tr><td colspan="5"><b>Total</b></td><td class="money"><b>@Format.Peso(_po.Total)</b></td></tr>
-                </tbody>
-            </AppSimpleTable>
+            <MudDataGrid T="PurchaseOrderLine" Items="_po.Lines"
+                         Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None">
+                <Columns>
+                    <TemplateColumn Title="Item"><CellTemplate>@context.Item.Sku · @context.Item.ItemName</CellTemplate></TemplateColumn>
+                    <TemplateColumn Title="Ordered" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Qty(context.Item.Quantity) @context.Item.Unit</CellTemplate></TemplateColumn>
+                    <TemplateColumn Title="Received" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Qty(context.Item.ReceivedQuantity)</CellTemplate></TemplateColumn>
+                    <TemplateColumn Title="To come" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Qty(context.Item.Outstanding)</CellTemplate></TemplateColumn>
+                    <MoneyColumn Title="Unit cost" Amount="x => x.UnitCost" />
+                    <MoneyColumn Title="Amount" Amount="x => x.LineTotal" />
+                </Columns>
+            </MudDataGrid>
+            <Totals>
+                <TotalLine Label="Total" Amount="_po.Total" Strong="true" />
+            </Totals>
         </MudPaper>
     </MudItem>
     <MudItem xs="12" md="4">

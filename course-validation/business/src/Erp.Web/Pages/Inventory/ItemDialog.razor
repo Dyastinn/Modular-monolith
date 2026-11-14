@@ -3,10 +3,13 @@
 <MudDialog>
     <DialogContent>
         <MudStack Spacing="2" Style="min-width:380px">
-            <AppTextField @bind-Value="_sku" Label="SKU" MaxLength="50" Disabled="Item is not null"
+            <MudTextField @bind-Value="_sku" Label="SKU" MaxLength="50" Disabled="Item is not null"
+                          Variant="Variant.Outlined" Margin="Margin.Normal"
                           HelperText="@(Item is null ? "Can't be changed later" : null)" />
-            <AppTextField @bind-Value="_name" Label="Name" MaxLength="200" />
-            <AppTextField @bind-Value="_unit" Label="Unit" MaxLength="10" HelperText="pc, box, kg, m, L…" />
+            <MudTextField @bind-Value="_name" Label="Name" MaxLength="200"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_unit" Label="Unit" MaxLength="10" HelperText="pc, box, kg, m, L…"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
             <MudSwitch @bind-Value="_fractions" Label="Sold and counted in fractions (2.5 kg)" Color="Color.Primary" />
         </MudStack>
     </DialogContent>

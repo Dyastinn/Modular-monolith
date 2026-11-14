@@ -5,37 +5,38 @@
 
 <PageTitle>Suppliers · ERP</PageTitle>
 
-<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
-    <MudText Typo="Typo.h4">Suppliers</MudText>
-    <MudSpacer />
-    <AuthorizeView Roles="@Buyers">
-        <MudButton OnClick="() => Edit(null)" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New supplier</MudButton>
-    </AuthorizeView>
-</MudStack>
+<PageHeader Title="Suppliers">
+    <Actions>
+        <AuthorizeView Roles="@Buyers">
+            <MudButton OnClick="() => Edit(null)" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New supplier</MudButton>
+        </AuthorizeView>
+    </Actions>
+</PageHeader>
 
-<AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Name or TIN" DebounceInterval="400" Clearable="true" Class="mb-4" />
+<MudTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Name or TIN" DebounceInterval="400" Clearable="true" Class="mb-4"
+              Variant="Variant.Outlined" Margin="Margin.Normal" />
 
-<AppTable T="Supplier" @ref="_table" @key="View.Version" ServerData="Load"
-          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
-    <HeaderContent>
-        <MudTh>Name</MudTh><MudTh>TIN</MudTh><MudTh>Email</MudTh><MudTh>Phone</MudTh><MudTh>Terms</MudTh><MudTh></MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="Name">@context.Name @if (!context.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</MudTd>
-        <MudTd DataLabel="TIN">@context.Tin</MudTd>
-        <MudTd DataLabel="Email">@context.Email</MudTd>
-        <MudTd DataLabel="Phone">@context.Phone</MudTd>
-        <MudTd DataLabel="Terms">@context.PaymentTermsDays days</MudTd>
-        <MudTd>
-            <AuthorizeView Roles="@Buyers" Context="auth">
-                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => Edit(context)" aria-label="Edit" />
-                <MudButton Size="Size.Small" OnClick="() => Toggle(context)">@(context.IsActive ? "Deactivate" : "Activate")</MudButton>
-            </AuthorizeView>
-        </MudTd>
-    </RowTemplate>
+<MudDataGrid T="Supplier" @ref="_table" @key="View.Version" ServerData="Load"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
+    <Columns>
+        <TemplateColumn Title="Name"><CellTemplate>@context.Item.Name @if (!context.Item.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</CellTemplate></TemplateColumn>
+        <PropertyColumn Property="x => x.Tin" Title="TIN" />
+        <PropertyColumn Property="x => x.Email" Title="Email" />
+        <PropertyColumn Property="x => x.Phone" Title="Phone" />
+        <TemplateColumn Title="Terms"><CellTemplate>@context.Item.PaymentTermsDays days</CellTemplate></TemplateColumn>
+        <TemplateColumn Title="">
+            <CellTemplate>
+                <AuthorizeView Roles="@Buyers" Context="auth">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => Edit(context.Item)" aria-label="Edit" />
+                    <MudButton Size="Size.Small" OnClick="() => Toggle(context.Item)">@(context.Item.IsActive ? "Deactivate" : "Activate")</MudButton>
+                </AuthorizeView>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
     <NoRecordsContent>No suppliers match.</NoRecordsContent>
-    <PagerContent><MudTablePager /></PagerContent>
-</AppTable>
+    <PagerContent><MudDataGridPager T="Supplier" /></PagerContent>
+</MudDataGrid>
 
 @code {
     // The list's view lives in the address (see ListAddress).
@@ -44,9 +45,9 @@
     [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
 
     private static readonly string Buyers = $"{Roles.Purchaser},{Roles.Admin}";
-    private AppTable<Supplier> _table = default!;
+    private MudDataGrid<Supplier> _table = default!;
 
-    private Task<TableData<Supplier>> Load(TableState state, CancellationToken ct)
+    private Task<GridData<Supplier>> Load(GridState<Supplier> state, CancellationToken ct)
     {
         View.Save(state, ("search", Search));
         return Api.Page<Supplier>(Url.With("api/suppliers", ("search", Search)), state);

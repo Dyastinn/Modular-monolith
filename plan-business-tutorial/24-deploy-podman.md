@@ -153,11 +153,11 @@ public sealed class FirstRunFactory : WebApplicationFactory<Program>, IAsyncLife
 
     private readonly PostgreSqlContainer _postgres = TestDatabase.Container().Build();
 
-    public Task InitializeAsync() => _postgres.StartAsync();
+    public async ValueTask InitializeAsync() => await _postgres.StartAsync();
 
-    async Task IAsyncLifetime.DisposeAsync()
+    public override async ValueTask DisposeAsync()
     {
-        await DisposeAsync();
+        await base.DisposeAsync();
         await _postgres.DisposeAsync();
     }
 
@@ -338,7 +338,7 @@ half-migrated database.
 ```yaml
 # deploy/compose/compose.yaml
 # The whole ERP on one container host. Settings and secrets come from .env next to this file (see .env.example).
-#   podman compose up -d --build      first install, and every upgrade after it (podman compose works the same)
+#   podman compose up -d --build      first install, and every upgrade after it (docker compose works the same)
 # The ",z" on each mounted file lets SELinux hosts (Fedora, RHEL) share it with the container; elsewhere it's ignored.
 name: erp
 

@@ -284,17 +284,28 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
 - **The look lives in the theme** (`Erp.Web/Layout/AppTheme.cs`: light and dark palettes, typography, flat
   elevations 1–5), not in CSS. Pages ask for roles (`Color.Primary`), never colour codes; `app.css` holds only what
   the theme can't say, each rule with its reason. Build screens from MudBlazor components and its utility classes,
-  not raw HTML. **Forms use the `App*` fields** (`AppTextField`, `AppNumericField`, `AppSelect`, `AppAutocomplete`,
-  `AppDatePicker` in `Shared/AppFields.cs`: outlined, normal margin), never the `Mud*` inputs directly; tables use
-  `AppTable<T>`/`AppSimpleTable` (`Shared/AppTables.cs`: striped, hover, dense; cells don't wrap, free text opts in
-  with `Class="wrap"`; every cell has a `DataLabel` for phones); row actions go in a "⋮" `MudMenu`. Rows of fields
-  use `Breakpoint="Breakpoint.Xs"` so they stack on a phone. Every page under a list (a detail or edit page) starts
-  with `MudBreadcrumbs` back to it, via `ListMemory.Last`. A list keeps its search, filters, page and page size in
-  the address (`ListAddress`); a filter change returns to page 1 (`AppTable.FirstPage`). Buttons that send a change
-  are `Disabled="Api.Busy"`; an action that can't be undone (ship, close short, cancel) asks first, naming the
-  record and the consequence, with verb buttons ("Ship" / "Not yet"); a form with unsaved changes asks before it's
-  left (`NavigationLock` + `UnsavedChanges`). Password fields are `AppPasswordField` (show/hide). Dark mode follows the system unless the person picks one (kept in
-  `localStorage`). No gradients.
+  **never raw HTML** (no `<div>`, `<table>`, `<b>`; `MudElement` only for a landmark like `<nav>`); see
+  `plan-business-tutorial/MUDBLAZOR.md`. **Never subclass MudBlazor components** (no `AppTextField : MudTextField`);
+  use them as they are, with the house settings written on each tag: every field (`MudTextField`, `MudNumericField`,
+  `MudSelect`, `MudAutocomplete`, `MudDatePicker`) has `Variant="Variant.Outlined" Margin="Margin.Normal"`, and date
+  fields `Editable="true"`. **Every table is `MudDataGrid`** with `Striped="true" Hover="true" Dense="true"
+  SortMode="SortMode.None"` and `Outlined="true"` unless it sits in a framed tab or card; `PropertyColumn`/
+  `TemplateColumn`, amounts in our `MoneyColumn`; the column `Title` labels values on phones; cells don't wrap, free
+  text opts in with `CellClass="wrap"`; each grid that can be empty has `NoRecordsContent`. Never `MudTable` or
+`MudSimpleTable`. Totals under lines use `Totals` + `TotalLine`. Row actions go in a "⋮" `MudMenu` with
+  `AriaLabel`. Rows of fields use `Breakpoint="Breakpoint.Xs"` so they stack on a phone. Every page under a list (a
+  detail or edit page) has a breadcrumb back to it (`PageHeader Trail=`, drawn by `Crumbs`, a `nav` landmark around `MudBreadcrumbs`), via
+  `ListMemory.Last`; a detail page's status is `StatusChip Live="true"`. A list keeps its search, filters, page and
+  page size in the address (`ListAddress`); a filter change returns to page 1 (`GridPaging.FirstPage`, an extension method). Buttons
+  that send a change are `Disabled="Api.Busy"`; an action that can't be undone (ship, close short, cancel) asks
+  first, naming the record and the consequence, with verb buttons ("Ship" / "Not yet"); a form with unsaved changes
+  asks before it's left (`NavigationLock` + `UnsavedChanges`). Password fields are our `PasswordField` (show/hide). Every page's top row is `PageHeader` (title, trail, status,
+  actions, description). Shared behaviour goes in components that *hold* MudBlazor's, or in extension methods.
+  Dark mode follows the system unless the person picks one (kept in `localStorage`). No gradients.
+- **Browser tests find things by role and name and check with Playwright's `Expect`** (never MudBlazor CSS classes,
+  `WaitForTimeout`, `NetworkIdle`, or read-once checks); each person gets their own context; a failed test keeps
+  a trace. Recipes per component are in `MUDBLAZOR.md`. If a control can't be found by role, fix its accessibility
+  (`AriaLabel`, `role`), don't reach for CSS.
 - **Every dependency is permissively licensed and free** (see §3) and listed in the third-party notices file.
 - **Code comments are minimal.** None on self-explanatory code. Where one is needed, one short line with the
   important, non-obvious *why* (a trap, a constraint). The lessons carry the explanations, not the code.

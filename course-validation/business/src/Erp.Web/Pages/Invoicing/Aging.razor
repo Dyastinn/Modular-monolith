@@ -4,11 +4,12 @@
 
 <PageTitle>Receivables aging · ERP</PageTitle>
 
-<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
-    <MudText Typo="Typo.h4">Receivables aging</MudText>
-    <MudSpacer />
-    <AppDatePicker Date="_asOf" DateChanged="OnDate" Label="As of" Style="max-width:200px" />
-</MudStack>
+<PageHeader Title="Receivables aging">
+    <Actions>
+        <MudDatePicker Date="_asOf" DateChanged="OnDate" Label="As of" Style="max-width:200px"
+                       Variant="Variant.Outlined" Margin="Margin.Normal" Editable="true" />
+    </Actions>
+</PageHeader>
 
 @if (_report is null)
 {
@@ -16,30 +17,24 @@
 }
 else
 {
-    <AppSimpleTable Outlined="true">
-        <thead>
-            <tr><th>Customer</th><th class="money">Not yet due</th><th class="money">1–30 days</th><th class="money">31–60</th>
-                <th class="money">61–90</th><th class="money">Over 90</th><th class="money">Total</th></tr>
-        </thead>
-        <tbody>
-            @foreach (var r in _report.Customers.Append(_report.Totals))
-            {
-                <tr style="@(r.CustomerId == 0 ? "font-weight:bold" : "")">
-                    <td>
-                        @if (r.CustomerId == 0) { @r.CustomerName }
-                        else { <MudLink Href="@($"invoices?search={Uri.EscapeDataString(r.CustomerName)}")">@r.CustomerName</MudLink> }
-                    </td>
-                    <td class="money">@Format.Peso(r.NotYetDue)</td>
-                    <td class="money">@Format.Peso(r.Days1To30)</td>
-                    <td class="money">@Format.Peso(r.Days31To60)</td>
-                    <td class="money">@Format.Peso(r.Days61To90)</td>
-                    <td class="@(r.Over90 > 0 ? "money mud-error-text" : "money")">@Format.Peso(r.Over90)</td>
-                    <td class="money">@Format.Peso(r.Total)</td>
-                </tr>
-            }
-        </tbody>
-    </AppSimpleTable>
-    @if (_report.Customers.Count == 0) { <MudText Class="mt-4">Nobody owes anything on this date.</MudText> }
+    <MudDataGrid T="AgingRow" Items="_report.Customers"
+                 Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None">
+        <Columns>
+            <TemplateColumn Title="Customer">
+                <CellTemplate>
+                    <MudLink Href="@($"invoices?search={Uri.EscapeDataString(context.Item.CustomerName)}")">@context.Item.CustomerName</MudLink>
+                </CellTemplate>
+                <FooterTemplate>Total</FooterTemplate>
+            </TemplateColumn>
+            <MoneyColumn Title="Not yet due" Amount="r => r.NotYetDue" Total="_report.Totals.NotYetDue" />
+            <MoneyColumn Title="1–30 days" Amount="r => r.Days1To30" Total="_report.Totals.Days1To30" />
+            <MoneyColumn Title="31–60" Amount="r => r.Days31To60" Total="_report.Totals.Days31To60" />
+            <MoneyColumn Title="61–90" Amount="r => r.Days61To90" Total="_report.Totals.Days61To90" />
+            <MoneyColumn Title="Over 90" Amount="r => r.Over90" Total="_report.Totals.Over90" Warn="true" />
+            <MoneyColumn Title="Total" Amount="r => r.Total" Total="_report.Totals.Total" />
+        </Columns>
+        <NoRecordsContent>Nobody owes anything on this date.</NoRecordsContent>
+    </MudDataGrid>
 }
 
 @code {

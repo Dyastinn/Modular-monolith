@@ -1,0 +1,23 @@
+@typeparam T
+@* A column of pesos for any MudDataGrid: right-aligned, ₱ and two decimals (Format.Peso), and the grid's mobile
+   label from Title. One definition, so every amount in the app lines up and reads the same. It holds a
+   TemplateColumn rather than inheriting from one, so it sets the column's parameters instead of rewriting them. *@
+<TemplateColumn T="T" Title="@Title" HeaderClass="money" FooterClass="money" CellClassFunc="CellClass" FooterTemplate="Footer">
+    <CellTemplate>@Format.Peso(Amount(context.Item))</CellTemplate>
+</TemplateColumn>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public Func<T, decimal> Amount { get; set; } = default!;
+
+    // A total under the column, in the grid's footer row. Leave it out and the grid has no footer.
+    [Parameter] public decimal? Total { get; set; }
+
+    // Amounts above zero in the error colour: money overdue, a certificate missing.
+    [Parameter] public bool Warn { get; set; }
+
+    private string CellClass(T item) => Warn && Amount(item) > 0 ? "money mud-error-text" : "money";
+
+    private RenderFragment<FooterContext<T>>? Footer =>
+        Total is { } total ? _ => @<text>@Format.Peso(total)</text> : null;
+}

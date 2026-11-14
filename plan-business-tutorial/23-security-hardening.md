@@ -494,7 +494,7 @@ private readonly PostgreSqlContainer _postgres = TestDatabase.Container().Build(
 
 public string ConnectionString => _postgres.GetConnectionString();
 
-public Task InitializeAsync() => _postgres.StartAsync();
+public async ValueTask InitializeAsync() => await _postgres.StartAsync();
 ```
 
 After:
@@ -509,7 +509,7 @@ private readonly PostgreSqlContainer _postgres = TestDatabase.Container()
 public string ConnectionString { get; private set; } = default!;        // erp_app: rows only
 public string OwnerConnectionString { get; private set; } = default!;   // erp_owner: runs the migrations
 
-public async Task InitializeAsync()
+public async ValueTask InitializeAsync()
 {
     await _postgres.StartAsync();
     var roles = await _postgres.ExecAsync(["psql", "-U", "postgres", "-v", "ON_ERROR_STOP=1", "-v", $"db={Database}",

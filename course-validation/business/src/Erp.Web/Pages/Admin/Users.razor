@@ -6,41 +6,44 @@
 
 <PageTitle>Users · ERP</PageTitle>
 
-<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
-    <MudText Typo="Typo.h4">Users</MudText>
-    <MudSpacer />
-    <MudButton OnClick="() => Edit(null)" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PersonAdd">New user</MudButton>
-</MudStack>
+<PageHeader Title="Users">
+    <Actions>
+        <MudButton OnClick="() => Edit(null)" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PersonAdd">New user</MudButton>
+    </Actions>
+</PageHeader>
 
-<AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Name or email" DebounceInterval="400" Clearable="true" Class="mb-4" />
+<MudTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Name or email" DebounceInterval="400" Clearable="true" Class="mb-4"
+              Variant="Variant.Outlined" Margin="Margin.Normal" />
 
-<AppTable T="User" @ref="_table" @key="View.Version" ServerData="Load"
-          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
-    <HeaderContent>
-        <MudTh>Name</MudTh><MudTh>Email</MudTh><MudTh>Role</MudTh><MudTh>Status</MudTh><MudTh>Last sign-in</MudTh><MudTh></MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="Name">@context.FullName</MudTd>
-        <MudTd DataLabel="Email">@context.Email</MudTd>
-        <MudTd DataLabel="Role">@Format.Words(context.Role)</MudTd>
-        <MudTd DataLabel="Status">
-            @if (context.IsDisabled) { <MudChip T="string" Size="Size.Small" Color="Color.Default">Disabled</MudChip> }
-            else if (context.LockedOutUntil is not null) { <MudChip T="string" Size="Size.Small" Color="Color.Error">Locked out</MudChip> }
-            else if (context.MustChangePassword) { <MudChip T="string" Size="Size.Small" Color="Color.Warning">Temporary password</MudChip> }
-            else { <MudChip T="string" Size="Size.Small" Color="Color.Success">Active</MudChip> }
-        </MudTd>
-        <MudTd DataLabel="Last sign-in">@Format.Date(context.LastSignIn)</MudTd>
-        <MudTd>
-            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" aria-label="Actions">
-                <MudMenuItem OnClick="() => Edit(context)">Edit name and role</MudMenuItem>
-                <MudMenuItem OnClick="() => ResetPassword(context)">Reset password</MudMenuItem>
-                <MudMenuItem OnClick="() => ToggleDisabled(context)">@(context.IsDisabled ? "Enable" : "Disable")</MudMenuItem>
-            </MudMenu>
-        </MudTd>
-    </RowTemplate>
+<MudDataGrid T="User" @ref="_table" @key="View.Version" ServerData="Load"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
+    <Columns>
+        <PropertyColumn Property="x => x.FullName" Title="Name" />
+        <PropertyColumn Property="x => x.Email" Title="Email" />
+        <TemplateColumn Title="Role"><CellTemplate>@Format.Words(context.Item.Role)</CellTemplate></TemplateColumn>
+        <TemplateColumn Title="Status">
+            <CellTemplate>
+                @if (context.Item.IsDisabled) { <MudChip T="string" Size="Size.Small" Color="Color.Default">Disabled</MudChip> }
+                else if (context.Item.LockedOutUntil is not null) { <MudChip T="string" Size="Size.Small" Color="Color.Error">Locked out</MudChip> }
+                else if (context.Item.MustChangePassword) { <MudChip T="string" Size="Size.Small" Color="Color.Warning">Temporary password</MudChip> }
+                else { <MudChip T="string" Size="Size.Small" Color="Color.Success">Active</MudChip> }
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Last sign-in"><CellTemplate>@Format.Date(context.Item.LastSignIn)</CellTemplate></TemplateColumn>
+        <TemplateColumn Title="">
+            <CellTemplate>
+                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" AriaLabel="Actions">
+                    <MudMenuItem OnClick="() => Edit(context.Item)">Edit name and role</MudMenuItem>
+                    <MudMenuItem OnClick="() => ResetPassword(context.Item)">Reset password</MudMenuItem>
+                    <MudMenuItem OnClick="() => ToggleDisabled(context.Item)">@(context.Item.IsDisabled ? "Enable" : "Disable")</MudMenuItem>
+                </MudMenu>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
     <NoRecordsContent>No users match.</NoRecordsContent>
-    <PagerContent><MudTablePager /></PagerContent>
-</AppTable>
+    <PagerContent><MudDataGridPager T="User" /></PagerContent>
+</MudDataGrid>
 
 @code {
     // The list's view lives in the address (see ListAddress).
@@ -48,9 +51,9 @@
     [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
     [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
 
-    private AppTable<User> _table = default!;
+    private MudDataGrid<User> _table = default!;
 
-    private Task<TableData<User>> Load(TableState state, CancellationToken ct)
+    private Task<GridData<User>> Load(GridState<User> state, CancellationToken ct)
     {
         View.Save(state, ("search", Search));
         return Api.Page<User>(Url.With("api/users", ("search", Search)), state);

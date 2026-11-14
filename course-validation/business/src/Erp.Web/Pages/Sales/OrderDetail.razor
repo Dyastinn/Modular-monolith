@@ -13,84 +13,80 @@
     return;
 }
 
-<MudBreadcrumbs Items="@([new BreadcrumbItem("Sales orders", Lists.Last("sales-orders")), new BreadcrumbItem(_order.OrderNumber, null, disabled: true)])" Class="pa-0 mb-2" />
-
-<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
-    <MudText Typo="Typo.h4">@_order.OrderNumber</MudText>
-    <StatusChip Status="@_order.Status" />
-    <MudSpacer />
-
-    @* The API decides what's allowed; the buttons only show what could make sense for this order and this person. *@
-    @if (_order.Status == "Draft")
-    {
-        <AuthorizeView Roles="@Sellers">
-            <MudButton Href="@($"sales-orders/{Id}/edit")" Variant="Variant.Outlined">Edit</MudButton>
-            @if (_order.SpecialDiscount is null && _order.Lines.Any(l => l.SpecialDiscountEligible))
-            {
-                <MudButton OnClick="ApplyDiscount" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Elderly" Disabled="Api.Busy">Special discount</MudButton>
-            }
-            else if (_order.SpecialDiscount is not null)
-            {
-                <MudButton OnClick="RemoveDiscount" Variant="Variant.Text" Disabled="Api.Busy">Remove discount</MudButton>
-            }
-            <MudButton OnClick="Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="Api.Busy">Submit</MudButton>
-        </AuthorizeView>
-    }
-    @if (_order.Status == "PendingApproval")
-    {
-        <AuthorizeView Roles="@Managers">
-            <MudButton OnClick="Reject" Variant="Variant.Outlined" Color="Color.Error" Disabled="Api.Busy">Reject</MudButton>
-            <MudButton OnClick="Approve" Variant="Variant.Filled" Color="Color.Success" Disabled="Api.Busy">Approve</MudButton>
-        </AuthorizeView>
-    }
-    @if (_order.Status == "Approved")
-    {
-        <AuthorizeView Roles="@Shippers">
-            <MudButton OnClick="Ship" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.LocalShipping" Disabled="Api.Busy">Ship</MudButton>
-        </AuthorizeView>
-    }
-    @if (_order.Status is "Draft" or "PendingApproval" or "Approved")
-    {
-        <AuthorizeView Roles="@Sellers">
-            <MudButton OnClick="Cancel" Variant="Variant.Text" Color="Color.Error" Disabled="Api.Busy">Cancel order</MudButton>
-        </AuthorizeView>
-    }
-    @if (_order.Status == "Shipped")
-    {
-        <AuthorizeView Roles="@Billing">
-            <MudButton Href="@Url.With("invoices", ("search", _order.OrderNumber))" Variant="Variant.Outlined">Invoice</MudButton>
-        </AuthorizeView>
-    }
-</MudStack>
+<PageHeader Title="@_order.OrderNumber" Trail="@([new BreadcrumbItem("Sales orders", Lists.Last("sales-orders")), new BreadcrumbItem(_order.OrderNumber, null, disabled: true)])">
+    <Status><StatusChip Status="@_order.Status" Live="true" /></Status>
+    <Actions>
+        @* The API decides what's allowed; the buttons only show what could make sense for this order and this person. *@
+        @if (_order.Status == "Draft")
+        {
+            <AuthorizeView Roles="@Sellers">
+                <MudButton Href="@($"sales-orders/{Id}/edit")" Variant="Variant.Outlined">Edit</MudButton>
+                @if (_order.SpecialDiscount is null && _order.Lines.Any(l => l.SpecialDiscountEligible))
+                {
+                    <MudButton OnClick="ApplyDiscount" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Elderly" Disabled="Api.Busy">Special discount</MudButton>
+                }
+                else if (_order.SpecialDiscount is not null)
+                {
+                    <MudButton OnClick="RemoveDiscount" Variant="Variant.Text" Disabled="Api.Busy">Remove discount</MudButton>
+                }
+                <MudButton OnClick="Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="Api.Busy">Submit</MudButton>
+            </AuthorizeView>
+        }
+        @if (_order.Status == "PendingApproval")
+        {
+            <AuthorizeView Roles="@Managers">
+                <MudButton OnClick="Reject" Variant="Variant.Outlined" Color="Color.Error" Disabled="Api.Busy">Reject</MudButton>
+                <MudButton OnClick="Approve" Variant="Variant.Filled" Color="Color.Success" Disabled="Api.Busy">Approve</MudButton>
+            </AuthorizeView>
+        }
+        @if (_order.Status == "Approved")
+        {
+            <AuthorizeView Roles="@Shippers">
+                <MudButton OnClick="Ship" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.LocalShipping" Disabled="Api.Busy">Ship</MudButton>
+            </AuthorizeView>
+        }
+        @if (_order.Status is "Draft" or "PendingApproval" or "Approved")
+        {
+            <AuthorizeView Roles="@Sellers">
+                <MudButton OnClick="Cancel" Variant="Variant.Text" Color="Color.Error" Disabled="Api.Busy">Cancel order</MudButton>
+            </AuthorizeView>
+        }
+        @if (_order.Status == "Shipped")
+        {
+            <AuthorizeView Roles="@Billing">
+                <MudButton Href="@Url.With("invoices", ("search", _order.OrderNumber))" Variant="Variant.Outlined">Invoice</MudButton>
+            </AuthorizeView>
+        }
+    </Actions>
+</PageHeader>
 
 <MudGrid>
     <MudItem xs="12" md="8">
         <MudPaper Class="pa-4" Outlined="true">
             <MudText Typo="Typo.h6" GutterBottom="true">@_order.CustomerName</MudText>
-            <AppSimpleTable>
-                <thead><tr><th>Item</th><th class="money">Quantity</th><th class="money">Unit price</th><th class="money">Amount</th></tr></thead>
-                <tbody>
-                    @foreach (var line in _order.Lines)
+            <MudDataGrid T="SalesOrderLine" Items="_order.Lines"
+                         Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None">
+                <Columns>
+                    <TemplateColumn Title="Item">
+                        <CellTemplate>@context.Item.ItemName @(context.Item.SpecialDiscountEligible && _order.SpecialDiscount is not null ? "*" : "")</CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Quantity" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Qty(context.Item.Quantity) @context.Item.Unit</CellTemplate></TemplateColumn>
+                    <MoneyColumn Title="Unit price" Amount="x => x.UnitPrice" />
+                    <MoneyColumn Title="Amount" Amount="x => x.LineTotal" />
+                </Columns>
+            </MudDataGrid>
+            <Totals>
+                @if (_order.SpecialDiscount is { } d)
+                {
+                    <TotalLine Label="Gross" Amount="_order.GrossTotal" />
+                    @if (d.VatExemption > 0)
                     {
-                        <tr>
-                            <td>@line.ItemName @(line.SpecialDiscountEligible && _order.SpecialDiscount is not null ? "*" : "")</td>
-                            <td class="money">@Format.Qty(line.Quantity) @line.Unit</td>
-                            <td class="money">@Format.Peso(line.UnitPrice)</td>
-                            <td class="money">@Format.Peso(line.LineTotal)</td>
-                        </tr>
+                        <TotalLine Label="Less: VAT exemption (* items)" Amount="d.VatExemption" />
                     }
-                    @if (_order.SpecialDiscount is { } d)
-                    {
-                        <tr><td colspan="3">Gross</td><td class="money">@Format.Peso(_order.GrossTotal)</td></tr>
-                        @if (d.VatExemption > 0)
-                        {
-                            <tr><td colspan="3">Less: VAT exemption (* items)</td><td class="money">@Format.Peso(d.VatExemption)</td></tr>
-                        }
-                        <tr><td colspan="3">Less: @Format.Percent(d.Rate) @d.Program.ToLower() discount (* items)</td><td class="money">@Format.Peso(d.Discount)</td></tr>
-                    }
-                    <tr><td colspan="3"><b>Total</b></td><td class="money"><b>@Format.Peso(_order.Total)</b></td></tr>
-                </tbody>
-            </AppSimpleTable>
+                    <TotalLine Label="@($"Less: {Format.Percent(d.Rate)} {d.Program.ToLower()} discount (* items)")" Amount="d.Discount" />
+                }
+                <TotalLine Label="Total" Amount="_order.Total" Strong="true" />
+            </Totals>
         </MudPaper>
     </MudItem>
     <MudItem xs="12" md="4">

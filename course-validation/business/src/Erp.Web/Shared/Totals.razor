@@ -1,0 +1,9 @@
+@* The totals under a grid of lines (an order, an invoice, a purchase order): each line a label and an amount,
+   the amounts lined up on the right, under the grid's Amount column. *@
+<MudStack Spacing="1" Class="mt-3 px-3 ml-auto" Style="max-width:30rem">
+    @ChildContent
+</MudStack>
+
+@code {
+    [Parameter, EditorRequired] public RenderFragment ChildContent { get; set; } = default!;
+}

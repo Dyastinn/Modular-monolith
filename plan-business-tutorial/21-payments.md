@@ -679,14 +679,14 @@ internal sealed class ReceivablesAgingHandler(IDbConnectionFactory connections, 
 it's missing), for `InvoicingRoles.Readers`. Dapper fills the `DateOnly` parameter through lesson 19's type
 handler. The totals row is summed in C# from the rows already read; a second query would add nothing.
 
-The PDF gets its payment rows back. In `InvoicePdf`, the model gains `decimal AmountPaid`, and after the
+The PDF gets its payment rows back. In `InvoicePdf`, the model gains `decimal AmountPaid` and `decimal BalanceDue`, and after the
 "Total amount due" row:
 
 ```csharp
-if (m.AmountPaid > 0)
+if (i.AmountPaid > 0)
 {
-    Total(totals, "Less payments received", m.AmountPaid);
-    Total(totals, "Balance due", m.Total - m.AmountPaid, bold: true);
+    Total(totals, "Less payments received", i.AmountPaid);
+    Total(totals, "Balance due", i.BalanceDue, bold: true);
 }
 ```
 
@@ -837,10 +837,10 @@ public sealed record AgingReport(DateOnly AsOf, List<AgingRow> Customers, AgingR
 | Screen | What changes |
 |---|---|
 | **Invoices** | A **Balance due** column, and an "Overdue only" switch that adds `overdueOnly=true` (and reads it from the address, for the tile below) |
-| **One invoice** | Paid and balance rows under the total; a **Payments** table with each payment's date, method, reference, amount and who recorded it (lesson 16's user directory), void ones struck through with their reason; a **Record payment** button while there's a balance; a **Void** link on each live payment (`ReasonDialog` again) |
-| **Payment dialog** | Amount received (starting at the balance due), **tax withheld** (with a hint: "certified on BIR Form 2307"), date (`AppDatePicker`, starting today), method (`AppSelect` over the four names), reference |
-| **Receivables aging** (`/receivables-aging`) | An as-of date picker and an `AppSimpleTable` of the report, with the totals row in bold |
-| **Withholding tax** (`/withholding-tax`, accountants and admins) | A year field; per customer and quarter, withheld, certified and missing (in red), with **Record 2307** on rows still missing; under it, the certificates received, each with a **Void** button |
+| **One invoice** | `TotalLine`s for Paid and **Balance due** (`Strong="true"`) under the total; a **Payments** table with each payment's date, method, reference, amount and who recorded it (lesson 16's user directory), void ones struck through with their reason; a **Record payment** button while there's a balance; a **Void** link on each live payment (`ReasonDialog` again) |
+| **Payment dialog** | Amount received (starting at the balance due), **tax withheld** (with a hint: "certified on BIR Form 2307"), date (`MudDatePicker`, editable, starting today), method (`MudSelect` over the four names), reference |
+| **Receivables aging** (`/receivables-aging`) | An as-of date picker and a `MudDataGrid` of the report: a `MoneyColumn` per age bucket, each given `Total` from the report's totals row, so the grid shows them in its footer; "Over 90" with `Warn="true"` |
+| **Withholding tax** (`/withholding-tax`, accountants and admins) | A year field; per customer and quarter, withheld, certified and missing (a `MoneyColumn` with `Warn="true"`, so red), with **Record 2307** on rows still missing; under it, the certificates received, each with a **Void** button |
 
 Type them, then compare with the reference build's
 [Invoicing pages](../course-validation/business/src/Erp.Web/Pages/Invoicing/).
@@ -916,30 +916,7 @@ half: record a payment through the API (with `"method": "BankTransfer"`, which a
 converter), then wait until Sales shows the customer owing nothing and their full credit available again.
 That one test walks from an order through Inventory and Invoicing back to Sales.
 
-The UI flow test gets its last step, so it now walks from a new order to a paid invoice:
-
-```csharp
-// The invoice appears by itself; the accountant records full payment.
-var accountant = await SignIn("accountant@erp.local");
-var invoiceRow = accountant.GetByRole(AriaRole.Row).Filter(new() { HasText = orderNumber });
-for (var attempt = 0; attempt < 15 && await invoiceRow.CountAsync() == 0; attempt++)
-{
-    await accountant.GotoAsync($"/invoices?search={Uri.EscapeDataString(orderNumber)}");
-    await accountant.WaitForTimeoutAsync(1000);
-}
-await Shot(accountant, "accountant-invoices");
-await invoiceRow.First.ClickAsync();
-await accountant.GetByRole(AriaRole.Button, new() { Name = "Record payment" }).ClickAsync();
-await accountant.GetByRole(AriaRole.Button, new() { Name = "Record", Exact = true }).ClickAsync();
-await accountant.Locator(".mud-chip").Filter(new() { HasText = "Paid" }).WaitForAsync();
-await Shot(accountant, "accountant-paid");
-
-(await accountant.GetByRole(AriaRole.Row).Filter(new() { HasText = "Balance due" }).InnerTextAsync()).Should().Contain("₱0.00");
-```
-
-It needs the order's number, read right after the rep submits: `var orderNumber = await rep.Locator("h4").First.InnerTextAsync();`.
-Rename the test `From_order_to_paid_invoice_through_the_screens`, and add `"/receivables-aging"` and
-`"/withholding-tax"` to `pages`.
+The UI tests add `"/receivables-aging"` and `"/withholding-tax"` to `pages`; the flow test's last step comes below.
 
 ### Applied once, whatever happens
 
@@ -958,15 +935,18 @@ The browser flow reaches its name at last. After the accountant opens the invoic
 ```csharp
 // The accountant records full payment.
 await accountant.GetByRole(AriaRole.Button, new() { Name = "Record payment" }).ClickAsync();
-await accountant.GetByRole(AriaRole.Button, new() { Name = "Record", Exact = true }).ClickAsync();
-await accountant.Locator(".mud-chip").Filter(new() { HasText = "Paid" }).WaitForAsync();
+await accountant.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Record", Exact = true }).ClickAsync();
+await StatusIs(accountant, "Paid");
 await Shot(accountant, "accountant-paid");
 
-(await accountant.GetByRole(AriaRole.Row).Filter(new() { HasText = "Balance due" }).InnerTextAsync()).Should().Contain("₱0.00");
+await Expect(accountant.GetByRole(AriaRole.Group, new() { Name = "Balance due" })).ToContainTextAsync("₱0.00");
 ```
 
 The payment dialog fills in the balance due, so pressing **Record** pays the invoice in full. `Exact = true`
-matters: without it, "Record" also matches the "Record payment" button behind the dialog.
+matters: without it, "Record" also matches the "Record payment" button behind the dialog (and scoping the click to
+`GetByRole(AriaRole.Dialog)` makes doubly sure). The last line finds the **Balance due** line by name: `TotalLine`
+from lesson 08 makes each total a named group, so a test reads "the balance due says ₱0.00" just like a person
+does.
 
 | Test | The edge | Why it matters |
 |---|---|---|

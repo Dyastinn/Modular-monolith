@@ -8,7 +8,7 @@ namespace Erp.Modules.Invoicing.Features;
 internal sealed record RecordPaymentCommand(long InvoiceId, decimal Amount, decimal TaxWithheld, DateOnly PaidOn, PaymentMethod Method,
     string? Reference);
 
-// Saving the payment also writes PaymentRecorded to the outbox; Sales lowers the customer's balance from it.
+// Saving the payment also writes InvoicePaymentRecorded to the outbox; Sales hears it as PaymentRecorded.
 internal sealed class RecordPaymentHandler(InvoicingDbContext db, ICurrentUser user, TimeProvider time)
 {
     // null: there is no such invoice.

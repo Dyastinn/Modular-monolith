@@ -448,7 +448,8 @@ Each eligible line gets a `* ` before its description, and the totals gain "Less
 | **One order** | On a draft with an eligible item, a **Special discount** button. Its dialog lists the offered programs, then asks for the holder's name and the ID number. The totals show gross, the VAT exemption, the discount and the total, with eligible lines starred; a card shows the holder and ID; **Remove discount** takes it off |
 | **One invoice** | The same deduction rows, with the holder and ID |
 
-`Format.Percent(0.20m)` gives "20%". The new files are
+`Format` gets one more helper, `public static string Percent(decimal rate) => (rate * 100).ToString("0.##", Ph) + "%";`,
+so `Format.Percent(0.20m)` gives "20%". The new files are
 [SpecialDiscountDialog.razor](../course-validation/business/src/Erp.Web/Pages/Sales/SpecialDiscountDialog.razor) and
 [SpecialDiscountPrograms.razor](../course-validation/business/src/Erp.Web/Pages/Sales/SpecialDiscountPrograms.razor);
 the API client gains a `Delete(url, success)` next to `Put`.
@@ -561,7 +562,7 @@ public void A_discount_cannot_be_removed_after_submitting()
 [InlineData("0")]
 [InlineData("1")]
 public void A_program_rate_of_nothing_or_everything_is_refused(string rate) =>
-    FluentActions.Invoking(() => SpecialDiscountProgram.Define("SP", "Solo parent", "ID", decimal.Parse(rate), vatExempt: false))
+    FluentActions.Invoking(() => SpecialDiscountProgram.Define("SP", "Solo parent", "ID", decimal.Parse(rate, CultureInfo.InvariantCulture), vatExempt: false))
         .Should().Throw<DomainException>();
 ```
 

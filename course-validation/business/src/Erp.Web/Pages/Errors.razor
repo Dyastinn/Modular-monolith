@@ -9,7 +9,7 @@
 <PageTitle>@(Code is null ? "Error codes" : Code) · ERP</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.Medium" Class="py-6">
-    <MudText Typo="Typo.h4" GutterBottom="true">Error codes</MudText>
+    <PageHeader Title="Error codes" />
 
     @if (_codes is null)
     {
@@ -22,7 +22,8 @@
             <MudPaper Class="pa-4 mb-6" Outlined="true">
                 <MudText Typo="Typo.overline">@selected.Code</MudText>
                 <MudText Typo="Typo.h6" GutterBottom="true">@selected.Title</MudText>
-                <MudText Typo="Typo.body1"><strong>What to do:</strong> @selected.Fix</MudText>
+                <MudText Typo="Typo.subtitle2">What to do</MudText>
+                <MudText Typo="Typo.body1">@selected.Fix</MudText>
                 <MudText Typo="Typo.body2" Class="mt-3">
                     If this doesn't solve it, send support the code and the trace id from the message.
                 </MudText>
@@ -33,20 +34,17 @@
             <MudAlert Severity="Severity.Warning" Class="mb-6">There is no error code @Code.</MudAlert>
         }
 
-        <AppTextField @bind-Value="_search" Label="Search" Immediate="true" Adornment="Adornment.Start"
+        <MudTextField @bind-Value="_search" Label="Search" Immediate="true" Adornment="Adornment.Start"
+                      Variant="Variant.Outlined" Margin="Margin.Normal"
                       AdornmentIcon="@Icons.Material.Filled.Search" Class="mb-4" />
-        <AppSimpleTable Outlined="true">
-            <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
-            <tbody>
-                @foreach (var error in Filtered)
-                {
-                    <tr>
-                        <td><MudLink Href="@($"errors/{error.Code}")">@error.Code</MudLink></td>
-                        <td>@error.Title</td>
-                    </tr>
-                }
-            </tbody>
-        </AppSimpleTable>
+        <MudDataGrid T="ErrorCode" Items="Filtered"
+                     Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None">
+            <Columns>
+                <TemplateColumn Title="Code"><CellTemplate><MudLink Href="@($"errors/{context.Item.Code}")">@context.Item.Code</MudLink></CellTemplate></TemplateColumn>
+                <PropertyColumn Property="x => x.Title" Title="Meaning" CellClass="wrap" />
+            </Columns>
+            <NoRecordsContent>No code matches.</NoRecordsContent>
+        </MudDataGrid>
     }
 </MudContainer>
 

@@ -5,47 +5,43 @@
 
 <PageTitle>Sales orders · ERP</PageTitle>
 
-<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
-    <MudText Typo="Typo.h4">Sales orders</MudText>
-    <MudSpacer />
-    <AuthorizeView Roles="@Sellers">
-        <MudButton Href="sales-orders/new" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New order</MudButton>
-    </AuthorizeView>
-</MudStack>
+<PageHeader Title="Sales orders">
+    <Actions>
+        <AuthorizeView Roles="@Sellers">
+            <MudButton Href="sales-orders/new" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New order</MudButton>
+        </AuthorizeView>
+    </Actions>
+</PageHeader>
 
 <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
     <MudStack Row="true" Spacing="4" Breakpoint="Breakpoint.Xs">
-        <AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Order number or customer" DebounceInterval="400"
+        <MudTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Order number or customer" DebounceInterval="400"
+                      Variant="Variant.Outlined" Margin="Margin.Normal"
                       Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Clearable="true" />
-        <AppSelect T="string" Value="Status" ValueChanged="OnStatus" Label="Status" Clearable="true" Style="max-width:240px">
+        <MudSelect T="string" Value="Status" ValueChanged="OnStatus" Label="Status" Clearable="true" Style="max-width:240px"
+                   Variant="Variant.Outlined" Margin="Margin.Normal">
             @foreach (var s in Statuses)
             {
                 <MudSelectItem Value="s">@Format.Words(s)</MudSelectItem>
             }
-        </AppSelect>
+        </MudSelect>
     </MudStack>
 </MudPaper>
 
-<AppTable T="SalesOrderSummary" @ref="_table" @key="View.Version" ServerData="Load"
-          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize"
-          OnRowClick="Open" RowStyle="cursor:pointer">
-    <HeaderContent>
-        <MudTh>Order</MudTh>
-        <MudTh>Customer</MudTh>
-        <MudTh>Status</MudTh>
-        <MudTh Class="money">Total</MudTh>
-        <MudTh>Created</MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="Order">@context.OrderNumber</MudTd>
-        <MudTd DataLabel="Customer">@context.CustomerName</MudTd>
-        <MudTd DataLabel="Status"><StatusChip Status="@context.Status" /></MudTd>
-        <MudTd DataLabel="Total" Class="money">@Format.Peso(context.Total)</MudTd>
-        <MudTd DataLabel="Created">@Format.Date(context.CreatedUtc)</MudTd>
-    </RowTemplate>
+<MudDataGrid T="SalesOrderSummary" @ref="_table" @key="View.Version" ServerData="Load"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize"
+             RowClick="Open" RowStyle="cursor:pointer">
+    <Columns>
+        <PropertyColumn Property="x => x.OrderNumber" Title="Order" />
+        <PropertyColumn Property="x => x.CustomerName" Title="Customer" />
+        <TemplateColumn Title="Status"><CellTemplate><StatusChip Status="@context.Item.Status" /></CellTemplate></TemplateColumn>
+        <MoneyColumn Title="Total" Amount="x => x.Total" />
+        <TemplateColumn Title="Created"><CellTemplate>@Format.Date(context.Item.CreatedUtc)</CellTemplate></TemplateColumn>
+    </Columns>
     <NoRecordsContent>No orders match.</NoRecordsContent>
-    <PagerContent><MudTablePager /></PagerContent>
-</AppTable>
+    <PagerContent><MudDataGridPager T="SalesOrderSummary" /></PagerContent>
+</MudDataGrid>
 
 @code {
     // The list's view lives in the address (see ListAddress).
@@ -56,9 +52,9 @@
 
     private static readonly string[] Statuses = ["Draft", "PendingApproval", "Approved", "Shipped", "Rejected", "Cancelled"];
     private static readonly string Sellers = $"{Roles.SalesRep},{Roles.SalesManager},{Roles.Admin}";
-    private AppTable<SalesOrderSummary> _table = default!;
+    private MudDataGrid<SalesOrderSummary> _table = default!;
 
-    private Task<TableData<SalesOrderSummary>> Load(TableState state, CancellationToken ct)
+    private Task<GridData<SalesOrderSummary>> Load(GridState<SalesOrderSummary> state, CancellationToken ct)
     {
         View.Save(state, ("status", Status), ("search", Search));
         return Api.Page<SalesOrderSummary>(Url.With("api/sales-orders", ("status", Status), ("search", Search)), state);
@@ -67,7 +63,7 @@
     // A link to this list with other filters (the menu, a home tile, Back) shows them.
     protected override void OnParametersSet() => View.Check();
 
-    private void Open(TableRowClickEventArgs<SalesOrderSummary> row) => Nav.NavigateTo($"sales-orders/{row.Item!.Id}");
+    private void Open(DataGridRowClickEventArgs<SalesOrderSummary> row) => Nav.NavigateTo($"sales-orders/{row.Item.Id}");
 
     private Task OnSearch(string? text) { Search = text; return _table.FirstPage(); }
     private Task OnStatus(string? status) { Status = status; return _table.FirstPage(); }

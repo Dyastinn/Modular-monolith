@@ -5,39 +5,39 @@
 
 <PageTitle>Purchase orders · ERP</PageTitle>
 
-<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
-    <MudText Typo="Typo.h4">Purchase orders</MudText>
-    <MudSpacer />
-    <AuthorizeView Roles="@Buyers">
-        <MudButton Href="purchase-orders/new" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New purchase order</MudButton>
-    </AuthorizeView>
-</MudStack>
+<PageHeader Title="Purchase orders">
+    <Actions>
+        <AuthorizeView Roles="@Buyers">
+            <MudButton Href="purchase-orders/new" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New purchase order</MudButton>
+        </AuthorizeView>
+    </Actions>
+</PageHeader>
 
 <MudStack Row="true" Spacing="4" Class="mb-4" Breakpoint="Breakpoint.Xs">
-    <AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="PO number or supplier" DebounceInterval="400" Clearable="true" />
-    <AppSelect T="string" Value="Status" ValueChanged="OnStatus" Label="Status" Clearable="true" Style="max-width:240px">
+    <MudTextField T="string" Value="Search" ValueChanged="OnSearch" Label="PO number or supplier" DebounceInterval="400" Clearable="true"
+                  Variant="Variant.Outlined" Margin="Margin.Normal" />
+    <MudSelect T="string" Value="Status" ValueChanged="OnStatus" Label="Status" Clearable="true" Style="max-width:240px"
+               Variant="Variant.Outlined" Margin="Margin.Normal">
         @foreach (var s in Statuses)
         {
             <MudSelectItem Value="s">@Format.Words(s)</MudSelectItem>
         }
-    </AppSelect>
+    </MudSelect>
 </MudStack>
 
-<AppTable T="PurchaseOrderSummary" @ref="_table" @key="View.Version" ServerData="Load"
-          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize" OnRowClick="Open" RowStyle="cursor:pointer">
-    <HeaderContent>
-        <MudTh>PO</MudTh><MudTh>Supplier</MudTh><MudTh>Status</MudTh><MudTh Class="money">Total</MudTh><MudTh>Expected</MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="PO">@context.Number</MudTd>
-        <MudTd DataLabel="Supplier">@context.SupplierName</MudTd>
-        <MudTd DataLabel="Status"><StatusChip Status="@context.Status" /></MudTd>
-        <MudTd DataLabel="Total" Class="money">@Format.Peso(context.Total)</MudTd>
-        <MudTd DataLabel="Expected">@(context.ExpectedDate is { } d ? Format.Date(d) : "")</MudTd>
-    </RowTemplate>
+<MudDataGrid T="PurchaseOrderSummary" @ref="_table" @key="View.Version" ServerData="Load"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize" RowClick="Open" RowStyle="cursor:pointer">
+    <Columns>
+        <PropertyColumn Property="x => x.Number" Title="PO" />
+        <PropertyColumn Property="x => x.SupplierName" Title="Supplier" />
+        <TemplateColumn Title="Status"><CellTemplate><StatusChip Status="@context.Item.Status" /></CellTemplate></TemplateColumn>
+        <MoneyColumn Title="Total" Amount="x => x.Total" />
+        <TemplateColumn Title="Expected"><CellTemplate>@(context.Item.ExpectedDate is { } d ? Format.Date(d) : "")</CellTemplate></TemplateColumn>
+    </Columns>
     <NoRecordsContent>No purchase orders match.</NoRecordsContent>
-    <PagerContent><MudTablePager /></PagerContent>
-</AppTable>
+    <PagerContent><MudDataGridPager T="PurchaseOrderSummary" /></PagerContent>
+</MudDataGrid>
 
 @code {
     // The list's view lives in the address (see ListAddress).
@@ -48,9 +48,9 @@
 
     private static readonly string[] Statuses = ["Draft", "Approved", "Sent", "PartiallyReceived", "Received", "Closed", "Cancelled"];
     private static readonly string Buyers = $"{Roles.Purchaser},{Roles.Admin}";
-    private AppTable<PurchaseOrderSummary> _table = default!;
+    private MudDataGrid<PurchaseOrderSummary> _table = default!;
 
-    private Task<TableData<PurchaseOrderSummary>> Load(TableState state, CancellationToken ct)
+    private Task<GridData<PurchaseOrderSummary>> Load(GridState<PurchaseOrderSummary> state, CancellationToken ct)
     {
         View.Save(state, ("status", Status), ("search", Search));
         return Api.Page<PurchaseOrderSummary>(Url.With("api/purchase-orders", ("status", Status), ("search", Search)), state);
@@ -59,7 +59,7 @@
     // A link to this list with other filters (the menu, a home tile, Back) shows them.
     protected override void OnParametersSet() => View.Check();
 
-    private void Open(TableRowClickEventArgs<PurchaseOrderSummary> row) => Nav.NavigateTo($"purchase-orders/{row.Item!.Id}");
+    private void Open(DataGridRowClickEventArgs<PurchaseOrderSummary> row) => Nav.NavigateTo($"purchase-orders/{row.Item.Id}");
     private Task OnSearch(string? text) { Search = text; return _table.FirstPage(); }
     private Task OnStatus(string? status) { Status = status; return _table.FirstPage(); }
 }

@@ -123,7 +123,6 @@ And after, the whole catalog:
 
 ```csharp
 // src/Modules/Inventory/Erp.Modules.Inventory/Domain/Item.cs
-using Erp.Modules.Inventory.Contracts;
 using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Inventory.Domain;
@@ -509,7 +508,16 @@ check is not: it's in the same statement that reserves.
 
 ## 5. Maintaining the catalog
 
-Inventory gets endpoints for the first time, so `InventoryModule` learns lesson 03's two registrations. Before:
+Inventory gets endpoints for the first time, so like Sales and Identity it needs ASP.NET Core. In
+`Erp.Modules.Inventory.csproj`:
+
+```xml
+<ItemGroup>
+  <FrameworkReference Include="Microsoft.AspNetCore.App" />
+</ItemGroup>
+```
+
+And `InventoryModule` learns lesson 03's two registrations. Before:
 
 ```csharp
 services.AddScoped<IModuleDatabase, InventoryDatabase>();
@@ -1041,47 +1049,47 @@ public sealed record StockMovement(long Id, decimal Quantity, string Kind, strin
 
 <PageTitle>Items and stock · ERP</PageTitle>
 
-<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
-    <MudText Typo="Typo.h4">Items and stock</MudText>
-    <MudSpacer />
-    <AuthorizeView Roles="@Keepers">
-        <MudButton OnClick="() => Edit(null)" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New item</MudButton>
-    </AuthorizeView>
-</MudStack>
+<PageHeader Title="Items and stock">
+    <Actions>
+        <AuthorizeView Roles="@Keepers">
+            <MudButton OnClick="() => Edit(null)" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New item</MudButton>
+        </AuthorizeView>
+    </Actions>
+</PageHeader>
 
 <MudStack Row="true" Spacing="4" Class="mb-4" Breakpoint="Breakpoint.Xs">
-    <AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="SKU or name" DebounceInterval="400" Clearable="true"
+    <MudTextField T="string" Value="Search" ValueChanged="OnSearch" Label="SKU or name" DebounceInterval="400" Clearable="true"
+                  Variant="Variant.Outlined" Margin="Margin.Normal"
                   Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
     <MudSwitch T="bool" Value="ActiveOnly" ValueChanged="OnActive" Label="Active only" Color="Color.Primary" />
 </MudStack>
 
-<AppTable T="StockItem" @ref="_table" @key="View.Version" ServerData="Load"
-          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
-    <HeaderContent>
-        <MudTh>SKU</MudTh><MudTh>Name</MudTh><MudTh>Unit</MudTh>
-        <MudTh Class="money">On hand</MudTh><MudTh Class="money">Reserved</MudTh><MudTh Class="money">Available</MudTh><MudTh></MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="SKU">@context.Sku</MudTd>
-        <MudTd DataLabel="Name">@context.Name @if (!context.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</MudTd>
-        <MudTd DataLabel="Unit">@context.Unit</MudTd>
-        <MudTd DataLabel="On hand" Class="money">@Format.Qty(context.OnHand)</MudTd>
-        <MudTd DataLabel="Reserved" Class="money">@Format.Qty(context.Reserved)</MudTd>
-        <MudTd DataLabel="Available" Class="money"><b>@Format.Qty(context.Available)</b></MudTd>
-        <MudTd>
-            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" aria-label="Actions">
-                <MudMenuItem OnClick="() => Movements(context)">Movement history</MudMenuItem>
-                <AuthorizeView Roles="@Keepers" Context="auth">
-                    <MudMenuItem OnClick="() => Adjust(context)">Adjust stock</MudMenuItem>
-                    <MudMenuItem OnClick="() => Edit(context)">Edit</MudMenuItem>
-                    <MudMenuItem OnClick="() => ToggleActive(context)">@(context.IsActive ? "Deactivate" : "Activate")</MudMenuItem>
-                </AuthorizeView>
-            </MudMenu>
-        </MudTd>
-    </RowTemplate>
+<MudDataGrid T="StockItem" @ref="_table" @key="View.Version" ServerData="Load"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
+    <Columns>
+        <PropertyColumn Property="x => x.Sku" Title="SKU" />
+        <TemplateColumn Title="Name"><CellTemplate>@context.Item.Name @if (!context.Item.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</CellTemplate></TemplateColumn>
+        <PropertyColumn Property="x => x.Unit" Title="Unit" />
+        <TemplateColumn Title="On hand" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Qty(context.Item.OnHand)</CellTemplate></TemplateColumn>
+        <TemplateColumn Title="Reserved" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Qty(context.Item.Reserved)</CellTemplate></TemplateColumn>
+        <TemplateColumn Title="Available" HeaderClass="money" CellClass="money"><CellTemplate><MudText Inline="true" Typo="Typo.subtitle2">@Format.Qty(context.Item.Available)</MudText></CellTemplate></TemplateColumn>
+        <TemplateColumn Title="">
+            <CellTemplate>
+                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" AriaLabel="Actions">
+                    <MudMenuItem OnClick="() => Movements(context.Item)">Movement history</MudMenuItem>
+                    <AuthorizeView Roles="@Keepers" Context="auth">
+                        <MudMenuItem OnClick="() => Adjust(context.Item)">Adjust stock</MudMenuItem>
+                        <MudMenuItem OnClick="() => Edit(context.Item)">Edit</MudMenuItem>
+                        <MudMenuItem OnClick="() => ToggleActive(context.Item)">@(context.Item.IsActive ? "Deactivate" : "Activate")</MudMenuItem>
+                    </AuthorizeView>
+                </MudMenu>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
     <NoRecordsContent>No items match.</NoRecordsContent>
-    <PagerContent><MudTablePager /></PagerContent>
-</AppTable>
+    <PagerContent><MudDataGridPager T="StockItem" /></PagerContent>
+</MudDataGrid>
 
 @code {
     // The list's view lives in the address (see ListAddress).
@@ -1091,9 +1099,9 @@ public sealed record StockMovement(long Id, decimal Quantity, string Kind, strin
     [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
 
     private static readonly string Keepers = $"{Roles.InventoryClerk},{Roles.Admin}";
-    private AppTable<StockItem> _table = default!;
+    private MudDataGrid<StockItem> _table = default!;
 
-    private Task<TableData<StockItem>> Load(TableState state, CancellationToken ct)
+    private Task<GridData<StockItem>> Load(GridState<StockItem> state, CancellationToken ct)
     {
         View.Save(state, ("search", Search), ("activeOnly", ActiveOnly));
         return Api.Page<StockItem>(Url.With("api/items", ("search", Search), ("activeOnly", ActiveOnly)), state);
@@ -1141,10 +1149,13 @@ The three dialogs are short. The item form edits SKU only when it's new (the SKU
 <MudDialog>
     <DialogContent>
         <MudStack Spacing="2" Style="min-width:380px">
-            <AppTextField @bind-Value="_sku" Label="SKU" MaxLength="50" Disabled="Item is not null"
+            <MudTextField @bind-Value="_sku" Label="SKU" MaxLength="50" Disabled="Item is not null"
+                          Variant="Variant.Outlined" Margin="Margin.Normal"
                           HelperText="@(Item is null ? "Can't be changed later" : null)" />
-            <AppTextField @bind-Value="_name" Label="Name" MaxLength="200" />
-            <AppTextField @bind-Value="_unit" Label="Unit" MaxLength="10" HelperText="pc, box, kg, m, L…" />
+            <MudTextField @bind-Value="_name" Label="Name" MaxLength="200"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_unit" Label="Unit" MaxLength="10" HelperText="pc, box, kg, m, L…"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
             <MudSwitch @bind-Value="_fractions" Label="Sold and counted in fractions (2.5 kg)" Color="Color.Primary" />
         </MudStack>
     </DialogContent>
@@ -1188,9 +1199,11 @@ The success message tells the clerk what happens next: Sales still has to price 
 <MudDialog>
     <DialogContent>
         <MudStack Spacing="2" Style="min-width:380px">
-            <MudText>On hand now: <b>@Format.Qty(Item.OnHand) @Item.Unit</b> (reserved @Format.Qty(Item.Reserved))</MudText>
-            <AppNumericField @bind-Value="_change" Label="@($"Change ({Item.Unit}): + found, − lost or damaged")" />
-            <AppTextField @bind-Value="_reason" Label="Reason" MaxLength="500" Lines="2" />
+            <MudText>On hand now: @Format.Qty(Item.OnHand) @Item.Unit (reserved @Format.Qty(Item.Reserved))</MudText>
+            <MudNumericField @bind-Value="_change" Label="@($"Change ({Item.Unit}): + found, − lost or damaged")"
+                             Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_reason" Label="Reason" MaxLength="500" Lines="2"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
             <MudText Typo="Typo.body2">After: @Format.Qty(Item.OnHand + _change) @Item.Unit</MudText>
         </MudStack>
     </DialogContent>
@@ -1223,20 +1236,18 @@ The success message tells the clerk what happens next: Sales still has to price 
 
 <MudDialog>
     <DialogContent>
-        <AppTable T="StockMovement" ServerData="Load" Elevation="0">
-            <HeaderContent>
-                <MudTh>When</MudTh><MudTh>What</MudTh><MudTh Class="money">Quantity</MudTh><MudTh>Reference / reason</MudTh><MudTh>By</MudTh>
-            </HeaderContent>
-            <RowTemplate>
-                <MudTd DataLabel="When">@Format.Date(context.OccurredUtc)</MudTd>
-                <MudTd DataLabel="What">@context.Kind</MudTd>
-                <MudTd DataLabel="Quantity" Class="money">@(context.Quantity > 0 ? "+" : "")@Format.Qty(context.Quantity) @Item.Unit</MudTd>
-                <MudTd DataLabel="Reference / reason" Class="wrap">@(context.Reference ?? context.Reason)</MudTd>
-                <MudTd DataLabel="By">@_names.GetValueOrDefault(context.UserId)</MudTd>
-            </RowTemplate>
+        <MudDataGrid T="StockMovement" ServerData="Load" Elevation="0"
+                     Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None">
+            <Columns>
+                <TemplateColumn Title="When"><CellTemplate>@Format.Date(context.Item.OccurredUtc)</CellTemplate></TemplateColumn>
+                <PropertyColumn Property="x => x.Kind" Title="What" />
+                <TemplateColumn Title="Quantity" HeaderClass="money" CellClass="money"><CellTemplate>@(context.Item.Quantity > 0 ? "+" : "")@Format.Qty(context.Item.Quantity) @Item.Unit</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Reference / reason" CellClass="wrap"><CellTemplate>@(context.Item.Reference ?? context.Item.Reason)</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="By"><CellTemplate>@_names.GetValueOrDefault(context.Item.UserId)</CellTemplate></TemplateColumn>
+            </Columns>
             <NoRecordsContent>No movements yet.</NoRecordsContent>
-            <PagerContent><MudTablePager /></PagerContent>
-        </AppTable>
+            <PagerContent><MudDataGridPager T="StockMovement" /></PagerContent>
+        </MudDataGrid>
     </DialogContent>
 </MudDialog>
 
@@ -1245,7 +1256,7 @@ The success message tells the clerk what happens next: Sales still has to price 
     [Parameter] public StockItem Item { get; set; } = default!;
     private readonly Dictionary<long, string> _names = [];
 
-    private async Task<TableData<StockMovement>> Load(TableState state, CancellationToken ct)
+    private async Task<GridData<StockMovement>> Load(GridState<StockMovement> state, CancellationToken ct)
     {
         var page = await Api.Page<StockMovement>($"api/items/{Item.Id}/movements", state);
         foreach (var id in page.Items!.Select(m => m.UserId).Distinct()) _names[id] = await Users.NameOf(id);
@@ -1260,13 +1271,13 @@ The "By" column is lesson 16's user directory at work again: the movement stores
 ### The price list
 
 The price list page is the order list's pattern with a tab for categories: `src/Erp.Web/Pages/Sales/PriceList.razor`
-at `/price-list`, a `MudTabs` with an **Items** tab (a server-paged `AppTable<PriceListItem>` over
+at `/price-list`, a `MudTabs` with an **Items** tab (a server-paged `MudDataGrid<PriceListItem>` over
 `api/price-list` with a search box and a "For sale only" switch; each row shows SKU, name, unit, category,
 price and "for sale", and a **Set price** button for managers) and a **Categories** tab holding a
 `<Categories />` component. **Set price** opens a `PricingDialog` with a price field, a category
-`AppSelect` filled from `api/item-categories`, and a "For sale" switch, which saves with
-`Api.Put($"api/price-list/{Item.Id}", ...)`. The `Categories` component lists categories in a
-`AppSimpleTable` and, for managers, shows a small form under it that creates or edits one. All three are
+`MudSelect` filled from `api/item-categories`, and a "For sale" switch, which saves with
+`Api.Put($"api/price-list/{Item.Id}", ...)`. The `Categories` component lists categories in an
+`MudDataGrid` (with `Items`, and without `Outlined`, because the tab already frames it) and, for managers, shows a small form under it that creates or edits one. All three are
 built from pieces you've used several times now; type them out, and compare with
 [PriceList.razor](../course-validation/business/src/Erp.Web/Pages/Sales/PriceList.razor),
 [PricingDialog.razor](../course-validation/business/src/Erp.Web/Pages/Sales/PricingDialog.razor) and

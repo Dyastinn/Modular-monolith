@@ -390,11 +390,16 @@ The form for adding and editing is a dialog, like lesson 10's reason dialog, but
 <MudDialog>
     <DialogContent>
         <MudStack Spacing="2" Style="min-width:420px">
-            <AppTextField @bind-Value="_name" Label="Name" Required="true" MaxLength="200" />
-            <AppTextField @bind-Value="_tin" Label="TIN" MaxLength="20" HelperText="Printed on invoices" />
-            <AppTextField @bind-Value="_address" Label="Address" Lines="2" MaxLength="500" />
-            <AppNumericField @bind-Value="_creditLimit" Label="Credit limit (₱)" Min="0" Format="N2" />
-            <AppNumericField @bind-Value="_terms" Label="Payment terms (days)" Min="0" Max="365" />
+            <MudTextField @bind-Value="_name" Label="Name" Required="true" MaxLength="200"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_tin" Label="TIN" MaxLength="20" HelperText="Printed on invoices"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_address" Label="Address" Lines="2" MaxLength="500"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudNumericField @bind-Value="_creditLimit" Label="Credit limit (₱)" Min="0" Format="N2"
+                             Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudNumericField @bind-Value="_terms" Label="Payment terms (days)" Min="0" Max="365"
+                             Variant="Variant.Outlined" Margin="Margin.Normal" />
         </MudStack>
     </DialogContent>
     <DialogActions>
@@ -442,52 +447,48 @@ intact.
 
 <PageTitle>Customers · ERP</PageTitle>
 
-<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
-    <MudText Typo="Typo.h4">Customers</MudText>
-    <MudSpacer />
-    <AuthorizeView Roles="@Managers">
-        <MudButton OnClick="() => Edit(null)" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New customer</MudButton>
-    </AuthorizeView>
-</MudStack>
+<PageHeader Title="Customers">
+    <Actions>
+        <AuthorizeView Roles="@Managers">
+            <MudButton OnClick="() => Edit(null)" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New customer</MudButton>
+        </AuthorizeView>
+    </Actions>
+</PageHeader>
 
-<AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Name or TIN" DebounceInterval="400" Clearable="true"
+<MudTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Name or TIN" DebounceInterval="400" Clearable="true"
+              Variant="Variant.Outlined" Margin="Margin.Normal"
               Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="mb-4" />
 
-<AppTable T="Customer" @ref="_table" @key="View.Version" ServerData="Load"
-          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
-    <HeaderContent>
-        <MudTh>Name</MudTh>
-        <MudTh>TIN</MudTh>
-        <MudTh Class="money">Credit limit</MudTh>
-        <MudTh Class="money">Owes</MudTh>
-        <MudTh Class="money">Awaiting approval</MudTh>
-        <MudTh Class="money">Available</MudTh>
-        <MudTh>Terms</MudTh>
-        <MudTh></MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="Name">
-            @context.Name
-            @if (context.IsBlocked) { <MudChip T="string" Color="Color.Error" Size="Size.Small">Blocked</MudChip> }
-        </MudTd>
-        <MudTd DataLabel="TIN">@context.Tin</MudTd>
-        <MudTd DataLabel="Credit limit" Class="money">@Format.Peso(context.CreditLimit)</MudTd>
-        <MudTd DataLabel="Owes" Class="money">@Format.Peso(context.OutstandingBalance)</MudTd>
-        <MudTd DataLabel="Awaiting approval" Class="money">@Format.Peso(context.PendingTotal)</MudTd>
-        <MudTd DataLabel="Available" Class="money">@Format.Peso(context.AvailableCredit)</MudTd>
-        <MudTd DataLabel="Terms">@context.PaymentTermsDays days</MudTd>
-        <MudTd>
-            <AuthorizeView Roles="@Managers" Context="auth">
-                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" aria-label="Actions">
-                    <MudMenuItem OnClick="() => Edit(context)">Edit</MudMenuItem>
-                    <MudMenuItem OnClick="() => ToggleBlock(context)">@(context.IsBlocked ? "Unblock" : "Block")</MudMenuItem>
-                </MudMenu>
-            </AuthorizeView>
-        </MudTd>
-    </RowTemplate>
+<MudDataGrid T="Customer" @ref="_table" @key="View.Version" ServerData="Load"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
+    <Columns>
+        <TemplateColumn Title="Name">
+            <CellTemplate>
+                @context.Item.Name
+                @if (context.Item.IsBlocked) { <MudChip T="string" Color="Color.Error" Size="Size.Small">Blocked</MudChip> }
+            </CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="x => x.Tin" Title="TIN" />
+        <MoneyColumn Title="Credit limit" Amount="x => x.CreditLimit" />
+        <MoneyColumn Title="Owes" Amount="x => x.OutstandingBalance" />
+        <MoneyColumn Title="Awaiting approval" Amount="x => x.PendingTotal" />
+        <MoneyColumn Title="Available" Amount="x => x.AvailableCredit" />
+        <TemplateColumn Title="Terms"><CellTemplate>@context.Item.PaymentTermsDays days</CellTemplate></TemplateColumn>
+        <TemplateColumn Title="">
+            <CellTemplate>
+                <AuthorizeView Roles="@Managers" Context="auth">
+                    <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" AriaLabel="Actions">
+                        <MudMenuItem OnClick="() => Edit(context.Item)">Edit</MudMenuItem>
+                        <MudMenuItem OnClick="() => ToggleBlock(context.Item)">@(context.Item.IsBlocked ? "Unblock" : "Block")</MudMenuItem>
+                    </MudMenu>
+                </AuthorizeView>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
     <NoRecordsContent>No customers match.</NoRecordsContent>
-    <PagerContent><MudTablePager /></PagerContent>
-</AppTable>
+    <PagerContent><MudDataGridPager T="Customer" /></PagerContent>
+</MudDataGrid>
 
 @code {
     // The list's view lives in the address (see ListAddress).
@@ -496,9 +497,9 @@ intact.
     [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
 
     private static readonly string Managers = $"{Roles.SalesManager},{Roles.Admin}";
-    private AppTable<Customer> _table = default!;
+    private MudDataGrid<Customer> _table = default!;
 
-    private Task<TableData<Customer>> Load(TableState state, CancellationToken ct)
+    private Task<GridData<Customer>> Load(GridState<Customer> state, CancellationToken ct)
     {
         View.Save(state, ("search", Search));
         return Api.Page<Customer>(Url.With("api/customers", ("search", Search)), state);
@@ -540,7 +541,7 @@ Then the links. In `NavMenu.razor`, under the Sales heading, after Sales orders:
 In `OrderEditor.razor`, the line under the customer box can show the terms now:
 
 ```razor
-Available credit: <b>@Format.Peso(_customer.AvailableCredit)</b> · Terms: @_customer.PaymentTermsDays days
+Available credit: <MudText Inline="true" Typo="Typo.subtitle2">@Format.Peso(_customer.AvailableCredit)</MudText> · Terms: @_customer.PaymentTermsDays days
 ```
 
 And in the UI test's `Every_page_opens_without_an_error`, add `"/customers"` to `pages`.

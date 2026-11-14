@@ -556,17 +556,19 @@ them both.
 
 ## 7. The Submit button
 
-On the order page, the button goes where lesson 08 left a `<MudSpacer />`. In `OrderDetail.razor`, right
-after it:
+On the order page, the button goes in the header's actions. In `OrderDetail.razor`, the `PageHeader` gets an
+`<Actions>` slot, after `<Status>`:
 
 ```razor
-@* The API decides what's allowed; the buttons only show what could make sense for this order and this person. *@
-@if (_order.Status == "Draft")
-{
-    <AuthorizeView Roles="@Sellers">
-        <MudButton OnClick="Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="Api.Busy">Submit</MudButton>
-    </AuthorizeView>
-}
+    <Actions>
+        @* The API decides what's allowed; the buttons only show what could make sense for this order and this person. *@
+        @if (_order.Status == "Draft")
+        {
+            <AuthorizeView Roles="@Sellers">
+                <MudButton OnClick="Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="Api.Busy">Submit</MudButton>
+            </AuthorizeView>
+        }
+    </Actions>
 ```
 
 The history grows two lines, under "Created":
@@ -704,7 +706,7 @@ that changes shared rows puts them back.
 
 ### The whole submit, through the front door
 
-Add to `SalesOrderEdgeCaseTests`:
+Add to `SalesOrderEdgeCaseTests` (with `using Dapper;` at the top, for `ExecuteScalarAsync` and `ExecuteAsync`):
 
 ```csharp
 private async Task<decimal> Balance(long customerId)
@@ -791,7 +793,7 @@ public void A_module_references_other_modules_only_through_their_Contracts()
     {
         var illegal = module.GetReferencedAssemblies()
             .Select(a => a.Name!)
-            .Where(n => n.StartsWith("Erp.Modules.") && !n.EndsWith(".Contracts"));
+            .Where(n => n.StartsWith("Erp.Modules.", StringComparison.Ordinal) && !n.EndsWith(".Contracts", StringComparison.Ordinal));
 
         illegal.Should().BeEmpty($"{module.GetName().Name} may reference another module's .Contracts only");
     }
@@ -802,7 +804,7 @@ public void Contracts_reference_no_module_so_no_cycle_can_form()
 {
     foreach (var contracts in ContractsAssemblies)
         contracts.GetReferencedAssemblies().Select(a => a.Name!)
-            .Where(n => n.StartsWith("Erp.Modules."))
+            .Where(n => n.StartsWith("Erp.Modules.", StringComparison.Ordinal))
             .Should().BeEmpty($"{contracts.GetName().Name} must not depend on any module");
 }
 

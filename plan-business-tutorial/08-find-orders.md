@@ -156,8 +156,6 @@ public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Page, int PageSi
     public int TotalPages => (int)Math.Ceiling(TotalCount / (double)PageSize);
 }
 
-// The body of a 201 Created: the new thing's id. Its address is in the Location header.
-public sealed record CreatedId(long Id);
 ```
 
 And every list validates its paging the same way, so add two rules next to `ValidQuantity` in
@@ -805,7 +803,7 @@ public static class Format
 
     // "PendingApproval" -> "Pending approval"
     public static string Words(string pascal) =>
-        string.Concat(pascal.Select((c, i) => i > 0 && char.IsUpper(c) ? " " + char.ToLower(c) : c.ToString()));
+        string.Concat(pascal.Select((c, i) => i > 0 && char.IsUpper(c) ? " " + char.ToLowerInvariant(c) : c.ToString()));
 }
 ```
 
@@ -832,11 +830,13 @@ a half, a quantity would otherwise reach the API with a comma.
 
 ```razor
 @* src/Erp.Web/Shared/StatusChip.razor *@
-@* One look for a status everywhere: green when done, amber when someone must act, grey when over. *@
-<MudChip T="string" Size="Size.Small" Color="ColorOf(Status)" Variant="Variant.Text">@Format.Words(Status)</MudChip>
+@* One look for a status everywhere: green when done, amber when someone must act, grey when over.
+   Live: the page's own status, a role="status" region, so a screen reader announces it when an action changes it. *@
+<MudChip T="string" Size="Size.Small" Color="ColorOf(Status)" Variant="Variant.Text" role="@(Live ? "status" : null)">@Format.Words(Status)</MudChip>
 
 @code {
     [Parameter, EditorRequired] public string Status { get; set; } = "";
+    [Parameter] public bool Live { get; set; }
 
     private static Color ColorOf(string status) => status switch
     {
@@ -849,7 +849,13 @@ a half, a quantity would otherwise reach the API with a comma.
 }
 ```
 
-Later modules add their own statuses to that `switch`. And amounts line up best right-aligned in equal-width
+Later modules add their own statuses to that `switch`. `Live` is for the chip at the top of an order's own page.
+There, `role="status"` makes it a **live region**: when Submit turns "Draft" into "Pending approval", a screen
+reader says so without being asked, the way a sighted person sees the chip change. (Only there: in a list of ten
+orders, ten live regions would talk over each other.) MudBlazor passes any attribute it doesn't know, like
+`role`, on to the chip's outer element, and Blazor leaves the attribute out entirely when its value is `null`.
+
+And amounts line up best right-aligned in equal-width
 digits, so add this to `app.css`:
 
 ```css
@@ -862,6 +868,12 @@ digits, so add this to `app.css`:
 /* Numbers in tables line up digit under digit. */
 .mud-table-root {
     font-variant-numeric: tabular-nums;
+}
+
+/* An amount column's heading sits over its amounts, on the right. (A grid heading is a flex box, so text-align on
+   the cell isn't enough.) */
+.mud-table-cell.money .column-header {
+    justify-content: flex-end;
 }
 
 /* Short values (ids, dates, amounts) stay on one line, so a row reads straight across; on a narrow screen the
@@ -887,7 +899,7 @@ and the eye compares them at a glance. And a row should read straight across: an
 read as two things. So table cells don't wrap; when the window is too narrow, MudBlazor's table scrolls sideways
 inside its own card, and the page around it stays still.
 
-`ApiClient` learns to fetch one page for a table. In `Services/ApiClient.cs`, add the envelope above the
+`ApiClient` learns to fetch one page for a grid. In `Services/ApiClient.cs`, add the envelope above the
 class, and one method inside it:
 
 ```csharp
@@ -895,52 +907,85 @@ public sealed record PagedResult<T>(List<T> Items, int Page, int PageSize, int T
 ```
 
 ```csharp
-// One page of a list for a MudTable: the table counts pages from 0, the API from 1.
-public async Task<TableData<T>> Page<T>(string url, TableState state)
+// One page of a list for a grid: the grid counts pages from 0, the API from 1.
+public async Task<GridData<T>> Page<T>(string url, GridState<T> state)
 {
     var separator = url.Contains('?') ? '&' : '?';
     var result = await Get<PagedResult<T>>($"{url}{separator}page={state.Page + 1}&pageSize={state.PageSize}");
-    return new TableData<T> { Items = result?.Items ?? [], TotalItems = result?.TotalCount ?? 0 };
+    return new GridData<T> { Items = result?.Items ?? [], TotalItems = result?.TotalCount ?? 0 };
 }
 ```
 
 ### The order list
 
-Two new kinds of field arrive today, a drop-down list and a search box with suggestions, so `Shared/AppFields.cs`
-gets two more:
+Two new kinds of field arrive today: a drop-down list (`MudSelect`) and a search box with suggestions
+(`MudAutocomplete`). Both take the same two settings as every field, `Variant="Variant.Outlined"
+Margin="Margin.Normal"`.
+
+Lesson 07's grid showed a list it already had (`Items`). This one pages through the server, and needs one small
+helper of its own. It's an **extension method**: a method you write for a class you don't own, called as if it
+were the class's own (`_table.FirstPage()`). It adds behaviour to `MudDataGrid` without wrapping or replacing it:
 
 ```csharp
-public class AppSelect<T> : MudSelect<T>
+// src/Erp.Web/Shared/GridPaging.cs
+using MudBlazor;
+
+namespace Erp.Web.Shared;
+
+public static class GridPaging
 {
-    public AppSelect() { Variant = Variant.Outlined; Margin = Margin.Normal; }
-}
-
-public class AppAutocomplete<T> : MudAutocomplete<T>
-{
-    public AppAutocomplete() { Variant = Variant.Outlined; Margin = Margin.Normal; }
-}
-```
-
-And the first full table, the kind that pages through the server, joins lesson 07's `AppSimpleTable` in
-`Shared/AppTables.cs`:
-
-```csharp
-public class AppTable<T> : MudTable<T>
-{
-    public AppTable() { Outlined = true; Striped = true; Hover = true; Dense = true; }
-
     // After a search or filter changes: page 1 of the new results (page 3 of the old ones may not exist).
-    public Task FirstPage()
+    public static Task FirstPage<T>(this MudDataGrid<T> grid)
     {
-        if (CurrentPage == 0) return ReloadServerData();
-        NavigateTo(0);
+        if (grid.CurrentPage == 0) return grid.ReloadServerData();
+        grid.NavigateTo(Page.First);
         return Task.CompletedTask;
     }
 }
 ```
 
-`FirstPage` fixes a quiet trap: you're on page 3, you type a new search, and the table asks for page 3 of results
+`FirstPage` fixes a quiet trap: you're on page 3, you type a new search, and the grid asks for page 3 of results
 that have only one page. It shows "No orders match.", which is a lie.
+
+Amounts appear in almost every grid from now on, so they get a column of their own: a component that holds a
+`TemplateColumn` already set up for pesos.
+
+```razor
+@* src/Erp.Web/Shared/MoneyColumn.razor *@
+@typeparam T
+@* A column of pesos for any MudDataGrid: right-aligned, ₱ and two decimals (Format.Peso), and the grid's mobile
+   label from Title. One definition, so every amount in the app lines up and reads the same. It holds a
+   TemplateColumn rather than inheriting from one, so it sets the column's parameters instead of rewriting them. *@
+<TemplateColumn T="T" Title="@Title" HeaderClass="money" FooterClass="money" CellClassFunc="CellClass" FooterTemplate="Footer">
+    <CellTemplate>@Format.Peso(Amount(context.Item))</CellTemplate>
+</TemplateColumn>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter, EditorRequired] public Func<T, decimal> Amount { get; set; } = default!;
+
+    // A total under the column, in the grid's footer row. Leave it out and the grid has no footer.
+    [Parameter] public decimal? Total { get; set; }
+
+    // Amounts above zero in the error colour: money overdue, a certificate missing.
+    [Parameter] public bool Warn { get; set; }
+
+    private string CellClass(T item) => Warn && Amount(item) > 0 ? "money mud-error-text" : "money";
+
+    private RenderFragment<FooterContext<T>>? Footer =>
+        Total is { } total ? _ => @<text>@Format.Peso(total)</text> : null;
+}
+```
+
+- **`@typeparam T`** makes it generic, like the grid. It picks up the grid's row type by itself, the same way the
+  grid's own columns do.
+- **It holds a `TemplateColumn`, it doesn't extend one.** The column registers with the grid around it, as any
+  column does, and gets its settings from our parameters.
+- **`Footer`** is a piece of markup written in C# (`@<text>...</text>`), or `null` when there's no total, so a grid
+  without totals has no footer row.
+
+In a page it's one line: `<MoneyColumn Title="Total" Amount="x => x.Total" />`. `Total` and `Warn` wait for the
+reports in lessons 20 and 21.
 
 A list has one more need. You search for "Acme", go to page 2, open an order, and come back: the list should
 still say "Acme", page 2. And a link to that view, pasted to a colleague, should open it. Both work if the view
@@ -960,15 +1005,15 @@ public sealed class ListAddress(NavigationManager nav, ListMemory memory)
     public const int DefaultPageSize = 10;
     private string? _written;
 
-    // Changes when the address changed from outside (the menu, a home tile, Back): the page uses it as the table's
-    // @key, so the table starts again from the new address.
+    // Changes when the address changed from outside (the menu, a home tile, Back): the page uses it as the grid's
+    // @key, so the grid starts again from the new address.
     public int Version { get; private set; }
 
-    // ?page= counts from 1, like people do; the table counts from 0.
+    // ?page= counts from 1, like people do; the grid counts from 0.
     public static int PageIndex(int? page) => page is > 1 ? page.Value - 1 : 0;
 
     // Called on every load: writes the view into the address without adding a step to the browser's history.
-    public void Save(TableState state, params (string Name, object? Value)[] filters)
+    public void Save<T>(GridState<T> state, params (string Name, object? Value)[] filters)
     {
         var values = new Dictionary<string, object?>();
         foreach (var (name, value) in filters)
@@ -1015,11 +1060,11 @@ builder.Services.AddTransient<ListAddress>();
 | `View.Save(state, ...)` in `Load` | After every load, writes the search, the filters, the page and the page size back into the address |
 | `replace: true` | Changes the address without adding a step to the browser's history, so Back still means "the page before" |
 | `GetUriWithQueryParameters` | Blazor's own way to set query values; `null` removes one, so an empty search leaves no `?search=` behind |
-| `@key="View.Version"` | When the address changes from outside (the menu, a home tile, Back), the table is rebuilt from it |
+| `@key="View.Version"` | When the address changes from outside (the menu, a home tile, Back), the grid is rebuilt from it |
 | `ListMemory` | The last address of each list in this tab, for the breadcrumbs. `Transient` makes a fresh `ListAddress` for each page; `Scoped` keeps one memory for the whole tab |
 
-Like the fields, `AppTable<T>` is a `MudTable<T>`, so a page can keep a `MudTable<T>` reference to it
-(`@ref="_table"`) and call `ReloadServerData()` as usual.
+The page keeps a reference to its grid (`@ref="_table"`, a `MudDataGrid<SalesOrderSummary>`) and calls
+`FirstPage()` on it when a filter changes.
 
 ```razor
 @* src/Erp.Web/Pages/Sales/Orders.razor *@
@@ -1030,47 +1075,43 @@ Like the fields, `AppTable<T>` is a `MudTable<T>`, so a page can keep a `MudTabl
 
 <PageTitle>Sales orders · ERP</PageTitle>
 
-<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
-    <MudText Typo="Typo.h4">Sales orders</MudText>
-    <MudSpacer />
-    <AuthorizeView Roles="@Sellers">
-        <MudButton Href="sales-orders/new" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New order</MudButton>
-    </AuthorizeView>
-</MudStack>
+<PageHeader Title="Sales orders">
+    <Actions>
+        <AuthorizeView Roles="@Sellers">
+            <MudButton Href="sales-orders/new" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New order</MudButton>
+        </AuthorizeView>
+    </Actions>
+</PageHeader>
 
 <MudPaper Class="pa-4 mb-4" Elevation="0" Outlined="true">
     <MudStack Row="true" Spacing="4" Breakpoint="Breakpoint.Xs">
-        <AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Order number or customer" DebounceInterval="400"
+        <MudTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Order number or customer" DebounceInterval="400"
+                      Variant="Variant.Outlined" Margin="Margin.Normal"
                       Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Clearable="true" />
-        <AppSelect T="string" Value="Status" ValueChanged="OnStatus" Label="Status" Clearable="true" Style="max-width:240px">
+        <MudSelect T="string" Value="Status" ValueChanged="OnStatus" Label="Status" Clearable="true" Style="max-width:240px"
+                   Variant="Variant.Outlined" Margin="Margin.Normal">
             @foreach (var s in Statuses)
             {
                 <MudSelectItem Value="s">@Format.Words(s)</MudSelectItem>
             }
-        </AppSelect>
+        </MudSelect>
     </MudStack>
 </MudPaper>
 
-<AppTable T="SalesOrderSummary" @ref="_table" @key="View.Version" ServerData="Load"
-          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize"
-          OnRowClick="Open" RowStyle="cursor:pointer">
-    <HeaderContent>
-        <MudTh>Order</MudTh>
-        <MudTh>Customer</MudTh>
-        <MudTh>Status</MudTh>
-        <MudTh Class="money">Total</MudTh>
-        <MudTh>Created</MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="Order">@context.OrderNumber</MudTd>
-        <MudTd DataLabel="Customer">@context.CustomerName</MudTd>
-        <MudTd DataLabel="Status"><StatusChip Status="@context.Status" /></MudTd>
-        <MudTd DataLabel="Total" Class="money">@Format.Peso(context.Total)</MudTd>
-        <MudTd DataLabel="Created">@Format.Date(context.CreatedUtc)</MudTd>
-    </RowTemplate>
+<MudDataGrid T="SalesOrderSummary" @ref="_table" @key="View.Version" ServerData="Load"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize"
+             RowClick="Open" RowStyle="cursor:pointer">
+    <Columns>
+        <PropertyColumn Property="x => x.OrderNumber" Title="Order" />
+        <PropertyColumn Property="x => x.CustomerName" Title="Customer" />
+        <TemplateColumn Title="Status"><CellTemplate><StatusChip Status="@context.Item.Status" /></CellTemplate></TemplateColumn>
+        <MoneyColumn Title="Total" Amount="x => x.Total" />
+        <TemplateColumn Title="Created"><CellTemplate>@Format.Date(context.Item.CreatedUtc)</CellTemplate></TemplateColumn>
+    </Columns>
     <NoRecordsContent>No orders match.</NoRecordsContent>
-    <PagerContent><MudTablePager /></PagerContent>
-</AppTable>
+    <PagerContent><MudDataGridPager T="SalesOrderSummary" /></PagerContent>
+</MudDataGrid>
 
 @code {
     // The list's view lives in the address (see ListAddress).
@@ -1081,9 +1122,9 @@ Like the fields, `AppTable<T>` is a `MudTable<T>`, so a page can keep a `MudTabl
 
     private static readonly string[] Statuses = ["Draft", "PendingApproval", "Approved", "Rejected", "Cancelled"];
     private static readonly string Sellers = $"{Roles.SalesRep},{Roles.SalesManager},{Roles.Admin}";
-    private AppTable<SalesOrderSummary> _table = default!;
+    private MudDataGrid<SalesOrderSummary> _table = default!;
 
-    private Task<TableData<SalesOrderSummary>> Load(TableState state, CancellationToken ct)
+    private Task<GridData<SalesOrderSummary>> Load(GridState<SalesOrderSummary> state, CancellationToken ct)
     {
         View.Save(state, ("status", Status), ("search", Search));
         return Api.Page<SalesOrderSummary>(Url.With("api/sales-orders", ("status", Status), ("search", Search)), state);
@@ -1092,7 +1133,7 @@ Like the fields, `AppTable<T>` is a `MudTable<T>`, so a page can keep a `MudTabl
     // A link to this list with other filters (the menu, a home tile, Back) shows them.
     protected override void OnParametersSet() => View.Check();
 
-    private void Open(TableRowClickEventArgs<SalesOrderSummary> row) => Nav.NavigateTo($"sales-orders/{row.Item!.Id}");
+    private void Open(DataGridRowClickEventArgs<SalesOrderSummary> row) => Nav.NavigateTo($"sales-orders/{row.Item.Id}");
 
     private Task OnSearch(string? text) { Search = text; return _table.FirstPage(); }
     private Task OnStatus(string? status) { Status = status; return _table.FirstPage(); }
@@ -1102,11 +1143,14 @@ Like the fields, `AppTable<T>` is a `MudTable<T>`, so a page can keep a `MudTabl
 - **No role attribute on the page.** Any signed-in user may open it; the API answers 403 to anyone it
   shouldn't serve, and `ApiClient` says so. The **New order** button, though, only shows to people who may
   sell.
-- **`ServerData="Load"`** makes the table ask the server for each page, instead of downloading every order
+- **`ServerData="Load"`** makes the grid ask the server for each page, instead of downloading every order
   and paging in the browser. With 50,000 orders, that's the difference between instant and unusable.
-- **`DataLabel` on each cell** is for phones. On a narrow screen MudBlazor turns each row into a small card, one
-  value per line, and `DataLabel` puts the column's name beside each value. Without it you'd see "₱800.00" and
-  "Nov 14" with nothing to say which is which.
+  `MudDataGridPager` is the bar under it: rows per page, and the arrows.
+- **Each column's `Title`** is also for phones. On a narrow screen MudBlazor turns each row into a small card, one
+  value per line, and puts the column's title beside each value. Without it you'd see "₱800.00" and "Nov 14" with
+  nothing to say which is which.
+- **`context.Item`** is the row, inside a `TemplateColumn`. (In a `PropertyColumn`, `x => x.OrderNumber` says
+  which property to show, and the column does the rest.)
 - **`Breakpoint="Breakpoint.Xs"`** on the filter row does the same for the fields: side by side on a wide screen,
   stacked on a phone, where side by side would squeeze the search box to a few letters.
 
@@ -1134,33 +1178,26 @@ Like the fields, `AppTable<T>` is a `MudTable<T>`, so a page can keep a `MudTabl
     return;
 }
 
-<MudBreadcrumbs Items="@([new BreadcrumbItem("Sales orders", Lists.Last("sales-orders")), new BreadcrumbItem(_order.OrderNumber, null, disabled: true)])" Class="pa-0 mb-2" />
-
-<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4" Wrap="Wrap.Wrap">
-    <MudText Typo="Typo.h4">@_order.OrderNumber</MudText>
-    <StatusChip Status="@_order.Status" />
-    <MudSpacer />
-</MudStack>
+<PageHeader Title="@_order.OrderNumber" Trail="@([new BreadcrumbItem("Sales orders", Lists.Last("sales-orders")), new BreadcrumbItem(_order.OrderNumber, null, disabled: true)])">
+    <Status><StatusChip Status="@_order.Status" Live="true" /></Status>
+</PageHeader>
 
 <MudGrid>
     <MudItem xs="12" md="8">
         <MudPaper Class="pa-4" Outlined="true">
             <MudText Typo="Typo.h6" GutterBottom="true">@_order.CustomerName</MudText>
-            <AppSimpleTable>
-                <thead><tr><th>Item</th><th class="money">Quantity</th><th class="money">Unit price</th><th class="money">Amount</th></tr></thead>
-                <tbody>
-                    @foreach (var line in _order.Lines)
-                    {
-                        <tr>
-                            <td>@line.ItemName</td>
-                            <td class="money">@Format.Qty(line.Quantity) @line.Unit</td>
-                            <td class="money">@Format.Peso(line.UnitPrice)</td>
-                            <td class="money">@Format.Peso(line.LineTotal)</td>
-                        </tr>
-                    }
-                    <tr><td colspan="3"><b>Total</b></td><td class="money"><b>@Format.Peso(_order.Total)</b></td></tr>
-                </tbody>
-            </AppSimpleTable>
+            <MudDataGrid T="SalesOrderLine" Items="_order.Lines"
+                         Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None">
+                <Columns>
+                    <PropertyColumn Property="x => x.ItemName" Title="Item" />
+                    <TemplateColumn Title="Quantity" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Qty(context.Item.Quantity) @context.Item.Unit</CellTemplate></TemplateColumn>
+                    <MoneyColumn Title="Unit price" Amount="x => x.UnitPrice" />
+                    <MoneyColumn Title="Amount" Amount="x => x.LineTotal" />
+                </Columns>
+            </MudDataGrid>
+            <Totals>
+                <TotalLine Label="Total" Amount="_order.Total" Strong="true" />
+            </Totals>
         </MudPaper>
     </MudItem>
     <MudItem xs="12" md="4">
@@ -1186,6 +1223,117 @@ Like the fields, `AppTable<T>` is a `MudTable<T>`, so a page can keep a `MudTabl
 }
 ```
 
+The page uses four small components, each used again by the purchase order and invoice pages later. First, the
+top of the page. Every page has one: a title, sometimes a status, the things you can do here, sometimes a line
+saying what the page is for, and for a page under a list, the breadcrumb back to it. The order list above is the
+second page to need it, so it becomes a component now, before it's copied a third time:
+
+```razor
+@* src/Erp.Web/Shared/PageHeader.razor *@
+@* The top of every page: where it sits (a breadcrumb, for a page under a list), its title and status, what can be
+   done here, and a line saying what the page is for. On a phone the actions wrap under the title instead of
+   squeezing it. *@
+@if (Trail is not null)
+{
+    <Crumbs Items="Trail" />
+}
+<MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Class="@(Description is null ? "mb-4" : "mb-1")">
+    <MudText Typo="Typo.h4">@Title</MudText>
+    @Status
+    @if (Actions is not null)
+    {
+        <MudSpacer />
+        <MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Spacing="2">
+            @Actions
+        </MudStack>
+    }
+</MudStack>
+@if (Description is not null)
+{
+    <MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">@Description</MudText>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public List<BreadcrumbItem>? Trail { get; set; }
+    [Parameter] public RenderFragment? Status { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+    [Parameter] public RenderFragment? Description { get; set; }
+}
+```
+
+| Slot or parameter | What goes in it |
+|---|---|
+| `Title` | The page's name, or the record's number |
+| `Trail` | The breadcrumb, for a page under a list (the `Crumbs` component below draws it) |
+| `Status` | A `StatusChip`, next to the title |
+| `Actions` | The buttons, on the right. They **wrap** under the title on a phone instead of squeezing it |
+| `Description` | A line under the title, in the softer text colour |
+
+A **slot** is a `RenderFragment` parameter: markup a page passes in, written between `<Actions>` and `</Actions>`.
+Each slot that isn't given is simply left out.
+
+The two pages written before it switch over too. In `Home.razor`, the greeting becomes:
+
+```razor
+    <PageHeader Title="@($"Good day, {auth.User.Identity?.Name}")">
+        <Description>Here's where your work starts.</Description>
+    </PageHeader>
+```
+
+and in `Errors.razor`, the title becomes `<PageHeader Title="Error codes" />`.
+
+The totals under the lines: an invoice has eight of them (VAT, discounts, paid, balance due), so they're not squeezed into
+the grid as fake rows, but listed under it, each a label and an amount:
+
+```razor
+@* src/Erp.Web/Shared/Totals.razor *@
+@* The totals under a grid of lines (an order, an invoice, a purchase order): each line a label and an amount,
+   the amounts lined up on the right, under the grid's Amount column. *@
+<MudStack Spacing="1" Class="mt-3 px-3 ml-auto" Style="max-width:30rem">
+    @ChildContent
+</MudStack>
+
+@code {
+    [Parameter, EditorRequired] public RenderFragment ChildContent { get; set; } = default!;
+}
+```
+
+```razor
+@* src/Erp.Web/Shared/TotalLine.razor *@
+@* One line of Totals. A group named by its label, so a screen reader reads "Balance due, ₱0.00" together,
+   and a browser test finds the line by its name. *@
+<MudStack Row="true" Justify="Justify.SpaceBetween" Spacing="4" role="group" aria-label="@Label">
+    <MudText Typo="@Typo">@Label</MudText>
+    <MudText Typo="@Typo" Class="money">@Format.Peso(Amount)</MudText>
+</MudStack>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public decimal Amount { get; set; }
+    // The lines that matter most (Total, Balance due) in the heavier type.
+    [Parameter] public bool Strong { get; set; }
+
+    private Typo Typo => Strong ? Typo.subtitle1 : Typo.body2;
+}
+```
+
+```razor
+@* src/Erp.Web/Shared/Crumbs.razor *@
+@* The trail back to the list. MudElement renders it inside a nav landmark named "Breadcrumb", as the WAI-ARIA
+   breadcrumb pattern asks: a screen reader can jump to it, and a browser test can find it by its role. *@
+<MudElement HtmlTag="nav" aria-label="Breadcrumb">
+    <MudBreadcrumbs Items="Items" Class="pa-0 mb-2" />
+</MudElement>
+
+@code {
+    [Parameter, EditorRequired] public List<BreadcrumbItem> Items { get; set; } = [];
+}
+```
+
+`MudElement` is MudBlazor's way to get one specific HTML element when no component means it: here `<nav>`, the
+**landmark** a screen reader lists under "navigation".
+
 The line above the title is a **breadcrumb**: "Sales orders / SO-2026-000012". It says where this page sits,
 and the first part is a link back to the list, as you left it: `Lists.Last` gives the address `ListAddress`
 last saved for it, search and page included. The browser's Back button works too, but only if you came from
@@ -1195,8 +1343,8 @@ you're on, isn't a link: clicking where you already are does nothing useful. Lis
 because the menu already highlights where you are.
 
 For now the page only shows the order. The next three lessons add a button each (Submit, then Approve,
-Reject and Cancel, then Edit) and the history grows a line each time. The `<MudSpacer />` in the header is
-where those buttons will go.
+Reject and Cancel, then Edit) and the history grows a line each time. They go in the header's `Actions`,
+which this page doesn't use yet.
 
 `return;` inside the markup stops rendering there, so the rest of the page never touches a `null` order.
 
@@ -1208,7 +1356,8 @@ name, and it searches as you type.
 Before:
 
 ```razor
-<AppNumericField T="long" Label="Customer id" @bind-Value="_customerId" Min="1" Style="max-width:200px" />
+<MudNumericField T="long" Label="Customer id" @bind-Value="_customerId" Min="1" Style="max-width:200px"
+                 Variant="Variant.Outlined" Margin="Margin.Normal" />
 ```
 
 After, the whole page:
@@ -1225,16 +1374,16 @@ After, the whole page:
 <PageTitle>New order · ERP</PageTitle>
 
 <NavigationLock OnBeforeInternalNavigation="ConfirmLeave" ConfirmExternalNavigation="Unsaved" />
-<MudBreadcrumbs Items="@Crumbs" Class="pa-0 mb-2" />
-<MudText Typo="Typo.h4" Class="mb-4">New sales order</MudText>
+<PageHeader Title="New sales order" Trail="@Trail" />
 
 <MudPaper Class="pa-4 mb-4" Outlined="true">
-    <AppAutocomplete T="Customer" Label="Customer" @bind-Value="_customer" SearchFunc="FindCustomers" ToStringFunc="c => c?.Name"
+    <MudAutocomplete T="Customer" Label="Customer" @bind-Value="_customer" SearchFunc="FindCustomers" ToStringFunc="c => c?.Name"
+                     Variant="Variant.Outlined" Margin="Margin.Normal"
                      ResetValueOnEmptyText="true" DebounceInterval="300" />
     @if (_customer is not null)
     {
         <MudText Typo="Typo.body2" Class="mt-2">
-            Available credit: <b>@Format.Peso(_customer.AvailableCredit)</b>
+            Available credit: <MudText Inline="true" Typo="Typo.subtitle2">@Format.Peso(_customer.AvailableCredit)</MudText>
             @if (_customer.IsBlocked) { <MudChip T="string" Color="Color.Error" Size="Size.Small">Blocked</MudChip> }
         </MudText>
     }
@@ -1245,9 +1394,11 @@ After, the whole page:
     @foreach (var line in _lines)
     {
         <MudStack Row="true" Spacing="3" Class="mb-2 align-start align-sm-center" Breakpoint="Breakpoint.Xs">
-            <AppAutocomplete T="PriceListItem" Label="Item" @bind-Value="line.Item" SearchFunc="FindItems" Style="min-width:320px"
+            <MudAutocomplete T="PriceListItem" Label="Item" @bind-Value="line.Item" SearchFunc="FindItems" Style="min-width:320px"
+                             Variant="Variant.Outlined" Margin="Margin.Normal"
                              ToStringFunc="@(i => i is null ? null : $"{i.Sku} · {i.Name}")" DebounceInterval="300" />
-            <AppNumericField T="decimal" Label="@($"Quantity{(line.Item is null ? "" : $" ({line.Item.Unit})")}")" @bind-Value="line.Quantity"
+            <MudNumericField T="decimal" Label="@($"Quantity{(line.Item is null ? "" : $" ({line.Item.Unit})")}")" @bind-Value="line.Quantity"
+                             Variant="Variant.Outlined" Margin="Margin.Normal"
                              Min="0" Step="@(line.Item?.AllowsFractions == true ? 0.5m : 1m)" Style="max-width:160px" />
             <MudText Class="money" Style="min-width:140px">@Format.Peso(line.Total)</MudText>
             <MudIconButton Icon="@Icons.Material.Filled.Delete" OnClick="() => _lines.Remove(line)" aria-label="Remove line" />
@@ -1268,7 +1419,7 @@ After, the whole page:
 </MudStack>
 
 @code {
-    private List<BreadcrumbItem> Crumbs => [new("Sales orders", Lists.Last("sales-orders")), new("New order", null, disabled: true)];
+    private List<BreadcrumbItem> Trail => [new("Sales orders", Lists.Last("sales-orders")), new("New order", null, disabled: true)];
 
     private sealed class Line
     {
@@ -1338,6 +1489,13 @@ public static class UnsavedChanges
 ```
 
 "Stay" is the safe button: someone who wasn't expecting the question keeps their work.
+
+That question is the app's first **dialog**, a small window over the page. MudBlazor draws dialogs through a
+provider, like the snackbar's in lesson 07, so add it once to `MainLayout.razor`, next to the others:
+
+```razor
+<MudDialogProvider />
+```
 
 The `ISnackbar` we injected last time is gone: `ApiClient.Create` shows "Draft saved." itself, and the
 page goes straight to the new order.
@@ -1469,16 +1627,16 @@ public static class SearchText
 ```
 
 The backslash goes first, or we'd escape the backslashes we just added. In each of the three search handlers
-(orders, customers, price list), before:
+(orders, customers, price list), the search text is cleaned the same way. Before:
 
 ```csharp
-Search = string.IsNullOrWhiteSpace(q.Search) ? null : q.Search.Trim()
+string.IsNullOrWhiteSpace(q.Search) ? null : q.Search.Trim()
 ```
 
 After:
 
 ```csharp
-Search = SearchText.ForLike(q.Search)
+SearchText.ForLike(q.Search)
 ```
 
 Run the test again: green. Why not fix it in the SQL instead? We could, but then every function written from
@@ -1579,12 +1737,33 @@ public async Task Orders_created_at_the_same_moment_get_different_numbers()
 }
 ```
 
+And the visibility rule, through the front door. A rep asks for another rep's order by its id. Not 403
+("forbidden"), but 404: a rep can't even learn that the order exists. (It uses lesson 06's `CreateUserAsync` for
+the second rep, so add `using Erp.Shared.BuildingBlocks;` for `Roles`.)
+
+```csharp
+// tests/Erp.Integration.Tests/SalesOrderEdgeCaseTests.cs (add)
+// A rep can't even learn that another rep's order exists: not 403, but 404.
+[Fact]
+public async Task Another_reps_order_is_404_for_reading_submitting_and_editing()
+{
+    var mine = await factory.ClientFor(Rep);
+    var other = await factory.ClientFor(await factory.CreateUserAsync(Roles.SalesRep));
+    var id = await CreateOrder(mine, await NewCustomer(), 1, 1);
+
+    (await other.GetAsync($"/api/sales-orders/{id}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+}
+```
+
+The name says more than it checks today: submitting and editing join it in lessons 09 and 11.
+
 ### Commands write, queries read: a wall for CQRS
 
 From today, Sales has both kinds of handler, and the split from lesson 03 means something concrete: commands
 change state through the domain and EF Core; queries read with Dapper. A query handler holding a
 `SalesDbContext` could quietly start writing, and a command handler running SQL with Dapper would skip every
-rule the domain checks. An architecture test keeps them apart. Add it to `ModuleBoundaryTests`:
+rule the domain checks. An architecture test keeps them apart. Add it to `ModuleBoundaryTests`, with
+`using Erp.Shared.BuildingBlocks;` at the top for `IDbConnectionFactory`:
 
 ```csharp
     // CQRS: a command changes state through the domain and EF Core; a query reads with Dapper and SQL functions. A query
@@ -1655,24 +1834,48 @@ public async Task Every_page_opens_without_an_error()
     foreach (var path in pages)
     {
         await admin.GotoAsync(path);
-        await admin.Locator("h4, h5").First.WaitForAsync();
-        await admin.WaitForLoadStateAsync(LoadState.NetworkIdle);
+        // Loaded: the page has its heading, and no progress bar is still turning.
+        var main = admin.GetByRole(AriaRole.Main);
+        await Expect(main.GetByRole(AriaRole.Heading).First).ToBeVisibleAsync();
+        await Expect(main.GetByRole(AriaRole.Progressbar)).ToHaveCountAsync(0);
         await Shot(admin, path.Trim('/').Replace('/', '-'));
 
-        (await admin.Locator("#blazor-error-ui").IsVisibleAsync()).Should().BeFalse($"{path} crashed the app");
-        (await admin.Locator(".mud-alert-filled-error, .mud-snackbar.mud-alert-filled-error").CountAsync())
-            .Should().Be(0, $"{path} showed an error");
+        await Expect(admin.Locator("#blazor-error-ui"), $"{path} crashed the app").ToBeHiddenAsync();
+        await Expect(admin.GetByRole(AriaRole.Alert), $"{path} showed an error").ToHaveCountAsync(0);
     }
 }
 ```
 
-`#blazor-error-ui` is the bar from lesson 01's `App.razor`; if it's visible, a page threw. This test catches
-exactly the cost we named above: a field the API renamed, which the app's copy of the shape still expects.
+- **"Loaded" is something you can see**: the page's heading inside the main landmark (lesson 01's
+  `role="main"`), and no progress bar still turning. MudBlazor's progress bars have the `progressbar` role, so
+  `ToHaveCountAsync(0)` waits until the last one is gone. That replaces "wait until the network is quiet", which
+  Playwright's own documentation discourages: a page can be quiet and still wrong, or busy and already right.
+- **`#blazor-error-ui`** is the bar from lesson 01's `App.razor`; if it's visible, a page threw. It's our own id,
+  so a CSS locator is fine here. This test catches exactly the cost we named above: a field the API renamed,
+  which the app's copy of the shape still expects.
+- **No `Alert` anywhere**: errors reach the screen as MudBlazor snackbars, and a snackbar has the `alert` role.
+- **The second argument to `Expect`** is the message on failure: "/sales-orders/new crashed the app" says more
+  than "expected hidden".
+
 Every later lesson that adds a screen adds its address to `pages`.
 
 And three for this lesson's promises about getting around: the breadcrumb leads back, the list comes back as you
 left it (and the menu starts it fresh), and a half-filled form asks before it's left. None needs an order to
-exist, so they pass on a fresh install too:
+exist, so they pass on a fresh install too. Two small helpers first. The first drives a MudBlazor autocomplete:
+type, then click the suggestion. The second finds a link in the breadcrumb, which `Crumbs` put in a
+navigation landmark named "Breadcrumb":
+
+```csharp
+// A MudAutocomplete: type into the box, then click the option in the list that opens under it.
+private static async Task Pick(IPage page, string label, string search, string option)
+{
+    await page.GetByRole(AriaRole.Combobox, new() { Name = label }).FillAsync(search);
+    await page.GetByRole(AriaRole.Option, new() { Name = option }).ClickAsync();
+}
+
+private static ILocator Breadcrumb(IPage page, string name) =>
+    page.GetByRole(AriaRole.Navigation, new() { Name = "Breadcrumb" }).GetByRole(AriaRole.Link, new() { Name = name });
+```
 
 ```csharp
 // A page under a list says where it sits and leads back to the list in one click.
@@ -1682,9 +1885,9 @@ public async Task The_breadcrumb_leads_back_to_the_list()
     var rep = await SignIn("rep@erp.local");
     await rep.GotoAsync("/sales-orders/new");
 
-    await rep.Locator(".mud-breadcrumbs").GetByText("Sales orders").ClickAsync();
+    await Breadcrumb(rep, "Sales orders").ClickAsync();
 
-    await rep.WaitForURLAsync(new Regex(@"/sales-orders$"));
+    await Expect(rep).ToHaveURLAsync(new Regex(@"/sales-orders$"));
 }
 
 // A list keeps its search in the address: the breadcrumb returns to it as it was, and the menu starts it fresh.
@@ -1694,18 +1897,19 @@ public async Task A_list_is_remembered_when_you_come_back_to_it()
 {
     var rep = await SignIn("rep@erp.local");
     await rep.GotoAsync("/sales-orders");
-    await rep.GetByLabel("Order number or customer").FillAsync("no such order");
-    await rep.WaitForURLAsync(new Regex("search=no"));
+    var search = rep.GetByLabel("Order number or customer");
+    await search.FillAsync("no such order");
+    await Expect(rep).ToHaveURLAsync(new Regex("search=no"));
 
     await rep.GetByRole(AriaRole.Link, new() { Name = "New order" }).ClickAsync();
-    await rep.Locator(".mud-breadcrumbs").GetByText("Sales orders").ClickAsync();
+    await Breadcrumb(rep, "Sales orders").ClickAsync();
 
-    await rep.WaitForURLAsync(new Regex(@"/sales-orders\?search=no"));
-    (await rep.GetByLabel("Order number or customer").InputValueAsync()).Should().Be("no such order");
+    await Expect(rep).ToHaveURLAsync(new Regex(@"/sales-orders\?search=no"));
+    await Expect(search).ToHaveValueAsync("no such order");
 
-    await rep.GetByRole(AriaRole.Link, new() { Name = "Sales orders" }).First.ClickAsync();
-    await rep.WaitForURLAsync(new Regex(@"/sales-orders$"));
-    (await rep.GetByLabel("Order number or customer").InputValueAsync()).Should().BeEmpty();
+    await rep.GetByRole(AriaRole.Navigation).GetByRole(AriaRole.Link, new() { Name = "Sales orders" }).ClickAsync();
+    await Expect(rep).ToHaveURLAsync(new Regex(@"/sales-orders$"));
+    await Expect(search).ToHaveValueAsync("");
 }
 
 // A half-filled form asks before it's left; "Stay" keeps the work.
@@ -1714,17 +1918,30 @@ public async Task Leaving_an_unsaved_order_asks_first()
 {
     var rep = await SignIn("rep@erp.local");
     await rep.GotoAsync("/sales-orders/new");
-    await rep.GetByLabel("Customer").First.FillAsync("Epsilon");
-    await rep.GetByText("Epsilon Retail").First.ClickAsync();
+    await Pick(rep, "Customer", "Epsilon", "Epsilon Retail");
 
     await rep.GetByRole(AriaRole.Link, new() { Name = "Customers" }).ClickAsync();
-    await rep.GetByText("Leave without saving?").WaitForAsync();
-    await rep.GetByRole(AriaRole.Button, new() { Name = "Stay" }).ClickAsync();
+    var dialog = rep.GetByRole(AriaRole.Dialog, new() { Name = "Leave without saving?" });
+    await dialog.GetByRole(AriaRole.Button, new() { Name = "Stay" }).ClickAsync();
 
-    new Uri(rep.Url).AbsolutePath.Should().Be("/sales-orders/new");
-    (await rep.GetByLabel("Customer").First.InputValueAsync()).Should().Be("Epsilon Retail");
+    await Expect(dialog).ToBeHiddenAsync();
+    await Expect(rep).ToHaveURLAsync(new Regex("/sales-orders/new$"));
+    await Expect(rep.GetByRole(AriaRole.Combobox, new() { Name = "Customer" })).ToHaveValueAsync("Epsilon Retail");
 }
 ```
+
+Look at how each finds its target:
+
+| The test needs | Locator | Why that one |
+|---|---|---|
+| The "Sales orders" link in the breadcrumb, not the one in the menu | `GetByRole(Navigation, "Breadcrumb").GetByRole(Link, "Sales orders")` | Two links share the name; the landmark around each says which is which |
+| The menu's "Sales orders" | `GetByRole(AriaRole.Navigation).GetByRole(Link, ...)` | The menu is the page's other navigation landmark |
+| The customer box | `GetByRole(AriaRole.Combobox, new() { Name = "Customer" })` | A MudBlazor autocomplete is a combobox: a box that opens a list |
+| A suggestion | `GetByRole(AriaRole.Option, new() { Name = "Epsilon Retail" })` | The list's entries are options |
+| The "Leave without saving?" question | `GetByRole(AriaRole.Dialog, new() { Name = "Leave without saving?" })` | A MudBlazor dialog is named by its title |
+
+And each checks with `Expect`: `ToHaveURLAsync` waits for the address to change, `ToHaveValueAsync` for the box
+to hold the text, `ToBeHiddenAsync` for the dialog to close. None of them reads a value once and hopes.
 
 ## How a request flows
 

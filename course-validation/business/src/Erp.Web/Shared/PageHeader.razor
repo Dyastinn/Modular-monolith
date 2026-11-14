@@ -1,0 +1,30 @@
+@* The top of every page: where it sits (a breadcrumb, for a page under a list), its title and status, what can be
+   done here, and a line saying what the page is for. On a phone the actions wrap under the title instead of
+   squeezing it. *@
+@if (Trail is not null)
+{
+    <Crumbs Items="Trail" />
+}
+<MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Class="@(Description is null ? "mb-4" : "mb-1")">
+    <MudText Typo="Typo.h4">@Title</MudText>
+    @Status
+    @if (Actions is not null)
+    {
+        <MudSpacer />
+        <MudStack Row="true" AlignItems="AlignItems.Center" Wrap="Wrap.Wrap" Spacing="2">
+            @Actions
+        </MudStack>
+    }
+</MudStack>
+@if (Description is not null)
+{
+    <MudText Typo="Typo.body2" Class="mb-4 mud-text-secondary">@Description</MudText>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public List<BreadcrumbItem>? Trail { get; set; }
+    [Parameter] public RenderFragment? Status { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+    [Parameter] public RenderFragment? Description { get; set; }
+}

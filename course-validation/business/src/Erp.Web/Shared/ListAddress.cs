@@ -10,15 +10,15 @@ public sealed class ListAddress(NavigationManager nav, ListMemory memory)
     public const int DefaultPageSize = 10;
     private string? _written;
 
-    // Changes when the address changed from outside (the menu, a home tile, Back): the page uses it as the table's
-    // @key, so the table starts again from the new address.
+    // Changes when the address changed from outside (the menu, a home tile, Back): the page uses it as the grid's
+    // @key, so the grid starts again from the new address.
     public int Version { get; private set; }
 
-    // ?page= counts from 1, like people do; the table counts from 0.
+    // ?page= counts from 1, like people do; the grid counts from 0.
     public static int PageIndex(int? page) => page is > 1 ? page.Value - 1 : 0;
 
     // Called on every load: writes the view into the address without adding a step to the browser's history.
-    public void Save(TableState state, params (string Name, object? Value)[] filters)
+    public void Save<T>(GridState<T> state, params (string Name, object? Value)[] filters)
     {
         var values = new Dictionary<string, object?>();
         foreach (var (name, value) in filters)

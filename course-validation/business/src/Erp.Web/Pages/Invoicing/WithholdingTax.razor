@@ -5,11 +5,12 @@
 
 <PageTitle>Withholding tax · ERP</PageTitle>
 
-<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-2">
-    <MudText Typo="Typo.h4">Withholding tax (BIR Form 2307)</MudText>
-    <MudSpacer />
-    <AppNumericField T="int" Value="_year" ValueChanged="OnYear" Label="Year" Style="max-width:120px" />
-</MudStack>
+<PageHeader Title="Withholding tax (BIR Form 2307)">
+    <Actions>
+        <MudNumericField T="int" Value="_year" ValueChanged="OnYear" Label="Year" Style="max-width:120px"
+                         Variant="Variant.Outlined" Margin="Margin.Normal" />
+    </Actions>
+</PageHeader>
 <MudText Typo="Typo.body2" Class="mb-4">
     Tax customers withheld from their payments, and the certificates they've sent for it. Each 2307 is a credit against
     the business's income tax, so chase the missing ones.
@@ -21,53 +22,48 @@
 }
 else
 {
-    <AppSimpleTable Outlined="true" Class="mb-6">
-        <thead>
-            <tr><th>Customer</th><th>Quarter</th><th class="money">Withheld</th><th class="money">Certified</th><th class="money">Missing</th><th></th></tr>
-        </thead>
-        <tbody>
-            @foreach (var r in _report.Summary)
-            {
-                <tr>
-                    <td>@r.CustomerName</td>
-                    <td>Q@(r.Quarter)</td>
-                    <td class="money">@Format.Peso(r.Withheld)</td>
-                    <td class="money">@Format.Peso(r.Certified)</td>
-                    <td class="@(r.Missing > 0 ? "money mud-error-text" : "money")">@Format.Peso(r.Missing)</td>
-                    <td>
-                        @if (r.Missing > 0)
-                        {
-                            <MudButton Size="Size.Small" OnClick="() => Record(r)">Record 2307</MudButton>
-                        }
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </AppSimpleTable>
-    @if (_report.Summary.Count == 0) { <MudText Class="mb-6">No tax withheld in @_year.</MudText> }
+    <MudDataGrid T="WithholdingRow" Items="_report.Summary" Class="mb-6"
+                 Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None">
+        <Columns>
+            <PropertyColumn Property="x => x.CustomerName" Title="Customer" />
+            <TemplateColumn Title="Quarter"><CellTemplate>Q@(context.Item.Quarter)</CellTemplate></TemplateColumn>
+            <MoneyColumn Title="Withheld" Amount="x => x.Withheld" />
+            <MoneyColumn Title="Certified" Amount="x => x.Certified" />
+            <MoneyColumn Title="Missing" Amount="x => x.Missing" Warn="true" />
+            <TemplateColumn Title="">
+                <CellTemplate>
+                    @if (context.Item.Missing > 0)
+                    {
+                        <MudButton Size="Size.Small" OnClick="() => Record(context.Item)">Record 2307</MudButton>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <NoRecordsContent>No tax withheld in @_year.</NoRecordsContent>
+    </MudDataGrid>
 
     <MudText Typo="Typo.h6" GutterBottom="true">Certificates received</MudText>
-    <AppSimpleTable Outlined="true">
-        <thead><tr><th>Customer</th><th>Quarter</th><th class="money">Amount</th><th>Reference</th><th>Received</th><th></th></tr></thead>
-        <tbody>
-            @foreach (var c in _report.Certificates)
-            {
-                <tr style="@(c.VoidedUtc is null ? "" : "text-decoration:line-through")">
-                    <td>@c.CustomerName</td>
-                    <td>Q@(c.Quarter)</td>
-                    <td class="money">@Format.Peso(c.Amount)</td>
-                    <td>@c.Reference @(c.VoidReason is null ? "" : $"(void: {c.VoidReason})")</td>
-                    <td>@Format.Date(c.ReceivedOn)</td>
-                    <td>
-                        @if (c.VoidedUtc is null)
-                        {
-                            <MudIconButton Icon="@Icons.Material.Filled.Undo" Size="Size.Small" OnClick="() => Void(c)" aria-label="Void certificate" />
-                        }
-                    </td>
-                </tr>
-            }
-        </tbody>
-    </AppSimpleTable>
+    <MudDataGrid T="WithholdingCertificate" Items="_report.Certificates" RowClassFunc="@((c, _) => c.VoidedUtc is null ? "" : "voided")"
+                 Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None">
+        <Columns>
+            <PropertyColumn Property="x => x.CustomerName" Title="Customer" />
+            <TemplateColumn Title="Quarter"><CellTemplate>Q@(context.Item.Quarter)</CellTemplate></TemplateColumn>
+            <MoneyColumn Title="Amount" Amount="x => x.Amount" />
+            <TemplateColumn Title="Reference" CellClass="wrap">
+                <CellTemplate>@context.Item.Reference @(context.Item.VoidReason is null ? "" : $"(void: {context.Item.VoidReason})")</CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Received"><CellTemplate>@Format.Date(context.Item.ReceivedOn)</CellTemplate></TemplateColumn>
+            <TemplateColumn Title="">
+                <CellTemplate>
+                    @if (context.Item.VoidedUtc is null)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Undo" Size="Size.Small" OnClick="() => Void(context.Item)" aria-label="Void certificate" />
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+        <NoRecordsContent>No certificates received yet.</NoRecordsContent>
+    </MudDataGrid>
 }
 
 @code {

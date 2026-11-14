@@ -204,7 +204,12 @@ Two new codes join the end of `SalesErrors`, for an id in the request that doesn
 ```
 
 Two small helpers first. Many requests will carry quantities and page numbers, so their shape rules are
-written once, in BuildingBlocks:
+written once, in BuildingBlocks. They're written with FluentValidation, so BuildingBlocks needs the package too
+(it has no ASP.NET or database in it, so it stays a small, safe dependency for every module):
+
+```bash
+dotnet add src/Shared/Erp.Shared.BuildingBlocks package FluentValidation --version 12.1.1
+```
 
 ```csharp
 // src/Shared/Erp.Shared.BuildingBlocks/Messaging/ValidationRules.cs
@@ -328,6 +333,17 @@ internal static class CreateSalesOrderEndpoint
                 })
             .RequireAuthorization(p => p.RequireRole(SalesRoles.Sellers));
 }
+```
+
+A create answers `201 Created` with the new order's address in the `Location` header, and its id in the body.
+Every module will create things, so that body is one small record in BuildingBlocks:
+
+```csharp
+// src/Shared/Erp.Shared.BuildingBlocks/Abstractions/CreatedId.cs
+namespace Erp.Shared.BuildingBlocks;
+
+// The body of a 201 Created: the new thing's id. Its address is in the Location header.
+public sealed record CreatedId(long Id);
 ```
 
 The validators sit next to the request they check, because the request is what the endpoint receives and
@@ -747,24 +763,42 @@ Here's how that looks when a rep picks a blocked customer, and the page the butt
 
 ![The Error codes page for SALES-0002: the customer is blocked, and what to do about it, above a searchable list of every code](images/07-error-page.png)
 
-The page lists every code in a table, the app's first. Tables get one look, decided once, the same way lesson
-03 did it for fields:
+The page lists every code in a table, the app's first. MudBlazor has three kinds of table, and we use one of them
+everywhere:
 
-```csharp
-// src/Erp.Web/Shared/AppTables.cs
-using MudBlazor;
+| Component | How you describe the table | Why not, or why |
+|---|---|---|
+| `MudSimpleTable` | Plain HTML inside it: `<thead>`, `<tr>`, `<td>` | MudBlazor only styles it. Everything else in our screens is a MudBlazor component, so this would be the odd one out |
+| `MudTable` | Every column twice: a `MudTh` heading, then a `MudTd` cell (and its phone label again in `DataLabel`) | Three places to keep in step for every column |
+| **`MudDataGrid`** | **One line per column**: its title and its value together | Our choice. The title doubles as the label on a phone, and the same grid takes a list in memory (`Items`) or pages from the API (`ServerData`, next lesson) |
 
-namespace Erp.Web.Shared;
+Like the fields in lesson 03, every grid in the app gets the same settings, written on the grid:
 
-// The app's tables, one look decided once (like AppFields): compact rows, the row under the pointer highlighted,
-// and alternating row colours, so the eye stays on the right row across a wide table.
-
-// Simple tables often sit inside a card that already has a border, so Outlined stays the page's choice here.
-public class AppSimpleTable : MudSimpleTable
-{
-    public AppSimpleTable() { Striped = true; Hover = true; Dense = true; }
-}
+```razor
+<MudDataGrid T="ErrorCode" Items="Filtered" Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None">
 ```
+
+| Setting | Why |
+|---|---|
+| `Outlined="true"` | A thin border, the same as the cards around it. (Leave it off for a grid that already sits inside a framed tab or card) |
+| `Striped="true"` | Alternating row colours (more on that below) |
+| `Hover="true"` | The row under the pointer is highlighted, so a click lands on the row you meant |
+| `Dense="true"` | Compact rows: more of a list fits on the screen |
+| `SortMode="SortMode.None"` | No sort arrows on the headings. Our lists come sorted from the API, and a heading that looks clickable but sorts only the page on screen would mislead |
+
+Each grid also says what it shows when it's empty, in its `NoRecordsContent`, so an empty grid never looks broken.
+On a phone (narrower than MudBlazor's `Xs` breakpoint) each row becomes a small card, every value labelled with its
+column's `Title`, with nothing extra to write.
+
+Inside it go the columns. Two kinds cover everything:
+
+| Column | Use it for | Example |
+|---|---|---|
+| `PropertyColumn` | A property shown as it is | `<PropertyColumn Property="x => x.Title" Title="Meaning" />` |
+| `TemplateColumn` | Anything else: a link, a chip, a formatted amount, a button. The row is `context.Item` | `<TemplateColumn Title="Code"><CellTemplate>...</CellTemplate></TemplateColumn>` |
+
+The columns don't repeat `T="ErrorCode"`: `MudDataGrid` passes its row type down to everything inside it (Blazor's
+`[CascadingTypeParameter]`).
 
 Why alternating row colours (**zebra stripes**)? The studies are honest about it: they rarely make people faster,
 but they never made them slower, they helped accuracy on some tasks, and most people prefer them. In a wide
@@ -799,7 +833,8 @@ The page that button opens, open to anyone, because the link must work even afte
             <MudPaper Class="pa-4 mb-6" Outlined="true">
                 <MudText Typo="Typo.overline">@selected.Code</MudText>
                 <MudText Typo="Typo.h6" GutterBottom="true">@selected.Title</MudText>
-                <MudText Typo="Typo.body1"><strong>What to do:</strong> @selected.Fix</MudText>
+                <MudText Typo="Typo.subtitle2">What to do</MudText>
+                <MudText Typo="Typo.body1">@selected.Fix</MudText>
                 <MudText Typo="Typo.body2" Class="mt-3">
                     If this doesn't solve it, send support the code and the trace id from the message.
                 </MudText>
@@ -810,20 +845,17 @@ The page that button opens, open to anyone, because the link must work even afte
             <MudAlert Severity="Severity.Warning" Class="mb-6">There is no error code @Code.</MudAlert>
         }
 
-        <AppTextField @bind-Value="_search" Label="Search" Immediate="true" Adornment="Adornment.Start"
+        <MudTextField @bind-Value="_search" Label="Search" Immediate="true" Adornment="Adornment.Start"
+                      Variant="Variant.Outlined" Margin="Margin.Normal"
                       AdornmentIcon="@Icons.Material.Filled.Search" Class="mb-4" />
-        <AppSimpleTable Outlined="true">
-            <thead><tr><th>Code</th><th>Meaning</th></tr></thead>
-            <tbody>
-                @foreach (var error in Filtered)
-                {
-                    <tr>
-                        <td><MudLink Href="@($"errors/{error.Code}")">@error.Code</MudLink></td>
-                        <td>@error.Title</td>
-                    </tr>
-                }
-            </tbody>
-        </AppSimpleTable>
+        <MudDataGrid T="ErrorCode" Items="Filtered"
+                     Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None">
+            <Columns>
+                <TemplateColumn Title="Code"><CellTemplate><MudLink Href="@($"errors/{context.Item.Code}")">@context.Item.Code</MudLink></CellTemplate></TemplateColumn>
+                <PropertyColumn Property="x => x.Title" Title="Meaning" CellClass="wrap" />
+            </Columns>
+            <NoRecordsContent>No code matches.</NoRecordsContent>
+        </MudDataGrid>
     }
 </MudContainer>
 
@@ -926,14 +958,7 @@ API checks every call on its own, and a rep who builds the URL by hand still get
 Now the page. We can't search customers or items yet (reading lists is next lesson), so for today the
 form asks for ids. It's plain on purpose; [lesson 08](08-find-orders.md) gives it search boxes.
 
-It's the app's first number field, so it joins lesson 03's text field in `Shared/AppFields.cs`:
-
-```csharp
-public class AppNumericField<T> : MudNumericField<T>
-{
-    public AppNumericField() { Variant = Variant.Outlined; Margin = Margin.Normal; }
-}
-```
+It's the app's first number field, a `MudNumericField`, with the same two settings as every field.
 
 ```razor
 @* src/Erp.Web/Pages/Sales/OrderEditor.razor *@
@@ -947,7 +972,8 @@ public class AppNumericField<T> : MudNumericField<T>
 <MudText Typo="Typo.h4" Class="mb-4">New sales order</MudText>
 
 <MudPaper Class="pa-4 mb-4" Outlined="true">
-    <AppNumericField T="long" Label="Customer id" @bind-Value="_customerId" Min="1" Style="max-width:200px" />
+    <MudNumericField T="long" Label="Customer id" @bind-Value="_customerId" Min="1" Style="max-width:200px"
+                     Variant="Variant.Outlined" Margin="Margin.Normal" />
 </MudPaper>
 
 <MudPaper Class="pa-4 mb-4" Outlined="true">
@@ -955,8 +981,10 @@ public class AppNumericField<T> : MudNumericField<T>
     @foreach (var line in _lines)
     {
         <MudStack Row="true" Spacing="3" Class="mb-2 align-start align-sm-center" Breakpoint="Breakpoint.Xs">
-            <AppNumericField T="long" Label="Item id" @bind-Value="line.ItemId" Min="1" Style="max-width:160px" />
-            <AppNumericField T="decimal" Label="Quantity" @bind-Value="line.Quantity" Min="0" Style="max-width:160px" />
+            <MudNumericField T="long" Label="Item id" @bind-Value="line.ItemId" Min="1" Style="max-width:160px"
+                             Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudNumericField T="decimal" Label="Quantity" @bind-Value="line.Quantity" Min="0" Style="max-width:160px"
+                             Variant="Variant.Outlined" Margin="Margin.Normal" />
             <MudIconButton Icon="@Icons.Material.Filled.Delete" OnClick="() => _lines.Remove(line)" aria-label="Remove line" />
         </MudStack>
     }
@@ -1091,7 +1119,6 @@ public class SalesOrderWorkflowTests(CustomWebAppFactory factory)
     private const string Rep = "rep@erp.local", Manager = "manager@erp.local";
 
     private sealed record Created(long Id);
-    private sealed record Problem(string Detail, string[] Errors);
 
     private static async Task<long> CreateOrder(HttpClient client, long customerId, long itemId, int quantity)
     {
@@ -1271,7 +1298,7 @@ public class ErrorCodeTests(CustomWebAppFactory factory)
 
     // The framework writes these responses itself; they get a code from their status.
     [Theory]
-    [InlineData("/api/sales-orders", false, "ERP-0005")]          // not signed in
+    [InlineData("/api/auth/me", false, "ERP-0005")]               // not signed in
     [InlineData("/api/no-such-thing", true, "ERP-0002")]          // unknown address
     public async Task Errors_the_framework_writes_carry_a_code_too(string path, bool signedIn, string code)
     {
@@ -1323,6 +1350,29 @@ Make it fail once: in `ErrorProblems.Apply`, comment out the `code` line. Every 
 | `Order_with_no_lines_is_rejected_by_the_internal_validator` | Configuration | The `includeInternalTypes` guard, now on a real feature |
 | `Errors_the_framework_writes_carry_a_code_too` | Not signed in, an unknown address | Errors nobody threw still say what they are |
 | `The_catalog_explains_a_code_to_anyone_even_signed_out` | Who: nobody signed in | The link in an error must open after the session ended |
+
+### The same promise, in a real browser
+
+The API test above proves the catalog answers without a cookie. One browser test proves the *page* opens too,
+because a page can still send someone to sign in even when its data is public. In `BusinessFlowUiTests`:
+
+```csharp
+// The link in an error message must open even when the session has ended.
+[UiFact]
+public async Task The_error_catalog_opens_without_signing_in()
+{
+    var page = await NewPage();
+
+    await page.GotoAsync("/errors/SALES-0003");
+
+    await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "The order would exceed the credit limit" })).ToBeVisibleAsync();
+    await Expect(page, "the catalog doesn't send anyone to sign in").ToHaveURLAsync(new Regex("/errors/SALES-0003$"));
+}
+```
+
+It opens a fresh context (nobody signed in), goes straight to a code's address, and expects that code's heading.
+`GetByRole(AriaRole.Heading, ...)` matches the `MudText Typo="Typo.h6"` title, because MudBlazor draws `h6` as a
+real `<h6>`: typography in MudBlazor is real headings, so headings are something tests and screen readers can find.
 
 ## How a request flows
 

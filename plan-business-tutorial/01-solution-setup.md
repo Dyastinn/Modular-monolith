@@ -110,7 +110,8 @@ page on every postback.
 
 For the screen components (tables, forms, menus, dialogs), we use **MudBlazor**, under the MIT license. The
 well-known alternatives, Telerik, Syncfusion and DevExpress, need a paid license per developer, and the buyer
-of this source would inherit that bill.
+of this source would inherit that bill. Everything the course does with MudBlazor, and how to test it, is gathered in
+[MUDBLAZOR.md](MUDBLAZOR.md); come back to it as the screens grow.
 
 ### One address for the app and the API
 
@@ -636,7 +637,8 @@ Now the product's mark, a small component we can reuse:
                Class="border-r border-solid mud-border-lines-default">
         <NavMenu />
     </MudDrawer>
-    <MudMainContent>
+    @* role="main": the page's main landmark, so a screen reader (and a test) can go straight to the content. *@
+    <MudMainContent role="main">
         <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pt-8 pb-12 px-4 px-sm-8">
             @Body
         </MudContainer>
@@ -679,6 +681,7 @@ up is drawn, like the dark-mode button's tooltip. Each appears once, here.
 | `MudAppBar Elevation="0"` | The deep-blue top bar, flat |
 | `DrawerVariant.Responsive` | The menu sits beside the page on a wide screen and slides over it on a phone |
 | `border-r border-solid mud-border-lines-default` | MudBlazor's own utility classes: a thin border on the right, in the theme's line colour. No CSS of ours |
+| `role="main"` | Marks the page's own content as the **main landmark**. A screen reader can jump straight to it, past the bar and the menu, and lesson 06's browser tests look for headings inside it. MudBlazor passes attributes it doesn't know straight on to the element it draws |
 | `pt-8 pb-12 px-4 px-sm-8` | Spacing utilities: more room on a wide screen (`sm` and up) than on a phone |
 | `@bind-IsDarkMode` | Light or dark, for the whole app, in one boolean |
 | `GetSystemDarkModeAsync()` | Asks the browser whether the computer is set to dark mode |

@@ -1,36 +1,38 @@
 @inject ApiClient Api
 
 @* The discounts the business grants by law. Senior citizen and PWD come ready; others are the business's call. *@
-<AppSimpleTable Class="ma-4">
-    <thead><tr><th>Code</th><th>Name</th><th>ID asked for</th><th class="money">Rate</th><th>VAT-exempt</th><th>Offered</th><th></th></tr></thead>
-    <tbody>
-        @foreach (var p in _programs)
-        {
-            <tr>
-                <td>@p.Code</td>
-                <td>@p.Name</td>
-                <td>@p.IdLabel</td>
-                <td class="money">@Format.Percent(p.Rate)</td>
-                <td>@(p.VatExempt ? "Yes" : "No")</td>
-                <td>@(p.IsActive ? "Yes" : "No")</td>
-                <td>
-                    <AuthorizeView Roles="@Managers" Context="auth">
-                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => Start(p)" aria-label="Edit" />
-                    </AuthorizeView>
-                </td>
-            </tr>
-        }
-    </tbody>
-</AppSimpleTable>
+<MudDataGrid T="SpecialDiscountProgram" Items="_programs"
+             Striped="true" Hover="true" Dense="true" SortMode="SortMode.None">
+    <Columns>
+        <PropertyColumn Property="x => x.Code" Title="Code" />
+        <PropertyColumn Property="x => x.Name" Title="Name" />
+        <PropertyColumn Property="x => x.IdLabel" Title="ID asked for" />
+        <TemplateColumn Title="Rate" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Percent(context.Item.Rate)</CellTemplate></TemplateColumn>
+        <TemplateColumn Title="VAT-exempt"><CellTemplate>@(context.Item.VatExempt ? "Yes" : "No")</CellTemplate></TemplateColumn>
+        <TemplateColumn Title="Offered"><CellTemplate>@(context.Item.IsActive ? "Yes" : "No")</CellTemplate></TemplateColumn>
+        <TemplateColumn Title="">
+            <CellTemplate>
+                <AuthorizeView Roles="@Managers" Context="auth">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => Start(context.Item)" aria-label="Edit" />
+                </AuthorizeView>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <NoRecordsContent>No programs yet.</NoRecordsContent>
+</MudDataGrid>
 
 <AuthorizeView Roles="@Managers">
     <MudPaper Class="pa-4 ma-4" Outlined="true">
         <MudText Typo="Typo.subtitle1" GutterBottom="true">@(_editing is null ? "New program" : $"Edit {_editing.Name}")</MudText>
         <MudStack Row="true" Spacing="3" AlignItems="AlignItems.End" Wrap="Wrap.Wrap" Breakpoint="Breakpoint.Xs">
-            <AppTextField @bind-Value="_code" Label="Code" MaxLength="20" Disabled="_editing is not null" Style="max-width:100px" />
-            <AppTextField @bind-Value="_name" Label="Name" MaxLength="50" />
-            <AppTextField @bind-Value="_idLabel" Label="ID asked for" MaxLength="50" />
-            <AppNumericField @bind-Value="_percent" Label="Rate (%)" Min="0.01m" Max="99.99m" Style="max-width:110px" />
+            <MudTextField @bind-Value="_code" Label="Code" MaxLength="20" Disabled="_editing is not null" Style="max-width:100px"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_name" Label="Name" MaxLength="50"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_idLabel" Label="ID asked for" MaxLength="50"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudNumericField @bind-Value="_percent" Label="Rate (%)" Min="0.01m" Max="99.99m" Style="max-width:110px"
+                             Variant="Variant.Outlined" Margin="Margin.Normal" />
             <MudSwitch @bind-Value="_vatExempt" Label="VAT-exempt" Color="Color.Primary" />
             <MudSwitch @bind-Value="_active" Label="Offered" Color="Color.Primary" />
             <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary"

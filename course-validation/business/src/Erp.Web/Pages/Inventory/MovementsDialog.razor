@@ -3,20 +3,18 @@
 
 <MudDialog>
     <DialogContent>
-        <AppTable T="StockMovement" ServerData="Load" Elevation="0">
-            <HeaderContent>
-                <MudTh>When</MudTh><MudTh>What</MudTh><MudTh Class="money">Quantity</MudTh><MudTh>Reference / reason</MudTh><MudTh>By</MudTh>
-            </HeaderContent>
-            <RowTemplate>
-                <MudTd DataLabel="When">@Format.Date(context.OccurredUtc)</MudTd>
-                <MudTd DataLabel="What">@context.Kind</MudTd>
-                <MudTd DataLabel="Quantity" Class="money">@(context.Quantity > 0 ? "+" : "")@Format.Qty(context.Quantity) @Item.Unit</MudTd>
-                <MudTd DataLabel="Reference / reason" Class="wrap">@(context.Reference ?? context.Reason)</MudTd>
-                <MudTd DataLabel="By">@_names.GetValueOrDefault(context.UserId)</MudTd>
-            </RowTemplate>
+        <MudDataGrid T="StockMovement" ServerData="Load" Elevation="0"
+                     Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None">
+            <Columns>
+                <TemplateColumn Title="When"><CellTemplate>@Format.Date(context.Item.OccurredUtc)</CellTemplate></TemplateColumn>
+                <PropertyColumn Property="x => x.Kind" Title="What" />
+                <TemplateColumn Title="Quantity" HeaderClass="money" CellClass="money"><CellTemplate>@(context.Item.Quantity > 0 ? "+" : "")@Format.Qty(context.Item.Quantity) @Item.Unit</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Reference / reason" CellClass="wrap"><CellTemplate>@(context.Item.Reference ?? context.Item.Reason)</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="By"><CellTemplate>@_names.GetValueOrDefault(context.Item.UserId)</CellTemplate></TemplateColumn>
+            </Columns>
             <NoRecordsContent>No movements yet.</NoRecordsContent>
-            <PagerContent><MudTablePager /></PagerContent>
-        </AppTable>
+            <PagerContent><MudDataGridPager T="StockMovement" /></PagerContent>
+        </MudDataGrid>
     </DialogContent>
 </MudDialog>
 
@@ -25,7 +23,7 @@
     [Parameter] public StockItem Item { get; set; } = default!;
     private readonly Dictionary<long, string> _names = [];
 
-    private async Task<TableData<StockMovement>> Load(TableState state, CancellationToken ct)
+    private async Task<GridData<StockMovement>> Load(GridState<StockMovement> state, CancellationToken ct)
     {
         var page = await Api.Page<StockMovement>($"api/items/{Item.Id}/movements", state);
         foreach (var id in page.Items!.Select(m => m.UserId).Distinct()) _names[id] = await Users.NameOf(id);

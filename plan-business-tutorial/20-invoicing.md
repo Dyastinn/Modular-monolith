@@ -298,7 +298,7 @@ The treatment is a fact about a sale that both Sales and Invoicing need, and tha
 window. Contracts reference only BuildingBlocks, so that's where it lives:
 
 ```csharp
-// src/Shared/Erp.Shared.BuildingBlocks/Domain/TaxType.cs
+// src/Shared/Erp.Shared.BuildingBlocks/Domain/Tax.cs
 namespace Erp.Shared.BuildingBlocks;
 
 // How a sale of an item is treated for VAT (BIR RR 7-2024 Sec. 3(B)). Stored as numbers: never renumber.
@@ -380,11 +380,12 @@ On screen, `PriceListItem` in `Models.cs` gains `string TaxType`. The price list
 (`@Format.Words(context.TaxType)`), and `PricingDialog` gets a select above the "For sale" switch:
 
 ```razor
-<AppSelect T="string" @bind-Value="_taxType" Label="VAT treatment" HelperText="Printed on the invoice's VAT breakdown">
+<MudSelect T="string" @bind-Value="_taxType" Label="VAT treatment" HelperText="Printed on the invoice's VAT breakdown"
+           Variant="Variant.Outlined" Margin="Margin.Normal">
     <MudSelectItem Value="@("Vatable")">VATable</MudSelectItem>
     <MudSelectItem Value="@("ZeroRated")">Zero-rated</MudSelectItem>
     <MudSelectItem Value="@("VatExempt")">VAT-exempt</MudSelectItem>
-</AppSelect>
+</MudSelect>
 ```
 
 with `private string _taxType = "Vatable";`, loaded from `Item.TaxType` and sent as `taxType = _taxType`.
@@ -443,28 +444,6 @@ internal readonly record struct UserId(long Value);   // owned by Identity
 // Stored as numbers: never renumber.
 internal enum InvoiceStatus { Issued = 0, Void = 3 }
 
-// How the seller is registered with the BIR. Stored as numbers: never renumber.
-internal enum TaxRegime
-{
-    Vat = 0,             // VAT-registered: prices include VAT, invoices show the VAT breakdown
-    PercentageTax = 1,   // non-VAT, subject to percentage tax: invoices show sales subject to percentage tax
-    Exempt = 2           // non-VAT, subject to neither: invoices say "EXEMPT"
-}
-
-// The seller's tax setup at the moment an invoice is issued. Comes from configuration; copied onto every invoice.
-internal readonly record struct TaxPolicy
-{
-    public TaxRegime Regime { get; }
-    public decimal VatRate { get; }
-
-    public TaxPolicy(TaxRegime regime, decimal vatRate)
-    {
-        if (!Enum.IsDefined(regime)) throw new DomainException(CommonErrors.UnknownTaxRegime, $"'{regime}' is not a tax regime.");
-        if (vatRate is < 0 or >= 1) throw new DomainException(CommonErrors.InvalidVatRate, "The VAT rate must be a fraction between 0 and 1, such as 0.12.");
-        Regime = regime;
-        VatRate = regime == TaxRegime.Vat ? vatRate : 0;
-    }
-}
 
 // The totals RR 7-2024 Sec. 6(B.13) requires: VATable sales (net of VAT), the VAT, zero-rated and VAT-exempt sales.
 internal readonly record struct TaxBreakdown(Money VatableSales, Money VatAmount, Money ZeroRatedSales, Money VatExemptSales)
@@ -594,8 +573,35 @@ What to notice:
   details. An invoice is never recalculated from today's company profile. `seller with { }` stores a copy, not
   the profile's own object.
 
-`TaxType`, `TaxRegime` and `TaxPolicy` sit in BuildingBlocks' `Domain/Tax.cs`, because Sales needs the policy
-too, in [lesson 22](22-special-discounts.md). That's also why `TaxPolicy`'s two codes are shared ones, added to
+`TaxRegime` and `TaxPolicy` join `TaxType` in BuildingBlocks' `Domain/Tax.cs`, because Sales needs the policy
+too, in [lesson 22](22-special-discounts.md). Add them below `TaxType`:
+
+```csharp
+// How the seller is registered with the BIR. Stored as numbers: never renumber.
+public enum TaxRegime
+{
+    Vat = 0,             // VAT-registered: prices include VAT, invoices show the VAT breakdown
+    PercentageTax = 1,   // non-VAT, subject to percentage tax: invoices show sales subject to percentage tax
+    Exempt = 2           // non-VAT, subject to neither: invoices say "EXEMPT"
+}
+
+// The seller's tax setup, kept in Invoicing's company profile. Copied onto every invoice and every special discount.
+public sealed record TaxPolicy
+{
+    public TaxRegime Regime { get; }
+    public decimal VatRate { get; }
+
+    public TaxPolicy(TaxRegime regime, decimal vatRate)
+    {
+        if (!Enum.IsDefined(regime)) throw new DomainException(CommonErrors.UnknownTaxRegime, $"'{regime}' is not a tax regime.");
+        if (vatRate is < 0 or >= 1) throw new DomainException(CommonErrors.InvalidVatRate, "The VAT rate must be a fraction between 0 and 1, such as 0.12.");
+        Regime = regime;
+        VatRate = regime == TaxRegime.Vat ? vatRate : 0;
+    }
+}
+```
+
+That's also why `TaxPolicy`'s two codes are shared ones, added to
 `CommonErrors` after lesson 04's value-object codes:
 
 ```csharp
@@ -1392,7 +1398,7 @@ public async Task Invoice_numbers_have_no_gaps()
 {
     await using var conn = factory.OpenDatabase();
     var numbers = (await conn.QueryAsync<string>("SELECT number FROM invoicing.invoice ORDER BY id")).ToList();
-    var counters = numbers.Select(n => int.Parse(n[^6..])).ToList();
+    var counters = numbers.Select(n => int.Parse(n[^6..], CultureInfo.InvariantCulture)).ToList();
 
     counters.Should().Equal(Enumerable.Range(1, counters.Count));
 }
@@ -1471,7 +1477,26 @@ so the accountant's list may not show it yet. Keep the order number when the rep
 `Pending approval` chip):
 
 ```csharp
-var orderNumber = await rep.Locator("h4").First.InnerTextAsync();
+var orderNumber = await rep.GetByRole(AriaRole.Heading, new() { Level = 4 }).InnerTextAsync();
+```
+
+(`Level = 4`: the page title is the only `h4` on an order's page. Reading it once is fine here: it's a value to
+use later, not something to check.) Then a helper, because the invoices list doesn't refresh by itself:
+
+```csharp
+// A list doesn't refresh by itself, and some records are made in the background (lesson 13's outbox).
+// So reload until the row shows. Each round waits for the list to finish loading (the row, or the list's
+// "nothing matches" text), never for a fixed time: the app restarts on every reload, and that takes a moment.
+private static async Task ReloadUntilVisible(IPage page, string url, ILocator row, string nothingMatches)
+{
+    for (var attempt = 1; attempt <= 15; attempt++)
+    {
+        await page.GotoAsync(url);
+        await Expect(row.Or(page.GetByText(nothingMatches))).ToBeVisibleAsync();
+        if (await row.IsVisibleAsync()) return;
+    }
+    await Expect(row).ToBeVisibleAsync();   // fails with Playwright's own message
+}
 ```
 
 and after the clerk ships:
@@ -1480,17 +1505,16 @@ and after the clerk ships:
 // The invoice appears by itself; the accountant opens it.
 var accountant = await SignIn("accountant@erp.local");
 var invoiceRow = accountant.GetByRole(AriaRole.Row).Filter(new() { HasText = orderNumber });
-for (var attempt = 0; attempt < 15 && await invoiceRow.CountAsync() == 0; attempt++)
-{
-    await accountant.GotoAsync($"/invoices?search={Uri.EscapeDataString(orderNumber)}");
-    await accountant.WaitForTimeoutAsync(1000);
-}
+await ReloadUntilVisible(accountant, $"/invoices?search={Uri.EscapeDataString(orderNumber)}", invoiceRow, "No invoices match.");
 await Shot(accountant, "accountant-invoices");
-await invoiceRow.First.ClickAsync();
+await invoiceRow.ClickAsync();
 ```
 
-The loop is the browser's version of polling the outbox: reload the list, up to fifteen times, until the
-invoice is there.
+This is the one place a test retries by hand, and it still never waits for a clock. Each round reloads the list
+and waits until it has *finished loading*: either the row is there, or the list says "No invoices match."
+(`row.Or(...)` waits for whichever comes first). Only then does it decide whether to try again. An earlier
+version waited a fixed second after each reload, and failed on a slower machine: the reload restarts the whole
+app in the browser, which can take longer than the second it was given.
 
 | Test | The edge | Why it matters |
 |---|---|---|

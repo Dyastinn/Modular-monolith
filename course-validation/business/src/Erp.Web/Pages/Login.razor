@@ -12,13 +12,12 @@
         <MudText Typo="Typo.body2" Class="mud-text-secondary mb-6">Use the email and password your administrator gave you.</MudText>
         <EditForm Model="this" OnSubmit="SignIn">
             <MudStack Spacing="4">
-                <AppTextField @bind-Value="_email" Label="Email" InputType="InputType.Email" AutoFocus="true" Required="true"
-                              />
-                <AppPasswordField @bind-Value="_password" Label="Password" Required="true"
-                              />
+                <MudTextField @bind-Value="_email" Label="Email" InputType="InputType.Email" AutoFocus="true" Required="true"
+                              Variant="Variant.Outlined" Margin="Margin.Normal" />
+                <PasswordField @bind-Value="_password" Label="Password" Required="true" />
                 @if (_error is not null)
                 {
-                    <MudAlert Severity="Severity.Error" Dense="true">@_error</MudAlert>
+                    <MudAlert Severity="Severity.Error" Dense="true" role="alert">@_error</MudAlert>
                 }
                 <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
                            Size="Size.Large" Disabled="_busy">Sign in</MudButton>

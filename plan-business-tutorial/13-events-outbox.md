@@ -136,7 +136,10 @@ In `SalesOrder.MarkApproved`, add one line at the end:
 Raise(new SalesOrderApproved(Id, CustomerId, Total, approver));
 ```
 
-Because both auto-approval and manager approval go through `MarkApproved`, every approval raises it.
+Because both auto-approval and manager approval go through `MarkApproved`, every approval raises it. Nothing
+changes in `ApproveSalesOrderHandler`, but its one `SaveChangesAsync` now does more: it writes the event into the
+outbox in the same transaction as the order. Make its comment say so:
+`await db.SaveChangesAsync(ct);   // order, customer balance and outbox event: one transaction`.
 
 ```csharp
 // src/Modules/Sales/Erp.Modules.Sales/Infrastructure/EventHandlers/SalesOrderApprovedAuditHandler.cs
@@ -173,7 +176,8 @@ the other side. Step 8 adds a test for each.
 
 The analyzers have one more opinion here: CA1711 says a type name ending in `EventHandler` should be a
 delegate. `IDomainEventHandler` is the standard name for this interface in domain-driven code, so `.editorconfig`
-gets one more line, with its reason:
+gets one more rule, with its reason. Put it with the other switched-off rules in the `[*.cs]` section, not at the
+end of the file: the last section, from lesson 05, applies only to migrations.
 
 ```ini
 # CA1711: IDomainEventHandler and IIntegrationEventHandler are the standard names for these interfaces in DDD code.

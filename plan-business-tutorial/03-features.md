@@ -330,32 +330,20 @@ at `/api/ping`, without the endpoint knowing about the prefix. Not so hard, righ
 A small page in the app: type a message, press the button, see the answer. It has the app's first input
 field, so first let's decide, once, what every field looks like.
 
-MudBlazor's text field comes in three looks (`Variant`): an underline, a filled box, or an outlined box. We
-want the outlined box everywhere, with comfortable spacing. Writing `Variant="Variant.Outlined"` on every field
-of every page means a hundred places to remember, and one forgotten field looks out of place. MudBlazor 9 has
-no app-wide setting for it, so we make our own field: MudBlazor's, with our defaults set in its constructor.
+MudBlazor's text field comes in three looks (`Variant`): an underline, a filled box, or an outlined box. We want
+the outlined box everywhere, with comfortable spacing (`Margin.Normal`). So every field in this course is written
+with both:
 
-```csharp
-// src/Erp.Web/Shared/AppFields.cs
-using MudBlazor;
-
-namespace Erp.Web.Shared;
-
-// The app's input fields: MudBlazor's own, with one look decided here, once. Every page uses these instead of the
-// Mud* originals, so a form looks the same everywhere and changing the look is a change to this file.
-// They take every parameter the original takes; a page can still override the defaults when it must.
-// (MudBlazor 9 has no global setting for an input's variant, so the defaults live here.)
-
-public class AppTextField<T> : MudTextField<T>
-{
-    public AppTextField() { Variant = Variant.Outlined; Margin = Margin.Normal; }
-}
+```razor
+<MudTextField @bind-Value="_message" Label="Message" Variant="Variant.Outlined" Margin="Margin.Normal" />
 ```
 
-`AppTextField<T>` *is* a `MudTextField<T>`: it inherits every parameter, so `Label`, `@bind-Value` and the rest
-work exactly as in MudBlazor's documentation. The constructor only changes the starting values, and a page that
-passes `Variant` itself still wins. Later lessons add the other kinds of field to this file as they first need
-them. To remember it easily: a page never writes `<MudTextField>`, it writes `<AppTextField>`.
+Why not set it once for the whole app? MudBlazor 8 had a global setting for it; version 9 removed it. Its
+migration guide lists three ways instead: parameters on each component, theme tokens, or wrapper components. The
+theme has no token for a field's look, and a wrapper (your own field class built on MudBlazor's) is one more layer
+you maintain, between you and MudBlazor's documentation. Two attributes on each field is the plainer deal: what
+you read in MudBlazor's docs is exactly what's on the page. The price is remembering them, so the rule goes in the project's conventions, and a
+field without them stands out in review because it looks different.
 
 ```razor
 @* src/Erp.Web/Pages/Ping.razor *@
@@ -367,7 +355,8 @@ them. To remember it easily: a page never writes `<MudTextField>`, it writes `<A
 <MudText Typo="Typo.h4" GutterBottom="true">Ping</MudText>
 
 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="3" Class="mb-4" Breakpoint="Breakpoint.Xs">
-    <AppTextField @bind-Value="_message" Label="Message" Immediate="true" />
+    <MudTextField @bind-Value="_message" Label="Message" Immediate="true"
+                  Variant="Variant.Outlined" Margin="Margin.Normal" />
     <MudButton OnClick="Send" Variant="Variant.Filled" Color="Color.Primary">Send</MudButton>
 </MudStack>
 

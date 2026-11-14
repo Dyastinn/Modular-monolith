@@ -156,6 +156,8 @@ Every lesson walks the same path, so you always know where you are:
   every API's documentation. Prefer PowerShell? [00b-WINDOWS-POWERSHELL.md](00b-WINDOWS-POWERSHELL.md) has
   every command translated.
 - **Stuck on a word?** Look it up in [GLOSSARY.md](GLOSSARY.md).
+- **Working on a screen or its test?** [MUDBLAZOR.md](MUDBLAZOR.md) gathers how the course uses MudBlazor, and how to
+  test each of its components with Playwright.
 - **Want to compare with the finished thing?** [`course-validation/business/`](../course-validation/business/)
   is the complete, tested reference build. The repo [README](../README.md) shows how to run it. Its
   migrations and SQL files are squashed to their final shape, so it has fewer of them than you will; the

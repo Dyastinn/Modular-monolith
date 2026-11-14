@@ -3,12 +3,18 @@
 <MudDialog>
     <DialogContent>
         <MudStack Spacing="2" Style="min-width:420px">
-            <AppTextField @bind-Value="_name" Label="Name" MaxLength="200" />
-            <AppTextField @bind-Value="_tin" Label="TIN" MaxLength="20" />
-            <AppTextField @bind-Value="_address" Label="Address" Lines="2" MaxLength="500" />
-            <AppTextField @bind-Value="_email" Label="Email" InputType="InputType.Email" />
-            <AppTextField @bind-Value="_phone" Label="Phone" MaxLength="50" />
-            <AppNumericField @bind-Value="_terms" Label="Payment terms (days)" Min="0" Max="365" />
+            <MudTextField @bind-Value="_name" Label="Name" MaxLength="200"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_tin" Label="TIN" MaxLength="20"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_address" Label="Address" Lines="2" MaxLength="500"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_email" Label="Email" InputType="InputType.Email"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_phone" Label="Phone" MaxLength="50"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudNumericField @bind-Value="_terms" Label="Payment terms (days)" Min="0" Max="365"
+                             Variant="Variant.Outlined" Margin="Margin.Normal" />
         </MudStack>
     </DialogContent>
     <DialogActions>

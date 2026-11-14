@@ -6,11 +6,12 @@
 <PageTitle>Company and tax · ERP</PageTitle>
 <NavigationLock OnBeforeInternalNavigation="ConfirmLeave" ConfirmExternalNavigation="Unsaved" />
 
-<MudText Typo="Typo.h4" Class="mb-2">Company and tax</MudText>
-<MudText Typo="Typo.body2" Class="mb-4">
-    Printed on every invoice, exactly as on the BIR Certificate of Registration. A change applies to invoices issued from
-    now on; issued invoices keep what they were issued with.
-</MudText>
+<PageHeader Title="Company and tax">
+    <Description>
+        Printed on every invoice, exactly as on the BIR Certificate of Registration. A change applies to invoices issued from
+            now on; issued invoices keep what they were issued with.
+    </Description>
+</PageHeader>
 
 @if (_profile is null)
 {
@@ -27,28 +28,38 @@
     <MudItem xs="12" md="6">
         <MudPaper Class="pa-4" Outlined="true">
             <MudText Typo="Typo.h6" GutterBottom="true">Seller</MudText>
-            <AppTextField @bind-Value="_name" Label="Registered name" MaxLength="200" />
-            <AppTextField @bind-Value="_tradeName" Label="Trade name (optional)" MaxLength="200" />
-            <AppTextField @bind-Value="_tin" Label="TIN with branch code" Placeholder="123-456-789-00000" MaxLength="20" />
-            <AppTextField @bind-Value="_address" Label="Registered address" MaxLength="500" Lines="2" />
-            <AppTextField @bind-Value="_title" Label="Invoice title" HelperText="Must contain the word &quot;Invoice&quot;" MaxLength="50" />
+            <MudTextField @bind-Value="_name" Label="Registered name" MaxLength="200"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_tradeName" Label="Trade name (optional)" MaxLength="200"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_tin" Label="TIN with branch code" Placeholder="123-456-789-00000" MaxLength="20"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_address" Label="Registered address" MaxLength="500" Lines="2"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_title" Label="Invoice title" HelperText="Must contain the word &quot;Invoice&quot;" MaxLength="50"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
         </MudPaper>
     </MudItem>
     <MudItem xs="12" md="6">
         <MudPaper Class="pa-4 mb-4" Outlined="true">
             <MudText Typo="Typo.h6" GutterBottom="true">Tax</MudText>
-            <AppSelect T="string" @bind-Value="_regime" Label="Registered as">
+            <MudSelect T="string" @bind-Value="_regime" Label="Registered as"
+                       Variant="Variant.Outlined" Margin="Margin.Normal">
                 <MudSelectItem Value="@("Vat")">VAT-registered</MudSelectItem>
                 <MudSelectItem Value="@("PercentageTax")">Non-VAT, subject to percentage tax</MudSelectItem>
                 <MudSelectItem Value="@("Exempt")">Non-VAT, exempt from both</MudSelectItem>
-            </AppSelect>
-            <AppNumericField @bind-Value="_vatPercent" Label="VAT rate (%)" Min="0" Max="99.99m" Format="0.##" Disabled="@(_regime != "Vat")" />
+            </MudSelect>
+            <MudNumericField @bind-Value="_vatPercent" Label="VAT rate (%)" Min="0" Max="99.99m" Format="0.##" Disabled="@(_regime != "Vat")"
+                             Variant="Variant.Outlined" Margin="Margin.Normal" />
         </MudPaper>
         <MudPaper Class="pa-4" Outlined="true">
             <MudText Typo="Typo.h6" GutterBottom="true">BIR permit (after the system is registered)</MudText>
-            <AppTextField @bind-Value="_permit" Label="PTU or Acknowledgement Certificate Control No." MaxLength="100" />
-            <AppTextField @bind-Value="_series" Label="Approved series range" MaxLength="100" />
-            <AppTextField @bind-Value="_dateIssued" Label="Date issued (mm/dd/yyyy)" MaxLength="10" />
+            <MudTextField @bind-Value="_permit" Label="PTU or Acknowledgement Certificate Control No." MaxLength="100"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_series" Label="Approved series range" MaxLength="100"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_dateIssued" Label="Date issued (mm/dd/yyyy)" MaxLength="10"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
         </MudPaper>
     </MudItem>
 </MudGrid>

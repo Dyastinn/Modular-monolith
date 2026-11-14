@@ -7,14 +7,17 @@
                 Ask to see the ID. The discount applies to the items marked for it; the invoice prints the ID number and a line
                 for the holder's signature.
             </MudText>
-            <AppSelect T="SpecialDiscountProgram" @bind-Value="_program" Label="Program" ToStringFunc="@(p => p?.Name)">
+            <MudSelect T="SpecialDiscountProgram" @bind-Value="_program" Label="Program" ToStringFunc="@(p => p?.Name)"
+                       Variant="Variant.Outlined" Margin="Margin.Normal">
                 @foreach (var p in _programs)
                 {
                     <MudSelectItem Value="p">@p.Name (@Format.Percent(p.Rate)@(p.VatExempt ? ", VAT-exempt" : ""))</MudSelectItem>
                 }
-            </AppSelect>
-            <AppTextField @bind-Value="_holderName" Label="Holder's name, as on the ID" MaxLength="200" />
-            <AppTextField @bind-Value="_idNumber" Label="@(_program?.IdLabel ?? "ID No.")" MaxLength="50" />
+            </MudSelect>
+            <MudTextField @bind-Value="_holderName" Label="Holder's name, as on the ID" MaxLength="200"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_idNumber" Label="@(_program?.IdLabel ?? "ID No.")" MaxLength="50"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
         </MudStack>
     </DialogContent>
     <DialogActions>

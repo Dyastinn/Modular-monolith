@@ -33,6 +33,12 @@ html, body {
     font-variant-numeric: tabular-nums;
 }
 
+/* An amount column's heading sits over its amounts, on the right. (A grid heading is a flex box, so text-align on
+   the cell isn't enough.) */
+.mud-table-cell.money .column-header {
+    justify-content: flex-end;
+}
+
 /* Short values (ids, dates, amounts) stay on one line, so a row reads straight across; on a narrow screen the
    table scrolls sideways inside its card instead. A cell of free text opts out with Class="wrap". */
 .mud-table-cell {
@@ -58,4 +64,11 @@ html, body {
 /* MudBlazor writes tab labels in capitals, and has no setting for it; everything else here is sentence case. */
 .mud-tab {
     text-transform: none;
+}
+
+/* A voided payment or certificate stays on screen, struck through, so the history is complete. MudBlazor has no
+   utility class for it. */
+.voided {
+    text-decoration: line-through;
+    color: var(--mud-palette-text-secondary);
 }

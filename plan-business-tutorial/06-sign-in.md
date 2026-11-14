@@ -387,6 +387,7 @@ and its implementation in Infrastructure, the only place allowed to read the HTT
 
 ```csharp
 // src/Shared/Erp.Shared.Infrastructure/Security/CurrentUser.cs
+using System.Globalization;
 using System.Security.Claims;
 using Erp.Shared.BuildingBlocks;
 using Microsoft.AspNetCore.Http;
@@ -398,7 +399,7 @@ public sealed class CurrentUser(IHttpContextAccessor accessor) : ICurrentUser
     private ClaimsPrincipal User => accessor.HttpContext?.User
         ?? throw new InvalidOperationException("No HTTP context.");
 
-    public long UserId => long.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+    public long UserId => long.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!, CultureInfo.InvariantCulture);
     public string Username => User.FindFirstValue(ClaimTypes.Name)!;
     public string Role => User.FindFirstValue(ClaimTypes.Role)!;   // staff have exactly one role
     public bool IsInRole(string role) => User.IsInRole(role);
@@ -577,6 +578,7 @@ an **`AuthenticationStateProvider`**, the one class every `<AuthorizeView>` and 
 
 ```csharp
 // src/Erp.Web/Services/CookieAuthenticationStateProvider.cs
+using System.Globalization;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Components.Authorization;
@@ -636,7 +638,7 @@ public sealed class CookieAuthenticationStateProvider(HttpClient http) : Authent
 
     private static ClaimsPrincipal Principal(CurrentUser user) => new(new ClaimsIdentity(
     [
-        new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+        new Claim(ClaimTypes.NameIdentifier, user.Id.ToString(CultureInfo.InvariantCulture)),
         new Claim(ClaimTypes.Name, user.Username),
         new Claim(ClaimTypes.Role, user.Role),
     ], authenticationType: "cookie", ClaimTypes.Name, ClaimTypes.Role));
@@ -770,31 +772,40 @@ and `MainLayout` passes it: `<Brand OnBar="true" />`.
 
 The form has the app's first password field, and a password field has one need of its own: people type it blind,
 and a typo in a hidden field is the commonest reason a sign-in fails. So it gets an eye button that shows what was
-typed. It joins lesson 03's field in `Shared/AppFields.cs` (add `using Microsoft.AspNetCore.Components;` at the top):
+typed. Several pages and dialogs will need it, so it's a component of our own: a `MudTextField` inside, with the
+eye button and the "shown or hidden" state around it.
 
-```csharp
-// A password field with an eye button: people can check what they typed, because typos in a hidden field are the
-// commonest reason a sign-in fails.
-public class AppPasswordField : AppTextField<string>
-{
-    public AppPasswordField()
-    {
-        InputType = InputType.Password;
-        Adornment = Adornment.End;
-        AdornmentIcon = Icons.Material.Outlined.Visibility;
-        AdornmentAriaLabel = "Show password";
-        OnAdornmentClick = EventCallback.Factory.Create<Microsoft.AspNetCore.Components.Web.MouseEventArgs>(this, Toggle);
-    }
+```razor
+@* src/Erp.Web/Shared/PasswordField.razor *@
+@* A password field with an eye button: people can check what they typed, because typos in a hidden field are the
+   commonest reason a sign-in fails. Whether the text shows is this component's own state. *@
+<MudTextField T="string" Value="Value" ValueChanged="ValueChanged" Label="@Label" Required="Required"
+              HelperText="@HelperText" Error="Error" ErrorText="@ErrorText"
+              Variant="Variant.Outlined" Margin="Margin.Normal"
+              InputType="@(_shown ? InputType.Text : InputType.Password)" Adornment="Adornment.End"
+              AdornmentIcon="@(_shown ? Icons.Material.Outlined.VisibilityOff : Icons.Material.Outlined.Visibility)"
+              AdornmentAriaLabel="@(_shown ? "Hide password" : "Show password")" OnAdornmentClick="() => _shown = !_shown" />
 
-    private void Toggle()
-    {
-        var shown = InputType == InputType.Text;
-        InputType = shown ? InputType.Password : InputType.Text;
-        AdornmentIcon = shown ? Icons.Material.Outlined.Visibility : Icons.Material.Outlined.VisibilityOff;
-        AdornmentAriaLabel = shown ? "Show password" : "Hide password";
-    }
+@code {
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string?> ValueChanged { get; set; }
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public bool Required { get; set; }
+    [Parameter] public string? HelperText { get; set; }
+    [Parameter] public bool Error { get; set; }
+    [Parameter] public string? ErrorText { get; set; }
+
+    private bool _shown;
 }
 ```
+
+- **It holds a `MudTextField`, it doesn't extend one.** Whether the password shows is the component's own state
+  (`_shown`), and the field is drawn from it on every render. MudBlazor's rule for components is never to rewrite
+  their own parameters, and this way nothing does.
+- **The parameters it takes are the ones our pages use**: the value (so `@bind-Value` works), the label, and the
+  help and error text. Anything else would be added when a page needs it.
+- **`AdornmentAriaLabel`** names the eye button "Show password" or "Hide password", for screen readers, and for the
+  browser test that clicks it.
 
 An **adornment** is MudBlazor's word for an icon inside a field; clicking it calls `Toggle`, which switches the
 field between hidden and plain text. The `AdornmentAriaLabel` gives the eye a name for screen readers: "Show
@@ -816,11 +827,12 @@ password", then "Hide password".
         <MudText Typo="Typo.body2" Class="mud-text-secondary mb-6">Use the email and password your administrator gave you.</MudText>
         <EditForm Model="this" OnSubmit="SignIn">
             <MudStack Spacing="4">
-                <AppTextField @bind-Value="_email" Label="Email" InputType="InputType.Email" AutoFocus="true" Required="true" />
-                <AppPasswordField @bind-Value="_password" Label="Password" Required="true" />
+                <MudTextField @bind-Value="_email" Label="Email" InputType="InputType.Email" AutoFocus="true" Required="true"
+                              Variant="Variant.Outlined" Margin="Margin.Normal" />
+                <PasswordField @bind-Value="_password" Label="Password" Required="true" />
                 @if (_error is not null)
                 {
-                    <MudAlert Severity="Severity.Error" Dense="true">@_error</MudAlert>
+                    <MudAlert Severity="Severity.Error" Dense="true" role="alert">@_error</MudAlert>
                 }
                 <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
                            Size="Size.Large" Disabled="_busy">Sign in</MudButton>
@@ -899,7 +911,8 @@ bare page (the sign-in form) for everyone else. The top bar gets an account menu
                        Class="border-r border-solid mud-border-lines-default">
                 <NavMenu />
             </MudDrawer>
-            <MudMainContent>
+            @* role="main": the page's main landmark, so a screen reader (and a test) can go straight to the content. *@
+            <MudMainContent role="main">
                 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pt-8 pb-12 px-4 px-sm-8">
                     @Body
                 </MudContainer>
@@ -975,7 +988,18 @@ through the API, and, for the first time, a real browser clicking through the si
 ### Signed-in test clients
 
 Most tests from now on act as someone. The factory learns to sign in the way any client does, through
-`/api/auth/login`, and to make a throwaway user when a test needs one. In `CustomWebAppFactory`, add:
+`/api/auth/login`, and to make a throwaway user when a test needs one. In `CustomWebAppFactory`, add these
+`using` lines at the top:
+
+```csharp
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using Erp.Modules.Identity.Infrastructure;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.DependencyInjection;
+```
+
+and inside the class:
 
 ```csharp
 // tests/Erp.Integration.Tests/CustomWebAppFactory.cs (inside the class)
@@ -983,7 +1007,7 @@ public const string Password = "Password123!";   // every dev user's password (l
 
 public sealed record Tokens(string AccessToken, string RefreshToken);
 
-public async Task<Tokens> LoginAsync(HttpClient client, string email, string password = Password)
+public static async Task<Tokens> LoginAsync(HttpClient client, string email, string password = Password)
 {
     var response = await client.PostAsJsonAsync("/api/auth/login", new { email, password });
     response.EnsureSuccessStatusCode();
@@ -1096,7 +1120,7 @@ public class AuthTests(CustomWebAppFactory factory)
     public async Task Refresh_issues_a_new_access_token()
     {
         var client = factory.CreateClient();
-        var tokens = await factory.LoginAsync(client, "rep@erp.local");
+        var tokens = await CustomWebAppFactory.LoginAsync(client, "rep@erp.local");
 
         var refreshed = await client.PostAsJsonAsync("/api/auth/refresh", new { tokens.RefreshToken });
 
@@ -1143,7 +1167,7 @@ public class AuthTests(CustomWebAppFactory factory)
         }
 
         await Fail(4);
-        await factory.LoginAsync(client, email);
+        await CustomWebAppFactory.LoginAsync(client, email);
         await Fail(4);
 
         (await client.PostAsJsonAsync("/api/auth/login", new { email, password = CustomWebAppFactory.Password }))
@@ -1155,7 +1179,7 @@ public class AuthTests(CustomWebAppFactory factory)
     {
         var email = await factory.CreateUserAsync(Roles.SalesRep);
         var client = factory.CreateClient();
-        var tokens = await factory.LoginAsync(client, email);
+        var tokens = await CustomWebAppFactory.LoginAsync(client, email);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
 
         (await client.PostAsync("/api/auth/logout-everywhere", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
@@ -1211,31 +1235,32 @@ Here's every edge the file covers:
 
 Some bugs only a browser sees: a page that crashes while loading, a button that never appears, a message
 that never shows. **Playwright** (Microsoft, MIT) drives a real browser from C#: open a page, type, click,
-wait for text.
+and check what's on the screen.
 
 ```bash
 dotnet new classlib -n Erp.Web.UiTests -o tests/Erp.Web.UiTests
 rm tests/Erp.Web.UiTests/Class1.cs
 dotnet sln add tests/Erp.Web.UiTests
 dotnet add tests/Erp.Web.UiTests package xunit.v3 --version 4.0.2
-dotnet add tests/Erp.Web.UiTests package AwesomeAssertions --version 9.6.0
 dotnet add tests/Erp.Web.UiTests package Microsoft.Playwright --version 1.64.1
 ```
 
 Same `.csproj` clean-up as the others. Notice it references no project at all: it only knows the app's
-address, like a real user.
+address, like a real user. And no AwesomeAssertions: Playwright brings its own checks, made for pages, and
+they're the reason these tests don't flake (more on that below).
 
 ```csharp
 // tests/Erp.Web.UiTests/BusinessFlowUiTests.cs
 using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
-using AwesomeAssertions;
 using Microsoft.Playwright;
+using static Microsoft.Playwright.Assertions;
 
 namespace Erp.Web.UiTests;
 
 // Runs only against a running app with the development seed: set ERP_UI_URL (e.g. http://localhost:5264).
 // ERP_UI_SCREENSHOTS, if set, is a folder that receives a screenshot of every step.
+// ERP_UI_HEADED, if set, shows the browser window, slowed down.
 // ERP_UI_BROWSER picks the browser: msedge (Windows default), chrome (elsewhere), or chromium for the one
 // `playwright install chromium` downloads, on a machine with neither.
 public sealed class UiFactAttribute : FactAttribute
@@ -1253,6 +1278,7 @@ public sealed class BusinessFlowUiTests : IAsyncLifetime
 {
     private static readonly string BaseUrl = Environment.GetEnvironmentVariable("ERP_UI_URL")?.TrimEnd('/') ?? "";
     private static readonly string? Screenshots = Environment.GetEnvironmentVariable("ERP_UI_SCREENSHOTS");
+    private readonly List<IBrowserContext> _contexts = [];
     private IPlaywright _playwright = default!;
     private IBrowser _browser = default!;
     private int _shot;
@@ -1260,29 +1286,55 @@ public sealed class BusinessFlowUiTests : IAsyncLifetime
     public async ValueTask InitializeAsync()
     {
         if (BaseUrl.Length == 0) return;
+        // A first visit downloads and starts the whole app in the browser; on a busy build machine that can take
+        // longer than Expect's 5 seconds. Still a wait for something on screen, just a more patient one.
+        SetDefaultExpectTimeout(15_000);
         _playwright = await Playwright.CreateAsync();
         // By default the Edge (or Chrome) already on the machine: nothing to download.
         var channel = Environment.GetEnvironmentVariable("ERP_UI_BROWSER") ?? (OperatingSystem.IsWindows() ? "msedge" : "chrome");
-        _browser = await _playwright.Chromium.LaunchAsync(new() { Channel = channel == "chromium" ? null : channel });
+        // ERP_UI_HEADED=1 shows the browser window, slowed down, to watch a test while debugging it.
+        var headed = Environment.GetEnvironmentVariable("ERP_UI_HEADED") is not null;
+        _browser = await _playwright.Chromium.LaunchAsync(new()
+        {
+            Channel = channel == "chromium" ? null : channel,
+            Headless = !headed,
+            SlowMo = headed ? 300 : 0
+        });
     }
 
+    // A failed test leaves a trace: every step, with the page as it looked, the network and the console.
+    // Open it with `pwsh bin/Debug/net10.0/playwright.ps1 show-trace <file>`, or drop it on trace.playwright.dev.
     public async ValueTask DisposeAsync()
     {
         if (BaseUrl.Length == 0) return;
+        var failed = TestContext.Current.TestState?.Result == TestResult.Failed;
+        for (var i = 0; i < _contexts.Count; i++)
+        {
+            var path = Path.Combine("playwright-traces", $"{TestContext.Current.Test?.TestDisplayName}-{i + 1}.zip");
+            await _contexts[i].Tracing.StopAsync(failed ? new() { Path = path } : null);
+            await _contexts[i].CloseAsync();
+        }
         await _browser.DisposeAsync();
         _playwright.Dispose();
     }
 
     // Each person gets their own browser context: their own cookie, like their own computer.
-    private async Task<IPage> SignIn(string email)
+    private async Task<IPage> NewPage()
     {
         var context = await _browser.NewContextAsync(new() { BaseURL = BaseUrl, ViewportSize = new() { Width = 1366, Height = 820 } });
-        var page = await context.NewPageAsync();
+        await context.Tracing.StartAsync(new() { Screenshots = true, Snapshots = true, Sources = true });
+        _contexts.Add(context);
+        return await context.NewPageAsync();
+    }
+
+    private async Task<IPage> SignIn(string email)
+    {
+        var page = await NewPage();
         await page.GotoAsync("/login");
         await page.GetByLabel("Email").FillAsync(email);
         await page.GetByLabel("Password", new() { Exact = true }).FillAsync("Password123!");
         await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
-        await page.GetByText("Good day,").WaitForAsync();
+        await Expect(page.GetByText("Good day,")).ToBeVisibleAsync();
         return page;
     }
 
@@ -1298,44 +1350,71 @@ public sealed class BusinessFlowUiTests : IAsyncLifetime
     {
         var page = await SignIn("rep@erp.local");
         await Shot(page, "signed-in");
-        new Uri(page.Url).AbsolutePath.Should().Be("/");
+        await Expect(page).ToHaveURLAsync(BaseUrl + "/");
     }
 
     [UiFact]
     public async Task A_wrong_password_shows_a_message_and_stays_on_the_sign_in_page()
     {
-        var context = await _browser.NewContextAsync(new() { BaseURL = BaseUrl });
-        var page = await context.NewPageAsync();
+        var page = await NewPage();
         await page.GotoAsync("/login");
         await page.GetByLabel("Email").FillAsync("rep@erp.local");
         await page.GetByLabel("Password", new() { Exact = true }).FillAsync("not-the-password");
         await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
 
-        await page.GetByText("Wrong email or password.").WaitForAsync();
-        new Uri(page.Url).AbsolutePath.Should().Be("/login");
+        await Expect(page.GetByRole(AriaRole.Alert)).ToHaveTextAsync("Wrong email or password.");
+        await Expect(page).ToHaveURLAsync(new Regex("/login$"));
     }
 
     [UiFact]
     public async Task A_page_opened_before_signing_in_asks_for_sign_in()
     {
-        var context = await _browser.NewContextAsync(new() { BaseURL = BaseUrl });
-        var page = await context.NewPageAsync();
+        var page = await NewPage();
         await page.GotoAsync("/sales-orders");
 
-        await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).WaitForAsync();
+        await Expect(page.GetByRole(AriaRole.Button, new() { Name = "Sign in" })).ToBeVisibleAsync();
     }
 }
 ```
 
-`Exact = true` because the eye button is also labelled with the word "password" ("Show password"), and Playwright
-otherwise matches any label that *contains* the text.
+It reads like what a person does: open the sign-in page, type into **Email**, click **Sign in**, expect the
+greeting. Before the tests themselves, the rules they follow, because a browser test written any other way
+passes on your machine and fails on the build server.
 
-- **It finds things the way a person does**: by label ("Email"), by button name ("Sign in"), by text on
-  screen. So it breaks when the screen breaks, not when a CSS class changes.
-- **`WaitForAsync()` waits** (up to 30 seconds) for the text to appear. A browser test never sleeps for a fixed
-  time; it waits for what a person would wait for.
-- **Each person gets their own browser context**: their own cookies, so two people in one test are really two
-  different sign-ins.
+#### Five rules for browser tests that don't flake
+
+| Rule | In code | Why |
+|---|---|---|
+| **1. Find things the way a person does** | `GetByRole(AriaRole.Button, new() { Name = "Sign in" })`, then `GetByLabel("Email")`, then `GetByText(...)` | A role and a name are what a screen reader announces, so they only change when the screen really changes. A CSS class like `.mud-chip` is MudBlazor's internal detail, and can change in any update |
+| **2. Check with `Expect`, never by reading once** | `await Expect(page).ToHaveURLAsync(...)`, `await Expect(field).ToHaveValueAsync(...)` | `Expect` keeps checking until it's true (up to 5 seconds). Reading a value once (`IsVisibleAsync()`, `InnerTextAsync()`, then comparing) races the page: Blazor may not have drawn it yet |
+| **3. Never wait for a clock** | No `WaitForTimeoutAsync(1000)`, no `LoadState.NetworkIdle` | A fixed wait is too long on a fast machine and too short on a slow one. Wait for what a person waits for: the text, the button, the address |
+| **4. One person, one browser context** | `NewPage()` | A context is a fresh browser profile: its own cookies, its own storage. Two people in one test are really two sign-ins, and no test sees another's leftovers |
+| **5. Make a failure explain itself** | `Tracing.StartAsync`, saved only when a test fails | A failed run leaves a file showing every step, the page at that moment, the network calls and the console. You see what the browser saw instead of guessing |
+
+Here's the order Playwright's documentation recommends for finding things, best first:
+
+| Locator | Finds | Use it for |
+|---|---|---|
+| `GetByRole(role, Name)` | A button, link, field, row, dialog, tab... by what it is and what it's called | Almost everything you click or check |
+| `GetByLabel("Email")` | A field by its label | Text fields |
+| `GetByText("Good day,")` | Text on the screen | Messages and headings that aren't controls |
+| `GetByTestId(...)` | An attribute added only for tests | A last resort; this course never needs it |
+| `Locator(".css")` | Anything, by CSS | Only for things that are ours, like `#blazor-error-ui`. Never for MudBlazor's classes |
+
+A few details in the code:
+
+- **`using static Microsoft.Playwright.Assertions`** brings in `Expect`. It's part of the Playwright package; the
+  NUnit and MSTest base classes use the same one.
+- **`Exact = true`** on the password field, because the eye button is labelled "Show password", and without it
+  Playwright matches any label that *contains* "Password".
+- **Strict by default.** If a locator matches two elements, clicking it fails instead of picking one. That's a
+  feature: the fix is a more precise locator (inside the dialog, inside the menu, inside a row), not `.First`.
+- **`GetByRole(AriaRole.Alert)`** finds the sign-in error because the page gives its `MudAlert` `role="alert"`.
+  That attribute is what makes a screen reader read the message out the moment it appears; the test relies on the
+  same thing a blind user does.
+- **No "wait until the app has started" step.** The app runs in the browser (WebAssembly) and doesn't prerender, so
+  there's nothing to click until it's ready, and every locator waits for its element. (With server prerendering,
+  a page shows before it responds; a test would first wait for something only the live page shows.)
 - **It uses a browser you already have**: Edge on Windows, Chrome elsewhere. On a machine with neither, set
   `ERP_UI_BROWSER=chromium` and download Playwright's own Chromium once:
   `pwsh tests/Erp.Web.UiTests/bin/Debug/net10.0/playwright.ps1 install chromium`.
@@ -1352,8 +1431,14 @@ ERP_UI_URL=http://localhost:5264 ERP_UI_SCREENSHOTS=./screens dotnet test --proj
 ```
 
 Open the `screens` folder afterwards: each step is a picture. The browser runs *headless* (no window), so
-the screenshots are how you see what it saw. The flow through orders, approvals and invoices grows in later
-lessons, one step per feature.
+the screenshots are how you see what it saw. When a test fails, open its trace:
+
+```bash
+pwsh tests/Erp.Web.UiTests/bin/Debug/net10.0/playwright.ps1 show-trace tests/Erp.Web.UiTests/bin/Debug/net10.0/playwright-traces/<the test>-1.zip
+```
+
+(or drop the file on trace.playwright.dev, which opens it in your own browser without uploading it). The flow
+through orders, approvals and invoices grows in later lessons, one step per feature.
 
 Three more prove what this lesson built into the frame: the account button opens and signs out, the password can
 be shown, and the dark mode choice survives a reload:
@@ -1365,25 +1450,23 @@ public async Task The_account_menu_opens_and_signs_out()
 {
     var rep = await SignIn("rep@erp.local");
     await rep.GetByRole(AriaRole.Button, new() { Name = "Rita Reyes" }).ClickAsync();
-    await rep.GetByText("Sales rep").WaitForAsync();
-    await rep.GetByText("Sign out", new() { Exact = true }).ClickAsync();
+    await rep.GetByRole(AriaRole.Menuitem, new() { Name = "Sign out", Exact = true }).ClickAsync();
 
-    await rep.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).WaitForAsync();
+    await Expect(rep.GetByRole(AriaRole.Button, new() { Name = "Sign in" })).ToBeVisibleAsync();
 }
 
 // The eye button shows what was typed, so a typo can be seen before signing in.
 [UiFact]
 public async Task The_password_can_be_shown_before_signing_in()
 {
-    var context = await _browser.NewContextAsync(new() { BaseURL = BaseUrl });
-    var page = await context.NewPageAsync();
+    var page = await NewPage();
     await page.GotoAsync("/login");
     var password = page.GetByLabel("Password", new() { Exact = true });
     await password.FillAsync("Secret-1234");
 
     await page.GetByRole(AriaRole.Button, new() { Name = "Show password" }).ClickAsync();
 
-    (await password.GetAttributeAsync("type")).Should().Be("text");
+    await Expect(password).ToHaveAttributeAsync("type", "text");
 }
 
 // The choice of dark mode is remembered in this browser: a reload keeps it.
@@ -1392,16 +1475,21 @@ public async Task Dark_mode_is_remembered_after_a_reload()
 {
     var rep = await SignIn("rep@erp.local");
     await rep.GetByRole(AriaRole.Button, new() { Name = "Dark mode" }).ClickAsync();
-    await rep.GetByRole(AriaRole.Button, new() { Name = "Light mode" }).WaitForAsync();
+    await Expect(rep.GetByRole(AriaRole.Button, new() { Name = "Light mode" })).ToBeVisibleAsync();
 
     await rep.ReloadAsync();
 
-    await rep.GetByRole(AriaRole.Button, new() { Name = "Light mode" }).WaitForAsync();
+    await Expect(rep.GetByRole(AriaRole.Button, new() { Name = "Light mode" })).ToBeVisibleAsync();
 }
 ```
 
 The first one exists because of a real bug: an earlier version of the account button looked right and did
-nothing when clicked, and no test had ever clicked it.
+nothing when clicked, and no test had ever clicked it. Notice it clicks **Sign out** as a `Menuitem`: MudBlazor
+gives menu items that role, so "the Sign out *in the menu*" is exactly what the test says.
+
+Every MudBlazor control has its own way to be driven: a select opens a list of options, a date field commits when
+you leave it, a dialog is a `Dialog`. The [MudBlazor guide](MUDBLAZOR.md#testing-mudblazor-screens-with-playwright)
+has a recipe for each one; come back to it whenever a new control appears in a test.
 
 Now, let's be honest about the cost here: browser tests are the slowest and the most fragile tests we have.
 They need a running app, and a slow machine can make them time out. So we keep only a few: the main flows,
@@ -1438,6 +1526,10 @@ sequenceDiagram
 - Trusting `returnUrl`. Only follow paths inside your own app.
 - Testing lockout on a dev user. Every later test that signs in as that user fails for fifteen minutes.
 - Letting a browser test sleep for a fixed time. Wait for the text a person would wait for.
+- Checking a page by reading a value once (`IsVisibleAsync()`, `InputValueAsync()`) and comparing it. Use `Expect`,
+  which waits until the page agrees.
+- Finding MudBlazor parts by their CSS classes (`.mud-chip`). Find them by role and name; if there is none, the
+  screen has an accessibility gap to fix.
 - Writing dozens of browser tests. They're slow and fragile; test the rules underneath.
 
 ## Let's run it!
@@ -1503,6 +1595,7 @@ The browser tests skip until you point them at a running app, as in step 9.
 9. Why does the lockout test use a throwaway user instead of `rep@erp.local`?
 10. Why must an unknown email get exactly the same answer as a wrong password?
 11. How does a browser test find the "Sign in" button, and why not by its CSS class?
+12. Why `await Expect(field).ToHaveValueAsync("Acme")` and not `(await field.InputValueAsync()).Should().Be("Acme")`?
 
 And that's where this lesson ends. People can now sign in, and the app knows who they are and what role
 they have, in the app and through the API. Next time, we build our first real feature from end to end, from

@@ -3,19 +3,21 @@
 @* Count what actually arrived. Partial deliveries are normal: the order stays open for the rest. *@
 <MudDialog>
     <DialogContent>
-        <AppSimpleTable>
-            <thead><tr><th>Item</th><th class="money">Still to come</th><th>Arrived now</th></tr></thead>
-            <tbody>
-                @foreach (var line in _lines)
-                {
-                    <tr>
-                        <td>@line.Line.Sku · @line.Line.ItemName</td>
-                        <td class="money">@Format.Qty(line.Line.Outstanding) @line.Line.Unit</td>
-                        <td><AppNumericField T="decimal" @bind-Value="line.Arrived" Min="0" Max="line.Line.Outstanding" Style="max-width:140px" /></td>
-                    </tr>
-                }
-            </tbody>
-        </AppSimpleTable>
+        <MudDataGrid T="Entry" Items="_lines"
+                     Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None">
+            <Columns>
+                <TemplateColumn Title="Item"><CellTemplate>@context.Item.Line.Sku · @context.Item.Line.ItemName</CellTemplate></TemplateColumn>
+                <TemplateColumn Title="Still to come" HeaderClass="money" CellClass="money">
+                    <CellTemplate>@Format.Qty(context.Item.Line.Outstanding) @context.Item.Line.Unit</CellTemplate>
+                </TemplateColumn>
+                <TemplateColumn Title="Arrived now">
+                    <CellTemplate>
+                        <MudNumericField T="decimal" @bind-Value="context.Item.Arrived" Min="0" Max="context.Item.Line.Outstanding" Style="max-width:140px"
+                                         Variant="Variant.Outlined" Margin="Margin.Normal" />
+                    </CellTemplate>
+                </TemplateColumn>
+            </Columns>
+        </MudDataGrid>
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>

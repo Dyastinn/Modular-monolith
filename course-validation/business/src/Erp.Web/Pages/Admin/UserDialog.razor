@@ -3,18 +3,20 @@
 <MudDialog>
     <DialogContent>
         <MudStack Spacing="2" Style="min-width:400px">
-            <AppTextField @bind-Value="_email" Label="Email (they sign in with it)" InputType="InputType.Email" Disabled="User is not null" />
-            <AppTextField @bind-Value="_fullName" Label="Full name" MaxLength="100" />
-            <AppSelect T="string" @bind-Value="_role" Label="Role">
+            <MudTextField @bind-Value="_email" Label="Email (they sign in with it)" InputType="InputType.Email" Disabled="User is not null"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudTextField @bind-Value="_fullName" Label="Full name" MaxLength="100"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudSelect T="string" Variant="Variant.Outlined" Margin="Margin.Normal" @bind-Value="_role" Label="Role">
                 @foreach (var r in Roles.All)
                 {
                     <MudSelectItem Value="r">@Format.Words(r)</MudSelectItem>
                 }
-            </AppSelect>
+            </MudSelect>
             @if (User is null)
             {
-                <AppPasswordField @bind-Value="_password" Label="Temporary password (at least 12 characters)"
-                              HelperText="Give it to them in person. They must change it when they first sign in." />
+                <PasswordField @bind-Value="_password" Label="Temporary password (at least 12 characters)"
+                               HelperText="Give it to them in person. They must change it when they first sign in." />
             }
         </MudStack>
     </DialogContent>

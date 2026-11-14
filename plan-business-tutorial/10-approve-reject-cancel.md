@@ -132,15 +132,16 @@ In `GlobalExceptionHandler`, add `using Microsoft.EntityFrameworkCore;`, a line 
 line to the detail switch:
 
 ```csharp
-DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, "Someone else changed this. Reload and try again."),
+DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, CommonErrors.ChangedBySomeoneElse),
 ```
 
 ```csharp
 StatusCodes.Status409Conflict                                     => null,
 ```
 
-The title already says everything; EF's own message is about rows and versions, which means nothing to a
-user.
+`ChangedBySomeoneElse` is `ERP-0003` from lesson 07's catalog: "Someone else changed this first. Reload to see
+their change, then make yours again." The title says everything, so the detail stays empty; EF's own message is
+about rows and versions, which means nothing to a user.
 
 ## 2. Approve
 
@@ -341,15 +342,9 @@ attempt on anyone else's order a 404, without a line of extra code.
 
 ## 5. The buttons
 
-Rejecting asks for a reason, and a reason needs somewhere to type it. A **dialog** is a small window over
-the page; MudBlazor draws dialogs through a provider, so add it once to `MainLayout.razor`, next to the
-others:
-
-```razor
-<MudDialogProvider />
-```
-
-Then a dialog we can reuse whenever a step needs a reason (voiding an invoice will need one too):
+Rejecting asks for a reason, and a reason needs somewhere to type it. Lesson 08's dialog only asked yes or no;
+this one needs a field, so it's a dialog of our own, one we can reuse whenever a step needs a reason (voiding
+an invoice will need one too):
 
 ```razor
 @* src/Erp.Web/Shared/ReasonDialog.razor *@
@@ -357,7 +352,8 @@ Then a dialog we can reuse whenever a step needs a reason (voiding an invoice wi
 <MudDialog>
     <DialogContent>
         <MudText Class="mb-3">@Message</MudText>
-        <AppTextField @bind-Value="_reason" Label="Reason" Lines="3" MaxLength="500" Immediate="true" AutoFocus="true" />
+        <MudTextField @bind-Value="_reason" Label="Reason" Lines="3" MaxLength="500" Immediate="true" AutoFocus="true"
+                      Variant="Variant.Outlined" Margin="Margin.Normal" />
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="() => Dialog.Cancel()">Back</MudButton>
@@ -513,14 +509,13 @@ The reference build's `SalesOrderWorkflowTests.cs` and `SalesOrderEdgeCaseTests.
 ### The flow in a real browser
 
 The browser tests get their first walk through a real business flow: a rep writes and submits a big order, a
-manager approves it. Add a helper for MudBlazor's search boxes, and the test, to `BusinessFlowUiTests`:
+manager approves it. One more helper, for the status at the top of an order, and the test, to
+`BusinessFlowUiTests`:
 
 ```csharp
-private static async Task Pick(IPage page, string label, string search, string option)
-{
-    await page.GetByLabel(label).First.FillAsync(search);
-    await page.GetByText(option).First.ClickAsync();
-}
+// The status chip at the top of an order, purchase order or invoice (a role="status" region).
+private static Task StatusIs(IPage page, string status) =>
+    Expect(page.GetByRole(AriaRole.Status).Filter(new() { HasText = status })).ToBeVisibleAsync();
 
 [UiFact]
 public async Task From_order_to_paid_invoice_through_the_screens()
@@ -532,20 +527,23 @@ public async Task From_order_to_paid_invoice_through_the_screens()
     await Pick(rep, "Customer", "Epsilon", "Epsilon Retail");
     await Pick(rep, "Item", "Rack", "GEN-003 · Server Rack");
     await rep.GetByRole(AriaRole.Button, new() { Name = "Save draft" }).ClickAsync();
-    await rep.WaitForURLAsync(new Regex(@"/sales-orders/\d+$"));
+    await Expect(rep).ToHaveURLAsync(new Regex(@"/sales-orders/\d+$"));
     var orderUrl = new Uri(rep.Url).AbsolutePath;
     await rep.GetByRole(AriaRole.Button, new() { Name = "Submit" }).ClickAsync();
-    await rep.Locator(".mud-chip").Filter(new() { HasText = "Pending approval" }).WaitForAsync();
+    await StatusIs(rep, "Pending approval");
     await Shot(rep, "rep-submitted");
 
     // The manager approves it.
     var manager = await SignIn("manager@erp.local");
     await manager.GotoAsync(orderUrl);
     await manager.GetByRole(AriaRole.Button, new() { Name = "Approve" }).ClickAsync();
-    await manager.Locator(".mud-chip").Filter(new() { HasText = "Approved" }).WaitForAsync();
+    await StatusIs(manager, "Approved");
     await Shot(manager, "manager-approved");
 }
 ```
+
+`StatusIs` finds the chip by the role lesson 08 gave it (`Live="true"` makes it a `status` region), not by
+MudBlazor's `.mud-chip` class, and `Expect` waits for Submit's answer to redraw it.
 
 The name is a promise about where it's going: [shipping](18-shipping.md), [invoicing](20-invoicing.md) and
 [payments](21-payments.md) each add their steps, until it really walks from a new order to a paid invoice.

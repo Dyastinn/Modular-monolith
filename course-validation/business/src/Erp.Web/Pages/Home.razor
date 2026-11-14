@@ -3,8 +3,9 @@
 <PageTitle>Home · ERP</PageTitle>
 
 <AuthorizeView Context="auth">
-    <MudText Typo="Typo.h4" GutterBottom="true">Good day, @auth.User.Identity?.Name</MudText>
-    <MudText Class="mb-6 mud-text-secondary">Here's where your work starts.</MudText>
+    <PageHeader Title="@($"Good day, {auth.User.Identity?.Name}")">
+        <Description>Here's where your work starts.</Description>
+    </PageHeader>
 
     <MudGrid>
         <AuthorizeView Roles="@SellerRoles">

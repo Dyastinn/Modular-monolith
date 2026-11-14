@@ -5,39 +5,39 @@
 
 <PageTitle>Invoices · ERP</PageTitle>
 
-<MudText Typo="Typo.h4" Class="mb-2">Invoices</MudText>
-<MudText Typo="Typo.body2" Class="mb-4">Every shipment is invoiced automatically, a few seconds after it leaves.</MudText>
+<PageHeader Title="Invoices">
+    <Description>Every shipment is invoiced automatically, a few seconds after it leaves.</Description>
+</PageHeader>
 
 <MudStack Row="true" Spacing="4" Class="mb-4" Wrap="Wrap.Wrap" Breakpoint="Breakpoint.Xs">
-    <AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Invoice, order or customer" DebounceInterval="400" Clearable="true" />
-    <AppSelect T="string" Value="Status" ValueChanged="OnStatus" Label="Status" Clearable="true" Style="max-width:200px">
+    <MudTextField T="string" Value="Search" ValueChanged="OnSearch" Label="Invoice, order or customer" DebounceInterval="400" Clearable="true"
+                  Variant="Variant.Outlined" Margin="Margin.Normal" />
+    <MudSelect T="string" Value="Status" ValueChanged="OnStatus" Label="Status" Clearable="true" Style="max-width:200px"
+               Variant="Variant.Outlined" Margin="Margin.Normal">
         @foreach (var s in Statuses)
         {
             <MudSelectItem Value="s">@Format.Words(s)</MudSelectItem>
         }
-    </AppSelect>
+    </MudSelect>
     <MudSwitch T="bool" Value="OverdueOnly" ValueChanged="OnOverdue" Label="Overdue only" Color="Color.Error" />
 </MudStack>
 
-<AppTable T="InvoiceSummary" @ref="_table" @key="View.Version" ServerData="Load"
-          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize" OnRowClick="Open" RowStyle="cursor:pointer">
-    <HeaderContent>
-        <MudTh>Invoice</MudTh><MudTh>Customer</MudTh><MudTh>Order</MudTh><MudTh>Issued</MudTh><MudTh>Due</MudTh>
-        <MudTh>Status</MudTh><MudTh Class="money">Total</MudTh><MudTh Class="money">Balance</MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="Invoice">@context.Number</MudTd>
-        <MudTd DataLabel="Customer">@context.CustomerName</MudTd>
-        <MudTd DataLabel="Order">@context.OrderNumber</MudTd>
-        <MudTd DataLabel="Issued">@Format.Date(context.IssueDate)</MudTd>
-        <MudTd DataLabel="Due">@Format.Date(context.DueDate)</MudTd>
-        <MudTd DataLabel="Status"><StatusChip Status="@context.Status" /></MudTd>
-        <MudTd DataLabel="Total" Class="money">@Format.Peso(context.Total)</MudTd>
-        <MudTd DataLabel="Balance" Class="money">@Format.Peso(context.BalanceDue)</MudTd>
-    </RowTemplate>
+<MudDataGrid T="InvoiceSummary" @ref="_table" @key="View.Version" ServerData="Load"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize" RowClick="Open" RowStyle="cursor:pointer">
+    <Columns>
+        <PropertyColumn Property="x => x.Number" Title="Invoice" />
+        <PropertyColumn Property="x => x.CustomerName" Title="Customer" />
+        <PropertyColumn Property="x => x.OrderNumber" Title="Order" />
+        <TemplateColumn Title="Issued"><CellTemplate>@Format.Date(context.Item.IssueDate)</CellTemplate></TemplateColumn>
+        <TemplateColumn Title="Due"><CellTemplate>@Format.Date(context.Item.DueDate)</CellTemplate></TemplateColumn>
+        <TemplateColumn Title="Status"><CellTemplate><StatusChip Status="@context.Item.Status" /></CellTemplate></TemplateColumn>
+        <MoneyColumn Title="Total" Amount="x => x.Total" />
+        <MoneyColumn Title="Balance" Amount="x => x.BalanceDue" />
+    </Columns>
     <NoRecordsContent>No invoices match.</NoRecordsContent>
-    <PagerContent><MudTablePager /></PagerContent>
-</AppTable>
+    <PagerContent><MudDataGridPager T="InvoiceSummary" /></PagerContent>
+</MudDataGrid>
 
 @code {
     // The list's view lives in the address (see ListAddress).
@@ -48,9 +48,9 @@
     [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
 
     private static readonly string[] Statuses = ["Issued", "PartiallyPaid", "Paid", "Void"];
-    private AppTable<InvoiceSummary> _table = default!;
+    private MudDataGrid<InvoiceSummary> _table = default!;
 
-    private Task<TableData<InvoiceSummary>> Load(TableState state, CancellationToken ct)
+    private Task<GridData<InvoiceSummary>> Load(GridState<InvoiceSummary> state, CancellationToken ct)
     {
         View.Save(state, ("search", Search), ("status", Status), ("overdueOnly", OverdueOnly));
         return Api.Page<InvoiceSummary>(Url.With("api/invoices", ("search", Search), ("status", Status), ("overdueOnly", OverdueOnly)), state);
@@ -59,7 +59,7 @@
     // A link to this list with other filters (the menu, a home tile, Back) shows them.
     protected override void OnParametersSet() => View.Check();
 
-    private void Open(TableRowClickEventArgs<InvoiceSummary> row) => Nav.NavigateTo($"invoices/{row.Item!.Id}");
+    private void Open(DataGridRowClickEventArgs<InvoiceSummary> row) => Nav.NavigateTo($"invoices/{row.Item.Id}");
     private Task OnSearch(string? text) { Search = text; return _table.FirstPage(); }
     private Task OnStatus(string? status) { Status = status; return _table.FirstPage(); }
     private Task OnOverdue(bool value) { OverdueOnly = value; return _table.FirstPage(); }

@@ -1,0 +1,9 @@
+@* The trail back to the list. MudElement renders it inside a nav landmark named "Breadcrumb", as the WAI-ARIA
+   breadcrumb pattern asks: a screen reader can jump to it, and a browser test can find it by its role. *@
+<MudElement HtmlTag="nav" aria-label="Breadcrumb">
+    <MudBreadcrumbs Items="Items" Class="pa-0 mb-2" />
+</MudElement>
+
+@code {
+    [Parameter, EditorRequired] public List<BreadcrumbItem> Items { get; set; } = [];
+}

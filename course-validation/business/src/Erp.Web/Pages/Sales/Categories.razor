@@ -1,37 +1,39 @@
 @inject ApiClient Api
 
 @* Category rules: who may sell its items, and how much of them one order may hold. *@
-<AppSimpleTable Class="ma-4">
-    <thead><tr><th>Name</th><th class="money">Max per order</th><th>Only for role</th><th></th></tr></thead>
-    <tbody>
-        @foreach (var c in _categories)
-        {
-            <tr>
-                <td>@c.Name</td>
-                <td class="money">@Format.Qty(c.MaxQuantityPerOrder)</td>
-                <td>@(c.RequiredRole is null ? "Anyone who sells" : Format.Words(c.RequiredRole))</td>
-                <td>
-                    <AuthorizeView Roles="@Managers" Context="auth">
-                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => Start(c)" aria-label="Edit" />
-                    </AuthorizeView>
-                </td>
-            </tr>
-        }
-    </tbody>
-</AppSimpleTable>
+<MudDataGrid T="ItemCategory" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None" Items="_categories">
+    <Columns>
+        <PropertyColumn Property="x => x.Name" Title="Name" />
+        <TemplateColumn Title="Max per order" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Qty(context.Item.MaxQuantityPerOrder)</CellTemplate></TemplateColumn>
+        <TemplateColumn Title="Only for role">
+            <CellTemplate>@(context.Item.RequiredRole is null ? "Anyone who sells" : Format.Words(context.Item.RequiredRole))</CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="">
+            <CellTemplate>
+                <AuthorizeView Roles="@Managers" Context="auth">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="() => Start(context.Item)" aria-label="Edit" />
+                </AuthorizeView>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <NoRecordsContent>No categories yet.</NoRecordsContent>
+</MudDataGrid>
 
 <AuthorizeView Roles="@Managers">
     <MudPaper Class="pa-4 ma-4" Outlined="true">
         <MudText Typo="Typo.subtitle1" GutterBottom="true">@(_editing is null ? "New category" : $"Edit {_editing.Name}")</MudText>
         <MudStack Row="true" Spacing="3" AlignItems="AlignItems.End" Wrap="Wrap.Wrap" Breakpoint="Breakpoint.Xs">
-            <AppTextField @bind-Value="_name" Label="Name" MaxLength="100" />
-            <AppNumericField @bind-Value="_max" Label="Max per order" Min="1" />
-            <AppSelect T="string" @bind-Value="_role" Label="Only for role" Clearable="true" Style="min-width:200px">
+            <MudTextField @bind-Value="_name" Label="Name" MaxLength="100"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudNumericField @bind-Value="_max" Label="Max per order" Min="1"
+                             Variant="Variant.Outlined" Margin="Margin.Normal" />
+            <MudSelect T="string" @bind-Value="_role" Label="Only for role" Clearable="true" Style="min-width:200px"
+                       Variant="Variant.Outlined" Margin="Margin.Normal">
                 @foreach (var r in Roles.All)
                 {
                     <MudSelectItem Value="r">@Format.Words(r)</MudSelectItem>
                 }
-            </AppSelect>
+            </MudSelect>
             <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(string.IsNullOrWhiteSpace(_name) || Api.Busy)">Save</MudButton>
             @if (_editing is not null) { <MudButton OnClick="() => Start(null)">Cancel</MudButton> }
         </MudStack>

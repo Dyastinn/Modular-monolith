@@ -359,7 +359,7 @@ itself. No Docker, no extra install.
 Monitoring that's never been tested is worse than none: you trust it, and it's wrong on the one day you need
 it. Three promises from this lesson get tests.
 
-**Healthy when healthy.** In `PlatformTests`:
+**Healthy when healthy.** In `PlatformTests` (with `using System.Net;` at the top):
 
 ```csharp
 [Theory]

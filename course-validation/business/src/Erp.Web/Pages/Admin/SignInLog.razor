@@ -5,29 +5,26 @@
 
 <PageTitle>Sign-in log · ERP</PageTitle>
 
-<MudText Typo="Typo.h4" Class="mb-4">Sign-in log</MudText>
+<PageHeader Title="Sign-in log" />
 
 <MudStack Row="true" Spacing="4" Class="mb-4" Breakpoint="Breakpoint.Xs">
-    <AppTextField T="string" Value="Email" ValueChanged="OnEmail" Label="Email" DebounceInterval="400" Clearable="true" />
+    <MudTextField T="string" Value="Email" ValueChanged="OnEmail" Label="Email" DebounceInterval="400" Clearable="true"
+                  Variant="Variant.Outlined" Margin="Margin.Normal" />
     <MudSwitch T="bool" Value="FailedOnly" ValueChanged="OnFailed" Label="Failed only" Color="Color.Error" />
 </MudStack>
 
-<AppTable T="SignInAttempt" @ref="_table" @key="View.Version" ServerData="Load"
-          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? 50">
-    <HeaderContent>
-        <MudTh>When</MudTh><MudTh>Email</MudTh><MudTh>Outcome</MudTh><MudTh>From</MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="When">@Format.Date(context.OccurredUtc)</MudTd>
-        <MudTd DataLabel="Email">@context.Email</MudTd>
-        <MudTd DataLabel="Outcome">
-            <MudChip T="string" Size="Size.Small" Color="@(context.Outcome == "Succeeded" ? Color.Success : Color.Error)">@Format.Words(context.Outcome)</MudChip>
-        </MudTd>
-        <MudTd DataLabel="From">@context.IpAddress</MudTd>
-    </RowTemplate>
+<MudDataGrid T="SignInAttempt" @ref="_table" @key="View.Version" ServerData="Load"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? 50">
+    <Columns>
+        <TemplateColumn Title="When"><CellTemplate>@Format.Date(context.Item.OccurredUtc)</CellTemplate></TemplateColumn>
+        <PropertyColumn Property="x => x.Email" Title="Email" />
+        <TemplateColumn Title="Outcome"><CellTemplate><MudChip T="string" Size="Size.Small" Color="@(context.Item.Outcome == "Succeeded" ? Color.Success : Color.Error)">@Format.Words(context.Item.Outcome)</MudChip></CellTemplate></TemplateColumn>
+        <PropertyColumn Property="x => x.IpAddress" Title="From" />
+    </Columns>
     <NoRecordsContent>No sign-in attempts match.</NoRecordsContent>
-    <PagerContent><MudTablePager PageSizeOptions="new[] { 50, 100 }" /></PagerContent>
-</AppTable>
+    <PagerContent><MudDataGridPager T="SignInAttempt" PageSizeOptions="new[] { 50, 100 }" /></PagerContent>
+</MudDataGrid>
 
 @code {
     // The list's view lives in the address (see ListAddress).
@@ -36,9 +33,9 @@
     [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
     [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
 
-    private AppTable<SignInAttempt> _table = default!;
+    private MudDataGrid<SignInAttempt> _table = default!;
 
-    private Task<TableData<SignInAttempt>> Load(TableState state, CancellationToken ct)
+    private Task<GridData<SignInAttempt>> Load(GridState<SignInAttempt> state, CancellationToken ct)
     {
         View.Save(state, ("email", Email), ("failedOnly", FailedOnly));
         return Api.Page<SignInAttempt>(Url.With("api/sign-in-attempts", ("email", Email), ("failedOnly", FailedOnly)), state);

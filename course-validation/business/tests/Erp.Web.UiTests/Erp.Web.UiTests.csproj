@@ -7,7 +7,6 @@
 
   <!-- Drives a real browser against a running app. Skipped unless ERP_UI_URL points at one. -->
   <ItemGroup>
-    <PackageReference Include="AwesomeAssertions" />
     <PackageReference Include="coverlet.MTP" />
     <PackageReference Include="Microsoft.Playwright" />
     <PackageReference Include="xunit.v3" />

@@ -113,7 +113,20 @@ The current shape of a Blazor app: the server sends the page (`App.razor`), and 
 choose. Ours all run in the browser as **WebAssembly**, downloaded once and served by the API itself.
 
 **MudBlazor** (01)
-The free component library for the screens: tables, forms, dialogs, menus.
+The free component library for the screens: tables, forms, dialogs, menus. How the course uses it:
+[MUDBLAZOR.md](MUDBLAZOR.md).
+
+**Data grid** (07)
+MudBlazor's table component, `MudDataGrid`: one line per column, with the column's title doubling as the label on
+a phone.
+
+**Extension method** (08)
+A method you write for a class you don't own, called as if it were the class's own: `_table.FirstPage()` on a
+`MudDataGrid`. It adds behaviour without wrapping the class.
+
+**Slot** (08)
+A `RenderFragment` parameter: markup a page passes into a component, like the buttons between `<Actions>` and
+`</Actions>` in `PageHeader`.
 
 **Razor component** (01)
 A `.razor` file: markup on top, C# in `@code` below. Pages, dialogs and the layout are all components.
@@ -504,7 +517,27 @@ States a rule that must hold for every input, and lets a library (FsCheck) try a
 shrinking any failure to the simplest input.
 
 **Playwright** (06)
-Drives a real browser from a test: open a page, type, click, wait for text.
+Drives a real browser from a test: open a page, type, click, check what's on the screen.
+
+**Locator** (06)
+How a browser test says *which* element: best by role and name (`GetByRole(AriaRole.Button, "Sign in")`), the
+way a screen reader sees the page, not by CSS class. Strict: one that matches two elements refuses to act.
+
+**Web-first assertion** (06)
+Playwright's `Expect(...)`: a check that keeps retrying until it's true (up to 5 seconds), so it never races the
+page. The opposite of reading a value once and comparing it.
+
+**Trace** (06)
+A file Playwright records of a test run: every step, the page at that moment, network and console. Kept for
+failed tests and opened with `show-trace`.
+
+**Landmark** (01, 08)
+A region a screen reader can jump to: the main content (`role="main"`), a navigation (`<nav>`), a named one like
+"Breadcrumb". Tests use the same landmarks to say *where* to look.
+
+**Live region** (08)
+An element with `role="status"` or `role="alert"`: when its text changes, a screen reader reads it out without
+being asked. Our order status chip and our error messages are live regions.
 
 **Race test** (09)
 Starts two actions at the same instant (`Task.WhenAll`), each with its own connection, to prove only the

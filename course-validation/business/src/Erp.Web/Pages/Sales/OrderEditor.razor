@@ -9,16 +9,16 @@
 <PageTitle>@(Id is null ? "New order" : "Edit order") · ERP</PageTitle>
 
 <NavigationLock OnBeforeInternalNavigation="ConfirmLeave" ConfirmExternalNavigation="Unsaved" />
-<MudBreadcrumbs Items="@Crumbs" Class="pa-0 mb-2" />
-<MudText Typo="Typo.h4" Class="mb-4">@(Id is null ? "New sales order" : $"Edit {_orderNumber}")</MudText>
+<PageHeader Title="@(Id is null ? "New sales order" : $"Edit {_orderNumber}")" Trail="@Trail" />
 
 <MudPaper Class="pa-4 mb-4" Outlined="true">
-    <AppAutocomplete T="Customer" Label="Customer" @bind-Value="_customer" SearchFunc="FindCustomers" ToStringFunc="c => c?.Name"
+    <MudAutocomplete T="Customer" Label="Customer" @bind-Value="_customer" SearchFunc="FindCustomers" ToStringFunc="c => c?.Name"
+                     Variant="Variant.Outlined" Margin="Margin.Normal"
                      Disabled="Id is not null" ResetValueOnEmptyText="true" DebounceInterval="300" />
     @if (_customer is not null)
     {
         <MudText Typo="Typo.body2" Class="mt-2">
-            Available credit: <b>@Format.Peso(_customer.AvailableCredit)</b> · Terms: @_customer.PaymentTermsDays days
+            Available credit: <MudText Inline="true" Typo="Typo.subtitle2">@Format.Peso(_customer.AvailableCredit)</MudText> · Terms: @_customer.PaymentTermsDays days
             @if (_customer.IsBlocked) { <MudChip T="string" Color="Color.Error" Size="Size.Small">Blocked</MudChip> }
         </MudText>
     }
@@ -29,9 +29,11 @@
     @foreach (var line in _lines)
     {
         <MudStack Row="true" Spacing="3" Class="mb-2 align-start align-sm-center" Breakpoint="Breakpoint.Xs">
-            <AppAutocomplete T="PriceListItem" Label="Item" @bind-Value="line.Item" SearchFunc="FindItems" Style="min-width:320px"
+            <MudAutocomplete T="PriceListItem" Label="Item" @bind-Value="line.Item" SearchFunc="FindItems" Style="min-width:320px"
+                             Variant="Variant.Outlined" Margin="Margin.Normal"
                              ToStringFunc="@(i => i is null ? null : $"{i.Sku} · {i.Name}")" DebounceInterval="300" />
-            <AppNumericField T="decimal" Label="@($"Quantity{(line.Item is null ? "" : $" ({line.Item.Unit})")}")" @bind-Value="line.Quantity"
+            <MudNumericField T="decimal" Label="@($"Quantity{(line.Item is null ? "" : $" ({line.Item.Unit})")}")" @bind-Value="line.Quantity"
+                             Variant="Variant.Outlined" Margin="Margin.Normal"
                              Min="0" Step="@(line.Item?.AllowsFractions == true ? 0.5m : 1m)" Style="max-width:160px" />
             <MudText Class="money" Style="min-width:140px">@Format.Peso(line.Total)</MudText>
             <MudIconButton Icon="@Icons.Material.Filled.Delete" OnClick="() => _lines.Remove(line)" aria-label="Remove line" />
@@ -55,7 +57,7 @@
     [Parameter] public long? Id { get; set; }
 
     // Where this page sits: under the list, and under the order itself when editing one.
-    private List<BreadcrumbItem> Crumbs => Id is null
+    private List<BreadcrumbItem> Trail => Id is null
         ? [new("Sales orders", Lists.Last("sales-orders")), new("New order", null, disabled: true)]
         : [new("Sales orders", Lists.Last("sales-orders")), new(_orderNumber ?? "Order", $"sales-orders/{Id}"), new("Edit", null, disabled: true)];
 

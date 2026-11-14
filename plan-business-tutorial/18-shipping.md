@@ -149,7 +149,8 @@ dotnet ef migrations add AddShipping \
 
 EF generates the new column and the wider check constraint; add the `.v2.sql` at the end of `Up`, and put
 version 1 back in `Down`. In `GetSalesOrderHandler.cs`, the header row and the DTO gain
-`DateTime? ShippedUtc` at the end, passed through as `h.ShippedUtc`.
+`DateTime? ShippedUtc` after `RejectionReason` (in the DTO, that's just before `Lines`), passed through as
+`h.ShippedUtc`.
 
 Shipping an order that isn't approved gets a code, at the end of `SalesErrors`:
 
@@ -541,26 +542,23 @@ The Shipments page:
 
 <PageTitle>Shipments · ERP</PageTitle>
 
-<MudText Typo="Typo.h4" Class="mb-2">Shipments</MudText>
-<MudText Typo="Typo.body2" Class="mb-4">
-    To ship an approved order, open it from <MudLink Href="sales-orders?status=Approved">Ready to ship</MudLink> and choose Ship.
-</MudText>
+<PageHeader Title="Shipments">
+    <Description>To ship an approved order, open it from <MudLink Href="sales-orders?status=Approved">Ready to ship</MudLink> and choose Ship.</Description>
+</PageHeader>
 
-<AppTable T="Shipment" @key="View.Version" ServerData="Load"
-          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
-    <HeaderContent>
-        <MudTh>Shipment</MudTh><MudTh>Order</MudTh><MudTh>Lines</MudTh><MudTh>Shipped</MudTh><MudTh>By</MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="Shipment">@context.Number</MudTd>
-        <MudTd DataLabel="Order"><MudLink Href="@($"sales-orders/{context.SalesOrderId}")">@context.OrderNumber</MudLink></MudTd>
-        <MudTd DataLabel="Lines">@context.LineCount</MudTd>
-        <MudTd DataLabel="Shipped">@Format.Date(context.ShippedUtc)</MudTd>
-        <MudTd DataLabel="By">@_names.GetValueOrDefault(context.ShippedBy)</MudTd>
-    </RowTemplate>
+<MudDataGrid T="Shipment" @key="View.Version" ServerData="Load"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
+    <Columns>
+        <PropertyColumn Property="x => x.Number" Title="Shipment" />
+        <TemplateColumn Title="Order"><CellTemplate><MudLink Href="@($"sales-orders/{context.Item.SalesOrderId}")">@context.Item.OrderNumber</MudLink></CellTemplate></TemplateColumn>
+        <PropertyColumn Property="x => x.LineCount" Title="Lines" />
+        <TemplateColumn Title="Shipped"><CellTemplate>@Format.Date(context.Item.ShippedUtc)</CellTemplate></TemplateColumn>
+        <TemplateColumn Title="By"><CellTemplate>@_names.GetValueOrDefault(context.Item.ShippedBy)</CellTemplate></TemplateColumn>
+    </Columns>
     <NoRecordsContent>Nothing has shipped yet.</NoRecordsContent>
-    <PagerContent><MudTablePager /></PagerContent>
-</AppTable>
+    <PagerContent><MudDataGridPager T="Shipment" /></PagerContent>
+</MudDataGrid>
 
 @code {
     // The list's view lives in the address (see ListAddress).
@@ -569,7 +567,7 @@ The Shipments page:
 
     private readonly Dictionary<long, string> _names = [];
 
-    private async Task<TableData<Shipment>> Load(TableState state, CancellationToken ct)
+    private async Task<GridData<Shipment>> Load(GridState<Shipment> state, CancellationToken ct)
     {
         View.Save(state);
         var page = await Api.Page<Shipment>("api/shipments", state);
@@ -600,19 +598,7 @@ page gets a tile:
 
 with `private static readonly string ClerkRoles = $"{Roles.InventoryClerk},{Roles.Admin}";`.
 
-The UI flow test gets its next step, after the manager approves:
-
-```csharp
-// The warehouse ships it.
-var clerk = await SignIn("clerk@erp.local");
-await clerk.GotoAsync(orderUrl);
-await clerk.GetByRole(AriaRole.Button, new() { Name = "Ship" }).ClickAsync();
-await clerk.Locator(".mud-dialog").GetByRole(AriaRole.Button, new() { Name = "Ship" }).ClickAsync();   // it asks first
-await clerk.Locator(".mud-chip").Filter(new() { HasText = "Shipped" }).WaitForAsync();
-await Shot(clerk, "clerk-shipped");
-```
-
-and `"/shipments"` joins `pages`.
+`"/shipments"` joins `pages` in the browser test; the flow test's shipping step comes with the tests below.
 
 The Shipments list:
 
@@ -661,14 +647,18 @@ And the browser flow takes its next step: after the manager approves, the clerk 
 `From_order_to_paid_invoice_through_the_screens`, after the approval:
 
 ```csharp
-// The warehouse ships it.
+// The warehouse ships it; Ship asks first, in a dialog.
 var clerk = await SignIn("clerk@erp.local");
 await clerk.GotoAsync(orderUrl);
 await clerk.GetByRole(AriaRole.Button, new() { Name = "Ship" }).ClickAsync();
-await clerk.Locator(".mud-dialog").GetByRole(AriaRole.Button, new() { Name = "Ship" }).ClickAsync();   // it asks first
-await clerk.Locator(".mud-chip").Filter(new() { HasText = "Shipped" }).WaitForAsync();
+await clerk.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Ship" }).ClickAsync();
+await StatusIs(clerk, "Shipped");
 await Shot(clerk, "clerk-shipped");
 ```
+
+Ship asks first, so the test answers the question the way a person would: the **Ship** button *inside the
+dialog*. `GetByRole(AriaRole.Dialog)` scopes the search to the dialog. Without it there are two "Ship" buttons on
+the screen, the page's and the dialog's, and Playwright's strictness would stop the click instead of guessing.
 
 | Test | The edge | Why it matters |
 |---|---|---|

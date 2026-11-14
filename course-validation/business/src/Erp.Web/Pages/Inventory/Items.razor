@@ -5,47 +5,47 @@
 
 <PageTitle>Items and stock · ERP</PageTitle>
 
-<MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-4">
-    <MudText Typo="Typo.h4">Items and stock</MudText>
-    <MudSpacer />
-    <AuthorizeView Roles="@Keepers">
-        <MudButton OnClick="() => Edit(null)" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New item</MudButton>
-    </AuthorizeView>
-</MudStack>
+<PageHeader Title="Items and stock">
+    <Actions>
+        <AuthorizeView Roles="@Keepers">
+            <MudButton OnClick="() => Edit(null)" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New item</MudButton>
+        </AuthorizeView>
+    </Actions>
+</PageHeader>
 
 <MudStack Row="true" Spacing="4" Class="mb-4" Breakpoint="Breakpoint.Xs">
-    <AppTextField T="string" Value="Search" ValueChanged="OnSearch" Label="SKU or name" DebounceInterval="400" Clearable="true"
+    <MudTextField T="string" Value="Search" ValueChanged="OnSearch" Label="SKU or name" DebounceInterval="400" Clearable="true"
+                  Variant="Variant.Outlined" Margin="Margin.Normal"
                   Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" />
     <MudSwitch T="bool" Value="ActiveOnly" ValueChanged="OnActive" Label="Active only" Color="Color.Primary" />
 </MudStack>
 
-<AppTable T="StockItem" @ref="_table" @key="View.Version" ServerData="Load"
-          CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
-    <HeaderContent>
-        <MudTh>SKU</MudTh><MudTh>Name</MudTh><MudTh>Unit</MudTh>
-        <MudTh Class="money">On hand</MudTh><MudTh Class="money">Reserved</MudTh><MudTh Class="money">Available</MudTh><MudTh></MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd DataLabel="SKU">@context.Sku</MudTd>
-        <MudTd DataLabel="Name">@context.Name @if (!context.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</MudTd>
-        <MudTd DataLabel="Unit">@context.Unit</MudTd>
-        <MudTd DataLabel="On hand" Class="money">@Format.Qty(context.OnHand)</MudTd>
-        <MudTd DataLabel="Reserved" Class="money">@Format.Qty(context.Reserved)</MudTd>
-        <MudTd DataLabel="Available" Class="money"><b>@Format.Qty(context.Available)</b></MudTd>
-        <MudTd>
-            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" aria-label="Actions">
-                <MudMenuItem OnClick="() => Movements(context)">Movement history</MudMenuItem>
-                <AuthorizeView Roles="@Keepers" Context="auth">
-                    <MudMenuItem OnClick="() => Adjust(context)">Adjust stock</MudMenuItem>
-                    <MudMenuItem OnClick="() => Edit(context)">Edit</MudMenuItem>
-                    <MudMenuItem OnClick="() => ToggleActive(context)">@(context.IsActive ? "Deactivate" : "Activate")</MudMenuItem>
-                </AuthorizeView>
-            </MudMenu>
-        </MudTd>
-    </RowTemplate>
+<MudDataGrid T="StockItem" @ref="_table" @key="View.Version" ServerData="Load"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
+    <Columns>
+        <PropertyColumn Property="x => x.Sku" Title="SKU" />
+        <TemplateColumn Title="Name"><CellTemplate>@context.Item.Name @if (!context.Item.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</CellTemplate></TemplateColumn>
+        <PropertyColumn Property="x => x.Unit" Title="Unit" />
+        <TemplateColumn Title="On hand" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Qty(context.Item.OnHand)</CellTemplate></TemplateColumn>
+        <TemplateColumn Title="Reserved" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Qty(context.Item.Reserved)</CellTemplate></TemplateColumn>
+        <TemplateColumn Title="Available" HeaderClass="money" CellClass="money"><CellTemplate><MudText Inline="true" Typo="Typo.subtitle2">@Format.Qty(context.Item.Available)</MudText></CellTemplate></TemplateColumn>
+        <TemplateColumn Title="">
+            <CellTemplate>
+                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" AriaLabel="Actions">
+                    <MudMenuItem OnClick="() => Movements(context.Item)">Movement history</MudMenuItem>
+                    <AuthorizeView Roles="@Keepers" Context="auth">
+                        <MudMenuItem OnClick="() => Adjust(context.Item)">Adjust stock</MudMenuItem>
+                        <MudMenuItem OnClick="() => Edit(context.Item)">Edit</MudMenuItem>
+                        <MudMenuItem OnClick="() => ToggleActive(context.Item)">@(context.Item.IsActive ? "Deactivate" : "Activate")</MudMenuItem>
+                    </AuthorizeView>
+                </MudMenu>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
     <NoRecordsContent>No items match.</NoRecordsContent>
-    <PagerContent><MudTablePager /></PagerContent>
-</AppTable>
+    <PagerContent><MudDataGridPager T="StockItem" /></PagerContent>
+</MudDataGrid>
 
 @code {
     // The list's view lives in the address (see ListAddress).
@@ -55,9 +55,9 @@
     [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
 
     private static readonly string Keepers = $"{Roles.InventoryClerk},{Roles.Admin}";
-    private AppTable<StockItem> _table = default!;
+    private MudDataGrid<StockItem> _table = default!;
 
-    private Task<TableData<StockItem>> Load(TableState state, CancellationToken ct)
+    private Task<GridData<StockItem>> Load(GridState<StockItem> state, CancellationToken ct)
     {
         View.Save(state, ("search", Search), ("activeOnly", ActiveOnly));
         return Api.Page<StockItem>(Url.With("api/items", ("search", Search), ("activeOnly", ActiveOnly)), state);
