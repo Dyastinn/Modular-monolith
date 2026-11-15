@@ -37,6 +37,16 @@ public sealed class ApiClient(HttpClient http, ISnackbar snackbar, CookieAuthent
     }
 
     public Task<bool> Post(string url, object? body = null, string? success = null) => Send(HttpMethod.Post, url, body, success);
+
+    // A POST that answers with a body: an import's result, say.
+    public async Task<T?> PostFor<T>(string url, object body)
+    {
+        HttpResponseMessage response;
+        _saving++;
+        try { response = await http.PostAsJsonAsync(url, body); }
+        finally { _saving--; }
+        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<T>() : await Fail<T>(response);
+    }
     public Task<bool> Put(string url, object body, string? success = null) => Send(HttpMethod.Put, url, body, success);
     public Task<bool> Delete(string url, string? success = null) => Send(HttpMethod.Delete, url, null, success);
 

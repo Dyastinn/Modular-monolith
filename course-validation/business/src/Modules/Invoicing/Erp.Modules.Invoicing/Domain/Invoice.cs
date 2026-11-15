@@ -124,6 +124,9 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
     public string? VoidReason { get; private set; }
     public UserId? VoidedBy { get; private set; }
     public DateTime? VoidedUtc { get; private set; }
+    // What the customer owed before the system went live: not a sale, not a BIR invoice, never printed. It's here so
+    // aging, payments and 2307s treat the old debt like any other.
+    public bool IsOpeningBalance { get; private set; }
 
     public Money BalanceDue => Total - AmountPaid;
 
@@ -152,6 +155,28 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
         (invoice.TaxRegime, invoice.VatRate) = (taxPolicy.Regime, taxPolicy.VatRate);
         (invoice.VatableSales, invoice.VatAmount, invoice.ZeroRatedSales, invoice.VatExemptSales) =
             (tax.VatableSales, tax.VatAmount, tax.ZeroRatedSales, tax.VatExemptSales);
+        return invoice;
+    }
+
+    // reference: the number on the customer's old invoice, so the accountant can match the two.
+    public static Invoice OpeningBalance(string number, SellerDetails seller, long customerId, string customerName, string? customerTin,
+        string? customerAddress, string reference, DateOnly issueDate, DateOnly dueDate, Money amount, DateOnly today)
+    {
+        if (amount == Money.Zero) throw new DomainException(InvoicingErrors.OpeningBalanceNotPositive, "An opening balance must be more than zero.");
+        if (issueDate > today) throw new DomainException(InvoicingErrors.OpeningBalanceInFuture, "An opening balance is what was owed before today; its date can't be in the future.");
+        if (dueDate < issueDate) throw new DomainException(InvoicingErrors.DueBeforeIssue, "The due date can't be before the invoice date.");
+        if (string.IsNullOrWhiteSpace(reference)) throw new DomainException(InvoicingErrors.OpeningBalanceReferenceRequired, "Give the old invoice's number.");
+
+        var invoice = new Invoice
+        {
+            Number = number, Seller = seller with { }, OrderNumber = reference.Trim(), CustomerId = customerId, CustomerName = customerName,
+            CustomerTin = customerTin, CustomerAddress = customerAddress, IssueDate = issueDate, DueDate = dueDate,
+            Status = InvoiceStatus.Issued, AmountPaid = Money.Zero, Total = amount, IsOpeningBalance = true,
+            // Its VAT was declared on the original invoice; none of it belongs to this system's sales.
+            VatableSales = Money.Zero, VatAmount = Money.Zero, ZeroRatedSales = Money.Zero, VatExemptSales = Money.Zero
+        };
+        invoice._lines.Add(new InvoiceLine($"Opening balance: {reference.Trim()}", "", new Quantity(1), amount, TaxType.VatExempt));
+        invoice.Raise(new InvoiceOpeningBalanceRecorded(number, customerId, amount));
         return invoice;
     }
 
@@ -200,10 +225,12 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
         VoidReason = reason.Trim();
         VoidedBy = by;
         VoidedUtc = nowUtc;
+        if (IsOpeningBalance) Raise(new InvoiceOpeningBalanceVoided(Number, CustomerId, Total));
     }
 
     public void EnsureCanBeReissued()
     {
+        if (IsOpeningBalance) throw new DomainException(InvoicingErrors.OpeningBalanceNotReissued, $"{Number} is an opening balance: record a new one instead.");
         if (Status != InvoiceStatus.Void) throw new DomainException(InvoicingErrors.OnlyVoidInvoiceReissued, $"Only a void invoice can be reissued; {Number} is {Status}.");
     }
 
@@ -217,6 +244,11 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
         if (Status == InvoiceStatus.Void) throw new DomainException(InvoicingErrors.InvoiceIsVoid, $"{Number} is void.");
     }
 }
+
+// Published to other modules as OpeningBalanceCharged / OpeningBalanceVoided. They name the document by its number:
+// the id doesn't exist yet when the event is written, the number already does, and it is just as unique.
+internal sealed record InvoiceOpeningBalanceRecorded(string Number, long CustomerId, Money Amount) : IDomainEvent;
+internal sealed record InvoiceOpeningBalanceVoided(string Number, long CustomerId, Money Amount) : IDomainEvent;
 
 // Published to other modules as PaymentRecorded / PaymentVoided.
 internal sealed record InvoicePaymentRecorded(PaymentId PaymentId, long CustomerId, Money Settled) : IDomainEvent;

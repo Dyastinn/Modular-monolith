@@ -204,7 +204,7 @@ public sealed class BusinessFlowUiTests : IAsyncLifetime
         [
             "/sales-orders", "/sales-orders/new", "/customers", "/price-list", "/items", "/shipments",
             "/suppliers", "/purchase-orders", "/purchase-orders/new", "/invoices", "/receivables-aging", "/withholding-tax", "/company",
-            "/users", "/sign-in-log", "/change-password", "/approvals", "/approval-rules"
+            "/users", "/sign-in-log", "/change-password", "/approvals", "/approval-rules", "/import"
         ];
 
         foreach (var path in pages)
@@ -276,6 +276,35 @@ public sealed class BusinessFlowUiTests : IAsyncLifetime
         await rep.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Close short" }).ClickAsync();
         await StatusIs(rep, "Closed");
         await Shot(rep, "closed-short");
+    }
+
+    // A spreadsheet goes in after a check: a bad cell is caught before anything is saved, a good file is saved whole.
+    [UiFact]
+    public async Task An_admin_imports_customers_from_a_csv_file()
+    {
+        var admin = await SignIn("admin@erp.local");
+        await admin.GotoAsync("/import");
+        var name = $"Csv Trading {Guid.NewGuid():N}"[..20];
+
+        await ChooseCsv(admin, $"name,credit_limit,payment_terms_days\r\n\"{name}, Inc.\",\"50,000\",30\r\nBad Row,lots,30\r\n");
+        await Expect(admin.GetByRole(AriaRole.Row).Filter(new() { HasText = "credit_limit is not a number" })).ToBeVisibleAsync();
+        await Expect(admin.GetByRole(AriaRole.Button, new() { Name = "Import" })).ToBeDisabledAsync();
+
+        await ChooseCsv(admin, $"name,credit_limit,payment_terms_days\r\n\"{name}, Inc.\",\"50,000\",30\r\n");
+        await admin.GetByRole(AriaRole.Button, new() { Name = "Check" }).ClickAsync();
+        await admin.GetByRole(AriaRole.Button, new() { Name = "Import" }).ClickAsync();
+        await Expect(admin.GetByText("Imported 1 row.")).ToBeVisibleAsync();
+        await Shot(admin, "imported-customers");
+
+        await admin.GotoAsync($"/customers?search={Uri.EscapeDataString(name)}");
+        await Expect(admin.GetByRole(AriaRole.Row).Filter(new() { HasText = $"{name}, Inc." })).ToBeVisibleAsync();
+    }
+
+    private static async Task ChooseCsv(IPage page, string content)
+    {
+        var chooser = await page.RunAndWaitForFileChooserAsync(() =>
+            page.GetByRole(AriaRole.Button, new() { Name = "Choose a CSV file" }).ClickAsync());
+        await chooser.SetFilesAsync(new FilePayload { Name = "customers.csv", MimeType = "text/csv", Buffer = System.Text.Encoding.UTF8.GetBytes(content) });
     }
 
     // A sort is part of the list's view: it goes in the address, so Back, a bookmark or a reload keeps it.

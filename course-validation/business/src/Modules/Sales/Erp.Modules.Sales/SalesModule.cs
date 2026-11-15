@@ -26,6 +26,7 @@ public static class SalesModule
                 .AddInterceptors(sp.GetServices<IInterceptor>()));
         services.AddScoped<IModuleDatabase, SalesDatabase>();
         services.AddScoped<ISalesOrders, SalesOrdersService>();
+        services.AddScoped<ICustomerDirectory, CustomerDirectoryService>();
 
         // Handlers: plain classes, injected straight into the endpoints that use them.
         services.AddScoped<CreateCustomerHandler>();
@@ -60,6 +61,8 @@ public static class SalesModule
         services.AddScoped<IIntegrationEventHandler<ItemCatalogChanged>, ItemCatalogChangedHandler>();
         services.AddScoped<IIntegrationEventHandler<PaymentRecorded>, PaymentRecordedHandler>();
         services.AddScoped<IIntegrationEventHandler<PaymentVoided>, PaymentVoidedHandler>();
+        services.AddScoped<IIntegrationEventHandler<OpeningBalanceCharged>, OpeningBalanceChargedHandler>();
+        services.AddScoped<IIntegrationEventHandler<OpeningBalanceVoided>, OpeningBalanceVoidedHandler>();
         services.AddScoped<IDomainEventHandler<SalesOrderApproved>, SalesOrderApprovedAuditHandler>();
         services.AddSingleton(ErrorCatalog.From(typeof(SalesErrors)));
         return services;

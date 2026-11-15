@@ -22,3 +22,13 @@ public interface ISalesOrders
 
     Task<OrderForInvoice> GetForInvoiceAsync(long orderId, CancellationToken ct);
 }
+
+// A customer as another module needs to bill them.
+public sealed record CustomerSummary(long Id, string Name, string? Tin, string? Address, int PaymentTermsDays);
+
+public interface ICustomerDirectory
+{
+    // By exact name, ignoring case: how an imported file names its customers. Names not found are simply absent.
+    Task<IReadOnlyList<CustomerSummary>> FindByNamesAsync(IReadOnlyCollection<string> names, CancellationToken ct);
+}
+

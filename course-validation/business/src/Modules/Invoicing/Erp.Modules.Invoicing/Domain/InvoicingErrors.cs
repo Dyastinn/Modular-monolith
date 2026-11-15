@@ -51,4 +51,18 @@ internal static class InvoicingErrors
         "Nothing to do. Record a new certificate if the old one was replaced.");
     public static readonly ErrorCode CustomerNeverInvoiced = new("INVOICING-0023", "The customer has no invoices",
         "A customer we never invoiced can't have withheld tax from us. Check the customer.");
+    public static readonly ErrorCode OpeningBalanceNotPositive = new("INVOICING-0024", "An opening balance must be more than zero",
+        "Leave out customers who owed nothing on the day the system went live.");
+    public static readonly ErrorCode OpeningBalanceInFuture = new("INVOICING-0025", "An opening balance can't be dated in the future",
+        "Use the date of the customer's original invoice.");
+    public static readonly ErrorCode DueBeforeIssue = new("INVOICING-0026", "The due date is before the invoice date",
+        "Check the two dates; leave the due date out to use the customer's payment terms.");
+    public static readonly ErrorCode OpeningBalanceReferenceRequired = new("INVOICING-0027", "An opening balance needs the old invoice's number",
+        "Enter the number of the invoice it comes from, so payments can be matched to it.");
+    public static readonly ErrorCode OpeningBalanceNotReissued = new("INVOICING-0028", "An opening balance isn't reissued",
+        "Void it if it was wrong, and record the right amount as a new opening balance.");
+    public static readonly ErrorCode CustomerNotFound = new("INVOICING-0029", "There is no customer with that name",
+        "Import the customers first, or correct the name to match the Customers page exactly.");
+    public static readonly ErrorCode DuplicateOpeningBalance = new("INVOICING-0030", "That opening balance is already recorded",
+        "The same customer and old invoice number appear twice, or were imported before. Leave the row out.");
 }

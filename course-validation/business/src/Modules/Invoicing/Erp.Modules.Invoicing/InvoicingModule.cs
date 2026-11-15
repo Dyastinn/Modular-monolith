@@ -42,6 +42,7 @@ public static class InvoicingModule
         services.AddScoped<GetInvoiceHandler>();
         services.AddScoped<PrintInvoiceHandler>();
         services.AddScoped<VoidInvoiceHandler>();
+        services.AddScoped<ImportOpeningBalancesHandler>();
         services.AddScoped<ReissueInvoiceHandler>();
         services.AddScoped<RecordPaymentHandler>();
         services.AddScoped<VoidPaymentHandler>();
@@ -54,6 +55,8 @@ public static class InvoicingModule
         // Events: each module registers the handlers it owns. An unregistered handler never runs, and a test checks.
         services.AddScoped<IDomainEventHandler<InvoicePaymentRecorded>, PublishPaymentRecorded>();
         services.AddScoped<IDomainEventHandler<InvoicePaymentVoided>, PublishPaymentVoided>();
+        services.AddScoped<IDomainEventHandler<InvoiceOpeningBalanceRecorded>, PublishOpeningBalanceCharged>();
+        services.AddScoped<IDomainEventHandler<InvoiceOpeningBalanceVoided>, PublishOpeningBalanceVoided>();
         services.AddScoped<IIntegrationEventHandler<ShipmentRecorded>, ShipmentRecordedHandler>();
         services.AddSingleton(ErrorCatalog.From(typeof(InvoicingErrors)));
         return services;
@@ -66,6 +69,7 @@ public static class InvoicingModule
         SearchInvoicesEndpoint.Map(invoicing);
         GetInvoiceEndpoint.Map(invoicing);
         VoidInvoiceEndpoint.Map(invoicing);
+        ImportOpeningBalancesEndpoint.Map(invoicing);
         RecordPaymentEndpoint.Map(invoicing);
         ReceivablesAgingEndpoint.Map(invoicing);
         WithholdingTaxEndpoint.Map(invoicing);

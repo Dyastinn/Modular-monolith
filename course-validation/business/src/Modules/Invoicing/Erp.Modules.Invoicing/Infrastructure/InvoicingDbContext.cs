@@ -31,18 +31,23 @@ internal sealed class InvoicingDbContext(DbContextOptions<InvoicingDbContext> op
 
     // A sequence would be faster, but a rolled-back transaction burns its number, and invoice numbers must have no
     // gaps. This row stays locked until the transaction ends, so invoices are numbered one at a time.
-    public async Task<string> AllocateInvoiceNumberAsync(DateTime nowUtc, CancellationToken ct)
+    public Task<string> AllocateInvoiceNumberAsync(DateTime nowUtc, CancellationToken ct) => AllocateAsync("invoice", "SI", nowUtc, ct);
+
+    // A series of its own: opening balances never use up the BIR-registered invoice numbers.
+    public Task<string> AllocateOpeningBalanceNumberAsync(DateTime nowUtc, CancellationToken ct) => AllocateAsync("opening_balance", "OB", nowUtc, ct);
+
+    private async Task<string> AllocateAsync(string counter, string prefix, DateTime nowUtc, CancellationToken ct)
     {
         var value = (await Database.SqlQuery<long>(
-                $"UPDATE invoicing.document_counter SET next_value = next_value + 1 WHERE name = 'invoice' RETURNING next_value - 1 AS \"Value\"")
+                $"UPDATE invoicing.document_counter SET next_value = next_value + 1 WHERE name = {counter} RETURNING next_value - 1 AS \"Value\"")
             .ToListAsync(ct)).Single();
-        return DocumentNumber.Format("SI", value, nowUtc);
+        return DocumentNumber.Format(prefix, value, nowUtc);
     }
 
     // Counts every printing atomically; the BIR requires "REPRINT" on any copy after the first (RR 7-2024 Sec. 6(B.21)).
     public async Task<int?> RecordPrintAsync(long invoiceId, CancellationToken ct) =>
         (await Database.SqlQuery<int>(
-                $"UPDATE invoicing.invoice SET print_count = print_count + 1 WHERE id = {invoiceId} RETURNING print_count AS \"Value\"")
+                $"UPDATE invoicing.invoice SET print_count = print_count + 1 WHERE id = {invoiceId} AND NOT is_opening_balance RETURNING print_count AS \"Value\"")
             .ToListAsync(ct)).Cast<int?>().SingleOrDefault();
 
     // The payment id travels in PaymentRecorded, so it must exist before SaveChanges writes the event.
@@ -78,7 +83,7 @@ internal sealed class InvoicingDbContext(DbContextOptions<InvoicingDbContext> op
             e.ToTable("document_counter");
             e.HasKey(x => x.Name);
             e.Property(x => x.Name).HasMaxLength(30);
-            e.HasData(new { Name = "invoice", NextValue = 1L });
+            e.HasData(new { Name = "invoice", NextValue = 1L }, new { Name = "opening_balance", NextValue = 1L });
         });
 
         b.Entity<Invoice>(e =>
@@ -93,7 +98,7 @@ internal sealed class InvoicingDbContext(DbContextOptions<InvoicingDbContext> op
             e.Property(x => x.Number).HasMaxLength(30);
             e.HasIndex(x => x.Number).IsUnique();
             // One live invoice per shipment; a void one can be replaced.
-            e.HasIndex(x => x.ShipmentId).IsUnique().HasFilter("status <> 3");
+            e.HasIndex(x => x.ShipmentId).IsUnique().HasFilter("status <> 3 AND NOT is_opening_balance");
             e.Property(x => x.OrderNumber).HasMaxLength(30);
             e.Property(x => x.CustomerName).HasMaxLength(200);
             e.Property(x => x.CustomerTin).HasMaxLength(20);

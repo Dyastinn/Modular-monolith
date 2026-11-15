@@ -57,7 +57,7 @@ public sealed record PurchaseOrderDetail(long Id, string Number, long SupplierId
     DateTime? SentUtc, List<PurchaseOrderLine> Lines, DateTime? SubmittedUtc, long? RejectedBy, DateTime? RejectedUtc, string? RejectionReason);
 
 public sealed record InvoiceSummary(long Id, string Number, long CustomerId, string CustomerName, string OrderNumber,
-    DateOnly IssueDate, DateOnly DueDate, string Status, decimal Total, decimal AmountPaid, decimal BalanceDue);
+    DateOnly IssueDate, DateOnly DueDate, string Status, decimal Total, decimal AmountPaid, decimal BalanceDue, bool IsOpeningBalance);
 
 public sealed record InvoiceLine(string Description, string Unit, decimal Quantity, decimal UnitPrice, decimal LineTotal, string TaxType,
     bool SpecialDiscountEligible);
@@ -69,7 +69,8 @@ public sealed record InvoiceDetail(long Id, string Number, long ShipmentId, long
     string CustomerName, string? CustomerTin, string? CustomerAddress, DateOnly IssueDate, DateOnly DueDate, string Status,
     decimal Total, decimal AmountPaid, decimal BalanceDue, string TaxRegime, decimal VatRate, decimal VatableSales, decimal VatAmount,
     decimal ZeroRatedSales, decimal VatExemptSales, int PrintCount, string? VoidReason, long? VoidedBy,
-    DateTime? VoidedUtc, SpecialDiscount? SpecialDiscount, List<InvoiceLine> Lines, List<Payment> Payments, decimal GrossSales);
+    DateTime? VoidedUtc, SpecialDiscount? SpecialDiscount, List<InvoiceLine> Lines, List<Payment> Payments, decimal GrossSales,
+    bool IsOpeningBalance);
 
 public sealed record WithholdingRow(long CustomerId, string CustomerName, int Quarter, decimal Withheld, decimal Certified, decimal Missing);
 
@@ -87,3 +88,7 @@ public sealed record User(long Id, string Email, string FullName, string Role, b
     DateTime? LockedOutUntil, DateTime? LastSignIn);
 
 public sealed record SignInAttempt(long Id, string Email, long? UserId, string Outcome, string? IpAddress, DateTime OccurredUtc);
+
+public sealed record ImportError(int Row, string Message, string? Code);
+
+public sealed record ImportResult(int Rows, int Imported, List<ImportError> Errors);

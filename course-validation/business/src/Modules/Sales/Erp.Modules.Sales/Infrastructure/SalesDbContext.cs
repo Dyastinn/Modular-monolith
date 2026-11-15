@@ -16,6 +16,7 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
     public DbSet<SalesItem> SalesItems => Set<SalesItem>();
     public DbSet<ItemCategory> ItemCategories => Set<ItemCategory>();
     public DbSet<AppliedPayment> AppliedPayments => Set<AppliedPayment>();
+    public DbSet<AppliedCharge> AppliedCharges => Set<AppliedCharge>();
     public DbSet<SpecialDiscountProgram> SpecialDiscountPrograms => Set<SpecialDiscountProgram>();
     public DbSet<SalesSettings> Settings => Set<SalesSettings>();
 
@@ -170,6 +171,13 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
             e.ToTable("applied_payment");
             e.HasKey(x => x.PaymentId);
             e.Property(x => x.PaymentId).ValueGeneratedNever();   // Invoicing's id
+        });
+
+        b.Entity<AppliedCharge>(e =>
+        {
+            e.ToTable("applied_charge");
+            e.HasKey(x => x.DocumentNumber);
+            e.Property(x => x.DocumentNumber).HasMaxLength(30);
         });
 
         b.Entity<SalesOrder>(e =>

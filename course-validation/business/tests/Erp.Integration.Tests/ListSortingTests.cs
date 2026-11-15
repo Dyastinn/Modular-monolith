@@ -43,6 +43,9 @@ public class ListSortingTests(CustomWebAppFactory factory)
     [InlineData("/api/price-list?sort=unit")]
     [InlineData("/api/suppliers?sort=email")]
     [InlineData("/api/users?sort=password")]
+    [InlineData("/api/invoices?sort=status")]
+    [InlineData("/api/items?sort=unit")]
+    [InlineData("/api/shipments?sort=shippedBy")]
     public async Task A_sort_the_list_does_not_offer_is_a_400(string url)
     {
         var admin = await factory.ClientFor("admin@erp.local");
@@ -55,6 +58,9 @@ public class ListSortingTests(CustomWebAppFactory factory)
     [InlineData("/api/price-list?sort=unitPrice&desc=true")]
     [InlineData("/api/suppliers?sort=paymentTermsDays")]
     [InlineData("/api/users?sort=lastSignIn&desc=true")]
+    [InlineData("/api/invoices?sort=balanceDue&desc=true")]
+    [InlineData("/api/items?sort=stockValue")]
+    [InlineData("/api/shipments?sort=costOfGoods&desc=true")]
     public async Task Every_offered_sort_runs(string url)
     {
         var admin = await factory.ClientFor("admin@erp.local");

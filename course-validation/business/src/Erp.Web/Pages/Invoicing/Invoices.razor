@@ -23,17 +23,24 @@
 </MudStack>
 
 <MudDataGrid T="InvoiceSummary" @ref="_table" @key="View.Version" ServerData="Load"
-             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.Single" ShowColumnOptions="false"
              CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize" RowClick="Open" RowStyle="cursor:pointer">
     <Columns>
-        <PropertyColumn Property="x => x.Number" Title="Invoice" />
-        <PropertyColumn Property="x => x.CustomerName" Title="Customer" />
-        <PropertyColumn Property="x => x.OrderNumber" Title="Order" />
-        <TemplateColumn Title="Issued"><CellTemplate>@Format.Date(context.Item.IssueDate)</CellTemplate></TemplateColumn>
-        <TemplateColumn Title="Due"><CellTemplate>@Format.Date(context.Item.DueDate)</CellTemplate></TemplateColumn>
+        <PropertyColumn Property="x => x.Number" Title="Invoice" InitialDirection="@View.Initial(nameof(InvoiceSummary.Number))" />
+        <PropertyColumn Property="x => x.CustomerName" Title="Customer" InitialDirection="@View.Initial(nameof(InvoiceSummary.CustomerName))" />
+        @* An opening balance has the customer's old invoice number here instead of an order. *@
+        <PropertyColumn Property="x => x.OrderNumber" Title="Order" Sortable="false">
+            <CellTemplate>@context.Item.OrderNumber @if (context.Item.IsOpeningBalance) { <MudChip T="string" Size="Size.Small" Variant="Variant.Text">Opening balance</MudChip> }</CellTemplate>
+        </PropertyColumn>
+        <PropertyColumn Property="x => x.IssueDate" Title="Issued" InitialDirection="@View.Initial(nameof(InvoiceSummary.IssueDate))">
+            <CellTemplate>@Format.Date(context.Item.IssueDate)</CellTemplate>
+        </PropertyColumn>
+        <PropertyColumn Property="x => x.DueDate" Title="Due" InitialDirection="@View.Initial(nameof(InvoiceSummary.DueDate))">
+            <CellTemplate>@Format.Date(context.Item.DueDate)</CellTemplate>
+        </PropertyColumn>
         <TemplateColumn Title="Status"><CellTemplate><StatusChip Status="@context.Item.Status" /></CellTemplate></TemplateColumn>
-        @(MoneyColumn.Of<InvoiceSummary>("Total", x => x.Total))
-        @(MoneyColumn.Of<InvoiceSummary>("Balance", x => x.BalanceDue))
+        @(MoneyColumn.Of<InvoiceSummary>("Total", x => x.Total, initial: View.Initial(nameof(InvoiceSummary.Total))))
+        @(MoneyColumn.Of<InvoiceSummary>("Balance", x => x.BalanceDue, initial: View.Initial(nameof(InvoiceSummary.BalanceDue))))
     </Columns>
     <NoRecordsContent>No invoices match.</NoRecordsContent>
     <PagerContent><MudDataGridPager T="InvoiceSummary" /></PagerContent>

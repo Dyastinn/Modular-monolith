@@ -6,7 +6,8 @@ RETURNS TABLE (id bigint, order_number text, customer_id bigint, customer_name t
                approved_utc timestamptz, rejected_by bigint, rejection_reason text, shipped_utc timestamptz,
                gross_total numeric, special_discount_program text, special_discount_id_label text,
                special_discount_holder_name text, special_discount_id_number text, special_discount_rate numeric,
-               special_discount_vat_rate_removed numeric, special_discount_vat_exemption numeric, special_discount_amount numeric)
+               special_discount_vat_rate_removed numeric, special_discount_vat_exemption numeric, special_discount_amount numeric,
+               pending_approvals integer, credit_released_by bigint, credit_released_utc timestamptz)
 LANGUAGE sql STABLE
 AS $$
     WITH gross AS (
@@ -19,7 +20,8 @@ AS $$
            o.rejection_reason::text, o.shipped_utc,
            g.total, o.special_discount_program::text, o.special_discount_id_label::text,
            o.special_discount_holder_name::text, o.special_discount_id_number::text, o.special_discount_rate,
-           o.special_discount_vat_rate_removed, o.special_discount_vat_exemption, o.special_discount_amount
+           o.special_discount_vat_rate_removed, o.special_discount_vat_exemption, o.special_discount_amount,
+           o.pending_approvals, o.credit_released_by, o.credit_released_utc
     FROM sales.sales_order o
     CROSS JOIN gross g
     JOIN sales.customer c ON c.id = o.customer_id
@@ -28,10 +30,11 @@ AS $$
 $$;
 
 CREATE OR REPLACE FUNCTION sales.get_sales_order_lines(p_order_id bigint)
-RETURNS TABLE (item_id bigint, item_name text, unit text, quantity numeric, unit_price numeric, special_discount_eligible boolean)
+RETURNS TABLE (item_id bigint, item_name text, unit text, quantity numeric, unit_price numeric, special_discount_eligible boolean,
+               shipped_quantity numeric)
 LANGUAGE sql STABLE
 AS $$
-    SELECT l.item_id, l.item_name::text, l.unit::text, l.quantity, l.unit_price, l.special_discount_eligible
+    SELECT l.item_id, l.item_name::text, l.unit::text, l.quantity, l.unit_price, l.special_discount_eligible, l.shipped_quantity
     FROM sales.sales_order_line l
     WHERE l.sales_order_id = p_order_id
     ORDER BY l.id;

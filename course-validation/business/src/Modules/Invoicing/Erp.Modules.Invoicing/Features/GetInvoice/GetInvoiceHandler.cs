@@ -13,7 +13,7 @@ internal sealed record InvoiceDetailDto(
     decimal Total, decimal AmountPaid, decimal BalanceDue,
     string TaxRegime, decimal VatRate, decimal VatableSales, decimal VatAmount, decimal ZeroRatedSales, decimal VatExemptSales,
     int PrintCount, string? VoidReason, long? VoidedBy, DateTime? VoidedUtc, InvoiceSpecialDiscountDto? SpecialDiscount,
-    IReadOnlyList<InvoiceLineDto> Lines, IReadOnlyList<PaymentDto> Payments)
+    IReadOnlyList<InvoiceLineDto> Lines, IReadOnlyList<PaymentDto> Payments, bool IsOpeningBalance)
 {
     public decimal GrossSales => Total + (SpecialDiscount is { } d ? d.VatExemption + d.Discount : 0);
 }
@@ -38,7 +38,7 @@ internal sealed record InvoiceHeaderRow(
     string? SpecialDiscountProgram, string? SpecialDiscountIdLabel, string? SpecialDiscountHolderName, string? SpecialDiscountIdNumber,
     decimal? SpecialDiscountRate, decimal? SpecialDiscountVatRateRemoved, decimal SpecialDiscountVatExemption, decimal SpecialDiscountAmount,
     string SellerName, string? SellerTradeName, string SellerTin, string SellerAddress, string SellerInvoiceTitle,
-    string? SellerPermitNumber, string? SellerSeriesRange, string? SellerPermitDateIssued);
+    string? SellerPermitNumber, string? SellerSeriesRange, string? SellerPermitDateIssued, bool IsOpeningBalance);
 
 internal sealed record InvoiceLineRow(string Description, string Unit, decimal Quantity, decimal UnitPrice, int TaxType,
     bool SpecialDiscountEligible);
@@ -81,7 +81,7 @@ internal sealed class GetInvoiceHandler(IDbConnectionFactory connections)
             h.SpecialDiscountProgram is null ? null : new InvoiceSpecialDiscountDto(h.SpecialDiscountProgram, h.SpecialDiscountIdLabel!,
                 h.SpecialDiscountHolderName!, h.SpecialDiscountIdNumber!, h.SpecialDiscountRate ?? 0, h.SpecialDiscountVatRateRemoved ?? 0,
                 h.SpecialDiscountVatExemption, h.SpecialDiscountAmount),
-            lines, payments);
+            lines, payments, h.IsOpeningBalance);
     }
 }
 

@@ -1,20 +1,36 @@
 -- Released scripts are never edited: change a function with a .v2 file and a new migration.
--- p_overdue_on set: only open invoices whose due date is before that day.
+-- p_overdue_on set: only open invoices whose due date is before that day. p_sort: one of the validator's names;
+-- NULL = newest first.
 CREATE OR REPLACE FUNCTION invoicing.search_invoices(p_customer_id bigint, p_status integer, p_search text,
-                                                     p_overdue_on date, p_page integer, p_page_size integer)
+                                                     p_overdue_on date, p_sort text, p_desc boolean, p_page integer, p_page_size integer)
 RETURNS TABLE (id bigint, number text, customer_id bigint, customer_name text, order_number text, issue_date date,
-               due_date date, status integer, total numeric, amount_paid numeric)
+               due_date date, status integer, total numeric, amount_paid numeric, balance_due numeric, is_opening_balance boolean)
 LANGUAGE sql STABLE
 AS $$
-    SELECT i.id, i.number::text, i.customer_id, i.customer_name::text, i.order_number::text, i.issue_date, i.due_date,
-           i.status, i.total, i.amount_paid
-    FROM invoicing.invoice i
-    WHERE (p_customer_id IS NULL OR i.customer_id = p_customer_id)
-      AND (p_status      IS NULL OR i.status      = p_status)
-      AND (p_search      IS NULL OR i.number ILIKE '%' || p_search || '%' OR i.customer_name ILIKE '%' || p_search || '%'
-                                 OR i.order_number ILIKE '%' || p_search || '%')
-      AND (p_overdue_on  IS NULL OR (i.status IN (0, 1) AND i.due_date < p_overdue_on))
-    ORDER BY i.issue_date DESC, i.id DESC
+    WITH i AS (
+        SELECT i.id, i.number::text AS number, i.customer_id, i.customer_name::text AS customer_name, i.order_number::text AS order_number,
+               i.issue_date, i.due_date, i.status, i.total, i.amount_paid, i.total - i.amount_paid AS balance_due, i.is_opening_balance
+        FROM invoicing.invoice i
+        WHERE (p_customer_id IS NULL OR i.customer_id = p_customer_id)
+          AND (p_status      IS NULL OR i.status      = p_status)
+          AND (p_search      IS NULL OR i.number ILIKE '%' || p_search || '%' OR i.customer_name ILIKE '%' || p_search || '%'
+                                     OR i.order_number ILIKE '%' || p_search || '%')
+          AND (p_overdue_on  IS NULL OR (i.status IN (0, 1) AND i.due_date < p_overdue_on))
+    )
+    SELECT * FROM i
+    ORDER BY
+        CASE WHEN p_sort = 'number' AND NOT p_desc THEN i.number END ASC,
+        CASE WHEN p_sort = 'number' AND p_desc     THEN i.number END DESC,
+        CASE WHEN p_sort = 'customerName' AND NOT p_desc THEN i.customer_name END ASC,
+        CASE WHEN p_sort = 'customerName' AND p_desc     THEN i.customer_name END DESC,
+        CASE WHEN p_sort = 'dueDate' AND NOT p_desc THEN i.due_date END ASC,
+        CASE WHEN p_sort = 'dueDate' AND p_desc     THEN i.due_date END DESC,
+        CASE WHEN p_sort = 'total' AND NOT p_desc THEN i.total END ASC,
+        CASE WHEN p_sort = 'total' AND p_desc     THEN i.total END DESC,
+        CASE WHEN p_sort = 'balanceDue' AND NOT p_desc THEN i.balance_due END ASC,
+        CASE WHEN p_sort = 'balanceDue' AND p_desc     THEN i.balance_due END DESC,
+        CASE WHEN p_sort = 'issueDate' AND NOT p_desc THEN i.issue_date END ASC,
+        i.issue_date DESC, i.id DESC
     OFFSET (p_page - 1) * p_page_size
     LIMIT p_page_size;
 $$;
@@ -40,7 +56,7 @@ RETURNS TABLE (id bigint, number text, shipment_id bigint, sales_order_id bigint
                special_discount_holder_name text, special_discount_id_number text, special_discount_rate numeric,
                special_discount_vat_rate_removed numeric, special_discount_vat_exemption numeric, special_discount_amount numeric,
                seller_name text, seller_trade_name text, seller_tin text, seller_address text, seller_invoice_title text,
-               seller_permit_number text, seller_series_range text, seller_permit_date_issued text)
+               seller_permit_number text, seller_series_range text, seller_permit_date_issued text, is_opening_balance boolean)
 LANGUAGE sql STABLE
 AS $$
     SELECT i.id, i.number::text, i.shipment_id, i.sales_order_id, i.order_number::text, i.customer_id,
@@ -52,7 +68,7 @@ AS $$
            i.special_discount_vat_exemption, i.special_discount_amount,
            i.seller_name::text, i.seller_trade_name::text, i.seller_tin::text, i.seller_address::text,
            i.seller_invoice_title::text, i.seller_permit_number::text, i.seller_series_range::text,
-           i.seller_permit_date_issued::text
+           i.seller_permit_date_issued::text, i.is_opening_balance
     FROM invoicing.invoice i
     WHERE i.id = p_id;
 $$;

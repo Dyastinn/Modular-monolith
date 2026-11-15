@@ -157,6 +157,10 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                         .HasColumnType("date")
                         .HasColumnName("due_date");
 
+                    b.Property<bool>("IsOpeningBalance")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_opening_balance");
+
                     b.Property<DateOnly>("IssueDate")
                         .HasColumnType("date")
                         .HasColumnName("issue_date");
@@ -262,7 +266,7 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                     b.HasIndex("ShipmentId")
                         .IsUnique()
                         .HasDatabaseName("ix_invoice_shipment_id")
-                        .HasFilter("status <> 3");
+                        .HasFilter("status <> 3 AND NOT is_opening_balance");
 
                     b.HasIndex("CustomerId", "Status")
                         .HasDatabaseName("ix_invoice_customer_id_status");
@@ -367,6 +371,11 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                         new
                         {
                             Name = "invoice",
+                            NextValue = 1L
+                        },
+                        new
+                        {
+                            Name = "opening_balance",
                             NextValue = 1L
                         });
                 });

@@ -16,3 +16,15 @@ internal sealed class PublishPaymentVoided(IIntegrationEventPublisher publisher)
     public Task HandleAsync(InvoicePaymentVoided e, CancellationToken ct) =>
         publisher.PublishAsync(new PaymentVoided(e.PaymentId.Value, e.CustomerId, e.Settled.Amount), ct);
 }
+
+internal sealed class PublishOpeningBalanceCharged(IIntegrationEventPublisher publisher) : IDomainEventHandler<InvoiceOpeningBalanceRecorded>
+{
+    public Task HandleAsync(InvoiceOpeningBalanceRecorded e, CancellationToken ct) =>
+        publisher.PublishAsync(new OpeningBalanceCharged(e.Number, e.CustomerId, e.Amount.Amount), ct);
+}
+
+internal sealed class PublishOpeningBalanceVoided(IIntegrationEventPublisher publisher) : IDomainEventHandler<InvoiceOpeningBalanceVoided>
+{
+    public Task HandleAsync(InvoiceOpeningBalanceVoided e, CancellationToken ct) =>
+        publisher.PublishAsync(new OpeningBalanceVoided(e.Number, e.CustomerId, e.Amount.Amount), ct);
+}

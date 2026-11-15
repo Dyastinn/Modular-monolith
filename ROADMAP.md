@@ -372,12 +372,16 @@ Approvals and sorting (code ✅ · lessons ⬜):
 - [x] "Awaiting my approval" page (`awaitingMe=true` on both searches; a role sees only what it may approve, never
       its own); Approval rules page (Admin); customer dialog edits the override; order/PO pages show what an order
       waits for and who released credit
-- [x] Server sorting: `ValidSort` allow-list per query, `p_sort`/`p_desc` in v2 SQL functions (one `CASE` per
+- [x] Server sorting: `ValidSort` allow-list per query, `p_sort`/`p_desc` in the SQL functions (one `CASE` per
       column and direction; nothing built from text); `GridSort` + `ListAddress` keep the sort in the address
       (`sort=`, `desc=true`) and restore the arrow (`InitialDirection`). Done: sales orders, customers, price list,
       purchase orders, suppliers, users; client-side on aging and 2307. Items, shipments and invoices get theirs
       with costing, partial shipments and credit memos (their functions change then anyway). Logs (movements,
       sign-in) stay in time order on purpose
+- [x] Squashed (user decision, 2026-11-15): no `.v2` files or extra migrations in the build. Each changed function
+      was folded into its `.v1.sql`, and every module's migrations regenerated as one `InitialCreate` + one
+      `AddReadFunctions` (lesson 05's convention). A dev database created before this must be recreated. The lessons
+      will show the steps as `.v2` files and named migrations, the way lessons 15 and 18 already do
 - [x] `MoneyColumn` is now `MoneyColumn.Of<T>(title, property, …)`, which writes the `PropertyColumn` in place.
       Fixes a bug that predates M10: a column inside a wrapper component joins the grid after its siblings, so every
       amount column rendered last (after the ⋮ menu)
@@ -394,14 +398,22 @@ The buyer gaps, in build order (code ⬜ · lessons ⬜):
       cost; Purchasing passes the PO line's cost (`IStockReceiving` gained `unitCost`). Cost is shown to clerks,
       buyers, accountants, sales managers and admins, never to reps (nulled in the handler, cost sorts ignored).
       Items page: average cost, value, total stock value (`/api/stock-valuation`); movements show cost and value;
-      PO lines prefill with the average. Existing stock reads ₱0 until its next receipt (no cross-module backfill)
+      PO lines prefill with the average
 - [x] Partial shipments (code ✅ · lesson ⬜): order lines track `shipped_quantity`; `PartiallyShipped` and
       `Closed` statuses; `RecordShipment` refuses a line not on the order or over what's left (SALES-0031); an order
       with an SC/PWD discount ships whole (SALES-0032) so its one invoice equals the order; close short releases the
       reservation and takes the unshipped value off the balance; `ShipmentRecorded` carries lines with cost, and each
       shipment gets its own invoice billing what shipped, with item and unit cost on each line (margins). Ship
       dialog lets the clerk lower quantities. Shipments list sorts and shows cost of goods
-- [ ] CSV import: customers, items, opening stock, opening balances
+- [x] CSV import (code ✅ · lesson ⬜): Import data page (Admin; accountants see opening balances). The browser
+      reads the CSV (`Csv`, RFC 4180) and sends typed rows; each module checks every row with its domain and answers
+      per-row errors with codes (`ImportResult`); Commit saves all or nothing. Customers (SALES-0033 already exists),
+      items with opening stock at cost (an "Opening stock" adjustment), prices by SKU and category name (SALES-0034
+      duplicate row), and opening balances: an `Invoice` flagged `IsOpeningBalance` with its own `OB-` series (never
+      the BIR series), no tax breakdown, never printed or reissued; it appears in aging and takes payments, and Sales
+      adds it to the customer's balance (`OpeningBalanceCharged`/`Voided`, idempotent by document number in
+      `applied_charge`). New contract `ICustomerDirectory`. Invoices list sorts. MudFileUpload in MudBlazor 9 uses
+      `CustomContent` (`ActivatorContent` is gone and was silently ignored)
 - [ ] Returns and credit memos (BIR-compliant), stock back in at cost
 - [ ] Accounts payable: supplier bills, PO ↔ receipt ↔ bill match, payments, Form 2307 issued
 - [ ] Reorder points, low-stock list, stock count with variance posting
@@ -544,5 +556,8 @@ The buyer gaps, in build order (code ⬜ · lessons ⬜):
   fails only as the 16th test of a run and passes alone 3/3; most likely the sign-in rate limit, not yet
   confirmed). Integration and browser runs used a local-only workaround for the `podman exec` problem (see Risks);
   the committed test harness is unchanged.
+- **2026-11-15** — Build squashed back to lesson 05's convention (user): no `.v2` files or extra migrations; one
+  `InitialCreate` + `AddReadFunctions` per module. CSV import and opening balances. **Unit 195, architecture 14,
+  integration 151, browser 18/18 pass.**
 - **2026-11-15** — M10: inventory costing (moving average) and partial shipments. **Sales 142, Inventory 12,
   Invoicing 20, Purchasing 13, architecture 14, integration 136, browser 17/17 pass.**

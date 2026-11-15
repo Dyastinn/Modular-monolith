@@ -249,7 +249,11 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
   the module's `Infrastructure/Sql/Functions/` named `schema.function.vN.sql` (with its companions: the
   `count_` for a search, the `_lines` for a get), and are applied by a migration
   via `migrationBuilder.Sql`. **A shipped migration or script is never edited** — a changed function gets a
-  `.v2` file and a new migration. Dapper maps snake_case columns to PascalCase records
+  `.v2` file and a new migration. That is what the *lessons* teach, step by step. **The reference build is squashed**
+  (lesson 05; user decision, 2026-11-15): each module has exactly one `InitialCreate` and one `AddReadFunctions`, and
+  each function exists only as its final `.v1.sql`. A change to the build edits the `.v1.sql` file and regenerates
+  those two migrations; never add a `.v2` file or another migration to the build unless a lesson teaches that exact
+  step. (Once the product is installed somewhere, this flips: the release's migrations freeze.) Dapper maps snake_case columns to PascalCase records
   (`MatchNamesWithUnderscores`, set once in `AddSharedInfrastructure`).
 - **Domain events:** raise an event only in the same change that adds its first handler. Domain events are
   `internal`; integration events live in a module's `.Contracts` project and are plain data. Each module registers
