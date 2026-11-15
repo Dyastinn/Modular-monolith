@@ -40,7 +40,7 @@ The lessons are written for someone coming from ASP.NET WebForms, too: where an 
 equivalent, the lesson says so.
 
 For contributors: [CLAUDE.md](CLAUDE.md) holds the rules, [WRITING-STYLE.md](WRITING-STYLE.md) the lesson
-voice, [ROADMAP.md](ROADMAP.md) the plan and progress, and
+voice, [ROADMAP.md](ROADMAP.md) the plan and progress ([ROADMAP-HISTORY.md](ROADMAP-HISTORY.md) the finished milestones and the log), and
 [course-validation/FINDINGS.md](course-validation/FINDINGS.md) what was verified and what wasn't.
 
 ## Solution layout

@@ -1,0 +1,398 @@
+# Roadmap history — finished milestones and the log
+
+Moved out of [ROADMAP.md](ROADMAP.md) so the plan stays short. Nothing here is open work: read it when you
+need to know why or how something finished was done. The text is unchanged from the roadmap.
+
+---
+
+## Finished milestones
+
+### M0 — Rules & plan ✅
+- [x] Rewrite [CLAUDE.md](CLAUDE.md) for the new stack and production bar
+- [x] This roadmap
+
+### M1 — Foundation swap (existing features, new plumbing) ✅ code · ✅ lessons
+Goal: the current Sales/Inventory features behave exactly as before, on the new stack. Tests stay green.
+- [x] Spike: `martinothamar/Mediator` 3.0.2 and `internal` handlers in another assembly → generator in the
+      host fails with `CS0122`; **works when the module grants `InternalsVisibleTo("Erp.Api")`**. Adopted.
+- [x] Spike: `dotnet ef` works with `internal` DbContexts via an internal `IDesignTimeDbContextFactory`;
+      migration history table per schema
+- [x] Merge builds: `business-phase15` code copied over `business`; `business-phase15` removed
+- [x] Identity extracted from `Erp.Api/Auth` into `Erp.Modules.Identity` (brought forward from M3)
+- [x] `Erp.Modules.Inventory.Contracts` holds `IStockReservation`; Sales references only that
+- [x] Hand-rolled mediator replaced by `martinothamar/Mediator`; logging + validation behaviors ported
+- [x] PostgreSQL + EF Core: per-module DbContext, value converters for ids/`Money`/`Quantity`, owned order lines
+- [x] Handlers use the DbContext directly (no repositories); explicit transaction only where a contract joins in
+- [x] Shared connection (`ISharedConnection`) so Inventory joins Sales' transaction — proven by a rollback test
+- [x] Reads: Dapper + SQL functions shipped by migration `AddReadFunctions`; `DatabaseInitializer` deleted
+- [x] Concurrency: `xmin` row version on aggregates (+ root touch for line-only edits, with a test); atomic
+      `ExecuteUpdate` for stock reservation (race test)
+- [x] Refresh-token rotation race closed (`revoked_utc` concurrency token → treated as reuse)
+- [x] Cross-schema FKs to `identity.app_user` removed
+- [x] AwesomeAssertions; every package license checked;
+      [THIRD-PARTY-NOTICES.md](course-validation/business/THIRD-PARTY-NOTICES.md)
+- [x] Patched transitive versions pinned (`CentralPackageTransitivePinningEnabled`)
+- [x] Architecture tests for the boundary rules (6)
+- [x] Errors are RFC 9457 `application/problem+json` with a `traceId`
+- [x] Unhandled domain events removed (only `SalesOrderApproved`, which has a handler); MSG0005 stays on
+
+### M2 — Production bar on existing scope ✅ code · ✅ lessons
+- [x] Transactional outbox: `OutboxInterceptor` (same SaveChanges) + `OutboxDispatcher` (background,
+      `FOR UPDATE SKIP LOCKED`, retries, at-least-once); handlers no longer publish
+- [x] OpenTelemetry logs/traces/metrics (OTLP when configured), `X-Trace-Id` header, `traceId` in errors,
+      `/health/live` + `/health/ready`, `TelemetryBehavior` (span + duration metric per command/query)
+- [x] Aspire AppHost (dev-only dashboard; no Docker) — verified it starts the API and the dashboard
+- [x] Credit exposure counts orders awaiting approval; submit locks the customer row (`FOR UPDATE`)
+- [x] Approval workflow: ≤ ₱50,000 auto-approved on submit; above → manager approval; creator can't approve
+      own order; reject with reason releases stock; cancel reverses charge and releases stock
+- [x] **Auth moved to ASP.NET Core Identity** (user request): login/refresh/cookies/lockout/password policy from
+      the library; custom JWT + refresh-token code deleted; `/auth/register` blocked; data-protection keys in
+      PostgreSQL; sign-out-everywhere via security stamp. Forced 90-day password expiry dropped (NIST SP 800-63B)
+- [x] Rate limiting (per user/IP; strict per-IP on `/auth`), HTTPS redirection + HSTS, security headers, CORS
+      from config, no `Server` header
+- [x] Least privilege: `deploy/postgres/create-roles.sql` (`erp_owner` migrates, `erp_app` rows only);
+      verified — full integration suite passes as `erp_app`, and `erp_app` cannot DROP/CREATE/ALTER
+- [x] Search count is a separate function, so a page past the end reports the real total
+- [x] Found and fixed: `Money` deserialised as ₱0 from the outbox (`[JsonConstructor]`), caught by a new test
+- [x] Code comments trimmed to the non-obvious *why* (user request)
+
+### M3 — Complete Sales, Inventory, Identity ✅ code · ✅ lessons (14–17)
+- [x] User management: admin creates (temporary password, must change), edits role, disables, resets
+      password; `StaffAccountRules` (no self-disable, no self-role-change, keep the last admin); six roles
+- [x] `ErpSignInManager`: disabled users can't sign in; every password attempt in `identity.sign_in_attempt`
+- [x] MailKit `IEmailSender<AppUser>`; with no `Smtp:Host` the mail is logged (development)
+- [x] Quantities `numeric(18,3)` with units of measure (`Quantity` value object, `AllowsFractions` per item)
+- [x] Customers maintenance (TIN, address, terms, block); item catalog owned by Inventory, Sales keeps a copy
+      via `ItemCatalogChanged`; price list and categories; audited stock adjustments and movement history
+- [x] Shipping: Inventory ships, Sales marks shipped through `ISalesOrders` (Sales.Contracts), one transaction
+- [x] Who sees which orders: **decided** — a SalesRep sees only their own; everyone else sees all; another's
+      order is a 404 (`SalesOrder.CreatorFilterFor` / `IsVisibleTo`, `p_created_by` in the SQL functions)
+- [ ] Warehouses: out of scope for this release (one warehouse); listed in lesson 24
+
+### M4 — Blazor front end ✅ code · ✅ lessons (built along the way, from lesson 01)
+- [x] `Erp.Web` (WASM + MudBlazor 9.12) hosted by `Erp.Api` (`MapStaticAssets` + `MapFallbackToFile`); API
+      under `/api`; cookie sign-in via `CookieAuthenticationStateProvider`; role-aware navigation
+- [x] Screens for every feature: orders (create/edit/submit/approve/reject/cancel/ship), customers, price
+      list and categories, items and stock, shipments, suppliers, purchase orders and receiving, invoices,
+      payments, aging, users, sign-in log, change/forgot password
+- [x] Two CSPs (strict for `/api`, Blazor-compatible for pages, no inline scripts); API keys removed (a key in
+      a browser app is public)
+- [x] Playwright UI tests (3) against a running app
+- [ ] Two-factor sign-in: not built; listed in lesson 24
+
+### M5 — Purchasing ✅ code · ✅ lesson 18
+- [x] Suppliers; purchase orders (draft → admin approval, never the buyer → sent → partial/complete receipt →
+      closed short or cancelled); receiving through `IStockReceiving`; `IItemCatalog` for item details
+
+### M6 — Invoicing ✅ code · ✅ lessons 19–21 (BIR registration is the business's step)
+- [x] Invoice issued from `ShipmentRecorded` (idempotent issuer), gap-free numbers (counter row in the
+      transaction), void with reason + reissue, PDF (PDFsharp-MigraDoc **6.2.4**, the last MIT release; 6.5+
+      is AGPL — pinned; kept by user decision 2026-11-06)
+- [x] BIR RR 7-2024 alignment (2026-11-06): tax regime and rate, company details and BIR permit in the
+      `company_profile` table with a Company and tax page (2026-11-07, user decision: business data, not
+      configuration); each invoice keeps a copy of the seller; shipping refused until the profile is complete; VATable / zero-rated /
+      VAT-exempt per item, snapshotted on order and invoice lines; stored breakdown; TIN statement with branch
+      code; title must contain "Invoice"; REPRINT from an atomic print counter; PTU/ACCN, series range and date
+      issued in the footer
+- [x] Payments and payment voids; `PaymentRecorded`/`PaymentVoided` applied by Sales exactly once
+      (`applied_payment` inbox); receivables aging by as-of date; overdue filter
+- [ ] ⚠️ BIR registration (CAS) and a tax adviser's review of the printed invoice: the business's step (lesson 24)
+- [x] Senior citizen / PWD discounts (Sec. 6(B.18)), 2026-11-07: programs table (SC/PWD seeded), per-item
+      eligibility, VAT exemption then 20% on the order, one shared calculation so the invoice equals the order,
+      ID and signature block on the PDF (lesson 21)
+- [x] Creditable withholding tax and BIR Form 2307, 2026-11-07: tax withheld on payments settles the invoice;
+      certificates recorded per customer and quarter; withheld / certified / missing report (lesson 20)
+- [ ] The seniors' 5% basic-necessities discount (weekly cap, purchase booklet): not built; listed in lesson 24
+
+### M7 — Packaging & install ✅ code · ✅ lessons (22–24) · ⚠️ Docker not run here
+- [x] Data-protection keys encrypted with a certificate; app refuses to start in Production without one
+      (verified with an OpenSSL `.pfx`: stored keys show `encryptedSecret`)
+- [x] Docker (main path): multi-stage `Dockerfile` (`app` + `migrate` targets), Compose (db with initdb roles,
+      migrate, api, Caddy for HTTPS, nightly `pg_dump` backup), `.env.example`, secrets folder. ⚠️ **Not run:
+      Docker isn't installed on this machine** — shell scripts pass `sh -n`, the Linux bundle cross-builds
+- [x] First-run admin; migration bundles; backup and restore drill; production checklist with "not built yet"
+
+### M8 — Tests in every lesson, and Podman ✅ code · ✅ lessons (decided and done 2026-11-12/13) · ⚠️ `podman compose up` not run
+
+Goal: the reader proves every lesson works before moving on, learns to hunt for edge cases, and learns
+containers when they've felt the need for them. Course becomes **25 lessons**:
+
+| New # | Lesson | Was |
+|---|---|---|
+| 01 | Solution setup (no tests: setup only) | 01 |
+| **02** | **Testing** (new): why we test; setting up the test projects; *using* them | — |
+| 03–11 | Mediator · Domain model · Database · Sign-in · Create an order · Find orders · Submit · Approve, reject, cancel · Update an order | 02–10 |
+| **12** | **Containers and CI** (new): Podman, dev database into a container, Testcontainers, GitHub Actions | — |
+| 13 | Events and the outbox | 11 |
+| — | (old 12 Testing is split across the lessons below) | 12 |
+| 14–23 | Observability · Customers · Users and email · Item catalog · Shipping · Purchasing · Invoicing · Payments · Special discounts · Security hardening | 13–22 |
+| 24 | Deploying with Podman (Compose; the same files run on Docker) | 23 Docker |
+| 25 | Production checklist | 24 |
+
+Each lesson shows the tests that teach something new in full, then a table of every edge case (test name + why
+it matters). Every test exists in the reference build.
+
+**Build up, then refactor (user decision).** Lesson 05 installs PostgreSQL normally, and lessons 05–11 run the
+integration tests against a local `erp_test` database dropped at the start of each run. Lesson 12 names the
+pain (leftover data, a teammate on another PostgreSQL version, a CI machine with no database), installs
+Podman and says why Podman (free on every OS incl. Podman Desktop on Windows/Mac, rootless, no root daemon,
+Apache-2.0, OCI images Docker can also run), moves the dev database into a `postgres:18` container, and
+refactors the test factory to Testcontainers (before → after; `DropDatabase` goes). **Compose stays the
+deployment format**, run with `podman compose` (docker-compose v2 as provider, Apache-2.0) and unchanged with
+`docker compose`; the `Dockerfile` builds with `podman build` or `docker build`. Quadlet was considered and
+dropped: Podman-only.
+
+**Test kinds and where each is first set up and explained**
+
+| Kind | Tool (license) | Introduced in |
+|---|---|---|
+| In-memory API tests | xUnit 2.9.3, AwesomeAssertions, `WebApplicationFactory` | 02 Testing |
+| Unit tests (validators) | xUnit `[Fact]`/`[Theory]` | 02 (basics), 03 (validators) |
+| Architecture tests | reflection over assemblies, no extra package | 03, grows in 04, 10, 13 |
+| Domain unit tests | xUnit | 04 Domain model |
+| Property-based tests | FsCheck.Xunit 3.6.0 (BSD-3) | 04 (`Money`, `Quantity`); again 20–22 for tax math |
+| Integration tests on real PostgreSQL | local `erp_test` database | 05 Database |
+| Browser tests | Microsoft.Playwright (MIT) | 06 Sign-in |
+| Concurrency / race tests | `Task.WhenAll` | 09 Submit |
+| Coverage | coverlet.collector 10.1.0 (MIT) + report | 11 Update an order |
+| Mutation testing | Stryker.NET 5.1.0 (Apache-2.0), dotnet tool | 11 |
+| Containers for tests | Testcontainers.PostgreSql 4.16.0 (MIT) on Podman (Docker works too) | 12 Containers and CI |
+| CI | GitHub Actions; first Git/GitHub use in the course | 12 |
+
+Lesson 02 also teaches *using* tests: `dotnet test`, `--filter`, `dotnet watch test`, the test explorers (VS
+Code C# Dev Kit, Visual Studio, Rider), reading a failure, debugging one test, Arrange/Act/Assert, naming
+(`Blocked_customer_cannot_order`), `[Fact]` vs `[Theory]`, "make it fail once", and an edge-case checklist
+(empty, zero, negative, one, many, max, boundary ±1, duplicate, wrong role, someone else's data, twice in a row,
+at the same time, after the state changed).
+
+**Per lesson (new numbers) — what the tests prove (✚ = edge case to add; the rest exist)**
+
+| # | Lesson | Tests |
+|---|---|---|
+| 01 | Solution setup | none |
+| 02 | Testing | host starts; `/` and a deep link serve the app; unknown `/api/...` is 404, not HTML ✚; `/api` with trailing slash ✚; static asset 200 ✚ |
+| 03 | Mediator | Ping handler; validator `[Theory]` (empty, whitespace, max length ±1) ✚; invalid request → 400 problem details with `detail` ✚; internal validator actually runs (`includeInternalTypes`) ✚; arch: IVT only to host + tests, a module exposes only its entry class |
+| 04 | Domain model | existing Sales rules; ✚ `Money` rounding at the ₱0.005 boundary and `numeric(18,2)` max; ✚ `Quantity` 3-decimal boundary; ✚ credit exactly at the limit (allowed) vs +₱0.01; ✚ category cap exactly at the cap; ✚ approval threshold exactly ₱50,000 vs ₱50,000.01; ✚ same item merged then over the cap; properties: Money sums never drift a centavo, Quantity never negative; arch: domain depends on no data access or web |
+| 05 | Database | test factory on `erp_test`; ✚ migrations apply on an empty database; ✚ seed is idempotent (run twice); ✚ value converters round-trip ids, `Money`, `Quantity`; ✚ snake_case names; ✚ history table per schema |
+| 06 | Sign-in | wrong password 401; ✚ unknown email 401 with the same body; `/register` blocked; lockout after 5 (throwaway user); ✚ lockout ends after the window; refresh; ✚ refresh with a revoked token; sign out everywhere; ✚ anonymous `/api/*` → 401, not a redirect; ✚ cookie and bearer both accepted; Playwright: ✚ sign in, ✚ wrong password shows the message |
+| 07 | Create an order | ✚ number and date from a fixed `IClock`; ✚ unknown customer/item → 404; ✚ zero/negative/4-decimal quantity → 400; ✚ 0 lines and over the line limit; ✚ duplicate item lines merged; ✚ wrong role → 403; ✚ document numbers unique under parallel creates; Playwright: ✚ create an order |
+| 08 | Find orders | ✚ paging: page 0, negative, size 0, over the max, past the end (real total — exists); ✚ search text with `%`, `_`, `'` matches literally; ✚ case-insensitive; rep sees own only (exists), ✚ another's order by id → 404; ✚ empty result → total 0 |
+| 09 | Submit | race for the last units; rollback joins the caller's transaction; ✚ submit twice; ✚ insufficient stock → 422, nothing reserved; blocked / over credit (✚ exact boundary) → 422; ✚ someone else's draft → 404 |
+| 10 | Approve, reject, cancel | existing workflow tests; ✚ every illegal transition as a `[Theory]`; ✚ empty/whitespace reason; ✚ stale version → 409; ✚ two managers approve at once → one wins, charged once; arch: module → others' Contracts only, contracts reference no module, only the host references shared infrastructure |
+| 11 | Update an order | lost update (exists); ✚ editing a submitted order refused; ✚ line-only edit bumps the root version; ✚ remove all lines → 400 · **coverage report; mutation run on the Sales domain, surviving mutants killed** |
+| 12 | Containers and CI | factory refactored to Testcontainers; ✚ two runs in parallel don't collide; ✚ suite passes on a fresh container with no local PostgreSQL; ✚ CI run on GitHub Actions |
+| 13 | Events and the outbox | round trip, delivery (exist); ✚ handler runs once when delivered twice; ✚ failing handler retried, then parked; ✚ crash between save and dispatch → still delivered; ✚ rollback writes no outbox row; arch: every event has a handler |
+| 14–25 | (old 13–24) | existing tests kept, plus: 14 ready fails when the database is down ✚; 15 TIN/terms boundaries ✚; 16 reset-password token reused ✚; 17 duplicate name → 409 ✚; 18 ship twice ✚, ship more than reserved ✚; 19 over-receipt ✚; 20 invoice numbers gap-free under concurrency ✚, VAT properties ✚; 21 void a payment twice ✚, aging day boundaries 30/31 ✚; 22 property: invoice total = order total ✚; 23 rate limit → 429 ✚, `erp_app` cannot DDL (inside the container ✚); 24 first run, and the whole stack verified with `podman compose` ✚ |
+
+**Work order (code first):** (1) edge-case tests per lesson in the reference build, each made to fail once,
+suite green on a local PostgreSQL; (2) Testcontainers on Podman, FsCheck, coverlet, Stryker, GitHub Actions;
+(3) deployment verified with `podman compose` on this machine (retires "Docker path not executed");
+(4) lessons: new 02 and 12, renumber, split old 12, convert old 23 to Podman, each lesson's tests section and
+edge-case table, ANSWER-KEY, GLOSSARY, README, 00-START-HERE, 00b (Podman Desktop on Windows). Open: Ryuk under
+rootless Podman; rootless Caddy on ports 80/443 (`net.ipv4.ip_unprivileged_port_start`); restart on boot
+(`podman-restart.service` + linger).
+
+### L — Lessons ✅ (all milestones)
+Rewritten 2026-11-06 into one start-to-finish course; 2026-11-12 (M8) grew to **25 lessons**: a new 02 Testing and
+12 Containers and CI, old 02–11 → 03–13 around them, old 12 Testing split up, old 13–24 → 14–25. The interface is built
+along the way (user decision): lesson 01 creates the Blazor app, lesson 06 signs in through it, and every feature lesson
+adds its screen. Every lesson from 02 proves itself with tests.
+
+| # | Lesson | Introduces | Refactors (before → after) | Tests (M8) |
+|---|---|---|---|---|
+| 01 | Solution setup | slnx, CPM, 4 projects; `Erp.Web` (WASM, MudBlazor), host serves it (`MapStaticAssets`, fallbacks), `/api` group | — | — |
+| 02 | Testing | test project, `CustomWebAppFactory`, `public partial class Program`, `PrivateAssets` on the Erp.Web reference | — | xUnit, AwesomeAssertions, `WebApplicationFactory`; host routing tests (13); test habits; edge-case checklist |
+| 03 | Mediator | Mediator, FluentValidation, Carter, behaviors, IVT Erp.Api; Ping slice + Ping page; unit + architecture test projects | — | first unit tests (Ping), first architecture tests (3) |
+| 04 | Domain model | Entity/AggregateRoot/DomainException, Roles (3), Money (rounding), Quantity (decimal), Customer (+Block), ItemCategory, SalesItem, SalesOrder (`SetLines`, built aside then swapped), domain unit tests; FsCheck | — | boundary + status-transition theories, FsCheck properties, 2 architecture tests |
+| 05 | Database | PostgreSQL, EF Core per module, `IModuleDatabase`, seed (items with explicit ids) | — | test DB `erp_test` (dropped per run), collection, Dapper in tests, `DatabaseTests` (schemas, snake_case, no cross-schema FK, idempotent seed, round trip) |
+| 06 | Sign-in | Identity, `ICurrentUser`, `/api/auth/me`, sign out everywhere; Components.Authorization, `CookieAuthenticationStateProvider`, `[Authorize]` everywhere, Login, account menu | App.razor `RouteView` → `AuthorizeRouteView` | signed-in clients, throwaway users, `AuthTests` (12), Playwright project + sign-in tests |
+| 07 | Create an order | `IClock`, `NotFoundException`, `DocumentNumber`, `ResolveLinesAsync`, `ValidQuantity`, `SalesRoles.Sellers`, problem details (+`BadHttpRequestException`), Swagger; `ApiClient`, snackbar, Roles link into Erp.Web, id-based order form | delete Ping | validator tests, `SalesOrderWorkflowTests`, `SalesOrderEdgeCaseTests`; `UseStatusCodePages` |
+| 08 | Find orders | Dapper, `IDbConnectionFactory`, `PagedResult`, paging rules, SQL functions (orders, customers, price list), visibility (`CreatorFilterFor`); Models, Format, Url, StatusChip, list/detail pages, `Tile` | order form: ids → autocompletes | search edges (found the `%` bug → `SearchText`), status names not `TryParse`, C#/SQL total agreement, parallel order numbers, every-page UI test |
+| 09 | Submit | Inventory module + Contracts, `IStockReservation`, `StockService`, `GetVisibleOrderAsync`, `LockCustomerAsync`; Submit button | `NpgsqlDataSource` → `ISharedConnection` | race + rollback tests, submit edges, 3 contract architecture tests |
+| 10 | Approve, reject, cancel | `SalesRoles.Managers`, `xmin`, 409; `ReasonDialog`, dialog provider, buttons, approval tile | — | two managers at once (409/422), workflow table, first UI flow |
+| 11 | Update an order | update slice; edit mode of the form | `SaveChangesAsync` root touch | lost-update test; coverlet + ReportGenerator; Stryker.NET + `RulesFoundByMutationTests` |
+| 12 | Containers and CI | Podman, `podman run` dev DB, Testcontainers, `IAsyncLifetime`, Git, GitHub Actions | factory: drop `erp_test` → own container | Podman, dev DB in a container, Testcontainers, Git + GitHub Actions CI |
+| 13 | Events and the outbox | outbox, interceptor, dispatcher, `SalesOrderApproved` | `Money`/`Quantity` gain `[JsonConstructor]` | outbox delivered / rolled back / parked / redelivered; `Every_event_has_a_handler` |
+| 14 | Observability | OpenTelemetry, health checks, Aspire | `LoggingBehavior` → `TelemetryBehavior` | health tests; one trace id in every problem body |
+| 15 | Customers | customer slices, Customers page + dialog | `Customer.Create` → `Create` calls `Update` (+TIN/address/terms); `search_customers` v2 | customer edges |
+| 16 | Users and email | 6 roles, AppUser fields, `StaffAccountRules`, `ErpSignInManager`, sign-in log, user slices, MailKit, user directory; admin pages, change/forgot password; `SalesRoles.Readers` | `/me` gains FullName + MustChangePassword | disabled user can't refresh; 403 vs 401 |
+| 17 | Item catalog and stock | Inventory `Item` aggregate, `StockMovement`, `ItemCatalogChanged`, Sales upsert handler, price list + categories slices, 23505 → 409; items/price list pages | Inventory `Item` (stock only) → catalog; reservation guard gains `IsActive`; Mediator assemblies gain Contracts | duplicate SKU → 409; redelivery snapshot grows |
+| 18 | Shipping | Sales.Contracts `ISalesOrders`, `Shipment`, ship slice, `LockOrderAsync`, Shipped status; Ship button, Shipments page | `get_sales_order` v2 | status theory gains Ship; UI flow ships |
+| 19 | Purchasing | Purchasing module, `IItemCatalog`, `IStockReceiving`, `DateOnlyTypeHandler`; purchasing pages | `StockService` registered once, mapped to three interfaces | atomic receipt and line changes |
+| 20 | Invoicing | `IClock.Today`, `ShipmentRecorded`, `TaxType`, `JsonStringEnumConverter`, `GetForInvoiceAsync`, Invoice, `TaxPolicy`/`TaxBreakdown`, `CompanyProfile` + `SellerDetails` + Company and tax page, Invoicing.Contracts `IInvoicingSetup` (shipping refused until the profile is complete), counter, issuer, void/reissue, print counter + REPRINT, BIR PDF (6.2.4), invoice pages | `SetPricing` + order line gain `TaxType`; `search_price_list` v2 | FsCheck tax-breakdown property; UI flow finds the invoice |
+| 21 | Payments and receivables | payments with tax withheld, `AppliedPayment` inbox, aging, `WithholdingCertificate` + 2307 report; payment dialog, aging and withholding pages | Invoice → AggregateRoot; `search_invoices` v2 | payment edges; UI flow pays |
+| 22 | Special discounts | `SpecialDiscount` (BuildingBlocks), `SpecialDiscountProgram` table + tab, apply/remove on draft orders, B.18 block on the PDF | `SetPricing` + line gain eligibility; order `Total` subtracts stored amounts; `get_sales_order` v3, `search_sales_orders` v2, `search_customers` v3, `search_price_list` v3, `search_invoices` v3 | discount properties |
+| 23 | Security hardening | rate limits (`/api` only), HSTS, headers + two CSPs, CORS, data-protection keys in DB + certificate, least privilege, `ErpDbMigrations` | `IModuleDatabase` takes the owner connection; test factory runs `create-roles.sql` in its container | least-privilege suite inside the container; 429; DDL refused |
+| 24 | Deploying with Podman | `InitialAdmin` + `FirstRunTests`, Dockerfile, Compose, Caddy, initdb, backup, `.env` | — | first run on its own container; no dev users in production |
+| 25 | Production checklist | done list (incl. tax and invoices), first-day setup, restore drill, not-built list | — | test list in the done table |
+
+⚠️ A reader's migrations and SQL files are more numerous than the reference build's (e.g. `AddCustomerDetails`,
+`search_customers.v2`); the reference squashes each module to `InitialCreate` + `AddReadFunctions` with each
+function at its final shape as `v1`. The resulting schema is identical.
+
+### M9 — Best-practices alignment ✅ (decided 2026-11-13, done 2026-11-14)
+
+Every locked decision was checked against what Microsoft and established .NET practitioners actually do, with
+sources: [BEST-PRACTICES-REVIEW.md](BEST-PRACTICES-REVIEW.md). User decisions: every **Change** item is accepted;
+reads keep Dapper + SQL functions; domain and integration events are split; the front end becomes a Blazor Web
+App; errors gain stable, documented codes.
+
+- [x] Spike (2026-11-13, scratch copy): FluentValidation endpoint filter with internal validators → standard
+      400 problem, no exception; `Microsoft.AspNetCore.OpenApi` describes internal types, and `TypedResults`
+      unions list their status codes (Microsoft: "`TypedResults` is preferred"); .NET 10 `AddValidation()`
+      validates only public models in the host and **silently skips** internal ones and module endpoints;
+      xUnit v3 4.0.3 + FsCheck.Xunit.v3 3.6.0 + Stryker.NET 5.1.0 (`--test-runner mtp`, preview) +
+      `coverlet.MTP` 10.1.0 all work, given `global.json` opts into Microsoft.Testing.Platform
+- [x] `IClock` → `TimeProvider` (+ `FakeTimeProvider` in tests)
+- [x] Error codes: `ErrorCode`, one catalog per module, `DomainException(ErrorCode)`, `code` and `type` in every
+      problem response; tests that codes are unique, documented and used
+- [x] Domain events stay in the module; integration events in Contracts are mapped from them; the outbox delivers
+      to `IIntegrationEventHandler<T>` registered by each module (no Mediator)
+- [x] Mediator removed: handlers injected into endpoints, `ValidationFilter<T>` (no exception for a bad request),
+      `TelemetryBehavior` removed (ASP.NET Core instrumentation covers it)
+- [x] Carter removed: each module exposes `MapXxxEndpoints()` beside `AddXxxModule()`, with `MapGroup`
+- [x] `NotFoundException` removed: handlers return `null`, endpoints return `TypedResults`
+- [x] `InternalsVisibleTo Erp.Api` removed; architecture tests allow test projects only, check `Erp.Api` uses
+      only public module types, and enforce the CQRS split (no DbContext in a query handler, no Dapper in a
+      command handler)
+- [x] Swashbuckle → `Microsoft.AspNetCore.OpenApi`
+- [x] xUnit v3 + FsCheck.Xunit.v3 + `coverlet.MTP`; `global.json` opts into Microsoft.Testing.Platform
+- [x] Build hygiene: analyzers, warnings as errors in CI, `.editorconfig`
+- [x] Blazor Web App with interactive WebAssembly; `/errors/{code}` catalog page
+- [x] Lessons: 03 rewritten (features, handlers, validation filter, error codes); post-office analogy moves to
+      the dispatcher in 13; every feature lesson's endpoint and handler code; 01, 02, 06, 13, 14, 22 for their
+      specific changes; GLOSSARY, ANSWER-KEY
+- [x] Rules: CLAUDE.md §3–5, README, THIRD-PARTY-NOTICES
+
+---
+
+## Risks retired
+
+- ~~**Source-generated mediator + `internal` handlers in other assemblies.**~~ Retired 2026-11-05:
+  `InternalsVisibleTo("Erp.Api")` per module; an architecture test stops it spreading to other modules.
+- ~~**EF tooling with internal DbContexts**~~ Retired 2026-11-05: internal design-time factories work.
+- ~~**Sharing one transaction across module DbContexts**~~ Retired 2026-11-05: `ISharedConnection` +
+  `UseTransaction`; `A_reservation_rolls_back_with_the_callers_transaction` proves it.
+
+---
+
+## Log
+
+- **2026-11-05** — Direction changed (see Decisions). CLAUDE.md rewritten; roadmap created. Baseline
+  `business-phase15`: 14 unit + 8 integration tests pass.
+- **2026-11-05** — Database switched to PostgreSQL (user decision). PostgreSQL 18 installed locally via winget
+  (dev superuser password `erp_dev_only`, dev only). M1 code complete on PostgreSQL: **14 unit + 6 architecture
+  + 10 integration tests pass.** Lessons not yet converted.
+- **2026-11-05** — M2 code complete: **22 unit + 6 architecture + 23 integration tests pass** (also as the
+  least-privilege `erp_app` role). Auth switched to ASP.NET Core Identity at the user's request.
+- **2026-11-06** — Lessons 00–16 rewritten for M1 + M2 in the WRITING-STYLE voice; old phase files deleted;
+  glossary, answer key, foundations, PowerShell companion, resources and README rewritten. Added the
+  first-run admin; 400 responses now carry a readable `detail`, and problem details declare UTF-8. Verified
+  live: migration bundles, the published app in Production as `erp_app`, backup → restore onto fresh roles,
+  and the PowerShell companion on PS 5.1. **22 unit + 6 architecture + 25 integration tests pass.** IIS itself
+  not yet run (see [course-validation/FINDINGS.md](course-validation/FINDINGS.md)).
+- **2026-11-06** — M3–M7 code complete: Identity user management + sign-in log + MailKit; Inventory catalog,
+  adjustments, shipments; Purchasing; Invoicing with payments and aging; Blazor app with every screen;
+  data-protection certificate; Docker deployment. API keys removed; reps see only their own orders.
+  **45 unit + 7 architecture + 35 integration + 3 UI tests pass.** PDFsharp pinned to 6.2.4 (6.5 is AGPL).
+- **2026-11-06** — Lessons rewritten as one 24-lesson course with the interface built from lesson 01 (user
+  decision: the interface is built along with the logic). Support docs, glossary and answer key rebuilt.
+  Docker and IIS paths written but not executed on this machine (see FINDINGS).
+- **2026-11-06** — IIS removed (user decision: Docker only): lesson 23 (IIS) and the Windows Server 2012 R2
+  runbook deleted; the checklist is now lesson 23, Docker-only. Invoicing aligned with BIR RR 7-2024 and made
+  tax-configurable (see M6); PDFsharp 6.2.4 kept (user decision; 6.5+ is AGPL). Verified: the rendered PDF
+  shows every Sec. 6(B) field and REPRINT on the second print. **47 unit + 7 architecture + 35 integration
+  tests pass.** Sales and Invoicing migrations regenerated (pre-release squash): existing dev databases must
+  be recreated.
+- **2026-11-07** — Business values moved out of configuration (user decision): company profile (registered
+  details, tax regime and rate, invoice title, BIR permit) in Invoicing with a Company and tax page; special
+  discount programs in Sales. Added senior citizen / PWD discounts (new lesson 21; security, Docker and the
+  checklist are now 22–24) and creditable withholding tax with BIR Form 2307 tracking (lesson 20). Fixed a bug
+  dating from lesson 01: `ReferenceOutputAssembly="false"` stopped the host serving MudBlazor's CSS and JS; the
+  reference is now normal with `Aliases` and `PrivateAssets`. **59 unit + 7 architecture + 37 integration + 3 UI
+  tests pass.** Sales and Invoicing migrations regenerated again: dev databases must be recreated.
+- **2026-11-12/13** — M8 (user decisions): tests in every lesson from a new lesson 02, containers on Podman from a
+  new lesson 12, 25 lessons. Code first: the reference build gained edge-case, property, architecture, race and
+  outbox tests; integration tests now run on Testcontainers + rootless Podman, as `erp_app` with the production
+  roles script (Ryuk works rootless); coverlet, ReportGenerator, Stryker.NET (Sales domain 75% → 94%); GitHub
+  Actions workflow. **The new tests found real bugs, all fixed:** `%`/`_` acted as wildcards in every search
+  (`SearchText.ForLike`); `?status=99` passed validation (`Enum.TryParse` takes any number); `SalesOrder.SetLines`
+  and `PurchaseOrder.SetLines`/`Receive` left the aggregate half-changed when a line was refused; a missing order
+  answered an empty 404 and framework errors used another trace-id format (`UseStatusCodePages`,
+  `CustomizeProblemDetails`); invoice PDFs failed on Fedora/RHEL (font paths); two tests depended on test order.
+  Also: lesson 05's `SalesDbContext` listing lacked `using Erp.Shared.BuildingBlocks;`; Aspire 13.6.4 →
+  13.6.5 (CVE-2026-120006). Deployment: `deploy/docker` → `deploy/compose`, `:z` mount labels for SELinux hosts,
+  `GSS Encryption Mode=Disable`. Verified: images build with Podman; db + migrate + app run in Production on
+  Podman; lessons 01–05 rebuilt from scratch and match their stated test counts; lesson 12's factory run on its
+  own. Not run: `podman compose up` (no Compose program installed; download was declined), CI on GitHub (nothing
+  pushed). **159 unit + 9 architecture + 103 integration + 6 UI tests pass** (UI against a running app on Linux
+  with Playwright's Chromium).
+- **2026-11-13/14** — M9, best-practices alignment (user decisions; evidence in
+  [BEST-PRACTICES-REVIEW.md](BEST-PRACTICES-REVIEW.md)). Code: no mediator (endpoints call `internal` handlers
+  registered by hand in `AddXModule`; each module's public surface is `AddXModule` + `MapXEndpoints`); Carter,
+  Swashbuckle, `NotFoundException`, `IClock` and `TelemetryBehavior` removed; FluentValidation runs in one
+  endpoint filter on `/api` (400 `ERP-0001`, no exception); `TypedResults` unions, `Microsoft.AspNetCore.OpenApi` +
+  Scalar; `TimeProvider`/`CompanyTimeProvider`/`FakeTimeProvider`; domain events internal, mapped to Contracts
+  integration events delivered by the outbox through `IIntegrationEventPublisher`; stable error codes (`ERP-`,
+  `SALES-`, `INVENTORY-`, `PURCHASING-`, `INVOICING-`, `IDENTITY-`, numbered in the order the lessons introduce
+  them) with `/api/errors` and an `/errors/{code}` page; Blazor Web App (global interactive WebAssembly, no
+  prerender); xUnit v3 on Microsoft.Testing.Platform, `coverlet.MTP`, Stryker `test-runner: mtp` (94.09%, same as
+  before); analyzers at `latest-recommended`, warnings as errors in CI. **Behaviour changes:** an unknown id inside
+  a request body is now a coded 422 (was 404); an unknown page is the app's own 404; outbox rows now hold the
+  domain event type names (`ShipmentCreated`, `InvoicePaymentRecorded`, …), so unprocessed rows from before the
+  change won't deliver: drain the outbox before upgrading. Lessons: 03 rewritten as "Features" (03-mediator.md
+  removed), every lesson's endpoints, handlers, registrations, codes and test output updated; lesson 20 gains
+  question 9 (it was only in the answer key). **161 unit + 14 architecture + 114 integration tests pass, 8 UI
+  tests pass against the running app**; lessons 01–03 rebuilt from scratch and match their counts.
+- **2026-11-14** — Course and app polish (user requests). Lesson 02 now explains the kinds of tests (unit,
+  integration, end-to-end, pyramid; manual, functional, regression, smoke) before showing how. Visuals: 15 new
+  Mermaid diagrams in the "why" sections, 28 screenshots of the real app, a test-pyramid SVG; 14 existing sequence
+  diagrams never rendered (semicolons in messages) and were fixed; every diagram was rendered with Mermaid 11 to
+  check. Redesign (no gradients): a theme in `AppTheme.cs` with light and dark palettes, a deep-blue top bar,
+  section headings in the menu, flat surfaces, sentence-case buttons, outlined `App*` fields everywhere, messages
+  bottom-right, dark mode toggle. Fixed: the account button didn't open (MudBlazor 9's `ActivatorContent` needs the
+  activator to toggle; replaced by `MudMenu`'s own button), with a UI test. Lessons 04–05 rebuilt from their text:
+  six lesson bugs found and fixed (culture-sensitive parsing, a missing `using`, `WiringTests` outside the shared
+  collection, CA1711 unexplained, a redundant step). **161 unit + 14 architecture + 114 integration + 10 UI tests pass.**
+- **2026-11-14** — UX follow-up (user questions, checked against NN/g breadcrumb guidance and the zebra-striping
+  studies): breadcrumbs on every detail/edit page (sales order, invoice, purchase order and both editors), with a UI
+  test; `AppTable`/`AppSimpleTable` with subtle stripes; table cells no longer wrap and lose 16px of side padding,
+  so a nine-column list fits a 1280px laptop; customer row actions moved into the "⋮" menu like Users and Items.
+  Lesson 19's table pointed at lesson 10 for the editable form; it's lesson 11. **289 + 11 UI tests pass.**
+- **2026-11-14** — UX pass (user request), from an audit of every screen at 1280px and 390px: lists keep their
+  search, filters, page and size in the address and the breadcrumbs return to them (`ListAddress`, `ListMemory`); a
+  filter change goes back to page 1 (it used to stay on a page that might not exist); tables show labelled cards on
+  phones (`DataLabel`) and field rows stack (`Breakpoint.Xs`), so no screen scrolls sideways at 390px; buttons that
+  send a change are disabled while it's sending (`ApiClient.Busy`); Ship, Close short and the purchase order's Cancel
+  ask first; the order form, the purchase order form and the company profile ask before unsaved changes are left
+  (`NavigationLock`); password fields can be shown (`AppPasswordField`). Found on the way: no lesson ever changed
+  the Ship message to mention the invoice (lesson 20 now does). Two new UI tests were rewritten to need no existing
+  orders, so they pass on a fresh install. **289 + 14 UI tests pass.**
+- **2026-11-15** — MudBlazor and testing pass (user requests). Every table is `MudDataGrid` (no raw HTML anywhere);
+  MudBlazor components are used as they are, never subclassed (the `App*` wrappers are gone: MudBlazor 9 removed
+  `MudGlobal.InputDefaults`, and its migration guide lists parameters on each component first); shared behaviour lives
+  in components that hold MudBlazor's (`PageHeader`, `PasswordField`, `MoneyColumn`, `Totals`, `Crumbs`) or in an
+  extension method (`GridPaging.FirstPage`). Accessibility fixes found by the browser tests: a `main` landmark, a
+  named breadcrumb `nav`, a live status chip, named "⋮" buttons (`AriaLabel`), announced sign-in errors, typeable
+  dates. Browser tests rewritten to Playwright's rules: role-and-name locators, `Expect` everywhere, no clock waits,
+  a trace kept for each failure. New guide [MUDBLAZOR.md](plan-business-tutorial/MUDBLAZOR.md), with a Playwright
+  recipe for each component. Lessons 06–19 rebuilt step by step from their text (every one green); lessons 20–25,
+  which build from the pattern and link the reference, checked snippet by snippet against the app. About 30 lesson
+  defects fixed on the way, among them: a package lesson 07 never added, a test that needed lesson 08's endpoint,
+  a dialog provider added two lessons after the first dialog, a stale error-handler line (10), a missing framework
+  reference (17), `TaxRegime` defined in two places (20), xUnit v2 signatures (23, 24), culture-sensitive parsing
+  (06, 09, 16, 20, 22). **289 + 14 UI tests pass.**
+- **2026-11-15** — M10 started (user decisions above). Approvals: approval limits are data (company + customer),
+  credit holds go to accounting, purchase orders are submitted and can be sent back, "Awaiting my approval" and
+  "Approval rules" pages. Server-side sorting on six lists. `MoneyColumn` column-order bug fixed. **Sales 135,
+  Purchasing 13, other unit 29, architecture 14, integration 131, browser 15/16 pass** (the dark-mode browser test
+  fails only as the 16th test of a run and passes alone 3/3; most likely the sign-in rate limit, not yet
+  confirmed). Integration and browser runs used a local-only workaround for the `podman exec` problem (see Risks);
+  the committed test harness is unchanged.
+- **2026-11-15** — Returns and credit memos. crun downgraded to 1.29.1 (no version lock, by choice): `podman exec`
+  works again. On the original, unpatched harness: **unit 218, architecture 14, integration 154, browser 18/18 pass.**
+- **2026-11-15** — Build squashed back to lesson 05's convention (user): no `.v2` files or extra migrations; one
+  `InitialCreate` + `AddReadFunctions` per module. CSV import and opening balances. **Unit 195, architecture 14,
+  integration 151, browser 18/18 pass.**
+- **2026-11-15** — M10: inventory costing (moving average) and partial shipments. **Sales 142, Inventory 12,
+  Invoicing 20, Purchasing 13, architecture 14, integration 136, browser 17/17 pass.**
