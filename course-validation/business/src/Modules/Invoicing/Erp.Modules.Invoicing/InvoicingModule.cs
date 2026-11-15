@@ -43,6 +43,10 @@ public static class InvoicingModule
         services.AddScoped<PrintInvoiceHandler>();
         services.AddScoped<VoidInvoiceHandler>();
         services.AddScoped<ImportOpeningBalancesHandler>();
+        services.AddScoped<IssueCreditMemoHandler>();
+        services.AddScoped<RecordRefundHandler>();
+        services.AddScoped<SearchCreditMemosHandler>();
+        services.AddScoped<PrintCreditMemoHandler>();
         services.AddScoped<ReissueInvoiceHandler>();
         services.AddScoped<RecordPaymentHandler>();
         services.AddScoped<VoidPaymentHandler>();
@@ -57,6 +61,7 @@ public static class InvoicingModule
         services.AddScoped<IDomainEventHandler<InvoicePaymentVoided>, PublishPaymentVoided>();
         services.AddScoped<IDomainEventHandler<InvoiceOpeningBalanceRecorded>, PublishOpeningBalanceCharged>();
         services.AddScoped<IDomainEventHandler<InvoiceOpeningBalanceVoided>, PublishOpeningBalanceVoided>();
+        services.AddScoped<IDomainEventHandler<CreditMemoCreated>, PublishCreditMemoIssued>();
         services.AddScoped<IIntegrationEventHandler<ShipmentRecorded>, ShipmentRecordedHandler>();
         services.AddSingleton(ErrorCatalog.From(typeof(InvoicingErrors)));
         return services;
@@ -70,6 +75,8 @@ public static class InvoicingModule
         GetInvoiceEndpoint.Map(invoicing);
         VoidInvoiceEndpoint.Map(invoicing);
         ImportOpeningBalancesEndpoint.Map(invoicing);
+        IssueCreditMemoEndpoint.Map(invoicing);
+        SearchCreditMemosEndpoint.Map(invoicing);
         RecordPaymentEndpoint.Map(invoicing);
         ReceivablesAgingEndpoint.Map(invoicing);
         WithholdingTaxEndpoint.Map(invoicing);

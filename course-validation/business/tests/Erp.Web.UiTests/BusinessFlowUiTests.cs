@@ -204,7 +204,7 @@ public sealed class BusinessFlowUiTests : IAsyncLifetime
         [
             "/sales-orders", "/sales-orders/new", "/customers", "/price-list", "/items", "/shipments",
             "/suppliers", "/purchase-orders", "/purchase-orders/new", "/invoices", "/receivables-aging", "/withholding-tax", "/company",
-            "/users", "/sign-in-log", "/change-password", "/approvals", "/approval-rules", "/import"
+            "/users", "/sign-in-log", "/change-password", "/approvals", "/approval-rules", "/import", "/credit-memos"
         ];
 
         foreach (var path in pages)

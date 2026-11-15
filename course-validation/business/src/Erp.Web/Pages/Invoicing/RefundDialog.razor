@@ -1,0 +1,39 @@
+@inject ApiClient Api
+
+@* The money that went back to the customer for a credit memo on something they had already paid. *@
+<MudDialog>
+    <DialogContent>
+        <MudStack Spacing="2" Style="min-width:380px">
+            <MudText>Refund due: <MudText Inline="true" Typo="Typo.subtitle1">@Format.Peso(Memo.RefundDue)</MudText></MudText>
+            <MudDatePicker @bind-Date="_paidOn" Label="Refunded on" MaxDate="DateTime.Today"
+                           Variant="Variant.Outlined" Margin="Margin.Normal" Editable="true" />
+            <MudSelect T="string" @bind-Value="_method" Label="Method" Variant="Variant.Outlined" Margin="Margin.Normal">
+                <MudSelectItem Value="@("Cash")">Cash</MudSelectItem>
+                <MudSelectItem Value="@("Check")">Check</MudSelectItem>
+                <MudSelectItem Value="@("BankTransfer")">Bank transfer</MudSelectItem>
+                <MudSelectItem Value="@("Other")">Other</MudSelectItem>
+            </MudSelect>
+            <MudTextField @bind-Value="_reference" Label="Reference (check or bank reference)" MaxLength="100"
+                          Variant="Variant.Outlined" Margin="Margin.Normal" />
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="() => Dialog.Cancel()">Cancel</MudButton>
+        <MudButton OnClick="Save" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_paidOn is null || Api.Busy)">Record refund</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public InvoiceCreditMemo Memo { get; set; } = default!;
+
+    private DateTime? _paidOn = DateTime.Today;
+    private string _method = "Cash";
+    private string? _reference;
+
+    private async Task Save()
+    {
+        var body = new { paidOn = DateOnly.FromDateTime(_paidOn!.Value), method = _method, reference = _reference };
+        if (await Api.Post($"api/credit-memos/{Memo.Id}/refund", body, "Refund recorded.")) Dialog.Close(DialogResult.Ok(true));
+    }
+}

@@ -9,7 +9,7 @@ LANGUAGE sql STABLE
 AS $$
     WITH i AS (
         SELECT i.id, i.number::text AS number, i.customer_id, i.customer_name::text AS customer_name, i.order_number::text AS order_number,
-               i.issue_date, i.due_date, i.status, i.total, i.amount_paid, i.total - i.amount_paid AS balance_due, i.is_opening_balance
+               i.issue_date, i.due_date, i.status, i.total, i.amount_paid, i.total - i.amount_paid - i.credited AS balance_due, i.is_opening_balance
         FROM invoicing.invoice i
         WHERE (p_customer_id IS NULL OR i.customer_id = p_customer_id)
           AND (p_status      IS NULL OR i.status      = p_status)
@@ -56,7 +56,8 @@ RETURNS TABLE (id bigint, number text, shipment_id bigint, sales_order_id bigint
                special_discount_holder_name text, special_discount_id_number text, special_discount_rate numeric,
                special_discount_vat_rate_removed numeric, special_discount_vat_exemption numeric, special_discount_amount numeric,
                seller_name text, seller_trade_name text, seller_tin text, seller_address text, seller_invoice_title text,
-               seller_permit_number text, seller_series_range text, seller_permit_date_issued text, is_opening_balance boolean)
+               seller_permit_number text, seller_series_range text, seller_permit_date_issued text, is_opening_balance boolean,
+               credited numeric)
 LANGUAGE sql STABLE
 AS $$
     SELECT i.id, i.number::text, i.shipment_id, i.sales_order_id, i.order_number::text, i.customer_id,
@@ -68,18 +69,28 @@ AS $$
            i.special_discount_vat_exemption, i.special_discount_amount,
            i.seller_name::text, i.seller_trade_name::text, i.seller_tin::text, i.seller_address::text,
            i.seller_invoice_title::text, i.seller_permit_number::text, i.seller_series_range::text,
-           i.seller_permit_date_issued::text, i.is_opening_balance
+           i.seller_permit_date_issued::text, i.is_opening_balance, i.credited
     FROM invoicing.invoice i
     WHERE i.id = p_id;
 $$;
 
 CREATE OR REPLACE FUNCTION invoicing.get_invoice_lines(p_id bigint)
-RETURNS TABLE (description text, unit text, quantity numeric, unit_price numeric, tax_type integer,
-               special_discount_eligible boolean)
+RETURNS TABLE (id bigint, description text, unit text, quantity numeric, unit_price numeric, tax_type integer,
+               special_discount_eligible boolean, credited_quantity numeric)
 LANGUAGE sql STABLE
 AS $$
-    SELECT l.description::text, l.unit::text, l.quantity, l.unit_price, l.tax_type, l.special_discount_eligible
+    SELECT l.id, l.description::text, l.unit::text, l.quantity, l.unit_price, l.tax_type, l.special_discount_eligible, l.credited_quantity
     FROM invoicing.invoice_line l WHERE l.invoice_id = p_id ORDER BY l.id;
+$$;
+
+-- The credit memos against one invoice, oldest first.
+CREATE OR REPLACE FUNCTION invoicing.get_invoice_credit_memos(p_id bigint)
+RETURNS TABLE (id bigint, number text, issue_date date, reason text, total numeric, applied_to_invoice numeric, refund_due numeric,
+               refunded_on date, return_to_stock boolean)
+LANGUAGE sql STABLE
+AS $$
+    SELECT m.id, m.number::text, m.issue_date, m.reason::text, m.total, m.applied_to_invoice, m.refund_due, m.refunded_on, m.return_to_stock
+    FROM invoicing.credit_memo m WHERE m.invoice_id = p_id ORDER BY m.id;
 $$;
 
 CREATE OR REPLACE FUNCTION invoicing.get_invoice_payments(p_id bigint)

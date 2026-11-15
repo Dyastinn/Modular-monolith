@@ -102,6 +102,7 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                     special_discount_vat_exemption = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
                     special_discount_amount = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
                     amount_paid = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    credited = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
                     void_reason = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
                     voided_by = table.Column<long>(type: "bigint", nullable: true),
                     voided_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
@@ -112,8 +113,8 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_invoice", x => x.id);
-                    table.CheckConstraint("ck_invoice_paid", "amount_paid >= 0 AND amount_paid <= total");
-                    table.CheckConstraint("ck_invoice_status", "status BETWEEN 0 AND 3");
+                    table.CheckConstraint("ck_invoice_paid", "amount_paid >= 0 AND credited >= 0 AND amount_paid + credited <= total");
+                    table.CheckConstraint("ck_invoice_status", "status BETWEEN 0 AND 4");
                 });
 
             migrationBuilder.CreateTable(
@@ -161,6 +162,63 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "credit_memo",
+                schema: "invoicing",
+                columns: table => new
+                {
+                    id = table.Column<long>(type: "bigint", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    number = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    seller_name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    seller_trade_name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
+                    seller_tin = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    seller_address = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
+                    seller_invoice_title = table.Column<string>(type: "character varying(50)", maxLength: 50, nullable: false),
+                    seller_permit_number = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    seller_series_range = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    seller_permit_date_issued = table.Column<string>(type: "character varying(10)", maxLength: 10, nullable: true),
+                    invoice_id = table.Column<long>(type: "bigint", nullable: false),
+                    invoice_number = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    customer_id = table.Column<long>(type: "bigint", nullable: false),
+                    customer_name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    customer_tin = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: true),
+                    customer_address = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    issue_date = table.Column<DateOnly>(type: "date", nullable: false),
+                    reason = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: false),
+                    return_to_stock = table.Column<bool>(type: "boolean", nullable: false),
+                    tax_regime = table.Column<int>(type: "integer", nullable: false),
+                    vat_rate = table.Column<decimal>(type: "numeric(5,4)", precision: 5, scale: 4, nullable: false),
+                    vatable_sales = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    vat_amount = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    zero_rated_sales = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    vat_exempt_sales = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    special_discount_vat_exemption = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    special_discount_amount = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    total = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    applied_to_invoice = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    refund_due = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    refunded_on = table.Column<DateOnly>(type: "date", nullable: true),
+                    refund_method = table.Column<int>(type: "integer", nullable: true),
+                    refund_reference = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    created_by = table.Column<long>(type: "bigint", nullable: false),
+                    created_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    print_count = table.Column<int>(type: "integer", nullable: false),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_credit_memo", x => x.id);
+                    table.CheckConstraint("ck_credit_memo_amounts", "total > 0 AND applied_to_invoice >= 0 AND refund_due >= 0 AND applied_to_invoice + refund_due = total");
+                    table.ForeignKey(
+                        name: "fk_credit_memo_invoices_invoice_id",
+                        column: x => x.invoice_id,
+                        principalSchema: "invoicing",
+                        principalTable: "invoice",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "invoice_line",
                 schema: "invoicing",
                 columns: table => new
@@ -175,11 +233,13 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                     special_discount_eligible = table.Column<bool>(type: "boolean", nullable: false),
                     item_id = table.Column<long>(type: "bigint", nullable: true),
                     unit_cost = table.Column<decimal>(type: "numeric(18,4)", precision: 18, scale: 4, nullable: true),
+                    credited_quantity = table.Column<decimal>(type: "numeric", nullable: false),
                     invoice_id = table.Column<long>(type: "bigint", nullable: false)
                 },
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_invoice_line", x => x.id);
+                    table.CheckConstraint("ck_invoice_line_credited", "credited_quantity >= 0 AND credited_quantity <= quantity");
                     table.ForeignKey(
                         name: "fk_invoice_line_invoice_invoice_id",
                         column: x => x.invoice_id,
@@ -219,6 +279,36 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
+            migrationBuilder.CreateTable(
+                name: "credit_memo_line",
+                schema: "invoicing",
+                columns: table => new
+                {
+                    id = table.Column<long>(type: "bigint", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    invoice_line_id = table.Column<long>(type: "bigint", nullable: false),
+                    description = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    unit = table.Column<string>(type: "character varying(10)", maxLength: 10, nullable: false),
+                    quantity = table.Column<decimal>(type: "numeric(18,3)", precision: 18, scale: 3, nullable: false),
+                    unit_price = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    tax_type = table.Column<int>(type: "integer", nullable: false),
+                    item_id = table.Column<long>(type: "bigint", nullable: true),
+                    unit_cost = table.Column<decimal>(type: "numeric(18,4)", precision: 18, scale: 4, nullable: true),
+                    credit_memo_id = table.Column<long>(type: "bigint", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_credit_memo_line", x => x.id);
+                    table.CheckConstraint("ck_credit_memo_line_qty", "quantity > 0");
+                    table.ForeignKey(
+                        name: "fk_credit_memo_line_credit_memo_credit_memo_id",
+                        column: x => x.credit_memo_id,
+                        principalSchema: "invoicing",
+                        principalTable: "credit_memo",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
             migrationBuilder.InsertData(
                 schema: "invoicing",
                 table: "company_profile",
@@ -231,9 +321,29 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                 columns: new[] { "name", "next_value" },
                 values: new object[,]
                 {
+                    { "credit_memo", 1L },
                     { "invoice", 1L },
                     { "opening_balance", 1L }
                 });
+
+            migrationBuilder.CreateIndex(
+                name: "ix_credit_memo_invoice_id",
+                schema: "invoicing",
+                table: "credit_memo",
+                column: "invoice_id");
+
+            migrationBuilder.CreateIndex(
+                name: "ix_credit_memo_number",
+                schema: "invoicing",
+                table: "credit_memo",
+                column: "number",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "ix_credit_memo_line_credit_memo_id",
+                schema: "invoicing",
+                table: "credit_memo_line",
+                column: "credit_memo_id");
 
             migrationBuilder.CreateIndex(
                 name: "ix_invoice_customer_id_status",
@@ -290,6 +400,10 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                 schema: "invoicing");
 
             migrationBuilder.DropTable(
+                name: "credit_memo_line",
+                schema: "invoicing");
+
+            migrationBuilder.DropTable(
                 name: "document_counter",
                 schema: "invoicing");
 
@@ -307,6 +421,10 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "withholding_certificate",
+                schema: "invoicing");
+
+            migrationBuilder.DropTable(
+                name: "credit_memo",
                 schema: "invoicing");
 
             migrationBuilder.DropTable(

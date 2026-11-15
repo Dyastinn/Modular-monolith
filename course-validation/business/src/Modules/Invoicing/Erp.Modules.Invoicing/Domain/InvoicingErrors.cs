@@ -65,4 +65,22 @@ internal static class InvoicingErrors
         "Import the customers first, or correct the name to match the Customers page exactly.");
     public static readonly ErrorCode DuplicateOpeningBalance = new("INVOICING-0030", "That opening balance is already recorded",
         "The same customer and old invoice number appear twice, or were imported before. Leave the row out.");
+    public static readonly ErrorCode InvoiceHasCredits = new("INVOICING-0031", "The invoice has credit memos",
+        "An invoice with credit memos stays: credit the rest of it instead of voiding it.");
+    public static readonly ErrorCode OpeningBalanceNotCredited = new("INVOICING-0032", "An opening balance isn't credited",
+        "Void the opening balance and record the right amount as a new one.");
+    public static readonly ErrorCode CreditReasonRequired = new("INVOICING-0033", "A credit memo needs a reason",
+        "Say why: goods returned, wrong price, damaged in delivery.");
+    public static readonly ErrorCode NothingToCredit = new("INVOICING-0034", "Nothing to credit",
+        "Enter a quantity on at least one line.");
+    public static readonly ErrorCode LineNotOnInvoice = new("INVOICING-0035", "That line isn't on the invoice",
+        "Reload the invoice and choose its lines again.");
+    public static readonly ErrorCode CreditExceedsInvoiced = new("INVOICING-0036", "More would be credited than was billed",
+        "Credit at most what is left on each line; earlier credit memos count.");
+    public static readonly ErrorCode DiscountedInvoiceCreditedWhole = new("INVOICING-0037", "An invoice with a senior citizen or PWD discount is credited whole",
+        "Credit every line in full, then invoice again what the customer keeps.");
+    public static readonly ErrorCode NoRefundDue = new("INVOICING-0038", "There is no refund due",
+        "The whole credit was taken off what the invoice still owed.");
+    public static readonly ErrorCode RefundAlreadyRecorded = new("INVOICING-0039", "The refund is already recorded",
+        "Nothing more to do. If it was recorded by mistake, tell an admin.");
 }

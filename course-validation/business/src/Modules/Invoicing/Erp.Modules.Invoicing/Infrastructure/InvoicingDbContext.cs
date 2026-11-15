@@ -19,6 +19,7 @@ internal sealed class InvoicingDbContext(DbContextOptions<InvoicingDbContext> op
     public const string Schema = "invoicing";
 
     public DbSet<Invoice> Invoices => Set<Invoice>();
+    public DbSet<CreditMemo> CreditMemos => Set<CreditMemo>();
     public DbSet<WithholdingCertificate> WithholdingCertificates => Set<WithholdingCertificate>();
     public DbSet<CompanyProfile> CompanyProfiles => Set<CompanyProfile>();
 
@@ -33,6 +34,8 @@ internal sealed class InvoicingDbContext(DbContextOptions<InvoicingDbContext> op
     // gaps. This row stays locked until the transaction ends, so invoices are numbered one at a time.
     public Task<string> AllocateInvoiceNumberAsync(DateTime nowUtc, CancellationToken ct) => AllocateAsync("invoice", "SI", nowUtc, ct);
 
+    public Task<string> AllocateCreditMemoNumberAsync(DateTime nowUtc, CancellationToken ct) => AllocateAsync("credit_memo", "CM", nowUtc, ct);
+
     // A series of its own: opening balances never use up the BIR-registered invoice numbers.
     public Task<string> AllocateOpeningBalanceNumberAsync(DateTime nowUtc, CancellationToken ct) => AllocateAsync("opening_balance", "OB", nowUtc, ct);
 
@@ -43,6 +46,11 @@ internal sealed class InvoicingDbContext(DbContextOptions<InvoicingDbContext> op
             .ToListAsync(ct)).Single();
         return DocumentNumber.Format(prefix, value, nowUtc);
     }
+
+    public async Task<int?> RecordCreditMemoPrintAsync(long creditMemoId, CancellationToken ct) =>
+        (await Database.SqlQuery<int>(
+                $"UPDATE invoicing.credit_memo SET print_count = print_count + 1 WHERE id = {creditMemoId} RETURNING print_count AS \"Value\"")
+            .ToListAsync(ct)).Cast<int?>().SingleOrDefault();
 
     // Counts every printing atomically; the BIR requires "REPRINT" on any copy after the first (RR 7-2024 Sec. 6(B.21)).
     public async Task<int?> RecordPrintAsync(long invoiceId, CancellationToken ct) =>
@@ -58,6 +66,7 @@ internal sealed class InvoicingDbContext(DbContextOptions<InvoicingDbContext> op
     {
         c.Properties<InvoiceId>().HaveConversion<InvoiceIdConverter>();
         c.Properties<PaymentId>().HaveConversion<PaymentIdConverter>();
+        c.Properties<CreditMemoId>().HaveConversion<CreditMemoIdConverter>();
         c.Properties<UserId>().HaveConversion<UserIdConverter>();
         c.Properties<WithholdingCertificateId>().HaveConversion<WithholdingCertificateIdConverter>();
         c.Properties<Money>().HaveConversion<MoneyConverter>().HavePrecision(18, 2);
@@ -83,15 +92,62 @@ internal sealed class InvoicingDbContext(DbContextOptions<InvoicingDbContext> op
             e.ToTable("document_counter");
             e.HasKey(x => x.Name);
             e.Property(x => x.Name).HasMaxLength(30);
-            e.HasData(new { Name = "invoice", NextValue = 1L }, new { Name = "opening_balance", NextValue = 1L });
+            e.HasData(new { Name = "invoice", NextValue = 1L }, new { Name = "opening_balance", NextValue = 1L },
+                new { Name = "credit_memo", NextValue = 1L });
+        });
+
+        b.Entity<CreditMemo>(e =>
+        {
+            e.ToTable("credit_memo", t => t.HasCheckConstraint("ck_credit_memo_amounts",
+                "total > 0 AND applied_to_invoice >= 0 AND refund_due >= 0 AND applied_to_invoice + refund_due = total"));
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.Number).HasMaxLength(30);
+            e.HasIndex(x => x.Number).IsUnique();
+            e.HasIndex(x => x.InvoiceId);
+            e.HasOne<Invoice>().WithMany().HasForeignKey(x => x.InvoiceId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.InvoiceNumber).HasMaxLength(30);
+            e.Property(x => x.CustomerName).HasMaxLength(200);
+            e.Property(x => x.CustomerTin).HasMaxLength(20);
+            e.Property(x => x.CustomerAddress).HasMaxLength(500);
+            e.Property(x => x.Reason).HasMaxLength(500);
+            e.Property(x => x.RefundReference).HasMaxLength(100);
+            e.Property(x => x.VatRate).HasPrecision(5, 4);
+            e.OwnsOne(x => x.Seller, s =>
+            {
+                s.Property(x => x.Name).HasMaxLength(200);
+                s.Property(x => x.TradeName).HasMaxLength(200);
+                s.Property(x => x.Tin).HasMaxLength(20);
+                s.Property(x => x.Address).HasMaxLength(500);
+                s.Property(x => x.InvoiceTitle).HasMaxLength(50);
+                s.Property(x => x.PermitNumber).HasMaxLength(100);
+                s.Property(x => x.SeriesRange).HasMaxLength(100);
+                s.Property(x => x.PermitDateIssued).HasMaxLength(10);
+            });
+            e.Navigation(x => x.Seller).IsRequired();
+            e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");
+            e.Property<int>("PrintCount");
+            e.Ignore(x => x.DomainEvents);
+            e.OwnsMany(x => x.Lines, l =>
+            {
+                l.ToTable("credit_memo_line", t => t.HasCheckConstraint("ck_credit_memo_line_qty", "quantity > 0"));
+                l.WithOwner().HasForeignKey("CreditMemoId");
+                l.Property<long>("Id");
+                l.HasKey("Id");
+                l.Property(x => x.Description).HasMaxLength(200);
+                l.Property(x => x.Unit).HasMaxLength(10);
+                l.Property(x => x.UnitCost).HasPrecision(18, 4);
+                l.Ignore(x => x.LineTotal);
+            });
+            e.Navigation(x => x.Lines).HasField("_lines").UsePropertyAccessMode(PropertyAccessMode.Field);
         });
 
         b.Entity<Invoice>(e =>
         {
             e.ToTable("invoice", t =>
             {
-                t.HasCheckConstraint("ck_invoice_status", "status BETWEEN 0 AND 3");
-                t.HasCheckConstraint("ck_invoice_paid", "amount_paid >= 0 AND amount_paid <= total");
+                t.HasCheckConstraint("ck_invoice_status", "status BETWEEN 0 AND 4");
+                t.HasCheckConstraint("ck_invoice_paid", "amount_paid >= 0 AND credited >= 0 AND amount_paid + credited <= total");
             });
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).UseIdentityColumn();
@@ -134,10 +190,11 @@ internal sealed class InvoicingDbContext(DbContextOptions<InvoicingDbContext> op
 
             e.OwnsMany(x => x.Lines, l =>
             {
-                l.ToTable("invoice_line");
+                l.ToTable("invoice_line", t => t.HasCheckConstraint("ck_invoice_line_credited", "credited_quantity >= 0 AND credited_quantity <= quantity"));
                 l.WithOwner().HasForeignKey("InvoiceId");
-                l.Property<long>("Id");
-                l.HasKey("Id");
+                l.HasKey(x => x.Id);
+                l.Property(x => x.Id).UseIdentityColumn();
+                l.Ignore(x => x.Remaining);
                 l.Property(x => x.Description).HasMaxLength(200);
                 l.Property(x => x.Unit).HasMaxLength(10);
                 l.Property(x => x.UnitCost).HasPrecision(18, 4);
@@ -212,6 +269,7 @@ internal sealed class InvoicingDbContext(DbContextOptions<InvoicingDbContext> op
 }
 
 internal sealed class InvoiceIdConverter() : ValueConverter<InvoiceId, long>(v => v.Value, v => new InvoiceId(v));
+internal sealed class CreditMemoIdConverter() : ValueConverter<CreditMemoId, long>(v => v.Value, v => new CreditMemoId(v));
 internal sealed class PaymentIdConverter() : ValueConverter<PaymentId, long>(v => v.Value, v => new PaymentId(v));
 internal sealed class WithholdingCertificateIdConverter()
     : ValueConverter<WithholdingCertificateId, long>(v => v.Value, v => new WithholdingCertificateId(v));

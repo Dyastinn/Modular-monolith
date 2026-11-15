@@ -38,6 +38,21 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "applied_credit",
+                schema: "sales",
+                columns: table => new
+                {
+                    document_number = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    customer_id = table.Column<long>(type: "bigint", nullable: false),
+                    amount = table.Column<decimal>(type: "numeric(18,2)", precision: 18, scale: 2, nullable: false),
+                    applied_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_applied_credit", x => x.document_number);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "applied_payment",
                 schema: "sales",
                 columns: table => new
@@ -336,6 +351,10 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
         {
             migrationBuilder.DropTable(
                 name: "applied_charge",
+                schema: "sales");
+
+            migrationBuilder.DropTable(
+                name: "applied_credit",
                 schema: "sales");
 
             migrationBuilder.DropTable(

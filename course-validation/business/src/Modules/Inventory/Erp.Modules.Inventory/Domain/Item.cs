@@ -61,6 +61,18 @@ internal sealed class Item : AggregateRoot<ItemId>
         return StockMovement.Receipt(Id, quantity, cost, reference, by, nowUtc);
     }
 
+    // Goods a customer sent back, fit to sell again. They come back at what they cost when they left (cost), or at
+    // today's average when that isn't known.
+    public StockMovement Return(decimal quantity, UnitCost? cost, string reference, UserId by, DateTime nowUtc)
+    {
+        if (quantity <= 0) throw new DomainException(CommonErrors.QuantityNotPositive, "A return must bring stock back.");
+        EnsureQuantityFits(quantity);
+        var unitCost = cost ?? AverageCost;
+        AverageCost = UnitCost.Average(OnHand, AverageCost, quantity, unitCost);
+        OnHand += quantity;
+        return StockMovement.Return(Id, quantity, unitCost, reference, by, nowUtc);
+    }
+
     // A count correction: found, lost, damaged. Never below what's already promised to orders.
     // Stock found comes in at the cost given, or the average; stock lost leaves at the average.
     public StockMovement Adjust(decimal delta, string reason, UserId by, DateTime nowUtc, UnitCost? cost = null)

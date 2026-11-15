@@ -1,5 +1,5 @@
 -- Released scripts are never edited: change a function with a .v2 file and a new migration.
--- What each customer owed on p_as_of, by how late it was. Payments made after that day don't count yet.
+-- What each customer owed on p_as_of, by how late it was. Payments and credit memos after that day don't count yet.
 CREATE OR REPLACE FUNCTION invoicing.receivables_aging(p_as_of date)
 RETURNS TABLE (customer_id bigint, customer_name text, not_yet_due numeric, days_1_to_30 numeric, days_31_to_60 numeric,
                days_61_to_90 numeric, over_90 numeric, total numeric)
@@ -8,7 +8,9 @@ AS $$
     WITH open_invoice AS (
         SELECT i.customer_id, i.customer_name, i.due_date,
                i.total - COALESCE((SELECT SUM(p.amount + p.tax_withheld) FROM invoicing.payment p
-                                   WHERE p.invoice_id = i.id AND p.voided_utc IS NULL AND p.paid_on <= p_as_of), 0) AS open_amount
+                                   WHERE p.invoice_id = i.id AND p.voided_utc IS NULL AND p.paid_on <= p_as_of), 0)
+                       - COALESCE((SELECT SUM(m.applied_to_invoice) FROM invoicing.credit_memo m
+                                   WHERE m.invoice_id = i.id AND m.issue_date <= p_as_of), 0) AS open_amount
         FROM invoicing.invoice i
         WHERE i.status <> 3 AND i.issue_date <= p_as_of
     )

@@ -18,6 +18,12 @@ public interface IStockReceiving
     Task ReceiveAsync(long itemId, decimal quantity, decimal unitCost, string reference, long userId, DbTransaction tx, CancellationToken ct);
 }
 
+public interface IStockReturns
+{
+    // unitCost: what the goods cost when they left (null: the item's average now).
+    Task ReturnAsync(long itemId, decimal quantity, decimal? unitCost, string reference, long userId, DbTransaction tx, CancellationToken ct);
+}
+
 public sealed record CatalogItem(long Id, string Sku, string Name, string Unit, bool AllowsFractions, bool IsActive);
 
 public interface IItemCatalog

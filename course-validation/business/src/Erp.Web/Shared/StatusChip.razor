@@ -8,7 +8,7 @@
 
     private static Color ColorOf(string status) => status switch
     {
-        "Approved" or "Shipped" or "Received" or "Paid" => Color.Success,
+        "Approved" or "Shipped" or "Received" or "Paid" or "Credited" => Color.Success,
         "PendingApproval" or "PartiallyReceived" or "PartiallyShipped" or "PartiallyPaid" or "Sent" or "Issued" => Color.Warning,
         "Rejected" or "Void" => Color.Error,
         "Cancelled" or "Closed" => Color.Default,

@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Erp.Modules.Invoicing.Infrastructure.Migrations
 {
     [DbContext(typeof(InvoicingDbContext))]
-    [Migration("20261115020424_AddReadFunctions")]
+    [Migration("20261115023005_AddReadFunctions")]
     partial class AddReadFunctions
     {
         /// <inheritdoc />
@@ -122,6 +122,166 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Erp.Modules.Invoicing.Domain.CreditMemo", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<decimal>("AppliedToInvoice")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("applied_to_invoice");
+
+                    b.Property<long>("CreatedBy")
+                        .HasColumnType("bigint")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_utc");
+
+                    b.Property<string>("CustomerAddress")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("customer_address");
+
+                    b.Property<long>("CustomerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("customer_id");
+
+                    b.Property<string>("CustomerName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("customer_name");
+
+                    b.Property<string>("CustomerTin")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("customer_tin");
+
+                    b.Property<long>("InvoiceId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("invoice_id");
+
+                    b.Property<string>("InvoiceNumber")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("invoice_number");
+
+                    b.Property<DateOnly>("IssueDate")
+                        .HasColumnType("date")
+                        .HasColumnName("issue_date");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("number");
+
+                    b.Property<int>("PrintCount")
+                        .HasColumnType("integer")
+                        .HasColumnName("print_count");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reason");
+
+                    b.Property<decimal>("RefundDue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("refund_due");
+
+                    b.Property<int?>("RefundMethod")
+                        .HasColumnType("integer")
+                        .HasColumnName("refund_method");
+
+                    b.Property<string>("RefundReference")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("refund_reference");
+
+                    b.Property<DateOnly?>("RefundedOn")
+                        .HasColumnType("date")
+                        .HasColumnName("refunded_on");
+
+                    b.Property<bool>("ReturnToStock")
+                        .HasColumnType("boolean")
+                        .HasColumnName("return_to_stock");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<decimal>("SpecialDiscountAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("special_discount_amount");
+
+                    b.Property<decimal>("SpecialDiscountVatExemption")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("special_discount_vat_exemption");
+
+                    b.Property<int>("TaxRegime")
+                        .HasColumnType("integer")
+                        .HasColumnName("tax_regime");
+
+                    b.Property<decimal>("Total")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("total");
+
+                    b.Property<decimal>("VatAmount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("vat_amount");
+
+                    b.Property<decimal>("VatExemptSales")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("vat_exempt_sales");
+
+                    b.Property<decimal>("VatRate")
+                        .HasPrecision(5, 4)
+                        .HasColumnType("numeric(5,4)")
+                        .HasColumnName("vat_rate");
+
+                    b.Property<decimal>("VatableSales")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("vatable_sales");
+
+                    b.Property<decimal>("ZeroRatedSales")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("zero_rated_sales");
+
+                    b.HasKey("Id")
+                        .HasName("pk_credit_memo");
+
+                    b.HasIndex("InvoiceId")
+                        .HasDatabaseName("ix_credit_memo_invoice_id");
+
+                    b.HasIndex("Number")
+                        .IsUnique()
+                        .HasDatabaseName("ix_credit_memo_number");
+
+                    b.ToTable("credit_memo", "invoicing", t =>
+                        {
+                            t.HasCheckConstraint("ck_credit_memo_amounts", "total > 0 AND applied_to_invoice >= 0 AND refund_due >= 0 AND applied_to_invoice + refund_due = total");
+                        });
+                });
+
             modelBuilder.Entity("Erp.Modules.Invoicing.Domain.Invoice", b =>
                 {
                     b.Property<long>("Id")
@@ -135,6 +295,11 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)")
                         .HasColumnName("amount_paid");
+
+                    b.Property<decimal>("Credited")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("credited");
 
                     b.Property<string>("CustomerAddress")
                         .HasMaxLength(500)
@@ -276,9 +441,9 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
 
                     b.ToTable("invoice", "invoicing", t =>
                         {
-                            t.HasCheckConstraint("ck_invoice_paid", "amount_paid >= 0 AND amount_paid <= total");
+                            t.HasCheckConstraint("ck_invoice_paid", "amount_paid >= 0 AND credited >= 0 AND amount_paid + credited <= total");
 
-                            t.HasCheckConstraint("ck_invoice_status", "status BETWEEN 0 AND 3");
+                            t.HasCheckConstraint("ck_invoice_status", "status BETWEEN 0 AND 4");
                         });
                 });
 
@@ -380,6 +545,11 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                         {
                             Name = "opening_balance",
                             NextValue = 1L
+                        },
+                        new
+                        {
+                            Name = "credit_memo",
+                            NextValue = 1L
                         });
                 });
 
@@ -427,8 +597,209 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                     b.ToTable("outbox_message", "invoicing");
                 });
 
+            modelBuilder.Entity("Erp.Modules.Invoicing.Domain.CreditMemo", b =>
+                {
+                    b.HasOne("Erp.Modules.Invoicing.Domain.Invoice", null)
+                        .WithMany()
+                        .HasForeignKey("InvoiceId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired()
+                        .HasConstraintName("fk_credit_memo_invoices_invoice_id");
+
+                    b.OwnsOne("Erp.Modules.Invoicing.Domain.SellerDetails", "Seller", b1 =>
+                        {
+                            b1.Property<long>("CreditMemoId")
+                                .HasColumnType("bigint")
+                                .HasColumnName("id");
+
+                            b1.Property<string>("Address")
+                                .IsRequired()
+                                .HasMaxLength(500)
+                                .HasColumnType("character varying(500)")
+                                .HasColumnName("seller_address");
+
+                            b1.Property<string>("InvoiceTitle")
+                                .IsRequired()
+                                .HasMaxLength(50)
+                                .HasColumnType("character varying(50)")
+                                .HasColumnName("seller_invoice_title");
+
+                            b1.Property<string>("Name")
+                                .IsRequired()
+                                .HasMaxLength(200)
+                                .HasColumnType("character varying(200)")
+                                .HasColumnName("seller_name");
+
+                            b1.Property<string>("PermitDateIssued")
+                                .HasMaxLength(10)
+                                .HasColumnType("character varying(10)")
+                                .HasColumnName("seller_permit_date_issued");
+
+                            b1.Property<string>("PermitNumber")
+                                .HasMaxLength(100)
+                                .HasColumnType("character varying(100)")
+                                .HasColumnName("seller_permit_number");
+
+                            b1.Property<string>("SeriesRange")
+                                .HasMaxLength(100)
+                                .HasColumnType("character varying(100)")
+                                .HasColumnName("seller_series_range");
+
+                            b1.Property<string>("Tin")
+                                .IsRequired()
+                                .HasMaxLength(20)
+                                .HasColumnType("character varying(20)")
+                                .HasColumnName("seller_tin");
+
+                            b1.Property<string>("TradeName")
+                                .HasMaxLength(200)
+                                .HasColumnType("character varying(200)")
+                                .HasColumnName("seller_trade_name");
+
+                            b1.HasKey("CreditMemoId");
+
+                            b1.ToTable("credit_memo", "invoicing");
+
+                            b1.WithOwner()
+                                .HasForeignKey("CreditMemoId")
+                                .HasConstraintName("fk_credit_memo_credit_memo_id");
+                        });
+
+                    b.OwnsMany("Erp.Modules.Invoicing.Domain.CreditMemoLine", "Lines", b1 =>
+                        {
+                            b1.Property<long>("Id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("bigint")
+                                .HasColumnName("id");
+
+                            NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b1.Property<long>("Id"));
+
+                            b1.Property<long>("CreditMemoId")
+                                .HasColumnType("bigint")
+                                .HasColumnName("credit_memo_id");
+
+                            b1.Property<string>("Description")
+                                .IsRequired()
+                                .HasMaxLength(200)
+                                .HasColumnType("character varying(200)")
+                                .HasColumnName("description");
+
+                            b1.Property<long>("InvoiceLineId")
+                                .HasColumnType("bigint")
+                                .HasColumnName("invoice_line_id");
+
+                            b1.Property<long?>("ItemId")
+                                .HasColumnType("bigint")
+                                .HasColumnName("item_id");
+
+                            b1.Property<decimal>("Quantity")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("numeric(18,3)")
+                                .HasColumnName("quantity");
+
+                            b1.Property<int>("TaxType")
+                                .HasColumnType("integer")
+                                .HasColumnName("tax_type");
+
+                            b1.Property<string>("Unit")
+                                .IsRequired()
+                                .HasMaxLength(10)
+                                .HasColumnType("character varying(10)")
+                                .HasColumnName("unit");
+
+                            b1.Property<decimal?>("UnitCost")
+                                .HasPrecision(18, 4)
+                                .HasColumnType("numeric(18,4)")
+                                .HasColumnName("unit_cost");
+
+                            b1.Property<decimal>("UnitPrice")
+                                .HasPrecision(18, 2)
+                                .HasColumnType("numeric(18,2)")
+                                .HasColumnName("unit_price");
+
+                            b1.HasKey("Id")
+                                .HasName("pk_credit_memo_line");
+
+                            b1.HasIndex("CreditMemoId")
+                                .HasDatabaseName("ix_credit_memo_line_credit_memo_id");
+
+                            b1.ToTable("credit_memo_line", "invoicing", t =>
+                                {
+                                    t.HasCheckConstraint("ck_credit_memo_line_qty", "quantity > 0");
+                                });
+
+                            b1.WithOwner()
+                                .HasForeignKey("CreditMemoId")
+                                .HasConstraintName("fk_credit_memo_line_credit_memo_credit_memo_id");
+                        });
+
+                    b.Navigation("Lines");
+
+                    b.Navigation("Seller")
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Erp.Modules.Invoicing.Domain.Invoice", b =>
                 {
+                    b.OwnsOne("Erp.Modules.Invoicing.Domain.SellerDetails", "Seller", b1 =>
+                        {
+                            b1.Property<long>("InvoiceId")
+                                .HasColumnType("bigint")
+                                .HasColumnName("id");
+
+                            b1.Property<string>("Address")
+                                .IsRequired()
+                                .HasMaxLength(500)
+                                .HasColumnType("character varying(500)")
+                                .HasColumnName("seller_address");
+
+                            b1.Property<string>("InvoiceTitle")
+                                .IsRequired()
+                                .HasMaxLength(50)
+                                .HasColumnType("character varying(50)")
+                                .HasColumnName("seller_invoice_title");
+
+                            b1.Property<string>("Name")
+                                .IsRequired()
+                                .HasMaxLength(200)
+                                .HasColumnType("character varying(200)")
+                                .HasColumnName("seller_name");
+
+                            b1.Property<string>("PermitDateIssued")
+                                .HasMaxLength(10)
+                                .HasColumnType("character varying(10)")
+                                .HasColumnName("seller_permit_date_issued");
+
+                            b1.Property<string>("PermitNumber")
+                                .HasMaxLength(100)
+                                .HasColumnType("character varying(100)")
+                                .HasColumnName("seller_permit_number");
+
+                            b1.Property<string>("SeriesRange")
+                                .HasMaxLength(100)
+                                .HasColumnType("character varying(100)")
+                                .HasColumnName("seller_series_range");
+
+                            b1.Property<string>("Tin")
+                                .IsRequired()
+                                .HasMaxLength(20)
+                                .HasColumnType("character varying(20)")
+                                .HasColumnName("seller_tin");
+
+                            b1.Property<string>("TradeName")
+                                .HasMaxLength(200)
+                                .HasColumnType("character varying(200)")
+                                .HasColumnName("seller_trade_name");
+
+                            b1.HasKey("InvoiceId");
+
+                            b1.ToTable("invoice", "invoicing");
+
+                            b1.WithOwner()
+                                .HasForeignKey("InvoiceId")
+                                .HasConstraintName("fk_invoice_invoice_id");
+                        });
+
                     b.OwnsMany("Erp.Modules.Invoicing.Domain.InvoiceLine", "Lines", b1 =>
                         {
                             b1.Property<long>("Id")
@@ -437,6 +808,10 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                                 .HasColumnName("id");
 
                             NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b1.Property<long>("Id"));
+
+                            b1.Property<decimal>("CreditedQuantity")
+                                .HasColumnType("numeric")
+                                .HasColumnName("credited_quantity");
 
                             b1.Property<string>("Description")
                                 .IsRequired()
@@ -487,7 +862,10 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                             b1.HasIndex("InvoiceId")
                                 .HasDatabaseName("ix_invoice_line_invoice_id");
 
-                            b1.ToTable("invoice_line", "invoicing");
+                            b1.ToTable("invoice_line", "invoicing", t =>
+                                {
+                                    t.HasCheckConstraint("ck_invoice_line_credited", "credited_quantity >= 0 AND credited_quantity <= quantity");
+                                });
 
                             b1.WithOwner()
                                 .HasForeignKey("InvoiceId")
@@ -558,65 +936,6 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                             b1.WithOwner()
                                 .HasForeignKey("InvoiceId")
                                 .HasConstraintName("fk_payment_invoice_invoice_id");
-                        });
-
-                    b.OwnsOne("Erp.Modules.Invoicing.Domain.SellerDetails", "Seller", b1 =>
-                        {
-                            b1.Property<long>("InvoiceId")
-                                .HasColumnType("bigint")
-                                .HasColumnName("id");
-
-                            b1.Property<string>("Address")
-                                .IsRequired()
-                                .HasMaxLength(500)
-                                .HasColumnType("character varying(500)")
-                                .HasColumnName("seller_address");
-
-                            b1.Property<string>("InvoiceTitle")
-                                .IsRequired()
-                                .HasMaxLength(50)
-                                .HasColumnType("character varying(50)")
-                                .HasColumnName("seller_invoice_title");
-
-                            b1.Property<string>("Name")
-                                .IsRequired()
-                                .HasMaxLength(200)
-                                .HasColumnType("character varying(200)")
-                                .HasColumnName("seller_name");
-
-                            b1.Property<string>("PermitDateIssued")
-                                .HasMaxLength(10)
-                                .HasColumnType("character varying(10)")
-                                .HasColumnName("seller_permit_date_issued");
-
-                            b1.Property<string>("PermitNumber")
-                                .HasMaxLength(100)
-                                .HasColumnType("character varying(100)")
-                                .HasColumnName("seller_permit_number");
-
-                            b1.Property<string>("SeriesRange")
-                                .HasMaxLength(100)
-                                .HasColumnType("character varying(100)")
-                                .HasColumnName("seller_series_range");
-
-                            b1.Property<string>("Tin")
-                                .IsRequired()
-                                .HasMaxLength(20)
-                                .HasColumnType("character varying(20)")
-                                .HasColumnName("seller_tin");
-
-                            b1.Property<string>("TradeName")
-                                .HasMaxLength(200)
-                                .HasColumnType("character varying(200)")
-                                .HasColumnName("seller_trade_name");
-
-                            b1.HasKey("InvoiceId");
-
-                            b1.ToTable("invoice", "invoicing");
-
-                            b1.WithOwner()
-                                .HasForeignKey("InvoiceId")
-                                .HasConstraintName("fk_invoice_invoice_id");
                         });
 
                     b.OwnsOne("Erp.Shared.BuildingBlocks.SpecialDiscount", "SpecialDiscount", b1 =>

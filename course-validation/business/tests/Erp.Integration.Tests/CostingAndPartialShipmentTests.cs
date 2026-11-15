@@ -162,4 +162,80 @@ public class CostingAndPartialShipmentTests(CustomWebAppFactory factory)
 
         (await Item(clerk, sku)).AverageCost.Should().Be(25m);
     }
+
+    private sealed record InvoiceLineRow(long Id, decimal Quantity, decimal CreditedQuantity);
+    private sealed record MemoRow(long Id, string Number, decimal Total, decimal AppliedToInvoice, decimal RefundDue);
+    private sealed record InvoiceDetail(string Status, decimal BalanceDue, decimal Credited, List<InvoiceLineRow> Lines, List<MemoRow> CreditMemos);
+
+    private async Task<long> ShippedAndInvoiced(long itemId, int quantity)
+    {
+        var (order, _) = await ApprovedOrder(itemId, quantity);
+        var clerk = await As("clerk");
+        await Create(clerk, "/api/shipments", new { salesOrderId = order });
+        var number = (await clerk.GetFromJsonAsync<OrderNumberRow>($"/api/sales-orders/{order}"))!.OrderNumber;
+        var accountant = await As("accountant");
+        var invoices = await Eventually(() => accountant.GetFromJsonAsync<Page<InvoiceRow>>($"/api/invoices?search={number}")!, p => p!.TotalCount == 1);
+        return invoices!.Items.Single().Id;
+    }
+
+    [Fact]
+    public async Task Returned_goods_come_back_at_cost_and_the_customer_owes_less()
+    {
+        var (itemId, sku) = await StockedItem((20, 40));
+        var invoiceId = await ShippedAndInvoiced(itemId, 10);   // ₱1,000 billed; 10 left at ₱40 each
+        var accountant = await As("accountant");
+        var clerk = await As("clerk");
+        var line = (await accountant.GetFromJsonAsync<InvoiceDetail>($"/api/invoices/{invoiceId}"))!.Lines.Single();
+
+        await Create(accountant, $"/api/invoices/{invoiceId}/credit-memos",
+            new { lines = new[] { new { lineId = line.Id, quantity = 3m } }, reason = "Returned unopened", returnToStock = true });
+
+        var invoice = (await accountant.GetFromJsonAsync<InvoiceDetail>($"/api/invoices/{invoiceId}"))!;
+        (invoice.Credited, invoice.BalanceDue).Should().Be((300m, 700m));
+        invoice.CreditMemos.Single().Should().Match<MemoRow>(m => m.Number.StartsWith("CM-") && m.AppliedToInvoice == 300 && m.RefundDue == 0);
+        (await Item(clerk, sku)).Should().Match<ItemRow>(i => i.OnHand == 13 && i.AverageCost == 40);
+
+        var pdf = await accountant.GetAsync($"/api/credit-memos/{invoice.CreditMemos.Single().Id}/pdf");
+        pdf.Content.Headers.ContentType!.MediaType.Should().Be("application/pdf");
+    }
+
+    [Fact]
+    public async Task A_credit_on_a_paid_invoice_is_a_refund_and_the_balance_is_not_taken_below_what_was_owed()
+    {
+        var (itemId, _) = await StockedItem((20, 40));
+        var invoiceId = await ShippedAndInvoiced(itemId, 5);   // ₱500
+        var accountant = await As("accountant");
+        (await accountant.PostAsJsonAsync($"/api/invoices/{invoiceId}/payments",
+            new { amount = 500m, taxWithheld = 0m, paidOn = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(8)), method = "Cash" }))
+            .IsSuccessStatusCode.Should().BeTrue();
+        var line = (await accountant.GetFromJsonAsync<InvoiceDetail>($"/api/invoices/{invoiceId}"))!.Lines.Single();
+
+        var memoId = await Create(accountant, $"/api/invoices/{invoiceId}/credit-memos",
+            new { lines = new[] { new { lineId = line.Id, quantity = 2m } }, reason = "Damaged in delivery", returnToStock = false });
+
+        var memo = (await accountant.GetFromJsonAsync<InvoiceDetail>($"/api/invoices/{invoiceId}"))!.CreditMemos.Single();
+        (memo.AppliedToInvoice, memo.RefundDue).Should().Be((0m, 200m));
+        (await accountant.PostAsJsonAsync($"/api/credit-memos/{memoId}/refund",
+            new { paidOn = DateOnly.FromDateTime(DateTime.UtcNow.AddHours(8)), method = "BankTransfer", reference = "TRX-1" }))
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
+    }
+
+    [Fact]
+    public async Task Crediting_more_than_was_billed_is_422_and_changes_nothing()
+    {
+        var (itemId, sku) = await StockedItem((20, 40));
+        var invoiceId = await ShippedAndInvoiced(itemId, 2);
+        var accountant = await As("accountant");
+        var line = (await accountant.GetFromJsonAsync<InvoiceDetail>($"/api/invoices/{invoiceId}"))!.Lines.Single();
+
+        var response = await accountant.PostAsJsonAsync($"/api/invoices/{invoiceId}/credit-memos",
+            new { lines = new[] { new { lineId = line.Id, quantity = 3m } }, reason = "Returned", returnToStock = true });
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+        (await response.Content.ReadFromJsonAsync<Problem>())!.Code.Should().Be("INVOICING-0036");
+        (await Item(await As("clerk"), sku)).OnHand.Should().Be(18);
+        (await (await As("rep")).PostAsJsonAsync($"/api/invoices/{invoiceId}/credit-memos",
+            new { lines = new[] { new { lineId = line.Id, quantity = 1m } }, reason = "x", returnToStock = false }))
+            .StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
 }

@@ -60,7 +60,16 @@ public sealed record InvoiceSummary(long Id, string Number, long CustomerId, str
     DateOnly IssueDate, DateOnly DueDate, string Status, decimal Total, decimal AmountPaid, decimal BalanceDue, bool IsOpeningBalance);
 
 public sealed record InvoiceLine(string Description, string Unit, decimal Quantity, decimal UnitPrice, decimal LineTotal, string TaxType,
-    bool SpecialDiscountEligible);
+    bool SpecialDiscountEligible, long Id, decimal CreditedQuantity)
+{
+    public decimal Remaining => Quantity - CreditedQuantity;
+}
+
+public sealed record InvoiceCreditMemo(long Id, string Number, DateOnly IssueDate, string Reason, decimal Total, decimal AppliedToInvoice,
+    decimal RefundDue, DateOnly? RefundedOn, bool ReturnToStock);
+
+public sealed record CreditMemoSummary(long Id, string Number, long InvoiceId, string InvoiceNumber, long CustomerId, string CustomerName,
+    DateOnly IssueDate, string Reason, decimal Total, decimal AppliedToInvoice, decimal RefundDue, DateOnly? RefundedOn, bool ReturnToStock);
 
 public sealed record Payment(long Id, decimal Amount, decimal TaxWithheld, DateOnly PaidOn, string Method, string? Reference, long RecordedBy,
     DateTime RecordedUtc, DateTime? VoidedUtc, string? VoidReason);
@@ -70,7 +79,7 @@ public sealed record InvoiceDetail(long Id, string Number, long ShipmentId, long
     decimal Total, decimal AmountPaid, decimal BalanceDue, string TaxRegime, decimal VatRate, decimal VatableSales, decimal VatAmount,
     decimal ZeroRatedSales, decimal VatExemptSales, int PrintCount, string? VoidReason, long? VoidedBy,
     DateTime? VoidedUtc, SpecialDiscount? SpecialDiscount, List<InvoiceLine> Lines, List<Payment> Payments, decimal GrossSales,
-    bool IsOpeningBalance);
+    bool IsOpeningBalance, decimal Credited, List<InvoiceCreditMemo> CreditMemos);
 
 public sealed record WithholdingRow(long CustomerId, string CustomerName, int Quarter, decimal Withheld, decimal Certified, decimal Missing);
 

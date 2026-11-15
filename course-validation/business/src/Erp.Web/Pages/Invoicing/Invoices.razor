@@ -54,7 +54,7 @@
     [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
     [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
 
-    private static readonly string[] Statuses = ["Issued", "PartiallyPaid", "Paid", "Void"];
+    private static readonly string[] Statuses = ["Issued", "PartiallyPaid", "Paid", "Credited", "Void"];
     private MudDataGrid<InvoiceSummary> _table = default!;
 
     private Task<GridData<InvoiceSummary>> Load(GridState<InvoiceSummary> state, CancellationToken ct)

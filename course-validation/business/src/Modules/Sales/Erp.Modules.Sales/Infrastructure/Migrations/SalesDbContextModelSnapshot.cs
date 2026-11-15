@@ -55,6 +55,32 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                     b.ToTable("applied_charge", "sales");
                 });
 
+            modelBuilder.Entity("Erp.Modules.Sales.Domain.AppliedCredit", b =>
+                {
+                    b.Property<string>("DocumentNumber")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("document_number");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("amount");
+
+                    b.Property<DateTime>("AppliedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("applied_utc");
+
+                    b.Property<long>("CustomerId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("customer_id");
+
+                    b.HasKey("DocumentNumber")
+                        .HasName("pk_applied_credit");
+
+                    b.ToTable("applied_credit", "sales");
+                });
+
             modelBuilder.Entity("Erp.Modules.Sales.Domain.AppliedPayment", b =>
                 {
                     b.Property<long>("PaymentId")

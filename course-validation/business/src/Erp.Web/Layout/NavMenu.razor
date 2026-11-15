@@ -28,6 +28,7 @@
     <AuthorizeView Roles="@Billing">
         <MudText Typo="Typo.overline" Color="Color.Secondary" HtmlTag="div" Class="px-3 pt-4 pb-1">Invoicing</MudText>
         <MudNavLink Href="invoices" Icon="@Icons.Material.Outlined.Description">Invoices</MudNavLink>
+        <MudNavLink Href="credit-memos" Icon="@Icons.Material.Outlined.AssignmentReturn">Credit memos</MudNavLink>
         <MudNavLink Href="receivables-aging" Icon="@Icons.Material.Outlined.HourglassBottom">Receivables aging</MudNavLink>
         <AuthorizeView Roles="@Accounting" Context="accounting">
             <MudNavLink Href="withholding-tax" Icon="@Icons.Material.Outlined.AccountBalance">Withholding tax (2307)</MudNavLink>

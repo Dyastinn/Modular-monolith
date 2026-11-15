@@ -63,6 +63,7 @@ public static class SalesModule
         services.AddScoped<IIntegrationEventHandler<PaymentVoided>, PaymentVoidedHandler>();
         services.AddScoped<IIntegrationEventHandler<OpeningBalanceCharged>, OpeningBalanceChargedHandler>();
         services.AddScoped<IIntegrationEventHandler<OpeningBalanceVoided>, OpeningBalanceVoidedHandler>();
+        services.AddScoped<IIntegrationEventHandler<CreditMemoIssued>, CreditMemoIssuedHandler>();
         services.AddScoped<IDomainEventHandler<SalesOrderApproved>, SalesOrderApprovedAuditHandler>();
         services.AddSingleton(ErrorCatalog.From(typeof(SalesErrors)));
         return services;

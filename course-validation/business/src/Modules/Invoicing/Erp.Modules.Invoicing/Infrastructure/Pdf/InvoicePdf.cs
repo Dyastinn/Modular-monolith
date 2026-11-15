@@ -142,7 +142,7 @@ internal static class InvoicePdf
     private static string Describe(InvoiceLineDto line, TaxRegime regime) =>
         (line.SpecialDiscountEligible ? "* " : "") + Describe(line.Description, line.TaxType, regime);
 
-    private static string Describe(string description, string taxType, TaxRegime regime) =>
+    internal static string Describe(string description, string taxType, TaxRegime regime) =>
         regime != TaxRegime.Vat ? description
         : taxType == nameof(TaxType.ZeroRated) ? $"{description} (zero-rated)"
         : taxType == nameof(TaxType.VatExempt) ? $"{description} (VAT-exempt)"
@@ -155,12 +155,12 @@ internal static class InvoicePdf
         Total(totals, $"Less: {Percent(d.Rate)} {d.Program} discount", d.Discount);
     }
 
-    private static string Percent(decimal rate) => (rate * 100).ToString("0.##", Ph) + "%";
+    internal static string Percent(decimal rate) => (rate * 100).ToString("0.##", Ph) + "%";
 
     // "PHP": the peso sign isn't in every font, and Philippine invoices commonly print the code anyway.
-    private static string Peso(decimal amount) => "PHP " + amount.ToString("N2", Ph);
+    internal static string Peso(decimal amount) => "PHP " + amount.ToString("N2", Ph);
 
-    private static Paragraph Line(Section section, string text, int size = 9, bool bold = false,
+    internal static Paragraph Line(Section section, string text, int size = 9, bool bold = false,
         ParagraphAlignment align = ParagraphAlignment.Left)
     {
         var p = section.AddParagraph(text);
@@ -170,7 +170,7 @@ internal static class InvoicePdf
         return p;
     }
 
-    private static void Cells(Row row, params string[] values)
+    internal static void Cells(Row row, params string[] values)
     {
         for (var c = 0; c < values.Length; c++)
         {
@@ -179,7 +179,7 @@ internal static class InvoicePdf
         }
     }
 
-    private static void Total(Table table, string label, decimal amount, bool bold = false)
+    internal static void Total(Table table, string label, decimal amount, bool bold = false)
     {
         var row = table.AddRow();
         row.Format.Font.Bold = bold;

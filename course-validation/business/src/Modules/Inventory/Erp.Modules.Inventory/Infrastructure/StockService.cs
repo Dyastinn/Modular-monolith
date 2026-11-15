@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Erp.Modules.Inventory.Infrastructure;
 
 // Inventory's service window: what other modules may ask of it.
-internal sealed class StockService(InventoryDbContext db, TimeProvider time) : IStockReservation, IStockReceiving, IItemCatalog
+internal sealed class StockService(InventoryDbContext db, TimeProvider time) : IStockReservation, IStockReceiving, IStockReturns, IItemCatalog
 {
     // Check and write in ONE statement, so two orders racing for the last units can't both win.
     public Task<bool> TryReserveAsync(long itemId, decimal quantity, DbTransaction tx, CancellationToken ct) =>
@@ -43,6 +43,22 @@ internal sealed class StockService(InventoryDbContext db, TimeProvider time) : I
                 ?? throw new InvalidOperationException($"Item {itemId} doesn't exist.");
 
             db.StockMovements.Add(item.Receive(quantity, new UnitCost(unitCost), reference, new UserId(userId), time.GetUtcNow().UtcDateTime));
+            await db.SaveChangesAsync(ct);
+            return true;
+        }, ct);
+
+    // Like a receipt: the row is locked first, because the average needs what's on hand now.
+    public Task ReturnAsync(long itemId, decimal quantity, decimal? unitCost, string reference, long userId, DbTransaction tx,
+        CancellationToken ct) =>
+        InTransaction(tx, async () =>
+        {
+            var id = new ItemId(itemId);
+            await db.LockItemAsync(id, ct);
+            // Only items that were invoiced come back, so a missing one is a bug, not a request to refuse.
+            var item = await db.Items.SingleOrDefaultAsync(i => i.Id == id, ct)
+                ?? throw new InvalidOperationException($"Item {itemId} doesn't exist.");
+            db.StockMovements.Add(item.Return(quantity, unitCost is { } c ? new UnitCost(c) : null, reference, new UserId(userId),
+                time.GetUtcNow().UtcDateTime));
             await db.SaveChangesAsync(ct);
             return true;
         }, ct);

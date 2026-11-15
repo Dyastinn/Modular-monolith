@@ -30,3 +30,16 @@ internal sealed class OpeningBalanceVoidedHandler(SalesDbContext db, TimeProvide
         await db.SaveChangesAsync(ct);
     }
 }
+
+// Goods came back or a price was wrong: the customer owes less, and has room for the next order again.
+internal sealed class CreditMemoIssuedHandler(SalesDbContext db, TimeProvider time) : IIntegrationEventHandler<CreditMemoIssued>
+{
+    public async Task HandleAsync(CreditMemoIssued e, CancellationToken ct)
+    {
+        if (e.AppliedToInvoice == 0 || await db.AppliedCredits.AnyAsync(c => c.DocumentNumber == e.Number, ct)) return;
+
+        var customer = await db.Customers.SingleAsync(c => c.Id == new CustomerId(e.CustomerId), ct);
+        db.AppliedCredits.Add(AppliedCredit.Apply(e.Number, customer, new Money(e.AppliedToInvoice), time.GetUtcNow().UtcDateTime));
+        await db.SaveChangesAsync(ct);
+    }
+}

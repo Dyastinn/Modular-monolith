@@ -1,6 +1,6 @@
 namespace Erp.Modules.Inventory.Domain;
 
-internal enum MovementKind { Receipt = 1, Adjustment = 2, Shipment = 3 }
+internal enum MovementKind { Receipt = 1, Adjustment = 2, Shipment = 3, Return = 4 }
 
 // The audit trail: every change to on-hand stock, who made it and why. Written once, never changed.
 internal sealed class StockMovement
@@ -22,6 +22,9 @@ internal sealed class StockMovement
 
     public static StockMovement Adjustment(ItemId item, decimal delta, UnitCost cost, string reason, UserId by, DateTime nowUtc) =>
         new() { ItemId = item, Quantity = delta, UnitCost = cost, Kind = MovementKind.Adjustment, Reason = reason, UserId = by, OccurredUtc = nowUtc };
+
+    public static StockMovement Return(ItemId item, decimal quantity, UnitCost cost, string reference, UserId by, DateTime nowUtc) =>
+        new() { ItemId = item, Quantity = quantity, UnitCost = cost, Kind = MovementKind.Return, Reference = reference, UserId = by, OccurredUtc = nowUtc };
 
     public static StockMovement Shipment(ItemId item, decimal quantity, UnitCost cost, string reference, UserId by, DateTime nowUtc) =>
         new() { ItemId = item, Quantity = -quantity, UnitCost = cost, Kind = MovementKind.Shipment, Reference = reference, UserId = by, OccurredUtc = nowUtc };

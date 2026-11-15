@@ -13,7 +13,8 @@ internal sealed record InvoiceDetailDto(
     decimal Total, decimal AmountPaid, decimal BalanceDue,
     string TaxRegime, decimal VatRate, decimal VatableSales, decimal VatAmount, decimal ZeroRatedSales, decimal VatExemptSales,
     int PrintCount, string? VoidReason, long? VoidedBy, DateTime? VoidedUtc, InvoiceSpecialDiscountDto? SpecialDiscount,
-    IReadOnlyList<InvoiceLineDto> Lines, IReadOnlyList<PaymentDto> Payments, bool IsOpeningBalance)
+    IReadOnlyList<InvoiceLineDto> Lines, IReadOnlyList<PaymentDto> Payments, bool IsOpeningBalance, decimal Credited,
+    IReadOnlyList<InvoiceCreditMemoDto> CreditMemos)
 {
     public decimal GrossSales => Total + (SpecialDiscount is { } d ? d.VatExemption + d.Discount : 0);
 }
@@ -25,7 +26,10 @@ internal sealed record InvoiceSpecialDiscountDto(string Program, string IdLabel,
     decimal VatRateRemoved, decimal VatExemption, decimal Discount);
 
 internal sealed record InvoiceLineDto(string Description, string Unit, decimal Quantity, decimal UnitPrice, decimal LineTotal, string TaxType,
-    bool SpecialDiscountEligible);
+    bool SpecialDiscountEligible, long Id, decimal CreditedQuantity);
+
+internal sealed record InvoiceCreditMemoDto(long Id, string Number, DateOnly IssueDate, string Reason, decimal Total, decimal AppliedToInvoice,
+    decimal RefundDue, DateOnly? RefundedOn, bool ReturnToStock);
 
 internal sealed record PaymentDto(long Id, decimal Amount, decimal TaxWithheld, DateOnly PaidOn, string Method, string? Reference, long RecordedBy,
     DateTime RecordedUtc, DateTime? VoidedUtc, string? VoidReason);
@@ -38,10 +42,10 @@ internal sealed record InvoiceHeaderRow(
     string? SpecialDiscountProgram, string? SpecialDiscountIdLabel, string? SpecialDiscountHolderName, string? SpecialDiscountIdNumber,
     decimal? SpecialDiscountRate, decimal? SpecialDiscountVatRateRemoved, decimal SpecialDiscountVatExemption, decimal SpecialDiscountAmount,
     string SellerName, string? SellerTradeName, string SellerTin, string SellerAddress, string SellerInvoiceTitle,
-    string? SellerPermitNumber, string? SellerSeriesRange, string? SellerPermitDateIssued, bool IsOpeningBalance);
+    string? SellerPermitNumber, string? SellerSeriesRange, string? SellerPermitDateIssued, bool IsOpeningBalance, decimal Credited);
 
-internal sealed record InvoiceLineRow(string Description, string Unit, decimal Quantity, decimal UnitPrice, int TaxType,
-    bool SpecialDiscountEligible);
+internal sealed record InvoiceLineRow(long Id, string Description, string Unit, decimal Quantity, decimal UnitPrice, int TaxType,
+    bool SpecialDiscountEligible, decimal CreditedQuantity);
 
 internal sealed record PaymentRow(long Id, decimal Amount, decimal TaxWithheld, DateOnly PaidOn, int Method, string? Reference, long RecordedBy,
     DateTime RecordedUtc, DateTime? VoidedUtc, string? VoidReason);
@@ -56,6 +60,7 @@ internal sealed class GetInvoiceHandler(IDbConnectionFactory connections)
             SELECT * FROM invoicing.get_invoice(@Id);
             SELECT * FROM invoicing.get_invoice_lines(@Id);
             SELECT * FROM invoicing.get_invoice_payments(@Id);
+            SELECT * FROM invoicing.get_invoice_credit_memos(@Id);
             """, new { Id = q.InvoiceId }, cancellationToken: ct));
 
         var h = await multi.ReadSingleOrDefaultAsync<InvoiceHeaderRow>();
@@ -63,7 +68,7 @@ internal sealed class GetInvoiceHandler(IDbConnectionFactory connections)
         var lines = (await multi.ReadAsync<InvoiceLineRow>())
             .Select(l => new InvoiceLineDto(l.Description, l.Unit, l.Quantity, l.UnitPrice,
                 Math.Round(l.Quantity * l.UnitPrice, 2, MidpointRounding.AwayFromZero), ((TaxType)l.TaxType).ToString(),
-                l.SpecialDiscountEligible))
+                l.SpecialDiscountEligible, l.Id, l.CreditedQuantity))
             .ToList();
         var payments = (await multi.ReadAsync<PaymentRow>())
             .Select(p => new PaymentDto(p.Id, p.Amount, p.TaxWithheld, p.PaidOn, ((PaymentMethod)p.Method).ToString(), p.Reference,
@@ -75,13 +80,13 @@ internal sealed class GetInvoiceHandler(IDbConnectionFactory connections)
             new InvoiceSellerDto(h.SellerName, h.SellerTradeName, h.SellerTin, h.SellerAddress, h.SellerInvoiceTitle,
                 h.SellerPermitNumber, h.SellerSeriesRange, h.SellerPermitDateIssued), h.ShipmentId, h.SalesOrderId, h.OrderNumber, h.CustomerId, h.CustomerName,
             h.CustomerTin, h.CustomerAddress, h.IssueDate, h.DueDate, ((InvoiceStatus)h.Status).ToString(),
-            h.Total, h.AmountPaid, h.Total - h.AmountPaid,
+            h.Total, h.AmountPaid, h.Total - h.AmountPaid - h.Credited,
             ((TaxRegime)h.TaxRegime).ToString(), h.VatRate, h.VatableSales, h.VatAmount, h.ZeroRatedSales, h.VatExemptSales,
             h.PrintCount, h.VoidReason, h.VoidedBy, h.VoidedUtc,
             h.SpecialDiscountProgram is null ? null : new InvoiceSpecialDiscountDto(h.SpecialDiscountProgram, h.SpecialDiscountIdLabel!,
                 h.SpecialDiscountHolderName!, h.SpecialDiscountIdNumber!, h.SpecialDiscountRate ?? 0, h.SpecialDiscountVatRateRemoved ?? 0,
                 h.SpecialDiscountVatExemption, h.SpecialDiscountAmount),
-            lines, payments, h.IsOpeningBalance);
+            lines, payments, h.IsOpeningBalance, h.Credited, (await multi.ReadAsync<InvoiceCreditMemoDto>()).ToList());
     }
 }
 

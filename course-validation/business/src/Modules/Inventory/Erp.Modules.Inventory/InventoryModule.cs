@@ -28,6 +28,7 @@ public static class InventoryModule
         services.AddScoped<StockService>();
         services.AddScoped<IStockReservation>(sp => sp.GetRequiredService<StockService>());
         services.AddScoped<IStockReceiving>(sp => sp.GetRequiredService<StockService>());
+        services.AddScoped<IStockReturns>(sp => sp.GetRequiredService<StockService>());
         services.AddScoped<IItemCatalog>(sp => sp.GetRequiredService<StockService>());
 
         // Handlers: plain classes, injected straight into the endpoints that use them.

@@ -28,7 +28,11 @@
             {
                 <MudButton OnClick="RecordPayment" Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.Payments" Disabled="Api.Busy">Record payment</MudButton>
             }
-            @if (_invoice.Status == "Issued")
+            @if (!_invoice.IsOpeningBalance && _invoice.Status != "Void" && _invoice.Lines.Any(l => l.Remaining > 0))
+            {
+                <MudButton OnClick="IssueCreditMemo" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.AssignmentReturn" Disabled="Api.Busy">Credit memo</MudButton>
+            }
+            @if (_invoice.Status == "Issued" && _invoice.CreditMemos.Count == 0)
             {
                 <MudButton OnClick="Void" Variant="Variant.Text" Color="Color.Error" Disabled="Api.Busy">Void</MudButton>
             }
@@ -68,6 +72,9 @@
                         </CellTemplate>
                     </TemplateColumn>
                     <TemplateColumn Title="Quantity" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Qty(context.Item.Quantity) @context.Item.Unit</CellTemplate></TemplateColumn>
+                    <TemplateColumn Title="Credited" HeaderClass="money" CellClass="money" Hidden="@(_invoice.Credited == 0 && _invoice.CreditMemos.Count == 0)">
+                        <CellTemplate>@Format.Qty(context.Item.CreditedQuantity)</CellTemplate>
+                    </TemplateColumn>
                     @(MoneyColumn.Of<InvoiceLine>("Unit price", x => x.UnitPrice))
                     @(MoneyColumn.Of<InvoiceLine>("Amount", x => x.LineTotal))
                 </Columns>
@@ -96,6 +103,10 @@
                 <MudDivider Class="my-1" />
                 <TotalLine Label="Total" Amount="_invoice.Total" Strong="true" />
                 <TotalLine Label="Paid" Amount="_invoice.AmountPaid" />
+                @if (_invoice.Credited > 0)
+                {
+                    <TotalLine Label="Credited" Amount="_invoice.Credited" />
+                }
                 <TotalLine Label="Balance due" Amount="_invoice.BalanceDue" Strong="true" />
             </Totals>
         </MudPaper>
@@ -127,6 +138,31 @@
                 </MudStack>
             }
         </MudPaper>
+        @if (_invoice.CreditMemos.Count > 0)
+        {
+            <MudPaper Class="pa-4 mt-4" Outlined="true">
+                <MudText Typo="Typo.h6" GutterBottom="true">Credit memos</MudText>
+                @foreach (var m in _invoice.CreditMemos)
+                {
+                    <MudStack Spacing="0" Class="mb-2">
+                        <MudStack Row="true" AlignItems="AlignItems.Center">
+                            <MudLink Href="@($"api/credit-memos/{m.Id}/pdf")" Target="_blank">@m.Number</MudLink>
+                            <MudText Typo="Typo.body2">@Format.Peso(m.Total) · @Format.Date(m.IssueDate)</MudText>
+                            <MudSpacer />
+                            @if (m.RefundDue > 0 && m.RefundedOn is null)
+                            {
+                                <AuthorizeView Roles="@Accountants" Context="auth">
+                                    <MudButton Size="Size.Small" OnClick="() => RecordRefund(m)" Disabled="Api.Busy">Record refund</MudButton>
+                                </AuthorizeView>
+                            }
+                        </MudStack>
+                        <MudText Typo="Typo.caption">
+                            @m.Reason@(m.ReturnToStock ? " · back in stock" : "")@(m.RefundDue > 0 ? $" · refund {Format.Peso(m.RefundDue)}{(m.RefundedOn is { } on ? $" paid {Format.Date(on)}" : " due")}" : "")
+                        </MudText>
+                    </MudStack>
+                }
+            </MudPaper>
+        }
     </MudItem>
 </MudGrid>
 
@@ -165,6 +201,19 @@
                 is { } reason
             && await Api.Post($"api/invoices/{Id}/void", new { reason }, "Invoice voided."))
             await Load();
+    }
+
+    private async Task IssueCreditMemo()
+    {
+        var dialog = await Dialogs.ShowAsync<CreditMemoDialog>($"Credit memo for {_invoice!.Number}",
+            new DialogParameters<CreditMemoDialog> { { d => d.Invoice, _invoice } }, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if ((await dialog.Result) is { Canceled: false }) await Load();
+    }
+
+    private async Task RecordRefund(InvoiceCreditMemo memo)
+    {
+        var dialog = await Dialogs.ShowAsync<RefundDialog>($"Refund for {memo.Number}", new DialogParameters<RefundDialog> { { d => d.Memo, memo } });
+        if ((await dialog.Result) is { Canceled: false }) await Load();
     }
 
     private async Task Reissue()

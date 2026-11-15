@@ -28,3 +28,9 @@ internal sealed class PublishOpeningBalanceVoided(IIntegrationEventPublisher pub
     public Task HandleAsync(InvoiceOpeningBalanceVoided e, CancellationToken ct) =>
         publisher.PublishAsync(new OpeningBalanceVoided(e.Number, e.CustomerId, e.Amount.Amount), ct);
 }
+
+internal sealed class PublishCreditMemoIssued(IIntegrationEventPublisher publisher) : IDomainEventHandler<CreditMemoCreated>
+{
+    public Task HandleAsync(CreditMemoCreated e, CancellationToken ct) =>
+        publisher.PublishAsync(new CreditMemoIssued(e.Number, e.CustomerId, e.AppliedToInvoice.Amount), ct);
+}

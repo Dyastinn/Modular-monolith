@@ -414,7 +414,15 @@ The buyer gaps, in build order (code ⬜ · lessons ⬜):
       adds it to the customer's balance (`OpeningBalanceCharged`/`Voided`, idempotent by document number in
       `applied_charge`). New contract `ICustomerDirectory`. Invoices list sorts. MudFileUpload in MudBlazor 9 uses
       `CustomContent` (`ActivatorContent` is gone and was silently ignored)
-- [ ] Returns and credit memos (BIR-compliant), stock back in at cost
+- [x] Returns and credit memos (code ✅ · lesson ⬜): `CreditMemo` aggregate, own `CM-` series; `Invoice.Credit` credits
+      chosen lines and quantities (earlier memos count; INVOICING-0031…0039), with the VAT of what's credited at the
+      invoice's own rate; an SC/PWD invoice is credited whole and the memo mirrors it. What's still owed is reduced first
+      (`invoice.credited`, status `Credited` when nothing was paid), the rest is a refund due, recorded once paid out.
+      Returned goods come back in the same transaction at the cost they left with (`IStockReturns`, movement kind
+      `Return`); Sales takes the applied part off the balance (`CreditMemoIssued`, idempotent in `applied_credit`).
+      Aging subtracts credits. Credit memo PDF (counted, REPRINT). Invoice page: Credit memo dialog, memos with print
+      and Record refund; Credit memos list (sortable, refunds to pay). No void of a credit memo yet: a wrong one is
+      corrected by invoicing again
 - [ ] Accounts payable: supplier bills, PO ↔ receipt ↔ bill match, payments, Form 2307 issued
 - [ ] Reorder points, low-stock list, stock count with variance posting
 - [ ] Reports + CSV export: sales by customer/item/rep/period, stock valuation, BIR summary lists
@@ -433,11 +441,12 @@ The buyer gaps, in build order (code ⬜ · lessons ⬜):
   the reference build for screens built from patterns already taught.
 - **Full `podman compose up` not executed yet.** Images build with Podman and db + migrate + app ran together in
   Production; run lesson 24 end to end (with Caddy and backups) on a Linux server before the first sale.
-- **`podman exec` broken on kernel 7.3 (found 2026-11-15).** On this machine (Fedora 45, kernel 7.3.3, crun
-  1.31, Podman 6.1.3) every `podman exec` fails with `crun: write to /proc/self/oom_score_adj: Permission
-  denied`, so Testcontainers' PostgreSQL readiness check (`pg_isready` via exec) and the `create-roles.sql` exec
-  in `CustomWebAppFactory` hang the integration tests. Docker in CI is unaffected. Booting the 7.2 kernel should
-  fix it; otherwise switch the harness to a host-side readiness check and run the roles script over Npgsql.
+- **`podman exec` broken by crun 1.31 (found 2026-11-15).** Fedora updated crun 1.30.1 → 1.31 on 2026-11-15; from then
+  every `podman exec` into a container whose OOM score is not above the caller's fails with `crun: write to
+  /proc/self/oom_score_adj: Permission denied`. Testcontainers' PostgreSQL readiness check and `create-roles.sql` both
+  use exec, so the integration tests hang. Not the kernel: the suite passed on 2026-11-13 under kernel 7.3.3 with crun
+  1.30.1. Fix on the machine, not in the code: `sudo dnf downgrade crun` (or install crun-1.30.1-2.fc45 from Koji),
+  then `sudo dnf versionlock add crun` until a fixed crun ships. No reboot needed. Docker in CI is unaffected.
 - **Selling source vs. a public course.** If the course is published openly and ends in the full product,
   the product's source is effectively free. Decide how the course is distributed before M4.
 
@@ -556,6 +565,8 @@ The buyer gaps, in build order (code ⬜ · lessons ⬜):
   fails only as the 16th test of a run and passes alone 3/3; most likely the sign-in rate limit, not yet
   confirmed). Integration and browser runs used a local-only workaround for the `podman exec` problem (see Risks);
   the committed test harness is unchanged.
+- **2026-11-15** — Returns and credit memos. crun downgraded to 1.29.1 (no version lock, by choice): `podman exec`
+  works again. On the original, unpatched harness: **unit 218, architecture 14, integration 154, browser 18/18 pass.**
 - **2026-11-15** — Build squashed back to lesson 05's convention (user): no `.v2` files or extra migrations; one
   `InitialCreate` + `AddReadFunctions` per module. CSV import and opening balances. **Unit 195, architecture 14,
   integration 151, browser 18/18 pass.**

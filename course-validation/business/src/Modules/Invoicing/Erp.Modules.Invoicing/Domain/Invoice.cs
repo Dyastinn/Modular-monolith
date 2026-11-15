@@ -7,7 +7,7 @@ internal readonly record struct PaymentId(long Value);
 internal readonly record struct UserId(long Value);   // owned by Identity
 
 // Stored as numbers: never renumber.
-internal enum InvoiceStatus { Issued = 0, PartiallyPaid = 1, Paid = 2, Void = 3 }
+internal enum InvoiceStatus { Issued = 0, PartiallyPaid = 1, Paid = 2, Void = 3, Credited = 4 }   // Credited: settled by credit memos, not money
 internal enum PaymentMethod { Cash = 1, Check = 2, BankTransfer = 3, Other = 4 }
 
 // The totals RR 7-2024 Sec. 6(B.13) requires: VATable sales (net of VAT), the VAT, zero-rated and VAT-exempt sales.
@@ -35,15 +35,18 @@ internal readonly record struct TaxBreakdown(Money VatableSales, Money VatAmount
 // What was billed, as it was billed: nothing here follows later changes to the customer or the item.
 internal sealed class InvoiceLine
 {
+    public long Id { get; private set; }
     public string Description { get; private set; } = default!;
     public string Unit { get; private set; } = default!;
     public Quantity Quantity { get; private set; }
     public Money UnitPrice { get; private set; }
     public TaxType TaxType { get; private set; }
     public bool SpecialDiscountEligible { get; private set; }
-    // The item, and what each unit cost us as it shipped: for margins. Null on invoices issued before costing.
+    // The item, and what each unit cost us as it shipped: for margins and returns. Null on an opening balance.
     public long? ItemId { get; private set; }
     public decimal? UnitCost { get; private set; }
+    public decimal CreditedQuantity { get; private set; }   // given back by credit memos
+    public decimal Remaining => Quantity.Value - CreditedQuantity;
     public Money LineTotal => UnitPrice * Quantity;
 
     private InvoiceLine() { }
@@ -54,6 +57,8 @@ internal sealed class InvoiceLine
         Description = description; Unit = unit; Quantity = quantity; UnitPrice = unitPrice; TaxType = taxType;
         SpecialDiscountEligible = specialDiscountEligible; ItemId = itemId; UnitCost = unitCost;
     }
+
+    public void Credit(decimal quantity) => CreditedQuantity += quantity;
 }
 
 internal sealed class Payment
@@ -121,6 +126,7 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
     public Money SpecialDiscountVatExemption { get; private set; }
     public Money SpecialDiscountAmount { get; private set; }
     public Money AmountPaid { get; private set; }   // everything settled: money received plus tax withheld
+    public Money Credited { get; private set; }     // what credit memos took off what was still owed
     public string? VoidReason { get; private set; }
     public UserId? VoidedBy { get; private set; }
     public DateTime? VoidedUtc { get; private set; }
@@ -128,7 +134,7 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
     // aging, payments and 2307s treat the old debt like any other.
     public bool IsOpeningBalance { get; private set; }
 
-    public Money BalanceDue => Total - AmountPaid;
+    public Money BalanceDue => Total - AmountPaid - Credited;
 
     private Invoice() { }
 
@@ -221,6 +227,8 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
         EnsureNotVoid();
         if (string.IsNullOrWhiteSpace(reason)) throw new DomainException(InvoicingErrors.VoidReasonRequired, "Voiding an invoice needs a reason.");
         if (AmountPaid > Money.Zero) throw new DomainException(InvoicingErrors.InvoiceHasPayments, $"{Number} has payments. Void them first.");
+        if (_lines.Any(l => l.CreditedQuantity > 0))
+            throw new DomainException(InvoicingErrors.InvoiceHasCredits, $"{Number} has credit memos against it and can't be voided.");
         Status = InvoiceStatus.Void;
         VoidReason = reason.Trim();
         VoidedBy = by;
@@ -234,8 +242,44 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
         if (Status != InvoiceStatus.Void) throw new DomainException(InvoicingErrors.OnlyVoidInvoiceReissued, $"Only a void invoice can be reissued; {Number} is {Status}.");
     }
 
+    // Goods returned or a billing error: a credit memo for some or all of what this invoice billed. What's still owed is
+    // reduced first; anything the customer already paid becomes a refund due on the memo.
+    public CreditMemo Credit(string number, IReadOnlyList<(long LineId, decimal Quantity)> lines, string reason, bool returnToStock,
+        UserId by, DateOnly today, DateTime nowUtc)
+    {
+        EnsureNotVoid();
+        if (IsOpeningBalance) throw new DomainException(InvoicingErrors.OpeningBalanceNotCredited, $"{Number} is an opening balance: void it and record the right amount instead.");
+        if (string.IsNullOrWhiteSpace(reason)) throw new DomainException(InvoicingErrors.CreditReasonRequired, "A credit memo needs a reason.");
+        if (lines.Count == 0 || lines.Any(l => l.Quantity <= 0)) throw new DomainException(InvoicingErrors.NothingToCredit, "Enter a quantity to credit on at least one line.");
+
+        // Checked first, applied after: a refused line leaves the invoice exactly as it was.
+        var credited = lines.GroupBy(l => l.LineId).Select(g =>
+        {
+            var line = _lines.SingleOrDefault(l => l.Id == g.Key)
+                ?? throw new DomainException(InvoicingErrors.LineNotOnInvoice, $"Line {g.Key} is not on {Number}.");
+            var quantity = g.Sum(x => x.Quantity);
+            if (quantity > line.Remaining)
+                throw new DomainException(InvoicingErrors.CreditExceedsInvoiced,
+                    $"{line.Description}: {quantity:0.###} would be credited, but only {line.Remaining:0.###} is left to credit.");
+            return (Line: line, Quantity: quantity);
+        }).ToList();
+
+        // The discount was computed on the whole sale: crediting part of it would leave centavos that match nothing.
+        var whole = _lines.All(l => l.CreditedQuantity == 0 && credited.Any(c => c.Line == l && c.Quantity == l.Quantity.Value));
+        if (SpecialDiscount is not null && !whole)
+            throw new DomainException(InvoicingErrors.DiscountedInvoiceCreditedWhole, $"{Number} has a {SpecialDiscount.Program} discount: credit all of it, or none.");
+
+        var memo = CreditMemo.Issue(number, this, credited.Select(c => (c.Line, c.Quantity)).ToList(), whole, reason, returnToStock,
+            BalanceDue, by, today, nowUtc);
+        foreach (var (line, quantity) in credited) line.Credit(quantity);
+        Credited += memo.AppliedToInvoice;
+        RefreshStatus();
+        return memo;
+    }
+
     private void RefreshStatus() =>
-        Status = BalanceDue == Money.Zero ? InvoiceStatus.Paid
+        Status = BalanceDue == Money.Zero && AmountPaid == Money.Zero && Credited > Money.Zero ? InvoiceStatus.Credited
+            : BalanceDue == Money.Zero ? InvoiceStatus.Paid
             : AmountPaid > Money.Zero ? InvoiceStatus.PartiallyPaid
             : InvoiceStatus.Issued;
 
