@@ -436,6 +436,10 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                                 .HasColumnType("bigint")
                                 .HasColumnName("invoice_id");
 
+                            b1.Property<long?>("ItemId")
+                                .HasColumnType("bigint")
+                                .HasColumnName("item_id");
+
                             b1.Property<decimal>("Quantity")
                                 .HasPrecision(18, 3)
                                 .HasColumnType("numeric(18,3)")
@@ -454,6 +458,11 @@ namespace Erp.Modules.Invoicing.Infrastructure.Migrations
                                 .HasMaxLength(10)
                                 .HasColumnType("character varying(10)")
                                 .HasColumnName("unit");
+
+                            b1.Property<decimal?>("UnitCost")
+                                .HasPrecision(18, 4)
+                                .HasColumnType("numeric(18,4)")
+                                .HasColumnName("unit_cost");
 
                             b1.Property<decimal>("UnitPrice")
                                 .HasPrecision(18, 2)

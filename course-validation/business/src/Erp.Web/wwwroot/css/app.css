@@ -39,6 +39,11 @@ html, body {
     justify-content: flex-end;
 }
 
+/* A sortable header's title stretches to the full width (MudBlazor), so its text needs aligning on its own. */
+.mud-table-cell.money .column-header .sortable-column-header {
+    text-align: right;
+}
+
 /* Short values (ids, dates, amounts) stay on one line, so a row reads straight across; on a narrow screen the
    table scrolls sideways inside its card instead. A cell of free text opts out with Class="wrap". */
 .mud-table-cell {

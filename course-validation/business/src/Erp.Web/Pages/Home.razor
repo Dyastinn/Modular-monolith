@@ -13,9 +13,9 @@
                 <Tile Title="New sales order" Text="Pick a customer, add lines, submit." Href="sales-orders/new" Icon="@Icons.Material.Outlined.AddShoppingCart" />
             </MudItem>
         </AuthorizeView>
-        <AuthorizeView Roles="@ManagerRoles">
+        <AuthorizeView Roles="@ApproverRoles">
             <MudItem xs="12" sm="6" md="4">
-                <Tile Title="Waiting for approval" Text="Orders above ₱50,000 that need you." Href="sales-orders?status=PendingApproval" Icon="@Icons.Material.Outlined.HowToReg" />
+                <Tile Title="Awaiting my approval" Text="Orders that can't move until you say yes or no." Href="approvals" Icon="@Icons.Material.Outlined.HowToReg" />
             </MudItem>
         </AuthorizeView>
         <AuthorizeView Roles="@ClerkRoles">
@@ -44,7 +44,7 @@
 
 @code {
     private static readonly string SellerRoles = $"{Roles.SalesRep},{Roles.SalesManager},{Roles.Admin}";
-    private static readonly string ManagerRoles = $"{Roles.SalesManager},{Roles.Admin}";
+    private static readonly string ApproverRoles = $"{Roles.SalesManager},{Roles.Accountant},{Roles.Admin}";
     private static readonly string ClerkRoles = $"{Roles.InventoryClerk},{Roles.Admin}";
     private static readonly string BuyerRoles = $"{Roles.Purchaser},{Roles.Admin}";
     private static readonly string AccountantRoles = $"{Roles.Accountant},{Roles.Admin}";

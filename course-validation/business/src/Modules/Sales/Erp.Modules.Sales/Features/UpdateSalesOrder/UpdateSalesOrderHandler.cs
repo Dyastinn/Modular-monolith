@@ -17,7 +17,6 @@ internal sealed class UpdateSalesOrderHandler(SalesDbContext db, ICurrentUser cu
         customer.EnsureNotBlocked();
 
         order.SetLines(await db.ResolveLinesAsync(cmd.Lines.Select(l => (l.ItemId, l.Quantity)), ct), currentUser.Role);
-        customer.EnsureWithinCreditLimit(order.Total, await db.PendingTotalAsync(customer.Id, order.Id, ct));
 
         await db.SaveChangesAsync(ct);
         return true;

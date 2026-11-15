@@ -23,4 +23,6 @@ internal static class InventoryErrors
         "Reload the order: it may have been cancelled or already shipped by someone else.");
     public static readonly ErrorCode SalesOrderNotFound = new("INVENTORY-0009", "The sales order doesn't exist",
         "Choose an approved order from the list of orders ready to ship.");
+    public static readonly ErrorCode NegativeCost = new("INVENTORY-0010", "A cost can't be negative",
+        "Enter zero or a positive cost per unit.");
 }

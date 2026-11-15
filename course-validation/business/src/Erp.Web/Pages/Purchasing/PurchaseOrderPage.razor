@@ -20,8 +20,13 @@
         {
             <AuthorizeView Roles="@Buyers">
                 <MudButton Href="@($"purchase-orders/{Id}/edit")" Variant="Variant.Outlined">Edit</MudButton>
+                <MudButton OnClick="Submit" Variant="Variant.Filled" Color="Color.Primary" Disabled="Api.Busy">Submit</MudButton>
             </AuthorizeView>
+        }
+        @if (_po.Status == "PendingApproval")
+        {
             <AuthorizeView Roles="@Roles.Admin">
+                <MudButton OnClick="Reject" Variant="Variant.Outlined" Color="Color.Error" Disabled="Api.Busy">Send back</MudButton>
                 <MudButton OnClick="@(() => Act("approve", "Approved."))" Variant="Variant.Filled" Color="Color.Success" Disabled="Api.Busy">Approve</MudButton>
             </AuthorizeView>
         }
@@ -43,7 +48,7 @@
                 <MudButton OnClick="CloseShort" Variant="Variant.Outlined" Disabled="Api.Busy">Close short</MudButton>
             </AuthorizeView>
         }
-        @if (_po.Status is "Draft" or "Approved" or "Sent")
+        @if (_po.Status is "Draft" or "PendingApproval" or "Approved" or "Sent")
         {
             <AuthorizeView Roles="@Buyers">
                 <MudButton OnClick="Cancel" Variant="Variant.Text" Color="Color.Error" Disabled="Api.Busy">Cancel</MudButton>
@@ -63,8 +68,8 @@
                     <TemplateColumn Title="Ordered" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Qty(context.Item.Quantity) @context.Item.Unit</CellTemplate></TemplateColumn>
                     <TemplateColumn Title="Received" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Qty(context.Item.ReceivedQuantity)</CellTemplate></TemplateColumn>
                     <TemplateColumn Title="To come" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Qty(context.Item.Outstanding)</CellTemplate></TemplateColumn>
-                    <MoneyColumn Title="Unit cost" Amount="x => x.UnitCost" />
-                    <MoneyColumn Title="Amount" Amount="x => x.LineTotal" />
+                    @(MoneyColumn.Of<PurchaseOrderLine>("Unit cost", x => x.UnitCost))
+                    @(MoneyColumn.Of<PurchaseOrderLine>("Amount", x => x.LineTotal))
                 </Columns>
             </MudDataGrid>
             <Totals>
@@ -76,7 +81,15 @@
         <MudPaper Class="pa-4" Outlined="true">
             <MudText Typo="Typo.h6" GutterBottom="true">Details</MudText>
             <MudText Typo="Typo.body2">Created by @_createdBy, @Format.Date(_po.CreatedUtc)</MudText>
-            @if (_po.ApprovedUtc is not null) { <MudText Typo="Typo.body2">Approved by @_approvedBy, @Format.Date(_po.ApprovedUtc)</MudText> }
+            @if (_po.SubmittedUtc is not null) { <MudText Typo="Typo.body2">Submitted @Format.Date(_po.SubmittedUtc)</MudText> }
+            @if (_po.ApprovedUtc is not null)
+            {
+                <MudText Typo="Typo.body2">Approved by @(_approvedBy ?? "automatic approval (within the approval limit)"), @Format.Date(_po.ApprovedUtc)</MudText>
+            }
+            @if (_po.RejectionReason is not null)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">Sent back by @_rejectedBy: @_po.RejectionReason</MudAlert>
+            }
             @if (_po.SentUtc is not null) { <MudText Typo="Typo.body2">Sent @Format.Date(_po.SentUtc)</MudText> }
             @if (_po.ExpectedDate is { } d) { <MudText Typo="Typo.body2">Expected @Format.Date(d)</MudText> }
             @if (_po.Notes is not null) { <MudText Typo="Typo.body2" Class="mt-2">@_po.Notes</MudText> }
@@ -90,7 +103,7 @@
     private static readonly string Buyers = $"{Roles.Purchaser},{Roles.Admin}";
     private static readonly string Receivers = $"{Roles.InventoryClerk},{Roles.Purchaser},{Roles.Admin}";
     private PurchaseOrderDetail? _po;
-    private string? _createdBy, _approvedBy;
+    private string? _createdBy, _approvedBy, _rejectedBy;
 
     protected override Task OnParametersSetAsync() => Load();
 
@@ -99,12 +112,22 @@
         _po = await Api.Get<PurchaseOrderDetail>($"api/purchase-orders/{Id}");
         if (_po is null) { Nav.NavigateTo(Lists.Last("purchase-orders")); return; }
         _createdBy = await Users.NameOf(_po.CreatedBy);
-        _approvedBy = await Users.NameOf(_po.ApprovedBy);
+        _approvedBy = _po.ApprovedBy is null ? null : await Users.NameOf(_po.ApprovedBy);
+        _rejectedBy = _po.RejectedBy is null ? null : await Users.NameOf(_po.RejectedBy);
     }
 
     private async Task Act(string action, string message)
     {
         if (await Api.Post($"api/purchase-orders/{Id}/{action}", success: message)) await Load();
+    }
+
+    private Task Submit() => Act("submit", "Submitted. Within the approval limit it's approved at once.");
+
+    private async Task Reject()
+    {
+        if (await ReasonDialog.Ask(Dialogs, "Send back", "Tell the buyer what to change. It returns to them as a draft.", "Send back") is { } reason
+            && await Api.Post($"api/purchase-orders/{Id}/reject", new { reason }, "Sent back to the buyer."))
+            await Load();
     }
 
     // The two ends that can't be undone ask first.

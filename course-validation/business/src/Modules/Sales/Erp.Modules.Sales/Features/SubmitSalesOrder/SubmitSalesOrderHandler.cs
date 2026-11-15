@@ -20,8 +20,9 @@ internal sealed class SubmitSalesOrderHandler(SalesDbContext db, IStockReservati
         await db.LockCustomerAsync(order.CustomerId, ct);
         var customer = await db.Customers.SingleAsync(c => c.Id == order.CustomerId, ct);
         var otherPending = await db.PendingTotalAsync(order.CustomerId, order.Id, ct);
+        var settings = await db.SettingsAsync(ct);
 
-        order.Submit(customer, otherPending, time.GetUtcNow().UtcDateTime);   // may approve it on the spot
+        order.Submit(customer, settings, otherPending, time.GetUtcNow().UtcDateTime);   // may approve it on the spot
 
         foreach (var line in order.Lines)
         {

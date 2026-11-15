@@ -17,14 +17,14 @@
               Variant="Variant.Outlined" Margin="Margin.Normal" />
 
 <MudDataGrid T="Supplier" @ref="_table" @key="View.Version" ServerData="Load"
-             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.Single" ShowColumnOptions="false"
              CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
     <Columns>
-        <TemplateColumn Title="Name"><CellTemplate>@context.Item.Name @if (!context.Item.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</CellTemplate></TemplateColumn>
-        <PropertyColumn Property="x => x.Tin" Title="TIN" />
-        <PropertyColumn Property="x => x.Email" Title="Email" />
-        <PropertyColumn Property="x => x.Phone" Title="Phone" />
-        <TemplateColumn Title="Terms"><CellTemplate>@context.Item.PaymentTermsDays days</CellTemplate></TemplateColumn>
+        <PropertyColumn Property="x => x.Name" Title="Name" InitialDirection="@View.Initial(nameof(Supplier.Name))"><CellTemplate>@context.Item.Name @if (!context.Item.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</CellTemplate></PropertyColumn>
+        <PropertyColumn Property="x => x.Tin" Title="TIN" Sortable="false" />
+        <PropertyColumn Property="x => x.Email" Title="Email" Sortable="false" />
+        <PropertyColumn Property="x => x.Phone" Title="Phone" Sortable="false" />
+        <PropertyColumn Property="x => x.PaymentTermsDays" Title="Terms" InitialDirection="@View.Initial(nameof(Supplier.PaymentTermsDays))"><CellTemplate>@context.Item.PaymentTermsDays days</CellTemplate></PropertyColumn>
         <TemplateColumn Title="">
             <CellTemplate>
                 <AuthorizeView Roles="@Buyers" Context="auth">

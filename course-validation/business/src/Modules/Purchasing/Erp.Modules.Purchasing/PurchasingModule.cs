@@ -31,6 +31,9 @@ public static class PurchasingModule
         services.AddScoped<SearchPurchaseOrdersHandler>();
         services.AddScoped<GetPurchaseOrderHandler>();
         services.AddScoped<ChangePurchaseOrderStatusHandler>();
+        services.AddScoped<RejectPurchaseOrderHandler>();
+        services.AddScoped<GetPurchaseApprovalLimitHandler>();
+        services.AddScoped<SetPurchaseApprovalLimitHandler>();
         services.AddScoped<ReceivePurchaseOrderHandler>();
 
         services.AddValidatorsFromAssembly(assembly, includeInternalTypes: true);
@@ -47,6 +50,7 @@ public static class PurchasingModule
         SearchPurchaseOrdersEndpoint.Map(purchasing);
         ChangePurchaseOrderStatusEndpoint.Map(purchasing);
         ReceivePurchaseOrderEndpoint.Map(purchasing);
+        PurchaseApprovalLimitEndpoint.Map(purchasing);
         return api;
     }
 }

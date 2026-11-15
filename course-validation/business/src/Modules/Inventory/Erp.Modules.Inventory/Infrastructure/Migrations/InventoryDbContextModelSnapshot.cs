@@ -37,6 +37,11 @@ namespace Erp.Modules.Inventory.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("allows_fractions");
 
+                    b.Property<decimal>("AverageCost")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("average_cost");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean")
                         .HasColumnName("is_active");
@@ -130,7 +135,6 @@ namespace Erp.Modules.Inventory.Infrastructure.Migrations
                         .HasDatabaseName("ix_shipment_number");
 
                     b.HasIndex("SalesOrderId")
-                        .IsUnique()
                         .HasDatabaseName("ix_shipment_sales_order_id");
 
                     b.ToTable("shipment", "inventory");
@@ -171,6 +175,11 @@ namespace Erp.Modules.Inventory.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)")
                         .HasColumnName("reference");
+
+                    b.Property<decimal>("UnitCost")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)")
+                        .HasColumnName("unit_cost");
 
                     b.Property<long>("UserId")
                         .HasColumnType("bigint")
@@ -252,6 +261,11 @@ namespace Erp.Modules.Inventory.Infrastructure.Migrations
                             b1.Property<long>("ShipmentId")
                                 .HasColumnType("bigint")
                                 .HasColumnName("shipment_id");
+
+                            b1.Property<decimal>("UnitCost")
+                                .HasPrecision(18, 4)
+                                .HasColumnType("numeric(18,4)")
+                                .HasColumnName("unit_cost");
 
                             b1.HasKey("Id")
                                 .HasName("pk_shipment_line");

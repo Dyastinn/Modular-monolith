@@ -9,6 +9,8 @@
                 <TemplateColumn Title="When"><CellTemplate>@Format.Date(context.Item.OccurredUtc)</CellTemplate></TemplateColumn>
                 <PropertyColumn Property="x => x.Kind" Title="What" />
                 <TemplateColumn Title="Quantity" HeaderClass="money" CellClass="money"><CellTemplate>@(context.Item.Quantity > 0 ? "+" : "")@Format.Qty(context.Item.Quantity) @Item.Unit</CellTemplate></TemplateColumn>
+                @(MoneyColumn.Cost<StockMovement>("Unit cost", x => x.UnitCost, hidden: !_showCost))
+                @(MoneyColumn.Of<StockMovement>("Value", x => x.Value, hidden: !_showCost))
                 <TemplateColumn Title="Reference / reason" CellClass="wrap"><CellTemplate>@(context.Item.Reference ?? context.Item.Reason)</CellTemplate></TemplateColumn>
                 <TemplateColumn Title="By"><CellTemplate>@_names.GetValueOrDefault(context.Item.UserId)</CellTemplate></TemplateColumn>
             </Columns>
@@ -22,6 +24,8 @@
     [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
     [Parameter] public StockItem Item { get; set; } = default!;
     private readonly Dictionary<long, string> _names = [];
+    // The item row already tells us: a viewer who may see costs got its average.
+    private bool _showCost => Item.AverageCost is not null;
 
     private async Task<GridData<StockMovement>> Load(GridState<StockMovement> state, CancellationToken ct)
     {

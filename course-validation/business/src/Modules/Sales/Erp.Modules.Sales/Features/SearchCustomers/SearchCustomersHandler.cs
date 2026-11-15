@@ -4,14 +4,14 @@ using FluentValidation;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed record SearchCustomersQuery(string? Search = null, int Page = 1, int PageSize = 20);
+internal sealed record SearchCustomersQuery(string? Search = null, string? Sort = null, bool Desc = false, int Page = 1, int PageSize = 20);
 
 internal sealed record GetCustomerQuery(long CustomerId);
 
 // Available credit is what the next order may use: the limit, minus what they owe, minus what's awaiting approval.
 internal sealed record CustomerDto(
     long Id, string Name, string? Tin, string? Address, int PaymentTermsDays, bool IsBlocked,
-    decimal CreditLimit, decimal OutstandingBalance, decimal PendingTotal, decimal AvailableCredit);
+    decimal CreditLimit, decimal OutstandingBalance, decimal PendingTotal, decimal AvailableCredit, decimal? ApprovalThreshold);
 
 internal sealed class SearchCustomersValidator : AbstractValidator<SearchCustomersQuery>
 {
@@ -19,6 +19,7 @@ internal sealed class SearchCustomersValidator : AbstractValidator<SearchCustome
     {
         RuleFor(x => x.Page).ValidPage();
         RuleFor(x => x.PageSize).ValidPageSize();
+        RuleFor(x => x.Sort).ValidSort("name", "creditLimit", "outstandingBalance", "pendingTotal", "availableCredit", "paymentTermsDays");
     }
 }
 
@@ -30,9 +31,9 @@ internal sealed class SearchCustomersHandler(IDbConnectionFactory connections)
         await using var conn = connections.Create();
         using var multi = await conn.QueryMultipleAsync(new CommandDefinition(
             """
-            SELECT * FROM sales.search_customers(NULL, @Search, @Page, @PageSize);
+            SELECT * FROM sales.search_customers(NULL, @Search, @Sort, @Desc, @Page, @PageSize);
             SELECT sales.count_customers(@Search);
-            """, new { Search = search, q.Page, q.PageSize }, cancellationToken: ct));
+            """, new { Search = search, q.Sort, q.Desc, q.Page, q.PageSize }, cancellationToken: ct));
 
         var rows = (await multi.ReadAsync<CustomerDto>()).ToList();
         return new PagedResult<CustomerDto>(rows, q.Page, q.PageSize, (int)await multi.ReadSingleAsync<long>());
@@ -42,6 +43,6 @@ internal sealed class SearchCustomersHandler(IDbConnectionFactory connections)
     {
         await using var conn = connections.Create();
         return await conn.QuerySingleOrDefaultAsync<CustomerDto>(new CommandDefinition(
-            "SELECT * FROM sales.search_customers(@CustomerId, NULL, 1, 1);", new { q.CustomerId }, cancellationToken: ct));
+            "SELECT * FROM sales.search_customers(@CustomerId, NULL, NULL, false, 1, 1);", new { q.CustomerId }, cancellationToken: ct));
     }
 }

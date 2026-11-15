@@ -1,3 +1,4 @@
+using Erp.Modules.Inventory.Contracts;
 using Erp.Modules.Invoicing.Domain;
 using Erp.Modules.Invoicing.Infrastructure;
 using Erp.Shared.BuildingBlocks;
@@ -30,6 +31,7 @@ internal sealed class ReissueInvoiceHandler(InvoicingDbContext db, InvoiceIssuer
         var voided = await db.Invoices.AsNoTracking().SingleOrDefaultAsync(i => i.Id == new InvoiceId(cmd.VoidInvoiceId), ct);
         if (voided is null) return null;
         voided.EnsureCanBeReissued();
-        return await issuer.IssueForShipmentAsync(voided.ShipmentId, voided.SalesOrderId, ct);
+        return await issuer.IssueForShipmentAsync(voided.ShipmentId, voided.SalesOrderId,
+            voided.ShippedLines().Select(l => new ShippedLine(l.ItemId, l.Quantity, l.UnitCost)).ToList(), ct);
     }
 }

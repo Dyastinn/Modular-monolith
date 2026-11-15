@@ -22,6 +22,10 @@ internal sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> op
 
     // Ids that an event carries must exist before SaveChanges writes the event, so they come from a sequence.
     public Task<long> NextItemIdAsync(CancellationToken ct) => NextAsync($"SELECT nextval('inventory.item_id_seq') AS \"Value\"", ct);
+    // Holds the row until the transaction ends. Must be called inside a transaction.
+    public Task LockItemAsync(ItemId id, CancellationToken ct) =>
+        Database.ExecuteSqlAsync($"SELECT 1 FROM inventory.item WHERE id = {id.Value} FOR UPDATE", ct);
+
     public Task<long> NextShipmentIdAsync(CancellationToken ct) => NextAsync($"SELECT nextval('inventory.shipment_id_seq') AS \"Value\"", ct);
 
     // ToList, not Single(): EF would wrap Single() in a subquery.
@@ -33,6 +37,7 @@ internal sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> op
         c.Properties<ItemId>().HaveConversion<ItemIdConverter>();
         c.Properties<ShipmentId>().HaveConversion<ShipmentIdConverter>();
         c.Properties<UserId>().HaveConversion<UserIdConverter>();
+        c.Properties<UnitCost>().HaveConversion<UnitCostConverter>().HavePrecision(18, 4);
         c.Properties<decimal>().HavePrecision(18, 3);
     }
 
@@ -68,6 +73,8 @@ internal sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> op
             e.Property(x => x.Unit).HasMaxLength(10);
             e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");
             e.Ignore(x => x.Available);
+            e.Ignore(x => x.StockValue);
+
             e.Ignore(x => x.DomainEvents);
         });
 
@@ -90,7 +97,7 @@ internal sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> op
             e.Property(x => x.Number).HasMaxLength(30);
             e.HasIndex(x => x.Number).IsUnique();
             e.Property(x => x.OrderNumber).HasMaxLength(30);
-            e.HasIndex(x => x.SalesOrderId).IsUnique();   // an order ships once
+            e.HasIndex(x => x.SalesOrderId);   // an order may ship in parts
             e.Ignore(x => x.DomainEvents);
             e.OwnsMany(x => x.Lines, l =>
             {
@@ -104,6 +111,7 @@ internal sealed class InventoryDbContext(DbContextOptions<InventoryDbContext> op
     }
 }
 
+internal sealed class UnitCostConverter() : ValueConverter<UnitCost, decimal>(v => v.Value, v => new UnitCost(v));
 internal sealed class ItemIdConverter() : ValueConverter<ItemId, long>(v => v.Value, v => new ItemId(v));
 internal sealed class ShipmentIdConverter() : ValueConverter<ShipmentId, long>(v => v.Value, v => new ShipmentId(v));
 internal sealed class UserIdConverter() : ValueConverter<UserId, long>(v => v.Value, v => new UserId(v));

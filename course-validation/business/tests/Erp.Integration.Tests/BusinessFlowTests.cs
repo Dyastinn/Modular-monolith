@@ -203,6 +203,7 @@ public class BusinessFlowTests(CustomWebAppFactory factory)
 
         var poId = await Create(buyer, "/api/purchase-orders",
             new { supplierId = 1, expectedDate = (DateOnly?)null, notes = "restock", lines = new[] { new { itemId = 2, quantity = 10m, unitCost = 30m } } });
+        (await buyer.PostAsync($"/api/purchase-orders/{poId}/submit", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
         (await buyer.PostAsync($"/api/purchase-orders/{poId}/approve", null)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await admin.PostAsync($"/api/purchase-orders/{poId}/approve", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
 

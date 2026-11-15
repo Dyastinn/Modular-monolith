@@ -23,12 +23,26 @@ public sealed class ListAddress(NavigationManager nav, ListMemory memory)
         var values = new Dictionary<string, object?>();
         foreach (var (name, value) in filters)
             values[name] = value is null or "" or false ? null : value;
+        var (sort, desc) = GridSort.Of(state);
+        values["sort"] = sort;
+        values["desc"] = desc ? "true" : null;
         values["page"] = state.Page > 0 ? state.Page + 1 : null;
         values["size"] = state.PageSize != DefaultPageSize ? state.PageSize : null;
 
         _written = nav.GetUriWithQueryParameters(values);
         memory.Remember(nav.ToBaseRelativePath(_written));
         if (_written != nav.Uri) nav.NavigateTo(_written, replace: true);
+    }
+
+    // A column's arrow when the list opens: the sort the address asks for. Goes on each sortable column's InitialDirection.
+    public SortDirection Initial(string property)
+    {
+        var query = new Uri(nav.Uri).Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+            .Select(p => p.Split('=', 2))
+            .ToDictionary(p => Uri.UnescapeDataString(p[0]), p => p.Length > 1 ? Uri.UnescapeDataString(p[1]) : "", StringComparer.OrdinalIgnoreCase);
+        if (query.GetValueOrDefault("sort") != GridSort.Key(property)) return SortDirection.None;
+        return string.Equals(query.GetValueOrDefault("desc"), "true", StringComparison.OrdinalIgnoreCase)
+            ? SortDirection.Descending : SortDirection.Ascending;
     }
 
     // Called from the page's OnParametersSet: an address this list didn't write means "show this instead".

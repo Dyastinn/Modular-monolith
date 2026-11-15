@@ -17,6 +17,8 @@ internal sealed class Item : AggregateRoot<ItemId>
     public decimal OnHand { get; private set; }
     public decimal Reserved { get; private set; }   // promised to submitted sales orders
     public decimal Available => OnHand - Reserved;
+    public UnitCost AverageCost { get; private set; }
+    public decimal StockValue => AverageCost.ValueOf(OnHand);
 
     private Item() { }
 
@@ -49,8 +51,19 @@ internal sealed class Item : AggregateRoot<ItemId>
             throw new DomainException(InventoryErrors.WholeUnitsOnly, $"Item {Sku} is counted in whole {Unit}; {quantity:0.###} is not allowed.");
     }
 
+    // Goods in: they join what's on hand at the moving-average cost.
+    public StockMovement Receive(decimal quantity, UnitCost cost, string reference, UserId by, DateTime nowUtc)
+    {
+        if (quantity <= 0) throw new DomainException(CommonErrors.QuantityNotPositive, "A receipt must add stock.");
+        EnsureQuantityFits(quantity);
+        AverageCost = UnitCost.Average(OnHand, AverageCost, quantity, cost);
+        OnHand += quantity;
+        return StockMovement.Receipt(Id, quantity, cost, reference, by, nowUtc);
+    }
+
     // A count correction: found, lost, damaged. Never below what's already promised to orders.
-    public StockMovement Adjust(decimal delta, string reason, UserId by, DateTime nowUtc)
+    // Stock found comes in at the cost given, or the average; stock lost leaves at the average.
+    public StockMovement Adjust(decimal delta, string reason, UserId by, DateTime nowUtc, UnitCost? cost = null)
     {
         // Every check first: a refused adjustment must leave the item exactly as it was.
         if (delta == 0) throw new DomainException(InventoryErrors.AdjustmentMustChangeQuantity, "An adjustment must change the quantity.");
@@ -60,8 +73,10 @@ internal sealed class Item : AggregateRoot<ItemId>
             throw new DomainException(InventoryErrors.AdjustmentBelowReserved,
                 $"Adjusting {Sku} by {delta:0.###} would leave {OnHand + delta:0.###} {Unit} on hand, " +
                 $"less than the {Reserved:0.###} reserved for orders.");
+        var unitCost = delta > 0 ? cost ?? AverageCost : AverageCost;
+        if (delta > 0) AverageCost = UnitCost.Average(OnHand, AverageCost, delta, unitCost);
         OnHand += delta;
-        return StockMovement.Adjustment(Id, delta, why, by, nowUtc);
+        return StockMovement.Adjustment(Id, delta, unitCost, why, by, nowUtc);
     }
 
     private void RaiseChanged() =>

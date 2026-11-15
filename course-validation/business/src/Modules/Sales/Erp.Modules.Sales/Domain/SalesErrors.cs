@@ -10,7 +10,7 @@ internal static class SalesErrors
     public static readonly ErrorCode CustomerBlocked = new("SALES-0002", "The customer is blocked",
         "A blocked customer can't place orders. A sales manager can unblock them on the Customers page once the reason is settled.");
     public static readonly ErrorCode CreditLimitExceeded = new("SALES-0003", "The order would exceed the credit limit",
-        "Reduce the order, wait for the customer's payments, or ask a sales manager to raise the credit limit. Orders awaiting approval count against the limit too.");
+        "The order is on credit hold: an accountant or admin decides whether to release it. Orders awaiting approval count against the limit too.");
     public static readonly ErrorCode CategoryNameRequired = new("SALES-0004", "A category needs a name",
         "Enter a name for the category.");
     public static readonly ErrorCode CategoryMaxQuantityInvalid = new("SALES-0005", "Invalid maximum quantity per order",
@@ -63,4 +63,14 @@ internal static class SalesErrors
         "Cancel the order and create a new one if the discount must change.");
     public static readonly ErrorCode DiscountProgramNotFound = new("SALES-0029", "There is no such discount program",
         "Choose a program from the list.");
+    public static readonly ErrorCode NotYourApproval = new("SALES-0030", "This approval isn't yours to give",
+        "A sales manager approves orders above the approval limit; an accountant releases orders over the credit limit. An admin can do both.");
+    public static readonly ErrorCode ShipmentExceedsOrder = new("SALES-0031", "That shipment doesn't fit the order",
+        "Ship only items on the order, and at most what is still to ship on each line.");
+    public static readonly ErrorCode DiscountedOrderShipsWhole = new("SALES-0032", "An order with a senior citizen or PWD discount ships in one go",
+        "Ship every line in full. If something is missing, cancel the order and write a new one for what's in stock.");
+    public static readonly ErrorCode CustomerAlreadyExists = new("SALES-0033", "That customer already exists",
+        "Leave the row out, or edit the existing customer on the Customers page.");
+    public static readonly ErrorCode DuplicateRow = new("SALES-0034", "The same thing appears twice in the file",
+        "Keep one row for it and delete the others.");
 }

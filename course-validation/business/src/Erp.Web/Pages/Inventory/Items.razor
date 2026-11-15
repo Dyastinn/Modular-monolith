@@ -6,6 +6,12 @@
 <PageTitle>Items and stock · ERP</PageTitle>
 
 <PageHeader Title="Items and stock">
+    <Description>
+        @if (_valuation is { } v)
+        {
+            <text>@v.ItemCount items in stock, worth @Format.Peso(v.TotalValue) at average cost.</text>
+        }
+    </Description>
     <Actions>
         <AuthorizeView Roles="@Keepers">
             <MudButton OnClick="() => Edit(null)" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add">New item</MudButton>
@@ -21,15 +27,25 @@
 </MudStack>
 
 <MudDataGrid T="StockItem" @ref="_table" @key="View.Version" ServerData="Load"
-             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.Single" ShowColumnOptions="false"
              CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
     <Columns>
-        <PropertyColumn Property="x => x.Sku" Title="SKU" />
-        <TemplateColumn Title="Name"><CellTemplate>@context.Item.Name @if (!context.Item.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</CellTemplate></TemplateColumn>
-        <PropertyColumn Property="x => x.Unit" Title="Unit" />
-        <TemplateColumn Title="On hand" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Qty(context.Item.OnHand)</CellTemplate></TemplateColumn>
-        <TemplateColumn Title="Reserved" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Qty(context.Item.Reserved)</CellTemplate></TemplateColumn>
-        <TemplateColumn Title="Available" HeaderClass="money" CellClass="money"><CellTemplate><MudText Inline="true" Typo="Typo.subtitle2">@Format.Qty(context.Item.Available)</MudText></CellTemplate></TemplateColumn>
+        <PropertyColumn Property="x => x.Sku" Title="SKU" InitialDirection="@View.Initial(nameof(StockItem.Sku))" />
+        <PropertyColumn Property="x => x.Name" Title="Name" InitialDirection="@View.Initial(nameof(StockItem.Name))">
+            <CellTemplate>@context.Item.Name @if (!context.Item.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</CellTemplate>
+        </PropertyColumn>
+        <PropertyColumn Property="x => x.Unit" Title="Unit" Sortable="false" />
+        <PropertyColumn Property="x => x.OnHand" Title="On hand" HeaderClass="money" CellClass="money" InitialDirection="@View.Initial(nameof(StockItem.OnHand))">
+            <CellTemplate>@Format.Qty(context.Item.OnHand)</CellTemplate>
+        </PropertyColumn>
+        <PropertyColumn Property="x => x.Reserved" Title="Reserved" HeaderClass="money" CellClass="money" InitialDirection="@View.Initial(nameof(StockItem.Reserved))">
+            <CellTemplate>@Format.Qty(context.Item.Reserved)</CellTemplate>
+        </PropertyColumn>
+        <PropertyColumn Property="x => x.Available" Title="Available" HeaderClass="money" CellClass="money" InitialDirection="@View.Initial(nameof(StockItem.Available))">
+            <CellTemplate><MudText Inline="true" Typo="Typo.subtitle2">@Format.Qty(context.Item.Available)</MudText></CellTemplate>
+        </PropertyColumn>
+        @(MoneyColumn.Cost<StockItem>("Average cost", x => x.AverageCost, initial: View.Initial(nameof(StockItem.AverageCost)), hidden: _valuation is null))
+        @(MoneyColumn.Of<StockItem>("Value", x => x.StockValue, initial: View.Initial(nameof(StockItem.StockValue)), hidden: _valuation is null))
         <TemplateColumn Title="">
             <CellTemplate>
                 <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" AriaLabel="Actions">
@@ -55,7 +71,17 @@
     [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
 
     private static readonly string Keepers = $"{Roles.InventoryClerk},{Roles.Admin}";
+    private static readonly string[] CostViewers = [Roles.InventoryClerk, Roles.Purchaser, Roles.Accountant, Roles.SalesManager, Roles.Admin];
     private MudDataGrid<StockItem> _table = default!;
+    private StockValuation? _valuation;   // null: this person doesn't see costs, so the cost columns stay hidden
+
+    [CascadingParameter] private Task<AuthenticationState> Auth { get; set; } = default!;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var user = (await Auth).User;
+        if (CostViewers.Any(user.IsInRole)) _valuation = await Api.Get<StockValuation>("api/stock-valuation");
+    }
 
     private Task<GridData<StockItem>> Load(GridState<StockItem> state, CancellationToken ct)
     {
@@ -80,7 +106,11 @@
     {
         var dialog = await Dialogs.ShowAsync<AdjustStockDialog>($"Adjust {item.Sku}",
             new DialogParameters<AdjustStockDialog> { { d => d.Item, item } });
-        if ((await dialog.Result) is { Canceled: false }) await _table.ReloadServerData();
+        if ((await dialog.Result) is { Canceled: false })
+        {
+            await _table.ReloadServerData();
+            _valuation = await Api.Get<StockValuation>("api/stock-valuation");
+        }
     }
 
     private Task Movements(StockItem item) =>

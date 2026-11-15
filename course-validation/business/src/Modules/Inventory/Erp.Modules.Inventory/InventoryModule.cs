@@ -36,6 +36,7 @@ public static class InventoryModule
         services.AddScoped<SetItemActiveHandler>();
         services.AddScoped<SearchItemsHandler>();
         services.AddScoped<AdjustStockHandler>();
+        services.AddScoped<ImportItemsHandler>();
         services.AddScoped<GetItemMovementsHandler>();
         services.AddScoped<ShipSalesOrderHandler>();
         services.AddScoped<SearchShipmentsHandler>();
@@ -54,8 +55,10 @@ public static class InventoryModule
         CreateItemEndpoint.Map(inventory);
         UpdateItemEndpoint.Map(inventory);
         SetItemActiveEndpoint.Map(inventory);
+        SearchItemsEndpoint.MapValuation(inventory);
         SearchItemsEndpoint.Map(inventory);
         AdjustStockEndpoint.Map(inventory);
+        ImportItemsEndpoint.Map(inventory);
         GetItemMovementsEndpoint.Map(inventory);
         ShipSalesOrderEndpoint.Map(inventory);
         SearchShipmentsEndpoint.Map(inventory);

@@ -11,4 +11,8 @@ internal static class SearchItemsEndpoint
         app.MapGet("/items", async ([AsParameters] SearchItemsQuery query, SearchItemsHandler handler, CancellationToken ct) =>
                 TypedResults.Ok(await handler.HandleAsync(query, ct)))
             .RequireAuthorization();
+
+    public static void MapValuation(IEndpointRouteBuilder app) =>
+        app.MapGet("/stock-valuation", async (SearchItemsHandler handler, CancellationToken ct) => TypedResults.Ok(await handler.HandleAsync(ct)))
+            .RequireAuthorization(p => p.RequireRole(CostViewers.Roles));
 }

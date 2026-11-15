@@ -17,6 +17,9 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
     public DbSet<ItemCategory> ItemCategories => Set<ItemCategory>();
     public DbSet<AppliedPayment> AppliedPayments => Set<AppliedPayment>();
     public DbSet<SpecialDiscountProgram> SpecialDiscountPrograms => Set<SpecialDiscountProgram>();
+    public DbSet<SalesSettings> Settings => Set<SalesSettings>();
+
+    public Task<SalesSettings> SettingsAsync(CancellationToken ct) => Settings.SingleAsync(ct);
 
     // Shared by the app and `dotnet ef`, so the two can't drift apart.
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder o, DbConnection connection) =>
@@ -101,6 +104,7 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
             e.ToTable("customer", t =>
             {
                 t.HasCheckConstraint("ck_customer_credit_limit", "credit_limit >= 0");
+                t.HasCheckConstraint("ck_customer_approval_threshold", "approval_threshold IS NULL OR approval_threshold >= 0");
                 t.HasCheckConstraint("ck_customer_balance", "outstanding_balance >= 0");
             });
             e.HasKey(x => x.Id);
@@ -110,6 +114,20 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
             e.Property(x => x.Tin).HasMaxLength(20);
             e.Property(x => x.Address).HasMaxLength(500);
             e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");
+        });
+
+        b.Entity<SalesSettings>(e =>
+        {
+            e.ToTable("sales_settings", t =>
+            {
+                t.HasCheckConstraint("ck_sales_settings_single_row", "id = 1");
+                t.HasCheckConstraint("ck_sales_settings_approval_threshold", "approval_threshold >= 0");
+            });
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");
+            // What the app did before the limit became editable.
+            e.HasData(new { Id = SalesSettings.SingletonId, ApprovalThreshold = new Money(50_000m) });
         });
 
         b.Entity<ItemCategory>(e =>
@@ -156,7 +174,7 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
 
         b.Entity<SalesOrder>(e =>
         {
-            e.ToTable("sales_order", t => t.HasCheckConstraint("ck_sales_order_status", "status BETWEEN 0 AND 5"));
+            e.ToTable("sales_order", t => t.HasCheckConstraint("ck_sales_order_status", "status BETWEEN 0 AND 7"));
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).UseIdentityColumn();
             e.HasIndex(x => x.OrderNumber).IsUnique();
@@ -164,6 +182,7 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
             e.Property(x => x.RejectionReason).HasMaxLength(500);
             e.HasIndex(x => new { x.CustomerId, x.Status });
             e.HasIndex(x => x.CreatedBy);
+            e.HasIndex(x => x.PendingApprovals).HasFilter("status = 1");
             e.HasOne<Customer>().WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
             e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");
             e.Ignore(x => x.Total);
@@ -177,7 +196,6 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
                 d.Property(x => x.Rate).HasPrecision(5, 4);
                 d.Property(x => x.VatRateRemoved).HasPrecision(5, 4);
             });
-            e.Ignore(x => x.RequiresApproval);
             e.Ignore(x => x.HoldsStock);
             e.Ignore(x => x.DomainEvents);
 
@@ -187,6 +205,7 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
                 {
                     t.HasCheckConstraint("ck_sales_order_line_qty", "quantity > 0");
                     t.HasCheckConstraint("ck_sales_order_line_price", "unit_price >= 0");
+                    t.HasCheckConstraint("ck_sales_order_line_shipped", "shipped_quantity >= 0 AND shipped_quantity <= quantity");
                 });
                 l.WithOwner().HasForeignKey("SalesOrderId");
                 l.Property<long>("Id");
@@ -194,6 +213,8 @@ internal sealed class SalesDbContext(DbContextOptions<SalesDbContext> options) :
                 l.Property(x => x.ItemName).HasMaxLength(200);
                 l.Property(x => x.Unit).HasMaxLength(10);
                 l.Ignore(x => x.LineTotal);
+                l.Ignore(x => x.Outstanding);
+                l.Ignore(x => x.OutstandingTotal);
             });
             e.Navigation(x => x.Lines).HasField("_lines").UsePropertyAccessMode(PropertyAccessMode.Field);
         });

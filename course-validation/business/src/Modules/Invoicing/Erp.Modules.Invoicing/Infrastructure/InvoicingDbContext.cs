@@ -135,6 +135,7 @@ internal sealed class InvoicingDbContext(DbContextOptions<InvoicingDbContext> op
                 l.HasKey("Id");
                 l.Property(x => x.Description).HasMaxLength(200);
                 l.Property(x => x.Unit).HasMaxLength(10);
+                l.Property(x => x.UnitCost).HasPrecision(18, 4);
                 l.Ignore(x => x.LineTotal);
             });
             e.Navigation(x => x.Lines).HasField("_lines").UsePropertyAccessMode(PropertyAccessMode.Field);

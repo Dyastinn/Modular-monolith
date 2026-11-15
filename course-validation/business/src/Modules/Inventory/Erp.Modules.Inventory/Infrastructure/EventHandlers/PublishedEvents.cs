@@ -15,5 +15,7 @@ internal sealed class PublishItemCatalogChanged(IIntegrationEventPublisher publi
 internal sealed class PublishShipmentRecorded(IIntegrationEventPublisher publisher) : IDomainEventHandler<ShipmentCreated>
 {
     public Task HandleAsync(ShipmentCreated e, CancellationToken ct) =>
-        publisher.PublishAsync(new ShipmentRecorded(e.ShipmentId.Value, e.Number, e.SalesOrderId, e.ShippedUtc), ct);
+        publisher.PublishAsync(new ShipmentRecorded(e.ShipmentId.Value, e.Number, e.SalesOrderId, e.ShippedUtc,
+            // An event written before shipments carried lines comes back from the outbox without them.
+            (e.Lines ?? []).Select(l => new ShippedLine(l.ItemId.Value, l.Quantity, l.UnitCost.Value)).ToList()), ct);
 }

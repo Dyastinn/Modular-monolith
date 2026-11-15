@@ -7,6 +7,8 @@ public static class Format
     private static readonly CultureInfo Ph = CultureInfo.GetCultureInfo("en-PH");
 
     public static string Peso(decimal amount) => "₱" + amount.ToString("N2", Ph);
+    // A unit cost keeps up to four decimals: ₱10.0025, but ₱10.50 rather than ₱10.5000.
+    public static string Cost(decimal amount) => "₱" + amount.ToString("#,##0.00##", Ph);
     public static string Qty(decimal quantity) => quantity.ToString("0.###", Ph);
     public static string Percent(decimal rate) => (rate * 100).ToString("0.##", Ph) + "%";
     public static string Date(DateOnly date) => date.ToString("MMM d, yyyy", Ph);

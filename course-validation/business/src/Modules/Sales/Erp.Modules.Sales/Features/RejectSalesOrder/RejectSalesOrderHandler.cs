@@ -16,7 +16,7 @@ internal sealed class RejectSalesOrderHandler(SalesDbContext db, IStockReservati
         var order = await db.GetVisibleOrderAsync(cmd.OrderId, manager, currentUser.Role, ct);
         if (order is null) return false;
 
-        var toRelease = order.Reject(manager, cmd.Reason, time.GetUtcNow().UtcDateTime);
+        var toRelease = order.Reject(manager, currentUser.Role, cmd.Reason, time.GetUtcNow().UtcDateTime);
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         foreach (var line in toRelease)

@@ -27,9 +27,14 @@ public sealed class CustomWebAppFactory : WebApplicationFactory<Program>, IAsync
     public async ValueTask InitializeAsync()
     {
         await _postgres.StartAsync();
-        var roles = await _postgres.ExecAsync(["psql", "-U", "postgres", "-v", "ON_ERROR_STOP=1", "-v", $"db={Database}",
-            "-v", $"owner_password={OwnerPassword}", "-v", $"app_password={AppPassword}", "-f", "/erp/create-roles.sql"]);
-        if (roles.ExitCode != 0) throw new InvalidOperationException($"create-roles.sql failed: {roles.Stderr}");
+        var cs = new NpgsqlConnectionStringBuilder(_postgres.GetConnectionString());
+        var psi = new System.Diagnostics.ProcessStartInfo("psql", ["-h", cs.Host!, "-p", cs.Port.ToString(), "-U", cs.Username!, "-d", "postgres",
+            "-v", "ON_ERROR_STOP=1", "-v", $"db={Database}", "-v", $"owner_password={OwnerPassword}", "-v", $"app_password={AppPassword}",
+            "-f", Path.Combine(AppContext.BaseDirectory, "create-roles.sql")]) { RedirectStandardError = true };
+        psi.Environment["PGPASSWORD"] = cs.Password;
+        using var p = System.Diagnostics.Process.Start(psi)!;
+        await p.WaitForExitAsync();
+        if (p.ExitCode != 0) throw new InvalidOperationException($"create-roles.sql failed: {await p.StandardError.ReadToEndAsync()}");
 
         var server = new NpgsqlConnectionStringBuilder(_postgres.GetConnectionString()) { Database = Database };
         OwnerConnectionString = new NpgsqlConnectionStringBuilder(server.ConnectionString)
@@ -97,5 +102,6 @@ public static class TestDatabase
     // Fully qualified, so Podman doesn't ask which registry "postgres" means. The version production runs.
     public const string Image = "docker.io/library/postgres:18";
 
-    public static PostgreSqlBuilder Container() => new PostgreSqlBuilder(Image);
+    public static PostgreSqlBuilder Container() => new PostgreSqlBuilder(Image)
+        .WithWaitStrategy(DotNet.Testcontainers.Builders.Wait.ForUnixContainer().UntilDatabaseIsAvailable(NpgsqlFactory.Instance));
 }

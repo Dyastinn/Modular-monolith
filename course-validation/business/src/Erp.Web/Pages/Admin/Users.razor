@@ -16,12 +16,12 @@
               Variant="Variant.Outlined" Margin="Margin.Normal" />
 
 <MudDataGrid T="User" @ref="_table" @key="View.Version" ServerData="Load"
-             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.Single" ShowColumnOptions="false"
              CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
     <Columns>
-        <PropertyColumn Property="x => x.FullName" Title="Name" />
-        <PropertyColumn Property="x => x.Email" Title="Email" />
-        <TemplateColumn Title="Role"><CellTemplate>@Format.Words(context.Item.Role)</CellTemplate></TemplateColumn>
+        <PropertyColumn Property="x => x.FullName" Title="Name" InitialDirection="@View.Initial(nameof(User.FullName))" />
+        <PropertyColumn Property="x => x.Email" Title="Email" InitialDirection="@View.Initial(nameof(User.Email))" />
+        <PropertyColumn Property="x => x.Role" Title="Role" InitialDirection="@View.Initial(nameof(User.Role))"><CellTemplate>@Format.Words(context.Item.Role)</CellTemplate></PropertyColumn>
         <TemplateColumn Title="Status">
             <CellTemplate>
                 @if (context.Item.IsDisabled) { <MudChip T="string" Size="Size.Small" Color="Color.Default">Disabled</MudChip> }
@@ -30,7 +30,7 @@
                 else { <MudChip T="string" Size="Size.Small" Color="Color.Success">Active</MudChip> }
             </CellTemplate>
         </TemplateColumn>
-        <TemplateColumn Title="Last sign-in"><CellTemplate>@Format.Date(context.Item.LastSignIn)</CellTemplate></TemplateColumn>
+        <PropertyColumn Property="x => x.LastSignIn" Title="Last sign-in" InitialDirection="@View.Initial(nameof(User.LastSignIn))"><CellTemplate>@Format.Date(context.Item.LastSignIn)</CellTemplate></PropertyColumn>
         <TemplateColumn Title="">
             <CellTemplate>
                 <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Dense="true" AriaLabel="Actions">

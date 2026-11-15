@@ -26,14 +26,18 @@
 </MudStack>
 
 <MudDataGrid T="PurchaseOrderSummary" @ref="_table" @key="View.Version" ServerData="Load"
-             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.Single" ShowColumnOptions="false"
              CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize" RowClick="Open" RowStyle="cursor:pointer">
     <Columns>
-        <PropertyColumn Property="x => x.Number" Title="PO" />
-        <PropertyColumn Property="x => x.SupplierName" Title="Supplier" />
-        <TemplateColumn Title="Status"><CellTemplate><StatusChip Status="@context.Item.Status" /></CellTemplate></TemplateColumn>
-        <MoneyColumn Title="Total" Amount="x => x.Total" />
-        <TemplateColumn Title="Expected"><CellTemplate>@(context.Item.ExpectedDate is { } d ? Format.Date(d) : "")</CellTemplate></TemplateColumn>
+        <PropertyColumn Property="x => x.Number" Title="PO" InitialDirection="@View.Initial(nameof(PurchaseOrderSummary.Number))" />
+        <PropertyColumn Property="x => x.SupplierName" Title="Supplier" InitialDirection="@View.Initial(nameof(PurchaseOrderSummary.SupplierName))" />
+        <PropertyColumn Property="x => x.Status" Title="Status" InitialDirection="@View.Initial(nameof(PurchaseOrderSummary.Status))">
+            <CellTemplate><StatusChip Status="@context.Item.Status" /></CellTemplate>
+        </PropertyColumn>
+        @(MoneyColumn.Of<PurchaseOrderSummary>("Total", x => x.Total, initial: View.Initial(nameof(PurchaseOrderSummary.Total))))
+        <PropertyColumn Property="x => x.ExpectedDate" Title="Expected" InitialDirection="@View.Initial(nameof(PurchaseOrderSummary.ExpectedDate))">
+            <CellTemplate>@(context.Item.ExpectedDate is { } d ? Format.Date(d) : "")</CellTemplate>
+        </PropertyColumn>
     </Columns>
     <NoRecordsContent>No purchase orders match.</NoRecordsContent>
     <PagerContent><MudDataGridPager T="PurchaseOrderSummary" /></PagerContent>
@@ -46,7 +50,7 @@
     [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
     [SupplyParameterFromQuery(Name = "size")] public int? PageSize { get; set; }
 
-    private static readonly string[] Statuses = ["Draft", "Approved", "Sent", "PartiallyReceived", "Received", "Closed", "Cancelled"];
+    private static readonly string[] Statuses = ["Draft", "PendingApproval", "Approved", "Sent", "PartiallyReceived", "Received", "Closed", "Cancelled"];
     private static readonly string Buyers = $"{Roles.Purchaser},{Roles.Admin}";
     private MudDataGrid<PurchaseOrderSummary> _table = default!;
 

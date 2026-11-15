@@ -40,6 +40,9 @@ public static class SalesModule
         services.AddScoped<ApproveSalesOrderHandler>();
         services.AddScoped<RejectSalesOrderHandler>();
         services.AddScoped<CancelSalesOrderHandler>();
+        services.AddScoped<CloseSalesOrderHandler>();
+        services.AddScoped<ImportCustomersHandler>();
+        services.AddScoped<ImportPricesHandler>();
         services.AddScoped<ListItemCategoriesHandler>();
         services.AddScoped<SaveItemCategoryHandler>();
         services.AddScoped<SearchPriceListHandler>();
@@ -48,6 +51,8 @@ public static class SalesModule
         services.AddScoped<SaveSpecialDiscountProgramHandler>();
         services.AddScoped<ApplySpecialDiscountHandler>();
         services.AddScoped<RemoveSpecialDiscountHandler>();
+        services.AddScoped<GetApprovalLimitHandler>();
+        services.AddScoped<SetApprovalLimitHandler>();
 
         // Without includeInternalTypes no validator is found, and validation silently stops.
         services.AddValidatorsFromAssembly(assembly, includeInternalTypes: true);
@@ -74,10 +79,14 @@ public static class SalesModule
         ApproveSalesOrderEndpoint.Map(sales);
         RejectSalesOrderEndpoint.Map(sales);
         CancelSalesOrderEndpoint.Map(sales);
+        CloseSalesOrderEndpoint.Map(sales);
+        ImportCustomersEndpoint.Map(sales);
+        ImportPricesEndpoint.Map(sales);
         ItemCategoriesEndpoint.Map(sales);
         SearchPriceListEndpoint.Map(sales);
         SetItemPricingEndpoint.Map(sales);
         SpecialDiscountEndpoint.Map(sales);
+        ApprovalLimitEndpoint.Map(sales);
         return api;
     }
 }

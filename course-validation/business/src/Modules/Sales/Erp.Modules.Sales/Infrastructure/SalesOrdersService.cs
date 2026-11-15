@@ -13,20 +13,21 @@ internal sealed class SalesOrdersService(SalesDbContext db) : ISalesOrders
         InTransaction(tx, async () =>
         {
             var id = new SalesOrderId(orderId);
-            await db.LockOrderAsync(id, ct);   // two clerks shipping the same order: the second waits, then sees Shipped
+            await db.LockOrderAsync(id, ct);   // two clerks shipping the same order: the second waits, then sees what's left
             var order = await db.SalesOrders.SingleOrDefaultAsync(o => o.Id == id, ct);
             if (order is null) return null;
             order.EnsureCanShip();
             return (ShippableOrder?)new ShippableOrder(order.Id.Value, order.OrderNumber,
-                order.Lines.Select(l => new ShippableLine(l.ItemId.Value, l.Quantity.Value)).ToList());
+                order.Lines.Where(l => l.Outstanding > 0).Select(l => new ShippableLine(l.ItemId.Value, l.Outstanding)).ToList());
         }, ct);
 
-    public Task MarkShippedAsync(long orderId, DateTime shippedUtc, DbTransaction tx, CancellationToken ct) =>
+    public Task RecordShipmentAsync(long orderId, IReadOnlyList<ShippableLine> shipped, DateTime shippedUtc, DbTransaction tx,
+        CancellationToken ct) =>
         InTransaction(tx, async () =>
         {
             var id = new SalesOrderId(orderId);
             var order = await db.SalesOrders.SingleAsync(o => o.Id == id, ct);
-            order.MarkShipped(shippedUtc);
+            order.RecordShipment(shipped.Select(l => (new ItemId(l.ItemId), l.Quantity)).ToList(), shippedUtc);
             await db.SaveChangesAsync(ct);
             return true;
         }, ct);

@@ -12,3 +12,8 @@ WHERE NOT EXISTS (SELECT 1 FROM inventory.item);
 
 -- Explicit ids don't advance the sequence; move it past them.
 SELECT setval('inventory.item_id_seq', GREATEST((SELECT MAX(id) FROM inventory.item), 1));
+
+-- What the seeded stock cost, so values and margins have something to show. Only where nothing set a cost yet.
+UPDATE inventory.item i SET average_cost = v.cost
+FROM (VALUES (1, 15.0000), (2, 26.5000), (3, 310.0000), (4, 52500.0000), (5, 455.2500)) AS v(id, cost)
+WHERE i.id = v.id AND i.average_cost = 0;

@@ -11,7 +11,8 @@ internal enum PurchaseOrderStatus
     PartiallyReceived = 3,
     Received = 4,
     Closed = 5,      // partly received, and the rest will never come
-    Cancelled = 6
+    Cancelled = 6,
+    PendingApproval = 7
 }
 
 // What we buy, from whom, at what cost. Snapshot of the item as it was when ordered.
@@ -61,8 +62,12 @@ internal sealed class PurchaseOrder : Entity<PurchaseOrderId>
     public string? Notes { get; private set; }
     public UserId CreatedBy { get; private set; }
     public DateTime CreatedUtc { get; private set; }
-    public UserId? ApprovedBy { get; private set; }
+    public DateTime? SubmittedUtc { get; private set; }
+    public UserId? ApprovedBy { get; private set; }   // null = within the approval limit
     public DateTime? ApprovedUtc { get; private set; }
+    public UserId? RejectedBy { get; private set; }   // the last time it was sent back; cleared when resubmitted
+    public DateTime? RejectedUtc { get; private set; }
+    public string? RejectionReason { get; private set; }
     public DateTime? SentUtc { get; private set; }
 
     public Money Total => _lines.Aggregate(Money.Zero, (sum, l) => sum + l.LineTotal);
@@ -103,15 +108,36 @@ internal sealed class PurchaseOrder : Entity<PurchaseOrderId>
         _lines.AddRange(lines.Select(l => new PurchaseOrderLine(l.ItemId, l.Sku, l.Name, l.Unit, l.Quantity, l.UnitCost)));
     }
 
-    // Spending needs a second pair of eyes: nobody approves their own purchase order.
-    public void Approve(UserId approver, DateTime nowUtc)
+    // Within the approval limit it's approved on the spot; above it, it waits for an admin.
+    public void Submit(PurchasingSettings settings, DateTime nowUtc)
     {
         EnsureStatus(PurchaseOrderStatus.Draft);
         if (_lines.Count == 0) throw new DomainException(PurchasingErrors.OrderNeedsLines, "A purchase order needs at least one line.");
+        Status = PurchaseOrderStatus.PendingApproval;
+        SubmittedUtc = nowUtc;
+        (RejectedBy, RejectedUtc, RejectionReason) = (null, null, null);
+        if (Total <= settings.ApprovalThreshold)
+            (Status, ApprovedUtc) = (PurchaseOrderStatus.Approved, nowUtc);
+    }
+
+    // Spending needs a second pair of eyes: nobody approves their own purchase order.
+    public void Approve(UserId approver, DateTime nowUtc)
+    {
+        EnsureStatus(PurchaseOrderStatus.PendingApproval);
         if (approver == CreatedBy) throw new DomainException(PurchasingErrors.CreatorCannotApprove, "A purchase order can't be approved by the person who created it.");
         Status = PurchaseOrderStatus.Approved;
         ApprovedBy = approver;
         ApprovedUtc = nowUtc;
+    }
+
+    // Sent back to the buyer as a draft, with the reason, to fix and submit again.
+    public void Reject(UserId rejectedBy, string reason, DateTime nowUtc)
+    {
+        EnsureStatus(PurchaseOrderStatus.PendingApproval);
+        if (string.IsNullOrWhiteSpace(reason))
+            throw new DomainException(PurchasingErrors.RejectionReasonRequired, "Sending a purchase order back needs a reason.");
+        Status = PurchaseOrderStatus.Draft;
+        (RejectedBy, RejectedUtc, RejectionReason) = (rejectedBy, nowUtc, reason.Trim());
     }
 
     public void MarkSent(DateTime nowUtc)
@@ -121,8 +147,8 @@ internal sealed class PurchaseOrder : Entity<PurchaseOrderId>
         SentUtc = nowUtc;
     }
 
-    // Returns what to put into stock. Goods can arrive before we mark the order sent, so Approved counts too.
-    public IReadOnlyList<(ItemId ItemId, Quantity Quantity)> Receive(IReadOnlyList<(long LineId, Quantity Quantity)> received)
+    // Returns what to put into stock, at what cost. Goods can arrive before we mark the order sent, so Approved counts too.
+    public IReadOnlyList<(ItemId ItemId, Quantity Quantity, Money UnitCost)> Receive(IReadOnlyList<(long LineId, Quantity Quantity)> received)
     {
         EnsureStatus(PurchaseOrderStatus.Approved, PurchaseOrderStatus.Sent, PurchaseOrderStatus.PartiallyReceived);
         if (received.Count == 0) throw new DomainException(PurchasingErrors.NothingReceived, "Enter at least one received quantity.");
@@ -135,11 +161,11 @@ internal sealed class PurchaseOrder : Entity<PurchaseOrderId>
         foreach (var sameLine in receipt.GroupBy(r => r.Line))
             sameLine.Key.EnsureCanReceive(sameLine.Sum(r => r.Quantity.Value));
 
-        var toStock = new List<(ItemId, Quantity)>();
+        var toStock = new List<(ItemId, Quantity, Money)>();
         foreach (var (line, quantity) in receipt)
         {
             line.Receive(quantity);
-            toStock.Add((line.ItemId, quantity));
+            toStock.Add((line.ItemId, quantity, line.UnitCost));
         }
 
         Status = _lines.All(l => l.Outstanding == 0) ? PurchaseOrderStatus.Received : PurchaseOrderStatus.PartiallyReceived;
@@ -154,7 +180,7 @@ internal sealed class PurchaseOrder : Entity<PurchaseOrderId>
 
     public void Cancel()
     {
-        EnsureStatus(PurchaseOrderStatus.Draft, PurchaseOrderStatus.Approved, PurchaseOrderStatus.Sent);
+        EnsureStatus(PurchaseOrderStatus.Draft, PurchaseOrderStatus.PendingApproval, PurchaseOrderStatus.Approved, PurchaseOrderStatus.Sent);
         Status = PurchaseOrderStatus.Cancelled;
     }
 

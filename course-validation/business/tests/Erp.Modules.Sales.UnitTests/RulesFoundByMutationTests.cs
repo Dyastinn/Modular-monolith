@@ -66,18 +66,21 @@ public class RulesFoundByMutationTests
         Make.Item(9, 10).Invoking(i => i.SetPricing(new Money(10), Make.General, true, (TaxType)7, false))
             .Should().Throw<DomainException>().WithMessage("*tax type*");
 
-    // The handler checks these on create, but Submit is where they count: they're checked again there.
+    // The handler checks the block on create, but Submit is where it counts: it's checked again there.
     [Fact]
-    public void Submit_checks_the_block_and_the_credit_itself()
+    public void Submit_refuses_a_blocked_customer_and_holds_an_order_over_credit()
     {
         var customer = Make.Customer(limit: 100);
         var order = Make.Order(customer, unitPrice: 25);
         customer.Block();
-        order.Invoking(o => o.Submit(customer, Money.Zero, Make.Now)).Should().Throw<DomainException>().WithMessage("*blocked*");
+        order.Invoking(o => o.Submit(customer, Make.Settings, Money.Zero, Make.Now)).Should().Throw<DomainException>().WithMessage("*blocked*");
+        order.Status.Should().Be(SalesOrderStatus.Draft);
 
         customer.Unblock();
-        order.Invoking(o => o.Submit(customer, new Money(80), Make.Now)).Should().Throw<DomainException>().WithMessage("*credit limit*");
-        order.Status.Should().Be(SalesOrderStatus.Draft);
+        order.Submit(customer, Make.Settings, new Money(80), Make.Now);   // 80 already pending + 25 > 100
+        order.Status.Should().Be(SalesOrderStatus.PendingApproval);
+        order.PendingApprovals.Should().Be(ApprovalNeeds.CreditRelease);
+        customer.OutstandingBalance.Should().Be(Money.Zero);
     }
 
     [Fact]
@@ -85,7 +88,7 @@ public class RulesFoundByMutationTests
     {
         var customer = Make.Customer();
         SalesOrder.Create("SO-1", customer.Id, Make.Rep, Make.Now)
-            .Invoking(o => o.Submit(customer, Money.Zero, Make.Now)).Should().Throw<DomainException>().WithMessage("*no lines*");
+            .Invoking(o => o.Submit(customer, Make.Settings, Money.Zero, Make.Now)).Should().Throw<DomainException>().WithMessage("*no lines*");
     }
 
     // Passing another customer's record is a programming mistake, not a business rule, so it isn't a DomainException.
@@ -96,8 +99,8 @@ public class RulesFoundByMutationTests
         var order = SalesOrder.Create("SO-1", new CustomerId(99), Make.Rep, Make.Now);
         order.SetLines([(Make.Item(1, 25), new Quantity(1))], Roles.SalesRep);
 
-        order.Invoking(o => o.Submit(customer, Money.Zero, Make.Now)).Should().Throw<InvalidOperationException>();
-        order.Invoking(o => o.Approve(Make.Manager, customer, Make.Now)).Should().Throw<InvalidOperationException>();
+        order.Invoking(o => o.Submit(customer, Make.Settings, Money.Zero, Make.Now)).Should().Throw<InvalidOperationException>();
+        order.Invoking(o => o.Approve(Make.Manager, Roles.SalesManager, customer, Make.Now)).Should().Throw<InvalidOperationException>();
         order.Invoking(o => o.Cancel(customer)).Should().Throw<InvalidOperationException>();
     }
 
@@ -106,7 +109,7 @@ public class RulesFoundByMutationTests
     {
         var customer = Make.Customer();
         var order = Make.Order(customer, unitPrice: 60_000);
-        order.Submit(customer, Money.Zero, Make.Now);
+        order.Submit(customer, Make.Settings, Money.Zero, Make.Now);
 
         order.Invoking(o => o.EnsureCanShip()).Should().Throw<DomainException>().WithMessage("*Only approved*");
     }
@@ -116,7 +119,7 @@ public class RulesFoundByMutationTests
     {
         var customer = Make.Customer();
         var order = Make.Order(customer, unitPrice: 25);
-        order.Submit(customer, Money.Zero, Make.Now);
+        order.Submit(customer, Make.Settings, Money.Zero, Make.Now);
 
         order.Invoking(o => o.RemoveSpecialDiscount()).Should().Throw<DomainException>().WithMessage("*draft*");
     }

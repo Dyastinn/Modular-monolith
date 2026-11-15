@@ -19,5 +19,5 @@ internal static class RejectSalesOrderEndpoint
         app.MapPost("/sales-orders/{id:long}/reject",
                 async Task<Results<NoContent, NotFound>> (long id, RejectSalesOrderRequest body, RejectSalesOrderHandler handler, CancellationToken ct) =>
                     await handler.HandleAsync(new RejectSalesOrderCommand(id, body.Reason), ct) ? TypedResults.NoContent() : TypedResults.NotFound())
-            .RequireAuthorization(p => p.RequireRole(SalesRoles.Managers));
+            .RequireAuthorization(p => p.RequireRole(SalesRoles.Approvers));
 }

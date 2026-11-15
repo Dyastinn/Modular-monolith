@@ -266,7 +266,9 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
 - **Business values live in tables, edited on screens; `appsettings` describes the installation** (user
   decision, 2026-11-07). The company's registered details, tax regime, VAT rate, invoice title and BIR permit
   are Invoicing's `company_profile` (Accountant/Admin, **Company and tax** page, validated by the domain); the
-  special-discount programs are Sales' `special_discount_program` table (seeded SC/PWD). Only connection
+  special-discount programs are Sales' `special_discount_program` table (seeded SC/PWD); the approval limits are
+  `sales_settings` and `purchasing_settings` (Admin, **Approval rules** page), with a per-customer override on
+  `customer.approval_threshold`. Only connection
   strings, certificates, SMTP, fonts, the time zone, telemetry and the first admin stay in configuration. Never
   put a rate, a TIN or a permit number in `appsettings.json` or `.env`.
 - **Tax is data, never a constant.** Each item has a `TaxType` (VATable, zero-rated, VAT-exempt) and a
@@ -288,14 +290,22 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
   `plan-business-tutorial/MUDBLAZOR.md`. **Never subclass MudBlazor components** (no `AppTextField : MudTextField`);
   use them as they are, with the house settings written on each tag: every field (`MudTextField`, `MudNumericField`,
   `MudSelect`, `MudAutocomplete`, `MudDatePicker`) has `Variant="Variant.Outlined" Margin="Margin.Normal"`, and date
-  fields `Editable="true"`. **Every table is `MudDataGrid`** with `Striped="true" Hover="true" Dense="true"
-  SortMode="SortMode.None"` and `Outlined="true"` unless it sits in a framed tab or card; `PropertyColumn`/
-  `TemplateColumn`, amounts in our `MoneyColumn`; the column `Title` labels values on phones; cells don't wrap, free
+  fields `Editable="true"`. **Every table is `MudDataGrid`** with `Striped="true" Hover="true" Dense="true"` and
+  `Outlined="true"` unless it sits in a framed tab or card. **Lists sort** (user decision, 2026-11-15): a paged list
+  is `SortMode="SortMode.Single" ShowColumnOptions="false"` (the column menu's hide and filter don't fit a server
+  list, and its hidden button would push headers off their numbers) and sorts **on the server** (the query's `Sort`/`Desc`, checked by `ValidSort`
+  against an allow-list of the columns' JSON names; the SQL function orders with one `CASE` per column and
+  direction, never text built into SQL); each sortable column restores its arrow with
+  `InitialDirection="@View.Initial(nameof(Row.Prop))"`, a column the API can't sort says `Sortable="false"`; a small
+  unpaged report grid sorts in the browser; a document's lines (order, invoice, PO) and a log stay
+  `SortMode.None`, in their own order. `PropertyColumn` (with a `CellTemplate` when it needs one) for anything
+  sortable, `TemplateColumn` otherwise; amounts are `@(MoneyColumn.Of<Row>("Title", x => x.Amount, …))`, which writes
+  the `PropertyColumn` in place (a column wrapped in a component would render last); the column `Title` labels values on phones; cells don't wrap, free
   text opts in with `CellClass="wrap"`; each grid that can be empty has `NoRecordsContent`. Never `MudTable` or
 `MudSimpleTable`. Totals under lines use `Totals` + `TotalLine`. Row actions go in a "⋮" `MudMenu` with
   `AriaLabel`. Rows of fields use `Breakpoint="Breakpoint.Xs"` so they stack on a phone. Every page under a list (a
   detail or edit page) has a breadcrumb back to it (`PageHeader Trail=`, drawn by `Crumbs`, a `nav` landmark around `MudBreadcrumbs`), via
-  `ListMemory.Last`; a detail page's status is `StatusChip Live="true"`. A list keeps its search, filters, page and
+  `ListMemory.Last`; a detail page's status is `StatusChip Live="true"`. A list keeps its search, filters, sort, page and
   page size in the address (`ListAddress`); a filter change returns to page 1 (`GridPaging.FirstPage`, an extension method). Buttons
   that send a change are `Disabled="Api.Busy"`; an action that can't be undone (ship, close short, cancel) asks
   first, naming the record and the consequence, with verb buttons ("Ship" / "Not yet"); a form with unsaved changes

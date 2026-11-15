@@ -24,9 +24,6 @@ internal sealed class CreateSalesOrderHandler(SalesDbContext db, ICurrentUser cu
         var order = SalesOrder.Create(await db.NextOrderNumberAsync(now, ct), customer.Id, new UserId(currentUser.UserId), now);
         order.SetLines(lines, currentUser.Role);
 
-        // Early feedback only; Submit re-checks under a lock.
-        customer.EnsureWithinCreditLimit(order.Total, await db.PendingTotalAsync(customer.Id, order.Id, ct));
-
         db.SalesOrders.Add(order);
         await db.SaveChangesAsync(ct);
         return order.Id.Value;

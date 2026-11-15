@@ -30,16 +30,19 @@ internal sealed class StockService(InventoryDbContext db, TimeProvider time) : I
             return true;
         }, ct);
 
-    public Task ReceiveAsync(long itemId, decimal quantity, string reference, long userId, DbTransaction tx, CancellationToken ct) =>
+    // The average needs what's on hand now, so the row is locked first: a reservation arriving meanwhile waits a
+    // moment instead of turning this receipt into a conflict.
+    public Task ReceiveAsync(long itemId, decimal quantity, decimal unitCost, string reference, long userId, DbTransaction tx,
+        CancellationToken ct) =>
         InTransaction(tx, async () =>
         {
             var id = new ItemId(itemId);
-            var rows = await db.Items.Where(i => i.Id == id)
-                .ExecuteUpdateAsync(s => s.SetProperty(i => i.OnHand, i => i.OnHand + quantity), ct);
+            await db.LockItemAsync(id, ct);
             // Only items already on a purchase order are received, so a missing one is a bug, not a request to refuse.
-            if (rows == 0) throw new InvalidOperationException($"Item {itemId} doesn't exist.");
+            var item = await db.Items.SingleOrDefaultAsync(i => i.Id == id, ct)
+                ?? throw new InvalidOperationException($"Item {itemId} doesn't exist.");
 
-            db.StockMovements.Add(StockMovement.Receipt(id, quantity, reference, new UserId(userId), time.GetUtcNow().UtcDateTime));
+            db.StockMovements.Add(item.Receive(quantity, new UnitCost(unitCost), reference, new UserId(userId), time.GetUtcNow().UtcDateTime));
             await db.SaveChangesAsync(ct);
             return true;
         }, ct);

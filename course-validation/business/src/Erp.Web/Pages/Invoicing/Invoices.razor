@@ -32,8 +32,8 @@
         <TemplateColumn Title="Issued"><CellTemplate>@Format.Date(context.Item.IssueDate)</CellTemplate></TemplateColumn>
         <TemplateColumn Title="Due"><CellTemplate>@Format.Date(context.Item.DueDate)</CellTemplate></TemplateColumn>
         <TemplateColumn Title="Status"><CellTemplate><StatusChip Status="@context.Item.Status" /></CellTemplate></TemplateColumn>
-        <MoneyColumn Title="Total" Amount="x => x.Total" />
-        <MoneyColumn Title="Balance" Amount="x => x.BalanceDue" />
+        @(MoneyColumn.Of<InvoiceSummary>("Total", x => x.Total))
+        @(MoneyColumn.Of<InvoiceSummary>("Balance", x => x.BalanceDue))
     </Columns>
     <NoRecordsContent>No invoices match.</NoRecordsContent>
     <PagerContent><MudDataGridPager T="InvoiceSummary" /></PagerContent>

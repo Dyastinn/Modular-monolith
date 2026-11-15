@@ -4,7 +4,8 @@ using FluentValidation;
 
 namespace Erp.Modules.Sales.Features;
 
-internal sealed record SearchPriceListQuery(string? Search = null, bool ForSaleOnly = false, int Page = 1, int PageSize = 20);
+internal sealed record SearchPriceListQuery(string? Search = null, bool ForSaleOnly = false, string? Sort = null, bool Desc = false,
+    int Page = 1, int PageSize = 20);
 
 internal sealed record PriceListItemDto(
     long Id, string Sku, string Name, string Unit, bool AllowsFractions, bool IsActive,
@@ -17,6 +18,7 @@ internal sealed class SearchPriceListValidator : AbstractValidator<SearchPriceLi
     {
         RuleFor(x => x.Page).ValidPage();
         RuleFor(x => x.PageSize).ValidPageSize();
+        RuleFor(x => x.Sort).ValidSort("sku", "name", "unitPrice", "categoryName");
     }
 }
 
@@ -24,11 +26,11 @@ internal sealed class SearchPriceListHandler(IDbConnectionFactory connections)
 {
     public async Task<PagedResult<PriceListItemDto>> HandleAsync(SearchPriceListQuery q, CancellationToken ct)
     {
-        var args = new { Search = SearchText.ForLike(q.Search), q.ForSaleOnly, q.Page, q.PageSize };
+        var args = new { Search = SearchText.ForLike(q.Search), q.ForSaleOnly, q.Sort, q.Desc, q.Page, q.PageSize };
         await using var conn = connections.Create();
         using var multi = await conn.QueryMultipleAsync(new CommandDefinition(
             """
-            SELECT * FROM sales.search_price_list(@Search, @ForSaleOnly, @Page, @PageSize);
+            SELECT * FROM sales.search_price_list(@Search, @ForSaleOnly, @Sort, @Desc, @Page, @PageSize);
             SELECT sales.count_price_list(@Search, @ForSaleOnly);
             """, args, cancellationToken: ct));
 

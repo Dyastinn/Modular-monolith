@@ -14,7 +14,8 @@ public interface IStockReservation
 
 public interface IStockReceiving
 {
-    Task ReceiveAsync(long itemId, decimal quantity, string reference, long userId, DbTransaction tx, CancellationToken ct);
+    // unitCost: what one unit cost us; the item's moving-average cost takes it in.
+    Task ReceiveAsync(long itemId, decimal quantity, decimal unitCost, string reference, long userId, DbTransaction tx, CancellationToken ct);
 }
 
 public sealed record CatalogItem(long Id, string Sku, string Name, string Unit, bool AllowsFractions, bool IsActive);
@@ -29,5 +30,9 @@ public interface IItemCatalog
 public sealed record ItemCatalogChanged(long ItemId, string Sku, string Name, string Unit, bool AllowsFractions, bool IsActive)
     : IIntegrationEvent;
 
-public sealed record ShipmentRecorded(long ShipmentId, string ShipmentNumber, long SalesOrderId, DateTime ShippedUtc)
-    : IIntegrationEvent;
+// Lines: what left, and what each unit cost (the cost of goods sold). Empty only on events written before
+// shipments carried lines (2026-11-15), which shipped the whole order.
+public sealed record ShipmentRecorded(long ShipmentId, string ShipmentNumber, long SalesOrderId, DateTime ShippedUtc,
+    IReadOnlyList<ShippedLine>? Lines = null) : IIntegrationEvent;
+
+public sealed record ShippedLine(long ItemId, decimal Quantity, decimal UnitCost);

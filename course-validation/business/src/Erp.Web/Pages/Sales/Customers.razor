@@ -18,21 +18,26 @@
               Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="mb-4" />
 
 <MudDataGrid T="Customer" @ref="_table" @key="View.Version" ServerData="Load"
-             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.Single" ShowColumnOptions="false"
              CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
     <Columns>
-        <TemplateColumn Title="Name">
+        <PropertyColumn Property="x => x.Name" Title="Name" InitialDirection="@View.Initial(nameof(Customer.Name))">
             <CellTemplate>
                 @context.Item.Name
                 @if (context.Item.IsBlocked) { <MudChip T="string" Color="Color.Error" Size="Size.Small">Blocked</MudChip> }
             </CellTemplate>
+        </PropertyColumn>
+        <PropertyColumn Property="x => x.Tin" Title="TIN" Sortable="false" />
+        @(MoneyColumn.Of<Customer>("Credit limit", x => x.CreditLimit, initial: View.Initial(nameof(Customer.CreditLimit))))
+        @(MoneyColumn.Of<Customer>("Owes", x => x.OutstandingBalance, initial: View.Initial(nameof(Customer.OutstandingBalance))))
+        @(MoneyColumn.Of<Customer>("Awaiting approval", x => x.PendingTotal, initial: View.Initial(nameof(Customer.PendingTotal))))
+        @(MoneyColumn.Of<Customer>("Available", x => x.AvailableCredit, initial: View.Initial(nameof(Customer.AvailableCredit))))
+        <PropertyColumn Property="x => x.PaymentTermsDays" Title="Terms" InitialDirection="@View.Initial(nameof(Customer.PaymentTermsDays))">
+            <CellTemplate>@context.Item.PaymentTermsDays days</CellTemplate>
+        </PropertyColumn>
+        <TemplateColumn Title="Approval limit">
+            <CellTemplate>@(context.Item.ApprovalThreshold is { } t ? Format.Peso(t) : "Company's")</CellTemplate>
         </TemplateColumn>
-        <PropertyColumn Property="x => x.Tin" Title="TIN" />
-        <MoneyColumn Title="Credit limit" Amount="x => x.CreditLimit" />
-        <MoneyColumn Title="Owes" Amount="x => x.OutstandingBalance" />
-        <MoneyColumn Title="Awaiting approval" Amount="x => x.PendingTotal" />
-        <MoneyColumn Title="Available" Amount="x => x.AvailableCredit" />
-        <TemplateColumn Title="Terms"><CellTemplate>@context.Item.PaymentTermsDays days</CellTemplate></TemplateColumn>
         <TemplateColumn Title="">
             <CellTemplate>
                 <AuthorizeView Roles="@Managers" Context="auth">

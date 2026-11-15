@@ -65,6 +65,19 @@ namespace Erp.Modules.Purchasing.Infrastructure.Migrations
                         .HasColumnType("character varying(30)")
                         .HasColumnName("number");
 
+                    b.Property<long?>("RejectedBy")
+                        .HasColumnType("bigint")
+                        .HasColumnName("rejected_by");
+
+                    b.Property<DateTime?>("RejectedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("rejected_utc");
+
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("rejection_reason");
+
                     b.Property<uint>("RowVersion")
                         .IsConcurrencyToken()
                         .ValueGeneratedOnAddOrUpdate()
@@ -78,6 +91,10 @@ namespace Erp.Modules.Purchasing.Infrastructure.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("integer")
                         .HasColumnName("status");
+
+                    b.Property<DateTime?>("SubmittedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("submitted_utc");
 
                     b.Property<long>("SupplierId")
                         .HasColumnType("bigint")
@@ -95,7 +112,50 @@ namespace Erp.Modules.Purchasing.Infrastructure.Migrations
 
                     b.ToTable("purchase_order", "purchasing", t =>
                         {
-                            t.HasCheckConstraint("ck_purchase_order_status", "status BETWEEN 0 AND 6");
+                            t.HasCheckConstraint("ck_purchase_order_status", "status BETWEEN 0 AND 7");
+                        });
+                });
+
+            modelBuilder.Entity("Erp.Modules.Purchasing.Domain.PurchasingSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("ApprovalThreshold")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("approval_threshold");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<long?>("UpdatedBy")
+                        .HasColumnType("bigint")
+                        .HasColumnName("updated_by");
+
+                    b.Property<DateTime?>("UpdatedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_utc");
+
+                    b.HasKey("Id")
+                        .HasName("pk_purchasing_settings");
+
+                    b.ToTable("purchasing_settings", "purchasing", t =>
+                        {
+                            t.HasCheckConstraint("ck_purchasing_settings_approval_threshold", "approval_threshold >= 0");
+
+                            t.HasCheckConstraint("ck_purchasing_settings_single_row", "id = 1");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            ApprovalThreshold = 0m
                         });
                 });
 

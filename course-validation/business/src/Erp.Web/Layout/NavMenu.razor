@@ -2,6 +2,9 @@
    only a convenience. *@
 <MudNavMenu Color="Color.Primary" Rounded="true" Margin="Margin.Dense" Class="pa-2">
     <MudNavLink Href="" Match="NavLinkMatch.All" Icon="@Icons.Material.Outlined.SpaceDashboard">Home</MudNavLink>
+    <AuthorizeView Roles="@Approvers">
+        <MudNavLink Href="approvals" Icon="@Icons.Material.Outlined.HowToReg">Awaiting my approval</MudNavLink>
+    </AuthorizeView>
 
     <AuthorizeView Roles="@Sales">
         <MudText Typo="Typo.overline" Color="Color.Secondary" HtmlTag="div" Class="px-3 pt-4 pb-1">Sales</MudText>
@@ -35,6 +38,7 @@
     <AuthorizeView Roles="@Roles.Admin">
         <MudText Typo="Typo.overline" Color="Color.Secondary" HtmlTag="div" Class="px-3 pt-4 pb-1">Administration</MudText>
         <MudNavLink Href="users" Icon="@Icons.Material.Outlined.ManageAccounts">Users</MudNavLink>
+        <MudNavLink Href="approval-rules" Icon="@Icons.Material.Outlined.Rule">Approval rules</MudNavLink>
         <MudNavLink Href="sign-in-log" Icon="@Icons.Material.Outlined.History">Sign-in log</MudNavLink>
     </AuthorizeView>
 
@@ -48,6 +52,7 @@
     private static readonly string Buying = Join(Roles.Purchaser, Roles.Admin, Roles.InventoryClerk, Roles.Accountant);
     private static readonly string Billing = Join(Roles.Accountant, Roles.Admin, Roles.SalesManager);
     private static readonly string Accounting = Join(Roles.Accountant, Roles.Admin);
+    private static readonly string Approvers = Join(Roles.SalesManager, Roles.Accountant, Roles.Admin);
 
     private static string Join(params string[] roles) => string.Join(",", roles);
 }

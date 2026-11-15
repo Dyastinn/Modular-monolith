@@ -7,6 +7,8 @@ internal static class SalesRoles
 {
     public static readonly string[] Sellers = [Roles.SalesRep, Roles.SalesManager, Roles.Admin];
     public static readonly string[] Managers = [Roles.SalesManager, Roles.Admin];
+    // Managers approve large orders; accountants release credit holds (see ApprovalNeedsRules).
+    public static readonly string[] Approvers = [Roles.SalesManager, Roles.Accountant, Roles.Admin];
 
     // Customers and orders are also read by the people who ship and bill them.
     public static readonly string[] Readers =

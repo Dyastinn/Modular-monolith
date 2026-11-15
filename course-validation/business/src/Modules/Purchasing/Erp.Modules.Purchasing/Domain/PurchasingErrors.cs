@@ -33,4 +33,6 @@ internal static class PurchasingErrors
         "Choose a supplier from the list.");
     public static readonly ErrorCode ItemNotFound = new("PURCHASING-0014", "An item on the purchase order doesn't exist",
         "Choose items from the list.");
+    public static readonly ErrorCode RejectionReasonRequired = new("PURCHASING-0015", "Sending a purchase order back needs a reason",
+        "Write what the buyer should change before submitting it again.");
 }

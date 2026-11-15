@@ -204,7 +204,7 @@ public sealed class BusinessFlowUiTests : IAsyncLifetime
         [
             "/sales-orders", "/sales-orders/new", "/customers", "/price-list", "/items", "/shipments",
             "/suppliers", "/purchase-orders", "/purchase-orders/new", "/invoices", "/receivables-aging", "/withholding-tax", "/company",
-            "/users", "/sign-in-log", "/change-password"
+            "/users", "/sign-in-log", "/change-password", "/approvals", "/approval-rules"
         ];
 
         foreach (var path in pages)
@@ -219,6 +219,81 @@ public sealed class BusinessFlowUiTests : IAsyncLifetime
             await Expect(admin.Locator("#blazor-error-ui"), $"{path} crashed the app").ToBeHiddenAsync();
             await Expect(admin.GetByRole(AriaRole.Alert), $"{path} showed an error").ToHaveCountAsync(0);
         }
+    }
+
+    // The queue shows what waits on this person; approving from the row takes it off the queue.
+    [UiFact]
+    public async Task A_manager_approves_from_the_queue()
+    {
+        var rep = await SignIn("rep@erp.local");
+        await rep.GotoAsync("/sales-orders/new");
+        await Pick(rep, "Customer", "Epsilon", "Epsilon Retail");
+        await Pick(rep, "Item", "Rack", "GEN-003 · Server Rack");
+        await rep.GetByRole(AriaRole.Button, new() { Name = "Save draft" }).ClickAsync();
+        await Expect(rep).ToHaveURLAsync(new Regex(@"/sales-orders/\d+$"));
+        await rep.GetByRole(AriaRole.Button, new() { Name = "Submit" }).ClickAsync();
+        await StatusIs(rep, "Pending approval");
+        var orderNumber = await rep.GetByRole(AriaRole.Heading, new() { Level = 4 }).InnerTextAsync();
+
+        var manager = await SignIn("manager@erp.local");
+        await manager.GetByRole(AriaRole.Navigation).GetByRole(AriaRole.Link, new() { Name = "Awaiting my approval" }).ClickAsync();
+        var row = manager.GetByRole(AriaRole.Row).Filter(new() { HasText = orderNumber });
+        await Expect(row).ToContainTextAsync("Above limit");
+        await Shot(manager, "approvals-queue");
+
+        await manager.GetByRole(AriaRole.Button, new() { Name = $"Actions for {orderNumber}" }).ClickAsync();
+        await manager.GetByRole(AriaRole.Menuitem, new() { Name = "Approve" }).ClickAsync();
+
+        await Expect(row).ToHaveCountAsync(0);
+    }
+
+    // Part of an order ships now, and the rest is closed when it will never come.
+    [UiFact]
+    public async Task A_clerk_ships_part_of_an_order_and_the_rep_closes_the_rest()
+    {
+        var rep = await SignIn("rep@erp.local");
+        await rep.GotoAsync("/sales-orders/new");
+        await Pick(rep, "Customer", "Acme", "Acme Corp");
+        await Pick(rep, "Item", "Widget", "GEN-001 · Widget");
+        await rep.GetByLabel("Quantity").First.FillAsync("10");
+        await rep.GetByRole(AriaRole.Button, new() { Name = "Save draft" }).ClickAsync();
+        await Expect(rep).ToHaveURLAsync(new Regex(@"/sales-orders/\d+$"));
+        var orderUrl = new Uri(rep.Url).AbsolutePath;
+        await rep.GetByRole(AriaRole.Button, new() { Name = "Submit" }).ClickAsync();
+        await StatusIs(rep, "Approved");
+
+        var clerk = await SignIn("clerk@erp.local");
+        await clerk.GotoAsync(orderUrl);
+        await clerk.GetByRole(AriaRole.Button, new() { Name = "Ship" }).ClickAsync();
+        var dialog = clerk.GetByRole(AriaRole.Dialog);
+        await dialog.GetByLabel("Ship now: Widget").FillAsync("4");
+        await Shot(clerk, "ship-part");
+        await dialog.GetByRole(AriaRole.Button, new() { Name = "Ship" }).ClickAsync();
+        await StatusIs(clerk, "Partially shipped");
+
+        await rep.ReloadAsync();
+        await rep.GetByRole(AriaRole.Button, new() { Name = "Close short" }).ClickAsync();
+        await rep.GetByRole(AriaRole.Dialog).GetByRole(AriaRole.Button, new() { Name = "Close short" }).ClickAsync();
+        await StatusIs(rep, "Closed");
+        await Shot(rep, "closed-short");
+    }
+
+    // A sort is part of the list's view: it goes in the address, so Back, a bookmark or a reload keeps it.
+    [UiFact]
+    public async Task A_clicked_column_sorts_the_list_and_stays_in_the_address()
+    {
+        var manager = await SignIn("manager@erp.local");
+        await manager.GotoAsync("/customers");
+        var header = manager.GetByRole(AriaRole.Columnheader, new() { Name = "Credit limit" });
+
+        await header.ClickAsync();
+        await Expect(manager).ToHaveURLAsync(new Regex("sort=creditLimit(?!.*desc)"));
+        await header.ClickAsync();
+        await Expect(manager).ToHaveURLAsync(new Regex("sort=creditLimit.*desc=true|desc=true.*sort=creditLimit"));
+
+        await manager.ReloadAsync();
+        await Expect(manager).ToHaveURLAsync(new Regex("desc=true"));
+        await Expect(header).ToHaveAttributeAsync("aria-sort", "descending");
     }
 
     [UiFact]

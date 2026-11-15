@@ -8,9 +8,11 @@ using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Erp.Modules.Inventory.Features;
 
-internal sealed record ShipSalesOrderCommand(long SalesOrderId);
+// Lines: null = everything still to ship.
+internal sealed record ShipSalesOrderCommand(long SalesOrderId, IReadOnlyList<(long ItemId, decimal Quantity)>? Lines = null);
 
-// Stock leaves, the reservation is used up, and the order becomes Shipped: one transaction across two modules.
+// Stock leaves at its average cost, the reservation is used up, and the order records what shipped: one transaction
+// across two modules. Sales refuses a line that isn't on the order or is more than is still to ship.
 internal sealed class ShipSalesOrderHandler(InventoryDbContext db, ISalesOrders orders, IInvoicingSetup invoicing, ICurrentUser user,
     TimeProvider time)
 {
@@ -28,8 +30,12 @@ internal sealed class ShipSalesOrderHandler(InventoryDbContext db, ISalesOrders 
         var id = new ShipmentId(await db.NextShipmentIdAsync(ct));
         var number = DocumentNumber.Format("SH", id.Value, now);
 
+        var toShip = cmd.Lines?.Select(l => new ShippableLine(l.ItemId, l.Quantity)).ToList() ?? order.Lines.ToList();
+        // Sales first: a line that doesn't fit the order is refused for that reason, before any stock moves.
+        await orders.RecordShipmentAsync(order.OrderId, toShip, now, tx.GetDbTransaction(), ct);
+
         var lines = new List<ShipmentLine>();
-        foreach (var line in order.Lines)
+        foreach (var line in toShip)
         {
             var itemId = new ItemId(line.ItemId);
             var rows = await db.Items
@@ -40,13 +46,14 @@ internal sealed class ShipSalesOrderHandler(InventoryDbContext db, ISalesOrders 
             if (rows != 1)
                 throw new DomainException(InventoryErrors.ReservationMissing, $"Item {line.ItemId} no longer has {line.Quantity:0.###} reserved for {order.OrderNumber}.");
 
-            db.StockMovements.Add(StockMovement.Shipment(itemId, line.Quantity, number, by, now));
-            lines.Add(new ShipmentLine(itemId, line.Quantity));
+            // Read after the update, which holds the row: no receipt can change the average before this commits.
+            var cost = await db.Items.Where(i => i.Id == itemId).Select(i => i.AverageCost).SingleAsync(ct);
+            db.StockMovements.Add(StockMovement.Shipment(itemId, line.Quantity, cost, number, by, now));
+            lines.Add(new ShipmentLine(itemId, line.Quantity, cost));
         }
 
         db.Shipments.Add(Shipment.Record(id, number, order.OrderId, order.OrderNumber, lines, by, now));
         await db.SaveChangesAsync(ct);
-        await orders.MarkShippedAsync(order.OrderId, now, tx.GetDbTransaction(), ct);
         await tx.CommitAsync(ct);
         return id.Value;
     }

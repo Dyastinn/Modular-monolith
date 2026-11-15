@@ -4,9 +4,11 @@ namespace Erp.Modules.Inventory.Domain;
 
 internal readonly record struct ShipmentId(long Value);
 
-internal sealed record ShipmentLine(ItemId ItemId, decimal Quantity);
+// UnitCost: the item's average cost as it left; the cost of goods sold, carried onto the invoice for margins.
+internal sealed record ShipmentLine(ItemId ItemId, decimal Quantity, UnitCost UnitCost);
 
-// Goods that left the building for one approved sales order. Invoicing bills from it.
+// Goods that left the building for an approved sales order: all of it, or part (the rest ships later). Invoicing
+// bills each shipment on its own invoice.
 internal sealed class Shipment : AggregateRoot<ShipmentId>
 {
     private readonly List<ShipmentLine> _lines = new();
@@ -29,10 +31,11 @@ internal sealed class Shipment : AggregateRoot<ShipmentId>
         };
         shipment._lines.AddRange(lines);
         if (shipment._lines.Count == 0) throw new DomainException(InventoryErrors.ShipmentNeedsLines, "A shipment needs at least one line.");
-        shipment.Raise(new ShipmentCreated(id, number, salesOrderId, nowUtc));
+        shipment.Raise(new ShipmentCreated(id, number, salesOrderId, nowUtc, shipment._lines));
         return shipment;
     }
 }
 
 // Published to other modules as ShipmentRecorded.
-internal sealed record ShipmentCreated(ShipmentId ShipmentId, string Number, long SalesOrderId, DateTime ShippedUtc) : IDomainEvent;
+internal sealed record ShipmentCreated(ShipmentId ShipmentId, string Number, long SalesOrderId, DateTime ShippedUtc,
+    IReadOnlyList<ShipmentLine> Lines) : IDomainEvent;

@@ -8,6 +8,7 @@ internal sealed class StockMovement
     public long Id { get; private set; }
     public ItemId ItemId { get; private set; }
     public decimal Quantity { get; private set; }   // + in, - out
+    public UnitCost UnitCost { get; private set; }   // what each unit was worth as it moved
     public MovementKind Kind { get; private set; }
     public string? Reference { get; private set; }   // PO-..., SH-...
     public string? Reason { get; private set; }
@@ -16,12 +17,12 @@ internal sealed class StockMovement
 
     private StockMovement() { }
 
-    public static StockMovement Receipt(ItemId item, decimal quantity, string reference, UserId by, DateTime nowUtc) =>
-        new() { ItemId = item, Quantity = quantity, Kind = MovementKind.Receipt, Reference = reference, UserId = by, OccurredUtc = nowUtc };
+    public static StockMovement Receipt(ItemId item, decimal quantity, UnitCost cost, string reference, UserId by, DateTime nowUtc) =>
+        new() { ItemId = item, Quantity = quantity, UnitCost = cost, Kind = MovementKind.Receipt, Reference = reference, UserId = by, OccurredUtc = nowUtc };
 
-    public static StockMovement Adjustment(ItemId item, decimal delta, string reason, UserId by, DateTime nowUtc) =>
-        new() { ItemId = item, Quantity = delta, Kind = MovementKind.Adjustment, Reason = reason, UserId = by, OccurredUtc = nowUtc };
+    public static StockMovement Adjustment(ItemId item, decimal delta, UnitCost cost, string reason, UserId by, DateTime nowUtc) =>
+        new() { ItemId = item, Quantity = delta, UnitCost = cost, Kind = MovementKind.Adjustment, Reason = reason, UserId = by, OccurredUtc = nowUtc };
 
-    public static StockMovement Shipment(ItemId item, decimal quantity, string reference, UserId by, DateTime nowUtc) =>
-        new() { ItemId = item, Quantity = -quantity, Kind = MovementKind.Shipment, Reference = reference, UserId = by, OccurredUtc = nowUtc };
+    public static StockMovement Shipment(ItemId item, decimal quantity, UnitCost cost, string reference, UserId by, DateTime nowUtc) =>
+        new() { ItemId = item, Quantity = -quantity, UnitCost = cost, Kind = MovementKind.Shipment, Reference = reference, UserId = by, OccurredUtc = nowUtc };
 }

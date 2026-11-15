@@ -10,13 +10,18 @@
 </PageHeader>
 
 <MudDataGrid T="Shipment" @key="View.Version" ServerData="Load"
-             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.Single" ShowColumnOptions="false"
              CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
     <Columns>
-        <PropertyColumn Property="x => x.Number" Title="Shipment" />
-        <TemplateColumn Title="Order"><CellTemplate><MudLink Href="@($"sales-orders/{context.Item.SalesOrderId}")">@context.Item.OrderNumber</MudLink></CellTemplate></TemplateColumn>
-        <PropertyColumn Property="x => x.LineCount" Title="Lines" />
-        <TemplateColumn Title="Shipped"><CellTemplate>@Format.Date(context.Item.ShippedUtc)</CellTemplate></TemplateColumn>
+        <PropertyColumn Property="x => x.Number" Title="Shipment" InitialDirection="@View.Initial(nameof(Shipment.Number))" />
+        <PropertyColumn Property="x => x.OrderNumber" Title="Order" InitialDirection="@View.Initial(nameof(Shipment.OrderNumber))">
+            <CellTemplate><MudLink Href="@($"sales-orders/{context.Item.SalesOrderId}")">@context.Item.OrderNumber</MudLink></CellTemplate>
+        </PropertyColumn>
+        <PropertyColumn Property="x => x.LineCount" Title="Lines" Sortable="false" />
+        @(MoneyColumn.Of<Shipment>("Cost of goods", x => x.CostOfGoods, initial: View.Initial(nameof(Shipment.CostOfGoods))))
+        <PropertyColumn Property="x => x.ShippedUtc" Title="Shipped" InitialDirection="@View.Initial(nameof(Shipment.ShippedUtc))">
+            <CellTemplate>@Format.Date(context.Item.ShippedUtc)</CellTemplate>
+        </PropertyColumn>
         <TemplateColumn Title="By"><CellTemplate>@_names.GetValueOrDefault(context.Item.ShippedBy)</CellTemplate></TemplateColumn>
     </Columns>
     <NoRecordsContent>Nothing has shipped yet.</NoRecordsContent>

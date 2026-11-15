@@ -16,7 +16,7 @@ internal sealed class ApproveSalesOrderHandler(SalesDbContext db, ICurrentUser c
         if (order is null) return false;
         var customer = await db.Customers.SingleAsync(c => c.Id == order.CustomerId, ct);
 
-        order.Approve(approver, customer, time.GetUtcNow().UtcDateTime);
+        order.Approve(approver, currentUser.Role, customer, time.GetUtcNow().UtcDateTime);
 
         await db.SaveChangesAsync(ct);   // order, customer balance and outbox event: one transaction
         return true;

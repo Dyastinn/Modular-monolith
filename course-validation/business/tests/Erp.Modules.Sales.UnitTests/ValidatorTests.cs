@@ -48,7 +48,7 @@ public class SearchSalesOrdersValidatorTests
     [InlineData(1, 100)]
     [InlineData(500, 20)]
     public void Pages_from_one_and_sizes_from_1_to_100_pass(int page, int pageSize) =>
-        Validator.Validate(new SearchSalesOrdersQuery(null, null, null, page, pageSize)).IsValid.Should().BeTrue();
+        Validator.Validate(new SearchSalesOrdersQuery(Page: page, PageSize: pageSize)).IsValid.Should().BeTrue();
 
     [Theory]
     [InlineData(0, 20)]
@@ -56,7 +56,7 @@ public class SearchSalesOrdersValidatorTests
     [InlineData(1, 0)]
     [InlineData(1, 101)]
     public void Page_zero_negative_pages_and_sizes_outside_1_to_100_are_refused(int page, int pageSize) =>
-        Validator.Validate(new SearchSalesOrdersQuery(null, null, null, page, pageSize)).IsValid.Should().BeFalse();
+        Validator.Validate(new SearchSalesOrdersQuery(Page: page, PageSize: pageSize)).IsValid.Should().BeFalse();
 
     [Theory]
     [InlineData("Approved", true)]

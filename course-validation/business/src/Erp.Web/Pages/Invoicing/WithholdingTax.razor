@@ -23,13 +23,13 @@
 else
 {
     <MudDataGrid T="WithholdingRow" Items="_report.Summary" Class="mb-6"
-                 Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None">
+                 Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.Single" ShowColumnOptions="false">
         <Columns>
             <PropertyColumn Property="x => x.CustomerName" Title="Customer" />
-            <TemplateColumn Title="Quarter"><CellTemplate>Q@(context.Item.Quarter)</CellTemplate></TemplateColumn>
-            <MoneyColumn Title="Withheld" Amount="x => x.Withheld" />
-            <MoneyColumn Title="Certified" Amount="x => x.Certified" />
-            <MoneyColumn Title="Missing" Amount="x => x.Missing" Warn="true" />
+            <PropertyColumn Property="x => x.Quarter" Title="Quarter"><CellTemplate>Q@(context.Item.Quarter)</CellTemplate></PropertyColumn>
+            @(MoneyColumn.Of<WithholdingRow>("Withheld", x => x.Withheld))
+            @(MoneyColumn.Of<WithholdingRow>("Certified", x => x.Certified))
+            @(MoneyColumn.Of<WithholdingRow>("Missing", x => x.Missing, warn: true))
             <TemplateColumn Title="">
                 <CellTemplate>
                     @if (context.Item.Missing > 0)
@@ -44,11 +44,11 @@ else
 
     <MudText Typo="Typo.h6" GutterBottom="true">Certificates received</MudText>
     <MudDataGrid T="WithholdingCertificate" Items="_report.Certificates" RowClassFunc="@((c, _) => c.VoidedUtc is null ? "" : "voided")"
-                 Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None">
+                 Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.Single" ShowColumnOptions="false">
         <Columns>
             <PropertyColumn Property="x => x.CustomerName" Title="Customer" />
-            <TemplateColumn Title="Quarter"><CellTemplate>Q@(context.Item.Quarter)</CellTemplate></TemplateColumn>
-            <MoneyColumn Title="Amount" Amount="x => x.Amount" />
+            <PropertyColumn Property="x => x.Quarter" Title="Quarter"><CellTemplate>Q@(context.Item.Quarter)</CellTemplate></PropertyColumn>
+            @(MoneyColumn.Of<WithholdingCertificate>("Amount", x => x.Amount))
             <TemplateColumn Title="Reference" CellClass="wrap">
                 <CellTemplate>@context.Item.Reference @(context.Item.VoidReason is null ? "" : $"(void: {context.Item.VoidReason})")</CellTemplate>
             </TemplateColumn>

@@ -41,15 +41,18 @@ internal sealed class InvoiceLine
     public Money UnitPrice { get; private set; }
     public TaxType TaxType { get; private set; }
     public bool SpecialDiscountEligible { get; private set; }
+    // The item, and what each unit cost us as it shipped: for margins. Null on invoices issued before costing.
+    public long? ItemId { get; private set; }
+    public decimal? UnitCost { get; private set; }
     public Money LineTotal => UnitPrice * Quantity;
 
     private InvoiceLine() { }
 
     public InvoiceLine(string description, string unit, Quantity quantity, Money unitPrice, TaxType taxType,
-        bool specialDiscountEligible = false)
+        bool specialDiscountEligible = false, long? itemId = null, decimal? unitCost = null)
     {
         Description = description; Unit = unit; Quantity = quantity; UnitPrice = unitPrice; TaxType = taxType;
-        SpecialDiscountEligible = specialDiscountEligible;
+        SpecialDiscountEligible = specialDiscountEligible; ItemId = itemId; UnitCost = unitCost;
     }
 }
 
@@ -86,6 +89,13 @@ internal sealed class Invoice : AggregateRoot<InvoiceId>
     private readonly List<InvoiceLine> _lines = new();
     private readonly List<Payment> _payments = new();
     public IReadOnlyList<InvoiceLine> Lines => _lines;
+
+    // What this invoice billed, for a reissue of the same shipment. Empty for an invoice from before shipments had
+    // lines: it billed the whole order, and so will its reissue.
+    public IReadOnlyList<(long ItemId, decimal Quantity, decimal UnitCost)> ShippedLines() =>
+        _lines.All(l => l.ItemId is not null)
+            ? _lines.Select(l => (l.ItemId!.Value, l.Quantity.Value, l.UnitCost ?? 0m)).ToList()
+            : [];
     public IReadOnlyList<Payment> Payments => _payments;
 
     public string Number { get; private set; } = default!;

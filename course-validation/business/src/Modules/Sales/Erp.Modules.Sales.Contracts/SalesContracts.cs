@@ -4,7 +4,7 @@ using Erp.Shared.BuildingBlocks;
 namespace Erp.Modules.Sales.Contracts;
 
 public sealed record ShippableOrder(long OrderId, string OrderNumber, IReadOnlyList<ShippableLine> Lines);
-public sealed record ShippableLine(long ItemId, decimal Quantity);
+public sealed record ShippableLine(long ItemId, decimal Quantity);   // in a ShippableOrder: what is still to ship
 
 public sealed record OrderForInvoice(
     long OrderId, string OrderNumber, long CustomerId, string CustomerName, string? CustomerTin, string? CustomerAddress,
@@ -17,7 +17,8 @@ public interface ISalesOrders
     // Both join the caller's transaction. GetForShipment returns null when there is no such order, and throws a
     // DomainException unless the order is approved.
     Task<ShippableOrder?> GetForShipmentAsync(long orderId, DbTransaction tx, CancellationToken ct);
-    Task MarkShippedAsync(long orderId, DateTime shippedUtc, DbTransaction tx, CancellationToken ct);
+    // Throws a DomainException when the lines don't fit what is still to ship.
+    Task RecordShipmentAsync(long orderId, IReadOnlyList<ShippableLine> shipped, DateTime shippedUtc, DbTransaction tx, CancellationToken ct);
 
     Task<OrderForInvoice> GetForInvoiceAsync(long orderId, CancellationToken ct);
 }

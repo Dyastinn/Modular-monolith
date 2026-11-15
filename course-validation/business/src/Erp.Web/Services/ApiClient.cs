@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Components;
+using Erp.Web.Shared;
 using MudBlazor;
 
 namespace Erp.Web.Services;
@@ -26,11 +27,12 @@ public sealed class ApiClient(HttpClient http, ISnackbar snackbar, CookieAuthent
         return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<T>() : await Fail<T>(response);
     }
 
-    // One page of a list for a grid: the grid counts pages from 0, the API from 1.
+    // One page of a list for a grid: the grid counts pages from 0, the API from 1. The sort goes with it.
     public async Task<GridData<T>> Page<T>(string url, GridState<T> state)
     {
         var separator = url.Contains('?') ? '&' : '?';
-        var result = await Get<PagedResult<T>>($"{url}{separator}page={state.Page + 1}&pageSize={state.PageSize}");
+        var sort = GridSort.Of(state) is ({ } column, var desc) ? $"&sort={column}{(desc ? "&desc=true" : "")}" : "";
+        var result = await Get<PagedResult<T>>($"{url}{separator}page={state.Page + 1}&pageSize={state.PageSize}{sort}");
         return new GridData<T> { Items = result?.Items ?? [], TotalItems = result?.TotalCount ?? 0 };
     }
 

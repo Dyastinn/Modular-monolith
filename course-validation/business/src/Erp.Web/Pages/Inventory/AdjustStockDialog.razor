@@ -9,6 +9,12 @@
                              Variant="Variant.Outlined" Margin="Margin.Normal" />
             <MudTextField @bind-Value="_reason" Label="Reason" MaxLength="500" Lines="2"
                           Variant="Variant.Outlined" Margin="Margin.Normal" />
+            @if (_change > 0)
+            {
+                @* Stock found has a value too: say what it cost, or it joins at the current average. *@
+                <MudNumericField T="decimal?" @bind-Value="_unitCost" Label="Cost per unit (₱)" Min="0" Format="0.00##" Clearable="true"
+                                 HelperText="@CostHelp" Variant="Variant.Outlined" Margin="Margin.Normal" />
+            }
             <MudText Typo="Typo.body2">After: @Format.Qty(Item.OnHand + _change) @Item.Unit</MudText>
         </MudStack>
     </DialogContent>
@@ -24,11 +30,16 @@
     [Parameter] public StockItem Item { get; set; } = default!;
 
     private decimal _change;
+    private decimal? _unitCost;
     private string _reason = "";
+
+    private string CostHelp => Item.AverageCost is { } avg
+        ? $"Leave empty to use the average, {Format.Cost(avg)}."
+        : "Leave empty to use the item's average cost.";
 
     private async Task Save()
     {
-        if (await Api.Post($"api/items/{Item.Id}/adjustments", new { quantity = _change, reason = _reason }, "Stock adjusted."))
+        if (await Api.Post($"api/items/{Item.Id}/adjustments", new { quantity = _change, reason = _reason, unitCost = _change > 0 ? _unitCost : null }, "Stock adjusted."))
             Dialog.Close(DialogResult.Ok(true));
     }
 }

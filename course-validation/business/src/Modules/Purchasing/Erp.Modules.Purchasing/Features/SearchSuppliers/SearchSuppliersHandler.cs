@@ -4,7 +4,8 @@ using FluentValidation;
 
 namespace Erp.Modules.Purchasing.Features;
 
-internal sealed record SearchSuppliersQuery(string? Search = null, bool ActiveOnly = false, int Page = 1, int PageSize = 20);
+internal sealed record SearchSuppliersQuery(string? Search = null, bool ActiveOnly = false, string? Sort = null, bool Desc = false,
+    int Page = 1, int PageSize = 20);
 internal sealed record GetSupplierQuery(long SupplierId);
 
 internal sealed record SupplierDto(long Id, string Name, string? Tin, string? Address, string? Email, string? Phone,
@@ -16,6 +17,7 @@ internal sealed class SearchSuppliersValidator : AbstractValidator<SearchSupplie
     {
         RuleFor(x => x.Page).ValidPage();
         RuleFor(x => x.PageSize).ValidPageSize();
+        RuleFor(x => x.Sort).ValidSort("name", "paymentTermsDays");
     }
 }
 
@@ -23,11 +25,11 @@ internal sealed class SearchSuppliersHandler(IDbConnectionFactory connections)
 {
     public async Task<PagedResult<SupplierDto>> HandleAsync(SearchSuppliersQuery q, CancellationToken ct)
     {
-        var args = new { Search = SearchText.ForLike(q.Search), q.ActiveOnly, q.Page, q.PageSize };
+        var args = new { Search = SearchText.ForLike(q.Search), q.ActiveOnly, q.Sort, q.Desc, q.Page, q.PageSize };
         await using var conn = connections.Create();
         using var multi = await conn.QueryMultipleAsync(new CommandDefinition(
             """
-            SELECT * FROM purchasing.search_suppliers(NULL, @Search, @ActiveOnly, @Page, @PageSize);
+            SELECT * FROM purchasing.search_suppliers(NULL, @Search, @ActiveOnly, @Sort, @Desc, @Page, @PageSize);
             SELECT purchasing.count_suppliers(@Search, @ActiveOnly);
             """, args, cancellationToken: ct));
 
@@ -39,6 +41,6 @@ internal sealed class SearchSuppliersHandler(IDbConnectionFactory connections)
     {
         await using var conn = connections.Create();
         return await conn.QuerySingleOrDefaultAsync<SupplierDto>(new CommandDefinition(
-            "SELECT * FROM purchasing.search_suppliers(@SupplierId, NULL, FALSE, 1, 1);", new { q.SupplierId }, cancellationToken: ct));
+            "SELECT * FROM purchasing.search_suppliers(@SupplierId, NULL, FALSE, NULL, FALSE, 1, 1);", new { q.SupplierId }, cancellationToken: ct));
     }
 }

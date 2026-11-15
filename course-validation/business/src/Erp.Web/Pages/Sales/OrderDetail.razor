@@ -34,15 +34,24 @@
         }
         @if (_order.Status == "PendingApproval")
         {
-            <AuthorizeView Roles="@Managers">
-                <MudButton OnClick="Reject" Variant="Variant.Outlined" Color="Color.Error" Disabled="Api.Busy">Reject</MudButton>
-                <MudButton OnClick="Approve" Variant="Variant.Filled" Color="Color.Success" Disabled="Api.Busy">Approve</MudButton>
+            <AuthorizeView Context="auth">
+                @if (ApprovalText.CanGive(auth.User, _order.PendingApprovals))
+                {
+                    <MudButton OnClick="Reject" Variant="Variant.Outlined" Color="Color.Error" Disabled="Api.Busy">Reject</MudButton>
+                    <MudButton OnClick="Approve" Variant="Variant.Filled" Color="Color.Success" Disabled="Api.Busy">@ApprovalText.ActionLabel(auth.User, _order.PendingApprovals)</MudButton>
+                }
             </AuthorizeView>
         }
-        @if (_order.Status == "Approved")
+        @if (_order.Status is "Approved" or "PartiallyShipped")
         {
             <AuthorizeView Roles="@Shippers">
                 <MudButton OnClick="Ship" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.LocalShipping" Disabled="Api.Busy">Ship</MudButton>
+            </AuthorizeView>
+        }
+        @if (_order.Status == "PartiallyShipped")
+        {
+            <AuthorizeView Roles="@Sellers">
+                <MudButton OnClick="CloseShort" Variant="Variant.Outlined" Disabled="Api.Busy">Close short</MudButton>
             </AuthorizeView>
         }
         @if (_order.Status is "Draft" or "PendingApproval" or "Approved")
@@ -51,7 +60,7 @@
                 <MudButton OnClick="Cancel" Variant="Variant.Text" Color="Color.Error" Disabled="Api.Busy">Cancel order</MudButton>
             </AuthorizeView>
         }
-        @if (_order.Status == "Shipped")
+        @if (_order.Status is "Shipped" or "PartiallyShipped" or "Closed")
         {
             <AuthorizeView Roles="@Billing">
                 <MudButton Href="@Url.With("invoices", ("search", _order.OrderNumber))" Variant="Variant.Outlined">Invoice</MudButton>
@@ -71,8 +80,11 @@
                         <CellTemplate>@context.Item.ItemName @(context.Item.SpecialDiscountEligible && _order.SpecialDiscount is not null ? "*" : "")</CellTemplate>
                     </TemplateColumn>
                     <TemplateColumn Title="Quantity" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Qty(context.Item.Quantity) @context.Item.Unit</CellTemplate></TemplateColumn>
-                    <MoneyColumn Title="Unit price" Amount="x => x.UnitPrice" />
-                    <MoneyColumn Title="Amount" Amount="x => x.LineTotal" />
+                    <TemplateColumn Title="Shipped" HeaderClass="money" CellClass="money" Hidden="@(!HasShipped)">
+                        <CellTemplate>@Format.Qty(context.Item.ShippedQuantity)</CellTemplate>
+                    </TemplateColumn>
+                    @(MoneyColumn.Of<SalesOrderLine>("Unit price", x => x.UnitPrice))
+                    @(MoneyColumn.Of<SalesOrderLine>("Amount", x => x.LineTotal))
                 </Columns>
             </MudDataGrid>
             <Totals>
@@ -94,9 +106,19 @@
             <MudText Typo="Typo.h6" GutterBottom="true">History</MudText>
             <MudText Typo="Typo.body2">Created by @_names.Created, @Format.Date(_order.CreatedUtc)</MudText>
             @if (_order.SubmittedUtc is not null) { <MudText Typo="Typo.body2">Submitted @Format.Date(_order.SubmittedUtc)</MudText> }
+            @if (_order.PendingApprovals.Count > 0)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="my-2">Waiting for @ApprovalText.Describe(_order.PendingApprovals).</MudAlert>
+            }
+            @if (_order.CreditReleasedUtc is not null)
+            {
+                <MudText Typo="Typo.body2">Credit released by @_names.CreditReleased, @Format.Date(_order.CreditReleasedUtc)</MudText>
+            }
             @if (_order.ApprovedUtc is not null)
             {
-                <MudText Typo="Typo.body2">Approved by @(_names.Approved ?? "automatic approval (₱50,000 or less)"), @Format.Date(_order.ApprovedUtc)</MudText>
+                <MudText Typo="Typo.body2">
+                    Approved @(_names.Approved is { } by ? $"by {by}" : "automatically (within the approval limit)"), @Format.Date(_order.ApprovedUtc)
+                </MudText>
             }
             @if (_order.RejectionReason is not null)
             {
@@ -119,12 +141,12 @@
     [Parameter] public long Id { get; set; }
 
     private static readonly string Sellers = $"{Roles.SalesRep},{Roles.SalesManager},{Roles.Admin}";
-    private static readonly string Managers = $"{Roles.SalesManager},{Roles.Admin}";
     private static readonly string Shippers = $"{Roles.InventoryClerk},{Roles.Admin}";
     private static readonly string Billing = $"{Roles.Accountant},{Roles.Admin},{Roles.SalesManager}";
 
     private SalesOrderDetail? _order;
-    private (string Created, string? Approved, string? Rejected) _names = ("", null, null);
+    private bool HasShipped => _order!.Lines.Any(l => l.ShippedQuantity > 0);
+    private (string Created, string? Approved, string? Rejected, string? CreditReleased) _names = ("", null, null, null);
 
     protected override Task OnParametersSetAsync() => Load();
 
@@ -134,7 +156,8 @@
         if (_order is null) { Nav.NavigateTo(Lists.Last("sales-orders")); return; }
         _names = (await Users.NameOf(_order.CreatedBy),
                   _order.ApprovedBy is null ? null : await Users.NameOf(_order.ApprovedBy),
-                  _order.RejectedBy is null ? null : await Users.NameOf(_order.RejectedBy));
+                  _order.RejectedBy is null ? null : await Users.NameOf(_order.RejectedBy),
+                  _order.CreditReleasedBy is null ? null : await Users.NameOf(_order.CreditReleasedBy));
     }
 
     private async Task Act(string action, string message)
@@ -154,7 +177,7 @@
     {
         if (await Api.Delete($"api/sales-orders/{Id}/special-discount", "Discount removed.")) await Load();
     }
-    private Task Approve() => Act("approve", "Approved.");
+    private Task Approve() => Act("approve", "Done. The order moves on once every approval is in.");
 
     private async Task Reject()
     {
@@ -170,13 +193,19 @@
         if (confirmed == true) await Act("cancel", "Cancelled.");
     }
 
-    // Shipping can't be undone: the stock leaves and the invoice is issued. So it asks first.
+    // Shipping can't be undone: the stock leaves and the invoice is issued. So it asks first, and asks how much.
     private async Task Ship()
     {
-        var confirmed = await Dialogs.ShowMessageBoxAsync("Ship order",
-            $"Ship {_order!.OrderNumber} now? The stock leaves the warehouse and the invoice is issued. This can't be undone.",
-            yesText: "Ship", cancelText: "Not yet");
-        if (confirmed == true && await Api.Create("api/shipments", new { salesOrderId = Id }, "Shipped. The invoice is being issued.") is not null)
-            await Load();
+        var dialog = await Dialogs.ShowAsync<ShipDialog>("Ship order", new DialogParameters<ShipDialog> { { d => d.Order, _order! } },
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        if ((await dialog.Result) is { Canceled: false }) await Load();
+    }
+
+    private async Task CloseShort()
+    {
+        var confirmed = await Dialogs.ShowMessageBoxAsync("Close short",
+            $"Close {_order!.OrderNumber} with what has shipped? The rest is released from stock and taken off the customer's balance. This can't be undone.",
+            yesText: "Close short", cancelText: "Keep waiting");
+        if (confirmed == true) await Act("close", "Closed: the rest won't ship.");
     }
 }

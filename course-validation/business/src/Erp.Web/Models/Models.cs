@@ -4,10 +4,10 @@ namespace Erp.Web.Models;
 // browser app keeps its own copies: the HTTP contract is the only thing the two share.
 
 public sealed record SalesOrderSummary(long Id, string OrderNumber, long CustomerId, string CustomerName, string Status,
-    decimal Total, long CreatedBy, DateTime CreatedUtc);
+    decimal Total, long CreatedBy, DateTime CreatedUtc, DateTime? SubmittedUtc, List<string> PendingApprovals);
 
 public sealed record SalesOrderLine(long ItemId, string ItemName, string Unit, decimal Quantity, decimal UnitPrice, decimal LineTotal,
-    bool SpecialDiscountEligible);
+    bool SpecialDiscountEligible, decimal ShippedQuantity, decimal Outstanding);
 
 public sealed record SpecialDiscount(string Program, string IdLabel, string HolderName, string IdNumber, decimal Rate,
     decimal VatRateRemoved, decimal VatExemption, decimal Discount);
@@ -20,10 +20,13 @@ public sealed record CompanyProfileModel(string RegisteredName, string? TradeNam
 
 public sealed record SalesOrderDetail(long Id, string OrderNumber, long CustomerId, string CustomerName, string Status, decimal Total,
     long CreatedBy, DateTime CreatedUtc, DateTime? SubmittedUtc, long? ApprovedBy, DateTime? ApprovedUtc, long? RejectedBy,
-    string? RejectionReason, DateTime? ShippedUtc, decimal GrossTotal, SpecialDiscount? SpecialDiscount, List<SalesOrderLine> Lines);
+    string? RejectionReason, DateTime? ShippedUtc, decimal GrossTotal, SpecialDiscount? SpecialDiscount, List<SalesOrderLine> Lines,
+    List<string> PendingApprovals, long? CreditReleasedBy, DateTime? CreditReleasedUtc);
 
 public sealed record Customer(long Id, string Name, string? Tin, string? Address, int PaymentTermsDays, bool IsBlocked,
-    decimal CreditLimit, decimal OutstandingBalance, decimal PendingTotal, decimal AvailableCredit);
+    decimal CreditLimit, decimal OutstandingBalance, decimal PendingTotal, decimal AvailableCredit, decimal? ApprovalThreshold);
+
+public sealed record ApprovalLimit(decimal ApprovalThreshold, long? UpdatedBy, DateTime? UpdatedUtc);
 
 public sealed record PriceListItem(long Id, string Sku, string Name, string Unit, bool AllowsFractions, bool IsActive,
     decimal UnitPrice, long? CategoryId, string? CategoryName, bool IsForSale, string TaxType, bool IsSpecialDiscountEligible);
@@ -31,23 +34,27 @@ public sealed record PriceListItem(long Id, string Sku, string Name, string Unit
 public sealed record ItemCategory(long Id, string Name, decimal MaxQuantityPerOrder, string? RequiredRole);
 
 public sealed record StockItem(long Id, string Sku, string Name, string Unit, bool AllowsFractions, bool IsActive,
-    decimal OnHand, decimal Reserved, decimal Available);
+    decimal OnHand, decimal Reserved, decimal Available, decimal? AverageCost, decimal? StockValue);
 
-public sealed record StockMovement(long Id, decimal Quantity, string Kind, string? Reference, string? Reason, long UserId, DateTime OccurredUtc);
+public sealed record StockValuation(long ItemCount, decimal TotalValue);
 
-public sealed record Shipment(long Id, string Number, long SalesOrderId, string OrderNumber, long ShippedBy, DateTime ShippedUtc, int LineCount);
+public sealed record StockMovement(long Id, decimal Quantity, string Kind, string? Reference, string? Reason, long UserId, DateTime OccurredUtc,
+    decimal? UnitCost, decimal? Value);
+
+public sealed record Shipment(long Id, string Number, long SalesOrderId, string OrderNumber, long ShippedBy, DateTime ShippedUtc, int LineCount,
+    decimal? CostOfGoods);
 
 public sealed record Supplier(long Id, string Name, string? Tin, string? Address, string? Email, string? Phone, int PaymentTermsDays, bool IsActive);
 
 public sealed record PurchaseOrderSummary(long Id, string Number, long SupplierId, string SupplierName, string Status, decimal Total,
-    DateOnly? ExpectedDate, DateTime CreatedUtc);
+    DateOnly? ExpectedDate, long CreatedBy, DateTime CreatedUtc, DateTime? SubmittedUtc);
 
 public sealed record PurchaseOrderLine(long Id, long ItemId, string Sku, string ItemName, string Unit, decimal Quantity,
     decimal ReceivedQuantity, decimal Outstanding, decimal UnitCost, decimal LineTotal);
 
 public sealed record PurchaseOrderDetail(long Id, string Number, long SupplierId, string SupplierName, string Status, decimal Total,
     DateOnly? ExpectedDate, string? Notes, long CreatedBy, DateTime CreatedUtc, long? ApprovedBy, DateTime? ApprovedUtc,
-    DateTime? SentUtc, List<PurchaseOrderLine> Lines);
+    DateTime? SentUtc, List<PurchaseOrderLine> Lines, DateTime? SubmittedUtc, long? RejectedBy, DateTime? RejectedUtc, string? RejectionReason);
 
 public sealed record InvoiceSummary(long Id, string Number, long CustomerId, string CustomerName, string OrderNumber,
     DateOnly IssueDate, DateOnly DueDate, string Status, decimal Total, decimal AmountPaid, decimal BalanceDue);

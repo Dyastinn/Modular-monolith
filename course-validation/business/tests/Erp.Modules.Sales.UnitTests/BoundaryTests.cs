@@ -67,19 +67,16 @@ public class LimitBoundaryTests
         FluentActions.Invoking(() => Customer.Create(name, null, null, Money.Zero, 30)).Should().Throw<DomainException>();
 
     [Fact]
-    public void Credit_up_to_exactly_the_limit_is_allowed() =>
-        Make.Customer(limit: 5000, balance: 4500).Invoking(c => c.EnsureWithinCreditLimit(new Money(500), Money.Zero))
-            .Should().NotThrow();
+    public void Credit_up_to_exactly_the_limit_is_within_it() =>
+        Make.Customer(limit: 5000, balance: 4500).IsWithinCreditLimit(new Money(500), Money.Zero).Should().BeTrue();
 
     [Fact]
-    public void One_centavo_over_the_limit_is_refused() =>
-        Make.Customer(limit: 5000, balance: 4500).Invoking(c => c.EnsureWithinCreditLimit(new Money(500.01m), Money.Zero))
-            .Should().Throw<DomainException>().WithMessage("*Available credit: ₱500.00*");
+    public void One_centavo_over_the_limit_is_not() =>
+        Make.Customer(limit: 5000, balance: 4500).IsWithinCreditLimit(new Money(500.01m), Money.Zero).Should().BeFalse();
 
     [Fact]
-    public void A_customer_already_over_the_limit_shows_zero_available_not_a_negative() =>
-        Make.Customer(limit: 1000, balance: 1500).Invoking(c => c.EnsureWithinCreditLimit(new Money(1), Money.Zero))
-            .Should().Throw<DomainException>().WithMessage("*Available credit: ₱0.00*");
+    public void A_customer_already_over_the_limit_has_no_room_for_even_a_centavo() =>
+        Make.Customer(limit: 1000, balance: 1500).IsWithinCreditLimit(new Money(0.01m), Money.Zero).Should().BeFalse();
 
     [Fact]
     public void Exactly_the_category_cap_is_allowed()
@@ -105,7 +102,7 @@ public class LimitBoundaryTests
         var customer = Make.Customer();
         var order = Make.Order(customer, unitPrice: 50_000);
 
-        order.Submit(customer, Money.Zero, Make.Now);
+        order.Submit(customer, Make.Settings, Money.Zero, Make.Now);
 
         order.Status.Should().Be(SalesOrderStatus.Approved);
     }
@@ -116,7 +113,7 @@ public class LimitBoundaryTests
         var customer = Make.Customer();
         var order = Make.Order(customer, unitPrice: 50_000.01m);
 
-        order.Submit(customer, Money.Zero, Make.Now);
+        order.Submit(customer, Make.Settings, Money.Zero, Make.Now);
 
         order.Status.Should().Be(SalesOrderStatus.PendingApproval);
     }
@@ -158,13 +155,13 @@ public class StatusTransitionTests
         var order = Make.Order(customer, unitPrice: 60_000);   // over the threshold, so it waits for a manager
         if (status == SalesOrderStatus.Draft) return (order, customer);
 
-        order.Submit(customer, Money.Zero, Make.Now);
+        order.Submit(customer, Make.Settings, Money.Zero, Make.Now);
         switch (status)
         {
-            case SalesOrderStatus.Approved: order.Approve(Make.Manager, customer, Make.Now); break;
-            case SalesOrderStatus.Rejected: order.Reject(Make.Manager, "No", Make.Now); break;
+            case SalesOrderStatus.Approved: order.Approve(Make.Manager, Roles.SalesManager, customer, Make.Now); break;
+            case SalesOrderStatus.Rejected: order.Reject(Make.Manager, Roles.SalesManager, "No", Make.Now); break;
             case SalesOrderStatus.Cancelled: order.Cancel(customer); break;
-            case SalesOrderStatus.Shipped: order.Approve(Make.Manager, customer, Make.Now); order.MarkShipped(Make.Now); break;
+            case SalesOrderStatus.Shipped: order.Approve(Make.Manager, Roles.SalesManager, customer, Make.Now); order.ShipAll(Make.Now); break;
         }
         return (order, customer);
     }
@@ -173,11 +170,11 @@ public class StatusTransitionTests
     {
         switch (step)
         {
-            case Step.Submit: order.Submit(customer, Money.Zero, Make.Now); break;
-            case Step.Approve: order.Approve(Make.Manager, customer, Make.Now); break;
-            case Step.Reject: order.Reject(Make.Manager, "No", Make.Now); break;
+            case Step.Submit: order.Submit(customer, Make.Settings, Money.Zero, Make.Now); break;
+            case Step.Approve: order.Approve(Make.Manager, Roles.SalesManager, customer, Make.Now); break;
+            case Step.Reject: order.Reject(Make.Manager, Roles.SalesManager, "No", Make.Now); break;
             case Step.Cancel: order.Cancel(customer); break;
-            case Step.Ship: order.MarkShipped(Make.Now); break;
+            case Step.Ship: order.ShipAll(Make.Now); break;
         }
     }
 
@@ -232,7 +229,7 @@ public class StatusTransitionTests
     public void A_rejection_reason_is_kept_without_its_surrounding_spaces()
     {
         var (order, _) = OrderIn(SalesOrderStatus.PendingApproval);
-        order.Reject(Make.Manager, "  Price not agreed  ", Make.Now);
+        order.Reject(Make.Manager, Roles.SalesManager, "  Price not agreed  ", Make.Now);
         order.RejectionReason.Should().Be("Price not agreed");
     }
 }

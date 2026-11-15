@@ -4,11 +4,20 @@ using Erp.Shared.BuildingBlocks;
 
 namespace Erp.Modules.Sales.UnitTests;
 
+internal static class ShippingExtensions
+{
+    // Everything still to ship, in one shipment.
+    public static void ShipAll(this SalesOrder order, DateTime now) =>
+        order.RecordShipment(order.Lines.Where(l => l.Outstanding > 0).Select(l => (l.ItemId, l.Outstanding)).ToList(), now);
+}
+
 internal static class Make
 {
     public static readonly DateTime Now = new(2026, 11, 5, 9, 0, 0, DateTimeKind.Utc);
     public static readonly UserId Rep = new(1);
     public static readonly UserId Manager = new(2);
+    public static readonly UserId Accountant = new(3);
+    public static readonly SalesSettings Settings = SalesSettings.Default(new Money(50_000));
 
     public static readonly ItemCategory General = ItemCategory.Create("General", 1000, null);
     public static readonly ItemCategory Controlled = ItemCategory.Create("Controlled", 5, Roles.SalesManager);
@@ -46,14 +55,16 @@ public class CustomerRuleTests
             .Which.Error.Should().Be(SalesErrors.CustomerBlocked);   // the code a person can look up
 
     [Fact]
-    public void Order_over_available_credit_is_rejected() =>
-        Make.Customer(limit: 5000, balance: 4500).Invoking(c => c.EnsureWithinCreditLimit(new Money(600), Money.Zero))
-            .Should().Throw<DomainException>().WithMessage("*credit limit*");
+    public void An_order_over_available_credit_is_not_within_the_limit() =>
+        Make.Customer(limit: 5000, balance: 4500).IsWithinCreditLimit(new Money(600), Money.Zero).Should().BeFalse();
 
     [Fact]
-    public void Orders_awaiting_approval_count_against_credit() =>
-        Make.Customer(limit: 200_000).Invoking(c => c.EnsureWithinCreditLimit(new Money(75_000), new Money(150_000)))
-            .Should().Throw<DomainException>().WithMessage("*Available credit: ₱50,000.00*");
+    public void Orders_awaiting_approval_count_against_credit()
+    {
+        var customer = Make.Customer(limit: 200_000);
+        customer.IsWithinCreditLimit(new Money(50_000), new Money(150_000)).Should().BeTrue();
+        customer.IsWithinCreditLimit(new Money(50_000.01m), new Money(150_000)).Should().BeFalse();
+    }
 
     [Fact]
     public void A_payment_never_takes_the_balance_below_zero()
@@ -143,7 +154,7 @@ public class SubmitAndApproveTests
         var customer = Make.Customer();
         var order = Make.Order(customer, unitPrice: 25, qty: 2);
 
-        order.Submit(customer, Money.Zero, Make.Now);
+        order.Submit(customer, Make.Settings, Money.Zero, Make.Now);
 
         order.Status.Should().Be(SalesOrderStatus.Approved);
         order.ApprovedBy.Should().BeNull();
@@ -157,7 +168,7 @@ public class SubmitAndApproveTests
         var customer = Make.Customer();
         var order = Make.Order(customer, unitPrice: 60_000);
 
-        order.Submit(customer, Money.Zero, Make.Now);
+        order.Submit(customer, Make.Settings, Money.Zero, Make.Now);
 
         order.Status.Should().Be(SalesOrderStatus.PendingApproval);
         customer.OutstandingBalance.Should().Be(Money.Zero);
@@ -168,11 +179,11 @@ public class SubmitAndApproveTests
     {
         var customer = Make.Customer();
         var order = Make.Order(customer, unitPrice: 60_000);
-        order.Submit(customer, Money.Zero, Make.Now);
+        order.Submit(customer, Make.Settings, Money.Zero, Make.Now);
 
-        order.Invoking(o => o.Approve(Make.Rep, customer, Make.Now))
+        order.Invoking(o => o.Approve(Make.Rep, Roles.SalesManager, customer, Make.Now))
             .Should().Throw<DomainException>().WithMessage("*person who created it*");
-        order.Approve(Make.Manager, customer, Make.Now);
+        order.Approve(Make.Manager, Roles.SalesManager, customer, Make.Now);
         customer.OutstandingBalance.Should().Be(new Money(60_000));
     }
 
@@ -181,10 +192,228 @@ public class SubmitAndApproveTests
     {
         var customer = Make.Customer();
         var order = Make.Order(customer, unitPrice: 25);
-        order.Submit(customer, Money.Zero, Make.Now);
+        order.Submit(customer, Make.Settings, Money.Zero, Make.Now);
 
         order.Invoking(o => o.SetLines([(Make.Item(2, 40), new Quantity(1))], Roles.SalesRep))
             .Should().Throw<DomainException>().WithMessage("*draft*");
+    }
+}
+
+// Who says yes to what: a manager for size, accounting for credit, an admin for both, nobody for their own order.
+public class ApprovalRuleTests
+{
+    private static (SalesOrder Order, Customer Customer) Submitted(decimal price, decimal limit = 1_000_000,
+        decimal? customerThreshold = null, decimal companyThreshold = 50_000)
+    {
+        var customer = Customer.Create("Acme", null, null, new Money(limit), 30,
+            customerThreshold is { } t ? new Money(t) : null);
+        var order = Make.Order(customer, price);
+        order.Submit(customer, SalesSettings.Default(new Money(companyThreshold)), Money.Zero, Make.Now);
+        return (order, customer);
+    }
+
+    [Fact]
+    public void The_company_limit_comes_from_settings_not_code()
+    {
+        Submitted(60_000, companyThreshold: 100_000).Order.Status.Should().Be(SalesOrderStatus.Approved);
+        Submitted(60_000, companyThreshold: 50_000).Order.PendingApprovals.Should().Be(ApprovalNeeds.Manager);
+    }
+
+    [Fact]
+    public void A_customer_limit_overrides_the_company_limit_both_ways()
+    {
+        Submitted(60_000, customerThreshold: 200_000).Order.Status.Should().Be(SalesOrderStatus.Approved);
+        Submitted(1, customerThreshold: 0).Order.PendingApprovals.Should().Be(ApprovalNeeds.Manager);
+    }
+
+    [Fact]
+    public void Over_credit_waits_for_accounting_and_nothing_is_charged_yet()
+    {
+        var (order, customer) = Submitted(500, limit: 100);
+
+        order.Status.Should().Be(SalesOrderStatus.PendingApproval);
+        order.PendingApprovals.Should().Be(ApprovalNeeds.CreditRelease);
+        customer.OutstandingBalance.Should().Be(Money.Zero);
+    }
+
+    [Fact]
+    public void A_sales_manager_cannot_release_a_credit_hold()
+    {
+        var (order, customer) = Submitted(500, limit: 100);
+
+        order.Invoking(o => o.Approve(Make.Manager, Roles.SalesManager, customer, Make.Now))
+            .Should().Throw<DomainException>().Which.Error.Should().Be(SalesErrors.CreditLimitExceeded);
+        order.Status.Should().Be(SalesOrderStatus.PendingApproval);
+    }
+
+    [Fact]
+    public void An_accountant_releases_credit_and_the_order_is_approved_and_charged()
+    {
+        var (order, customer) = Submitted(500, limit: 100);
+
+        order.Approve(Make.Accountant, Roles.Accountant, customer, Make.Now);
+
+        order.Status.Should().Be(SalesOrderStatus.Approved);
+        order.CreditReleasedBy.Should().Be(Make.Accountant);
+        order.ApprovedBy.Should().BeNull();   // its size never needed a manager
+        customer.OutstandingBalance.Should().Be(new Money(500));
+    }
+
+    [Fact]
+    public void An_accountant_cannot_approve_an_order_that_only_needs_a_manager()
+    {
+        var (order, customer) = Submitted(60_000);
+
+        order.Invoking(o => o.Approve(Make.Accountant, Roles.Accountant, customer, Make.Now))
+            .Should().Throw<DomainException>().Which.Error.Should().Be(SalesErrors.NotYourApproval);
+    }
+
+    [Fact]
+    public void An_order_needing_both_is_approved_only_after_both_in_either_order()
+    {
+        var (order, customer) = Submitted(60_000, limit: 100);
+        order.PendingApprovals.Should().Be(ApprovalNeeds.Manager | ApprovalNeeds.CreditRelease);
+
+        order.Approve(Make.Manager, Roles.SalesManager, customer, Make.Now);
+        order.Status.Should().Be(SalesOrderStatus.PendingApproval);
+        order.PendingApprovals.Should().Be(ApprovalNeeds.CreditRelease);
+        customer.OutstandingBalance.Should().Be(Money.Zero);
+
+        order.Approve(Make.Accountant, Roles.Accountant, customer, Make.Now);
+        order.Status.Should().Be(SalesOrderStatus.Approved);
+        (order.ApprovedBy, order.CreditReleasedBy).Should().Be((Make.Manager, Make.Accountant));
+        order.DomainEvents.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void An_admin_gives_both_approvals_at_once()
+    {
+        var (order, customer) = Submitted(60_000, limit: 100);
+
+        order.Approve(new UserId(9), Roles.Admin, customer, Make.Now);
+
+        order.Status.Should().Be(SalesOrderStatus.Approved);
+    }
+
+    [Fact]
+    public void A_sales_rep_approves_nothing()
+    {
+        var (order, customer) = Submitted(60_000);
+
+        order.Invoking(o => o.Approve(new UserId(9), Roles.SalesRep, customer, Make.Now))
+            .Should().Throw<DomainException>().Which.Error.Should().Be(SalesErrors.NotYourApproval);
+    }
+
+    [Fact]
+    public void Only_someone_whose_approval_is_awaited_may_reject()
+    {
+        var (order, _) = Submitted(500, limit: 100);
+
+        order.Invoking(o => o.Reject(Make.Manager, Roles.SalesManager, "No", Make.Now))
+            .Should().Throw<DomainException>().Which.Error.Should().Be(SalesErrors.NotYourApproval);
+        order.Reject(Make.Accountant, Roles.Accountant, "Pay the overdue invoices first", Make.Now);
+        order.Status.Should().Be(SalesOrderStatus.Rejected);
+        order.PendingApprovals.Should().Be(ApprovalNeeds.None);
+    }
+
+    [Fact]
+    public void A_negative_customer_limit_is_impossible() =>
+        FluentActions.Invoking(() => Submitted(1, customerThreshold: -1)).Should().Throw<DomainException>()
+            .Which.Error.Should().Be(CommonErrors.NegativeMoney);
+}
+
+// An order can leave in parts: each line tracks what has shipped, the order knows when it's done, and the rest can
+// be closed when it will never come.
+public class PartialShipmentTests
+{
+    private static (SalesOrder Order, Customer Customer) Approved(params (long Item, decimal Price, decimal Qty)[] lines)
+    {
+        var customer = Make.Customer();
+        var order = SalesOrder.Create("SO-1", customer.Id, Make.Rep, Make.Now);
+        order.SetLines(lines.Select(l => (Make.Item(l.Item, l.Price), new Quantity(l.Qty))).ToList(), Roles.SalesRep);
+        order.Submit(customer, Make.Settings, Money.Zero, Make.Now);
+        order.Status.Should().Be(SalesOrderStatus.Approved);
+        return (order, customer);
+    }
+
+    [Fact]
+    public void Part_of_a_line_ships_and_the_rest_stays_to_ship()
+    {
+        var (order, _) = Approved((1, 25, 10));
+
+        order.RecordShipment([(new ItemId(1), 4)], Make.Now);
+
+        order.Status.Should().Be(SalesOrderStatus.PartiallyShipped);
+        order.Lines.Single().Outstanding.Should().Be(6);
+        order.HoldsStock.Should().BeTrue("the six still to ship stay reserved");
+    }
+
+    [Fact]
+    public void The_last_part_completes_the_order()
+    {
+        var (order, _) = Approved((1, 25, 10), (2, 40, 2));
+        order.RecordShipment([(new ItemId(1), 4)], Make.Now);
+
+        order.RecordShipment([(new ItemId(1), 6), (new ItemId(2), 2)], Make.Now);
+
+        order.Status.Should().Be(SalesOrderStatus.Shipped);
+        order.Lines.Should().OnlyContain(l => l.Outstanding == 0);
+    }
+
+    [Fact]
+    public void More_than_is_still_to_ship_is_refused_and_changes_nothing()
+    {
+        var (order, _) = Approved((1, 25, 10));
+        order.RecordShipment([(new ItemId(1), 8)], Make.Now);
+
+        order.Invoking(o => o.RecordShipment([(new ItemId(1), 3)], Make.Now))
+            .Should().Throw<DomainException>().Which.Error.Should().Be(SalesErrors.ShipmentExceedsOrder);
+        order.Lines.Single().Outstanding.Should().Be(2);
+    }
+
+    [Fact]
+    public void An_item_not_on_the_order_is_refused() =>
+        Approved((1, 25, 10)).Order.Invoking(o => o.RecordShipment([(new ItemId(9), 1)], Make.Now))
+            .Should().Throw<DomainException>().Which.Error.Should().Be(SalesErrors.ShipmentExceedsOrder);
+
+    [Fact]
+    public void Closing_short_releases_the_rest_and_takes_it_off_the_balance()
+    {
+        var (order, customer) = Approved((1, 25, 10), (2, 40, 2));   // ₱330 charged on approval
+        order.RecordShipment([(new ItemId(1), 4)], Make.Now);          // ₱100 went out
+
+        var released = order.CloseShort(customer);
+
+        order.Status.Should().Be(SalesOrderStatus.Closed);
+        released.Should().BeEquivalentTo([(new ItemId(1), 6m), (new ItemId(2), 2m)]);
+        customer.OutstandingBalance.Should().Be(new Money(100));
+        order.HoldsStock.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Only_a_partly_shipped_order_closes_short_and_it_cannot_be_cancelled()
+    {
+        var (order, customer) = Approved((1, 25, 10));
+        order.Invoking(o => o.CloseShort(customer)).Should().Throw<DomainException>("nothing has shipped yet: cancel instead");
+
+        order.RecordShipment([(new ItemId(1), 4)], Make.Now);
+        order.Invoking(o => o.Cancel(customer)).Should().Throw<DomainException>("goods already left: close short instead");
+    }
+
+    [Fact]
+    public void A_discounted_order_ships_in_one_go()
+    {
+        var customer = Make.Customer();
+        var order = SalesOrder.Create("SO-1", customer.Id, Make.Rep, Make.Now);
+        order.SetLines([(Make.Item(1, 112, discountEligible: true), new Quantity(2))], Roles.SalesRep);
+        order.ApplySpecialDiscount(SpecialDiscount.Grant("Senior citizen", "OSCA ID No.", 0.20m, vatExempt: true, "Lola Basyang", "OSCA-1",
+            new TaxPolicy(TaxRegime.Vat, 0.12m)));
+        order.Submit(customer, Make.Settings, Money.Zero, Make.Now);
+
+        order.Invoking(o => o.RecordShipment([(new ItemId(1), 1)], Make.Now))
+            .Should().Throw<DomainException>().Which.Error.Should().Be(SalesErrors.DiscountedOrderShipsWhole);
+        order.RecordShipment([(new ItemId(1), 2)], Make.Now);
+        order.Status.Should().Be(SalesOrderStatus.Shipped);
     }
 }
 
@@ -195,11 +424,11 @@ public class ShipRejectCancelTests
     {
         var customer = Make.Customer();
         var order = Make.Order(customer, unitPrice: 60_000);
-        order.Invoking(o => o.MarkShipped(Make.Now)).Should().Throw<DomainException>();
+        order.Invoking(o => o.ShipAll(Make.Now)).Should().Throw<DomainException>();
 
-        order.Submit(customer, Money.Zero, Make.Now);
-        order.Approve(Make.Manager, customer, Make.Now);
-        order.MarkShipped(Make.Now);
+        order.Submit(customer, Make.Settings, Money.Zero, Make.Now);
+        order.Approve(Make.Manager, Roles.SalesManager, customer, Make.Now);
+        order.ShipAll(Make.Now);
 
         order.Status.Should().Be(SalesOrderStatus.Shipped);
         order.Invoking(o => o.Cancel(customer)).Should().Throw<DomainException>();
@@ -210,10 +439,10 @@ public class ShipRejectCancelTests
     {
         var customer = Make.Customer();
         var order = Make.Order(customer, unitPrice: 60_000);
-        order.Submit(customer, Money.Zero, Make.Now);
+        order.Submit(customer, Make.Settings, Money.Zero, Make.Now);
 
-        order.Invoking(o => o.Reject(Make.Manager, " ", Make.Now)).Should().Throw<DomainException>();
-        order.Reject(Make.Manager, "Customer asked for a quote first", Make.Now).Should().HaveCount(1);
+        order.Invoking(o => o.Reject(Make.Manager, Roles.SalesManager, " ", Make.Now)).Should().Throw<DomainException>();
+        order.Reject(Make.Manager, Roles.SalesManager, "Customer asked for a quote first", Make.Now).Should().HaveCount(1);
         order.Status.Should().Be(SalesOrderStatus.Rejected);
     }
 
@@ -222,7 +451,7 @@ public class ShipRejectCancelTests
     {
         var customer = Make.Customer();
         var order = Make.Order(customer, unitPrice: 25, qty: 2);
-        order.Submit(customer, Money.Zero, Make.Now);
+        order.Submit(customer, Make.Settings, Money.Zero, Make.Now);
 
         order.Cancel(customer).Should().HaveCount(1);
         customer.OutstandingBalance.Should().Be(Money.Zero);
@@ -343,7 +572,7 @@ public class SpecialDiscountTests
 
         var customer = Make.Customer();
         var submitted = Draft(customer, (Make.Item(1, 1120, discountEligible: true), 1));
-        submitted.Submit(customer, Money.Zero, Make.Now);
+        submitted.Submit(customer, Make.Settings, Money.Zero, Make.Now);
         submitted.Invoking(o => o.ApplySpecialDiscount(Senior())).Should().Throw<DomainException>().WithMessage("*draft*");
     }
 

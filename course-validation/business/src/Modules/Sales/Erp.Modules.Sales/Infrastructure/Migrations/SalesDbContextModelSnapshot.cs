@@ -68,6 +68,11 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                         .HasColumnType("character varying(500)")
                         .HasColumnName("address");
 
+                    b.Property<decimal?>("ApprovalThreshold")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("approval_threshold");
+
                     b.Property<decimal>("CreditLimit")
                         .HasPrecision(18, 2)
                         .HasColumnType("numeric(18,2)")
@@ -111,6 +116,8 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
 
                     b.ToTable("customer", "sales", t =>
                         {
+                            t.HasCheckConstraint("ck_customer_approval_threshold", "approval_threshold IS NULL OR approval_threshold >= 0");
+
                             t.HasCheckConstraint("ck_customer_balance", "outstanding_balance >= 0");
 
                             t.HasCheckConstraint("ck_customer_credit_limit", "credit_limit >= 0");
@@ -245,6 +252,14 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_utc");
 
+                    b.Property<long?>("CreditReleasedBy")
+                        .HasColumnType("bigint")
+                        .HasColumnName("credit_released_by");
+
+                    b.Property<DateTime?>("CreditReleasedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("credit_released_utc");
+
                     b.Property<long>("CustomerId")
                         .HasColumnType("bigint")
                         .HasColumnName("customer_id");
@@ -254,6 +269,10 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
                         .HasColumnName("order_number");
+
+                    b.Property<int>("PendingApprovals")
+                        .HasColumnType("integer")
+                        .HasColumnName("pending_approvals");
 
                     b.Property<long?>("RejectedBy")
                         .HasColumnType("bigint")
@@ -306,12 +325,59 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                         .IsUnique()
                         .HasDatabaseName("ix_sales_order_order_number");
 
+                    b.HasIndex("PendingApprovals")
+                        .HasDatabaseName("ix_sales_order_pending_approvals")
+                        .HasFilter("status = 1");
+
                     b.HasIndex("CustomerId", "Status")
                         .HasDatabaseName("ix_sales_order_customer_id_status");
 
                     b.ToTable("sales_order", "sales", t =>
                         {
-                            t.HasCheckConstraint("ck_sales_order_status", "status BETWEEN 0 AND 5");
+                            t.HasCheckConstraint("ck_sales_order_status", "status BETWEEN 0 AND 7");
+                        });
+                });
+
+            modelBuilder.Entity("Erp.Modules.Sales.Domain.SalesSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    b.Property<decimal>("ApprovalThreshold")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)")
+                        .HasColumnName("approval_threshold");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<long?>("UpdatedBy")
+                        .HasColumnType("bigint")
+                        .HasColumnName("updated_by");
+
+                    b.Property<DateTime?>("UpdatedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_utc");
+
+                    b.HasKey("Id")
+                        .HasName("pk_sales_settings");
+
+                    b.ToTable("sales_settings", "sales", t =>
+                        {
+                            t.HasCheckConstraint("ck_sales_settings_approval_threshold", "approval_threshold >= 0");
+
+                            t.HasCheckConstraint("ck_sales_settings_single_row", "id = 1");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            ApprovalThreshold = 50000m
                         });
                 });
 
@@ -468,6 +534,11 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                                 .HasColumnType("bigint")
                                 .HasColumnName("sales_order_id");
 
+                            b1.Property<decimal>("ShippedQuantity")
+                                .HasPrecision(18, 3)
+                                .HasColumnType("numeric(18,3)")
+                                .HasColumnName("shipped_quantity");
+
                             b1.Property<bool>("SpecialDiscountEligible")
                                 .HasColumnType("boolean")
                                 .HasColumnName("special_discount_eligible");
@@ -498,6 +569,8 @@ namespace Erp.Modules.Sales.Infrastructure.Migrations
                                     t.HasCheckConstraint("ck_sales_order_line_price", "unit_price >= 0");
 
                                     t.HasCheckConstraint("ck_sales_order_line_qty", "quantity > 0");
+
+                                    t.HasCheckConstraint("ck_sales_order_line_shipped", "shipped_quantity >= 0 AND shipped_quantity <= quantity");
                                 });
 
                             b1.WithOwner()

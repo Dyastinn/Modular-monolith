@@ -16,6 +16,7 @@ internal sealed class CustomerInputValidator : AbstractValidator<CustomerInput>
         RuleFor(x => x.Address).MaximumLength(500);
         RuleFor(x => x.CreditLimit).GreaterThanOrEqualTo(0);
         RuleFor(x => x.PaymentTermsDays).InclusiveBetween(0, 365);
+        RuleFor(x => x.ApprovalThreshold).GreaterThanOrEqualTo(0).When(x => x.ApprovalThreshold is not null);
     }
 }
 

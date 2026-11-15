@@ -13,7 +13,7 @@ internal sealed class UpdateCustomerHandler(SalesDbContext db)
         var customer = await db.Customers.FindAsync([new CustomerId(cmd.CustomerId)], ct);
         if (customer is null) return false;
         var c = cmd.Customer;
-        customer.Update(c.Name, c.Tin, c.Address, new Money(c.CreditLimit), c.PaymentTermsDays);
+        customer.Update(c.Name, c.Tin, c.Address, new Money(c.CreditLimit), c.PaymentTermsDays, c.ApprovalThresholdMoney());
         await db.SaveChangesAsync(ct);
         return true;
     }

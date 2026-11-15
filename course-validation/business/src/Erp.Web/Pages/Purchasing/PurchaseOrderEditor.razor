@@ -59,7 +59,18 @@
 
     private sealed class Line
     {
-        public StockItem? Item { get; set; }
+        private StockItem? _item;
+
+        // A new line starts at what the item costs on average: usually close to the next price.
+        public StockItem? Item
+        {
+            get => _item;
+            set
+            {
+                _item = value;
+                if (UnitCost == 0 && value?.AverageCost is { } cost) UnitCost = Math.Round(cost, 2, MidpointRounding.AwayFromZero);
+            }
+        }
         public decimal Quantity { get; set; } = 1;
         public decimal UnitCost { get; set; }
         public decimal Total => Math.Round(Quantity * UnitCost, 2, MidpointRounding.AwayFromZero);
@@ -91,7 +102,7 @@
         _notes = po.Notes;
         _lines = po.Lines.Select(l => new Line
         {
-            Item = new StockItem(l.ItemId, l.Sku, l.ItemName, l.Unit, true, true, 0, 0, 0), Quantity = l.Quantity, UnitCost = l.UnitCost
+            Item = new StockItem(l.ItemId, l.Sku, l.ItemName, l.Unit, true, true, 0, 0, 0, null, null), Quantity = l.Quantity, UnitCost = l.UnitCost
         }).ToList();
         _saved = State;
     }

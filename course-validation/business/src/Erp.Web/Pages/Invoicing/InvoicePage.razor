@@ -57,8 +57,8 @@
                         </CellTemplate>
                     </TemplateColumn>
                     <TemplateColumn Title="Quantity" HeaderClass="money" CellClass="money"><CellTemplate>@Format.Qty(context.Item.Quantity) @context.Item.Unit</CellTemplate></TemplateColumn>
-                    <MoneyColumn Title="Unit price" Amount="x => x.UnitPrice" />
-                    <MoneyColumn Title="Amount" Amount="x => x.LineTotal" />
+                    @(MoneyColumn.Of<InvoiceLine>("Unit price", x => x.UnitPrice))
+                    @(MoneyColumn.Of<InvoiceLine>("Amount", x => x.LineTotal))
                 </Columns>
             </MudDataGrid>
             <Totals>

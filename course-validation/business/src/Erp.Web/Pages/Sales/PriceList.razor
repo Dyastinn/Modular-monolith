@@ -20,14 +20,14 @@
             <MudSwitch T="bool" Value="ForSaleOnly" ValueChanged="OnForSale" Label="For sale only" Color="Color.Primary" />
         </MudStack>
         <MudDataGrid T="PriceListItem" @ref="_table" @key="View.Version" ServerData="Load"
-                     Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None"
+                     Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.Single" ShowColumnOptions="false"
                      CurrentPage="ListAddress.PageIndex(PageNumber)" RowsPerPage="PageSize ?? ListAddress.DefaultPageSize">
             <Columns>
-                <PropertyColumn Property="x => x.Sku" Title="SKU" />
-                <TemplateColumn Title="Name"><CellTemplate>@context.Item.Name @if (!context.Item.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</CellTemplate></TemplateColumn>
-                <PropertyColumn Property="x => x.Unit" Title="Unit" />
-                <PropertyColumn Property="x => x.CategoryName" Title="Category" />
-                <MoneyColumn Title="Price" Amount="x => x.UnitPrice" />
+                <PropertyColumn Property="x => x.Sku" Title="SKU" InitialDirection="@View.Initial(nameof(PriceListItem.Sku))" />
+                <PropertyColumn Property="x => x.Name" Title="Name" InitialDirection="@View.Initial(nameof(PriceListItem.Name))"><CellTemplate>@context.Item.Name @if (!context.Item.IsActive) { <MudChip T="string" Size="Size.Small">Inactive</MudChip> }</CellTemplate></PropertyColumn>
+                <PropertyColumn Property="x => x.Unit" Title="Unit" Sortable="false" />
+                <PropertyColumn Property="x => x.CategoryName" Title="Category" InitialDirection="@View.Initial(nameof(PriceListItem.CategoryName))" />
+                @(MoneyColumn.Of<PriceListItem>("Price", x => x.UnitPrice, initial: View.Initial(nameof(PriceListItem.UnitPrice))))
                 <TemplateColumn Title="VAT"><CellTemplate>@Format.Words(context.Item.TaxType)</CellTemplate></TemplateColumn>
                 <TemplateColumn Title="SC/PWD"><CellTemplate>@(context.Item.IsSpecialDiscountEligible ? "Yes" : "")</CellTemplate></TemplateColumn>
                 <TemplateColumn Title="For sale"><CellTemplate>@(context.Item.IsForSale ? "Yes" : "No")</CellTemplate></TemplateColumn>

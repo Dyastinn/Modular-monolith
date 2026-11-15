@@ -13,6 +13,9 @@ internal sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> 
 
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
+    public DbSet<PurchasingSettings> Settings => Set<PurchasingSettings>();
+
+    public Task<PurchasingSettings> SettingsAsync(CancellationToken ct) => Settings.SingleAsync(ct);
 
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder o, DbConnection connection) =>
         o.UseNpgsql(connection, npg => npg.MigrationsHistoryTable("__EFMigrationsHistory", Schema))
@@ -51,6 +54,20 @@ internal sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> 
             e.HasIndex(x => x.OccurredUtc).HasFilter("processed_utc IS NULL");
         });
 
+        b.Entity<PurchasingSettings>(e =>
+        {
+            e.ToTable("purchasing_settings", t =>
+            {
+                t.HasCheckConstraint("ck_purchasing_settings_single_row", "id = 1");
+                t.HasCheckConstraint("ck_purchasing_settings_approval_threshold", "approval_threshold >= 0");
+            });
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");
+            // ₱0 keeps what the app did before the limit became editable: an admin approves every purchase order.
+            e.HasData(new { Id = PurchasingSettings.SingletonId, ApprovalThreshold = Money.Zero });
+        });
+
         b.Entity<Supplier>(e =>
         {
             e.ToTable("supplier");
@@ -66,7 +83,8 @@ internal sealed class PurchasingDbContext(DbContextOptions<PurchasingDbContext> 
 
         b.Entity<PurchaseOrder>(e =>
         {
-            e.ToTable("purchase_order", t => t.HasCheckConstraint("ck_purchase_order_status", "status BETWEEN 0 AND 6"));
+            e.ToTable("purchase_order", t => t.HasCheckConstraint("ck_purchase_order_status", "status BETWEEN 0 AND 7"));
+            e.Property(x => x.RejectionReason).HasMaxLength(500);
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).UseIdentityColumn();
             e.Property(x => x.Number).HasMaxLength(30);

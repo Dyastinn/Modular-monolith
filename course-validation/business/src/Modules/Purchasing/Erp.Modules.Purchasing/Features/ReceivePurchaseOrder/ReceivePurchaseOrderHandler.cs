@@ -22,8 +22,8 @@ internal sealed class ReceivePurchaseOrderHandler(PurchasingDbContext db, IStock
         var toStock = po.Receive(cmd.Lines.Select(l => (l.LineId, new Quantity(l.Quantity))).ToList());
 
         await using var tx = await db.Database.BeginTransactionAsync(ct);
-        foreach (var (itemId, quantity) in toStock)
-            await stock.ReceiveAsync(itemId.Value, quantity.Value, po.Number, user.UserId, tx.GetDbTransaction(), ct);
+        foreach (var (itemId, quantity, unitCost) in toStock)
+            await stock.ReceiveAsync(itemId.Value, quantity.Value, unitCost.Amount, po.Number, user.UserId, tx.GetDbTransaction(), ct);
         await db.SaveChangesAsync(ct);   // xmin: two clerks receiving the same order at once can't both count
         await tx.CommitAsync(ct);
         return true;

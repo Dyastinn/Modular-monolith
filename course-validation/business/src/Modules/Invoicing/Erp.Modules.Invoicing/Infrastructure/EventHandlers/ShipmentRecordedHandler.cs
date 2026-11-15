@@ -7,5 +7,5 @@ namespace Erp.Modules.Invoicing.Infrastructure;
 internal sealed class ShipmentRecordedHandler(InvoiceIssuer issuer) : IIntegrationEventHandler<ShipmentRecorded>
 {
     public async Task HandleAsync(ShipmentRecorded e, CancellationToken ct) =>
-        await issuer.IssueForShipmentAsync(e.ShipmentId, e.SalesOrderId, ct);
+        await issuer.IssueForShipmentAsync(e.ShipmentId, e.SalesOrderId, e.Lines ?? [], ct);
 }

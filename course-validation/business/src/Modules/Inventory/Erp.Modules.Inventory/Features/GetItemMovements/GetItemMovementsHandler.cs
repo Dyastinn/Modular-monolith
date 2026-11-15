@@ -7,9 +7,11 @@ namespace Erp.Modules.Inventory.Features;
 
 internal sealed record GetItemMovementsQuery(long ItemId, int Page = 1, int PageSize = 20);
 
-internal sealed record StockMovementDto(long Id, decimal Quantity, string Kind, string? Reference, string? Reason, long UserId, DateTime OccurredUtc);
+internal sealed record StockMovementDto(long Id, decimal Quantity, string Kind, string? Reference, string? Reason, long UserId, DateTime OccurredUtc,
+    decimal? UnitCost, decimal? Value);
 
-internal sealed record StockMovementRow(long Id, decimal Quantity, int Kind, string? Reference, string? Reason, long UserId, DateTime OccurredUtc);
+internal sealed record StockMovementRow(long Id, decimal Quantity, int Kind, string? Reference, string? Reason, long UserId, DateTime OccurredUtc,
+    decimal UnitCost, decimal Value);
 
 internal sealed class GetItemMovementsValidator : AbstractValidator<GetItemMovementsQuery>
 {
@@ -21,7 +23,7 @@ internal sealed class GetItemMovementsValidator : AbstractValidator<GetItemMovem
     }
 }
 
-internal sealed class GetItemMovementsHandler(IDbConnectionFactory connections)
+internal sealed class GetItemMovementsHandler(IDbConnectionFactory connections, ICurrentUser currentUser)
 {
     public async Task<PagedResult<StockMovementDto>> HandleAsync(GetItemMovementsQuery q, CancellationToken ct)
     {
@@ -32,8 +34,10 @@ internal sealed class GetItemMovementsHandler(IDbConnectionFactory connections)
             SELECT inventory.count_item_movements(@ItemId);
             """, new { q.ItemId, q.Page, q.PageSize }, cancellationToken: ct));
 
+        var showCost = CostViewers.Includes(currentUser.Role);
         var rows = (await multi.ReadAsync<StockMovementRow>())
-            .Select(r => new StockMovementDto(r.Id, r.Quantity, ((MovementKind)r.Kind).ToString(), r.Reference, r.Reason, r.UserId, r.OccurredUtc))
+            .Select(r => new StockMovementDto(r.Id, r.Quantity, ((MovementKind)r.Kind).ToString(), r.Reference, r.Reason, r.UserId, r.OccurredUtc,
+                showCost ? r.UnitCost : null, showCost ? r.Value : null))
             .ToList();
         return new PagedResult<StockMovementDto>(rows, q.Page, q.PageSize, (int)await multi.ReadSingleAsync<long>());
     }

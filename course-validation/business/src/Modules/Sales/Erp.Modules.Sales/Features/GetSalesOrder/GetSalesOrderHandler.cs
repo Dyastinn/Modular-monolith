@@ -10,13 +10,13 @@ internal sealed record SalesOrderDetailDto(
     long Id, string OrderNumber, long CustomerId, string CustomerName, string Status, decimal Total,
     long CreatedBy, DateTime CreatedUtc, DateTime? SubmittedUtc, long? ApprovedBy, DateTime? ApprovedUtc,
     long? RejectedBy, string? RejectionReason, DateTime? ShippedUtc, decimal GrossTotal, SpecialDiscountDto? SpecialDiscount,
-    IReadOnlyList<SalesOrderLineDto> Lines);
+    IReadOnlyList<SalesOrderLineDto> Lines, IReadOnlyList<string> PendingApprovals, long? CreditReleasedBy, DateTime? CreditReleasedUtc);
 
 internal sealed record SpecialDiscountDto(string Program, string IdLabel, string HolderName, string IdNumber, decimal Rate,
     decimal VatRateRemoved, decimal VatExemption, decimal Discount);
 
 internal sealed record SalesOrderLineDto(long ItemId, string ItemName, string Unit, decimal Quantity, decimal UnitPrice, decimal LineTotal,
-    bool SpecialDiscountEligible);
+    bool SpecialDiscountEligible, decimal ShippedQuantity, decimal Outstanding);
 
 internal sealed record SalesOrderHeaderRow(
     long Id, string OrderNumber, long CustomerId, string CustomerName, int Status, decimal Total, long CreatedBy,
@@ -24,10 +24,10 @@ internal sealed record SalesOrderHeaderRow(
     string? RejectionReason, DateTime? ShippedUtc, decimal GrossTotal, string? SpecialDiscountProgram,
     string? SpecialDiscountIdLabel, string? SpecialDiscountHolderName, string? SpecialDiscountIdNumber,
     decimal? SpecialDiscountRate, decimal? SpecialDiscountVatRateRemoved, decimal SpecialDiscountVatExemption,
-    decimal SpecialDiscountAmount);
+    decimal SpecialDiscountAmount, int PendingApprovals, long? CreditReleasedBy, DateTime? CreditReleasedUtc);
 
 internal sealed record SalesOrderLineRow(long ItemId, string ItemName, string Unit, decimal Quantity, decimal UnitPrice,
-    bool SpecialDiscountEligible);
+    bool SpecialDiscountEligible, decimal ShippedQuantity);
 
 internal sealed class GetSalesOrderHandler(IDbConnectionFactory connections, ICurrentUser currentUser)
 {
@@ -46,7 +46,8 @@ internal sealed class GetSalesOrderHandler(IDbConnectionFactory connections, ICu
         if (h is null) return null;
         var lines = (await multi.ReadAsync<SalesOrderLineRow>())
             .Select(l => new SalesOrderLineDto(l.ItemId, l.ItemName, l.Unit, l.Quantity, l.UnitPrice,
-                Math.Round(l.Quantity * l.UnitPrice, 2, MidpointRounding.AwayFromZero), l.SpecialDiscountEligible))
+                Math.Round(l.Quantity * l.UnitPrice, 2, MidpointRounding.AwayFromZero), l.SpecialDiscountEligible,
+                l.ShippedQuantity, l.Quantity - l.ShippedQuantity))
             .ToList();
 
         return new SalesOrderDetailDto(
@@ -56,6 +57,6 @@ internal sealed class GetSalesOrderHandler(IDbConnectionFactory connections, ICu
             h.SpecialDiscountProgram is null ? null : new SpecialDiscountDto(h.SpecialDiscountProgram, h.SpecialDiscountIdLabel!,
                 h.SpecialDiscountHolderName!, h.SpecialDiscountIdNumber!, h.SpecialDiscountRate ?? 0, h.SpecialDiscountVatRateRemoved ?? 0,
                 h.SpecialDiscountVatExemption, h.SpecialDiscountAmount),
-            lines);
+            lines, ((ApprovalNeeds)h.PendingApprovals).Names(), h.CreditReleasedBy, h.CreditReleasedUtc);
     }
 }

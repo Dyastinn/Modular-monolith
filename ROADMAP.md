@@ -351,6 +351,63 @@ App; errors gain stable, documented codes.
       specific changes; GLOSSARY, ANSWER-KEY
 - [x] Rules: CLAUDE.md §3–5, README, THIRD-PARTY-NOTICES
 
+### M10 — Sellable: approvals, sorting, and the gaps a buyer sees 🟨 (decided 2026-11-15)
+
+User decisions (2026-11-15): close the gaps lesson 25 listed as "not built" that would stop a sale; make the
+approval limit data, with a per-customer override; credit holds go to accounting, not sales; an "Awaiting my
+approval" page; every paged list sorts on the server. **Build first, lessons after**: each item lands as code and
+tests, and its lesson is written in a second pass once the design has settled (an explicit exception to the
+same-edit rule, so later features don't force rewrites of lessons written days earlier).
+
+Approvals and sorting (code ✅ · lessons ⬜):
+
+- [x] Sales: `sales_settings.approval_threshold` (seeded ₱50,000, Admin edits it) + `customer.approval_threshold`
+      (null = company's; ₱0 = every order). `ApprovalPolicy` constant removed
+- [x] Over the credit limit is a **credit hold**, not a refusal: the order waits (`PendingApprovals` flags:
+      `Manager`, `CreditRelease`); `ApprovalNeedsRules`: SalesManager approves size, Accountant releases credit,
+      Admin both; creator never; reject by anyone whose approval is awaited. SALES-0003 now means "on credit hold";
+      SALES-0030 "not your approval". Drafts may go over credit (the check moved entirely to Submit)
+- [x] Purchasing: `Draft → submit → PendingApproval → approve | send back (to Draft, with reason)`;
+      `purchasing_settings.approval_threshold` (seeded ₱0 = an admin approves every PO, as before); PURCHASING-0015
+- [x] "Awaiting my approval" page (`awaitingMe=true` on both searches; a role sees only what it may approve, never
+      its own); Approval rules page (Admin); customer dialog edits the override; order/PO pages show what an order
+      waits for and who released credit
+- [x] Server sorting: `ValidSort` allow-list per query, `p_sort`/`p_desc` in v2 SQL functions (one `CASE` per
+      column and direction; nothing built from text); `GridSort` + `ListAddress` keep the sort in the address
+      (`sort=`, `desc=true`) and restore the arrow (`InitialDirection`). Done: sales orders, customers, price list,
+      purchase orders, suppliers, users; client-side on aging and 2307. Items, shipments and invoices get theirs
+      with costing, partial shipments and credit memos (their functions change then anyway). Logs (movements,
+      sign-in) stay in time order on purpose
+- [x] `MoneyColumn` is now `MoneyColumn.Of<T>(title, property, …)`, which writes the `PropertyColumn` in place.
+      Fixes a bug that predates M10: a column inside a wrapper component joins the grid after its siblings, so every
+      amount column rendered last (after the ⋮ menu)
+- [x] Tests: approval rules (unit), PO workflow (unit), credit hold, customer limit, admin-only limit, awaiting-me
+      filter, sorting allow-list and order (integration), approvals queue and sort-in-address (browser)
+- [ ] Lessons: 04 (rules), 09–10 (submit/approve), 15 (customer limit), 18 (PO workflow), 08 (sorting) and
+      MUDBLAZOR.md (`MoneyColumn.Of`, sortable columns)
+
+The buyer gaps, in build order (code ⬜ · lessons ⬜):
+
+- [x] Inventory costing (code ✅ · lesson ⬜): `UnitCost` (4 decimals, never negative) and a moving average on
+      `item.average_cost`; a receipt locks the item row (`FOR UPDATE`) and re-averages; shipments and stock lost leave
+      at the average, stock found at a stated cost or the average; every movement and shipment line stores its unit
+      cost; Purchasing passes the PO line's cost (`IStockReceiving` gained `unitCost`). Cost is shown to clerks,
+      buyers, accountants, sales managers and admins, never to reps (nulled in the handler, cost sorts ignored).
+      Items page: average cost, value, total stock value (`/api/stock-valuation`); movements show cost and value;
+      PO lines prefill with the average. Existing stock reads ₱0 until its next receipt (no cross-module backfill)
+- [x] Partial shipments (code ✅ · lesson ⬜): order lines track `shipped_quantity`; `PartiallyShipped` and
+      `Closed` statuses; `RecordShipment` refuses a line not on the order or over what's left (SALES-0031); an order
+      with an SC/PWD discount ships whole (SALES-0032) so its one invoice equals the order; close short releases the
+      reservation and takes the unshipped value off the balance; `ShipmentRecorded` carries lines with cost, and each
+      shipment gets its own invoice billing what shipped, with item and unit cost on each line (margins). Ship
+      dialog lets the clerk lower quantities. Shipments list sorts and shows cost of goods
+- [ ] CSV import: customers, items, opening stock, opening balances
+- [ ] Returns and credit memos (BIR-compliant), stock back in at cost
+- [ ] Accounts payable: supplier bills, PO ↔ receipt ↔ bill match, payments, Form 2307 issued
+- [ ] Reorder points, low-stock list, stock count with variance posting
+- [ ] Reports + CSV export: sales by customer/item/rep/period, stock valuation, BIR summary lists
+- [ ] Change audit on master data (who changed a credit limit, price or customer, and when)
+
 ---
 
 ## Risks to retire early
@@ -364,6 +421,11 @@ App; errors gain stable, documented codes.
   the reference build for screens built from patterns already taught.
 - **Full `podman compose up` not executed yet.** Images build with Podman and db + migrate + app ran together in
   Production; run lesson 24 end to end (with Caddy and backups) on a Linux server before the first sale.
+- **`podman exec` broken on kernel 7.3 (found 2026-11-15).** On this machine (Fedora 45, kernel 7.3.3, crun
+  1.31, Podman 6.1.3) every `podman exec` fails with `crun: write to /proc/self/oom_score_adj: Permission
+  denied`, so Testcontainers' PostgreSQL readiness check (`pg_isready` via exec) and the `create-roles.sql` exec
+  in `CustomWebAppFactory` hang the integration tests. Docker in CI is unaffected. Booting the 7.2 kernel should
+  fix it; otherwise switch the harness to a host-side readiness check and run the roles script over Npgsql.
 - **Selling source vs. a public course.** If the course is published openly and ends in the full product,
   the product's source is effectively free. Decide how the course is distributed before M4.
 
@@ -475,3 +537,12 @@ App; errors gain stable, documented codes.
   a dialog provider added two lessons after the first dialog, a stale error-handler line (10), a missing framework
   reference (17), `TaxRegime` defined in two places (20), xUnit v2 signatures (23, 24), culture-sensitive parsing
   (06, 09, 16, 20, 22). **289 + 14 UI tests pass.**
+- **2026-11-15** — M10 started (user decisions above). Approvals: approval limits are data (company + customer),
+  credit holds go to accounting, purchase orders are submitted and can be sent back, "Awaiting my approval" and
+  "Approval rules" pages. Server-side sorting on six lists. `MoneyColumn` column-order bug fixed. **Sales 135,
+  Purchasing 13, other unit 29, architecture 14, integration 131, browser 15/16 pass** (the dark-mode browser test
+  fails only as the 16th test of a run and passes alone 3/3; most likely the sign-in rate limit, not yet
+  confirmed). Integration and browser runs used a local-only workaround for the `podman exec` problem (see Risks);
+  the committed test harness is unchanged.
+- **2026-11-15** — M10: inventory costing (moving average) and partial shipments. **Sales 142, Inventory 12,
+  Invoicing 20, Purchasing 13, architecture 14, integration 136, browser 17/17 pass.**
