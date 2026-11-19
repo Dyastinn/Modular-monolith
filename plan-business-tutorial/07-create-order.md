@@ -753,8 +753,8 @@ told why.
 
 And `Busy`. A person who double-clicks **Save** sends the order twice, and on a slow connection people click again
 because nothing seemed to happen. So while a change is on its way, every button that sends one says
-`Disabled="Api.Busy"` and greys out. Blazor redraws the page as soon as a click handler starts waiting for the
-server, so the button is grey before a second click can land, and it comes back when the answer arrives,
+`Disabled="Api.Busy"` and grays out. Blazor redraws the page as soon as a click handler starts waiting for the
+server, so the button is gray before a second click can land, and it comes back when the answer arrives,
 success or not (that's what the `finally` is for).
 
 Here's how that looks when a rep picks a blocked customer, and the page the button opens:
@@ -781,13 +781,13 @@ Like the fields in lesson 03, every grid in the app gets the same settings, writ
 | Setting | Why |
 |---|---|
 | `Outlined="true"` | A thin border, the same as the cards around it. (Leave it off for a grid that already sits inside a framed tab or card) |
-| `Striped="true"` | Alternating row colours (more on that below) |
+| `Striped="true"` | Alternating row colors (more on that below) |
 | `Hover="true"` | The row under the pointer is highlighted, so a click lands on the row you meant |
 | `Dense="true"` | Compact rows: more of a list fits on the screen |
 | `SortMode="SortMode.None"` | No sort arrows on the headings. Our lists come sorted from the API, and a heading that looks clickable but sorts only the page on screen would mislead |
 
 Each grid also says what it shows when it's empty, in its `NoRecordsContent`, so an empty grid never looks broken.
-On a phone (narrower than MudBlazor's `Xs` breakpoint) each row becomes a small card, every value labelled with its
+On a phone (narrower than MudBlazor's `Xs` breakpoint) each row becomes a small card, every value labeled with its
 column's `Title`, with nothing extra to write.
 
 Inside it go the columns. Two kinds cover everything:
@@ -800,10 +800,10 @@ Inside it go the columns. Two kinds cover everything:
 The columns don't repeat `T="ErrorCode"`: `MudDataGrid` passes its row type down to everything inside it (Blazor's
 `[CascadingTypeParameter]`).
 
-Why alternating row colours (**zebra stripes**)? The studies are honest about it: they rarely make people faster,
+Why alternating row colors (**zebra stripes**)? The studies are honest about it: they rarely make people faster,
 but they never made them slower, they helped accuracy on some tasks, and most people prefer them. In a wide
 table of amounts, losing your row halfway across is the mistake that costs money, so we take the help. The
-stripe colour is the theme's `TableStriped`, kept faint so the status colours still stand out.
+stripe color is the theme's `TableStriped`, kept faint so the status colors still stand out.
 
 The page that button opens, open to anyone, because the link must work even after the session has ended:
 

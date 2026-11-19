@@ -61,8 +61,8 @@ different problems, and each one costs more time than the one before.
 | **Integration test** | The engine, on a stand | The real API, started in memory, answering a real HTTP request; from lesson 05 also a real PostgreSQL | Wrong wiring, a missing registration, a bad SQL query, a wrong status code | Whether the screen shows the answer properly |
 | **End-to-end test** | A test drive | A real browser clicking through the real screens of the running app | A broken button, a page that never loads | Which line of code is wrong, when it fails |
 
-Here is the same idea as a picture. Every box is a part of our app; the coloured ones are switched on for real
-in that kind of test, and the grey ones aren't used at all:
+Here is the same idea as a picture. Every box is a part of our app; the colored ones are switched on for real
+in that kind of test, and the gray ones aren't used at all:
 
 ```mermaid
 flowchart TB
@@ -91,7 +91,7 @@ So a healthy suite has many small tests and few big ones. People draw it as the 
 
 ![The test pyramid: many fast unit tests at the bottom, fewer integration tests in the middle, a few end-to-end browser tests at the top](images/test-pyramid.svg)
 
-Microsoft's advice says the same in one line: if a behaviour can be tested with either a unit test or an
+Microsoft's advice says the same in one line: if a behavior can be tested with either a unit test or an
 integration test, choose the unit test. The opposite shape, mostly slow browser tests and hardly any unit
 tests, has a name too, the *ice-cream cone*, and it's what a team ends up with when testing is left for the
 end. Our pyramid is fatter in the middle than the textbook one, and that's on purpose: a lot of our risk sits in

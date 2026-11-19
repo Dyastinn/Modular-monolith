@@ -420,9 +420,9 @@ html, body {
 }
 ```
 
-This file stays small on purpose. The look of the app (colours, fonts, corners, shadows) lives in the MudBlazor
+This file stays small on purpose. The look of the app (colors, fonts, corners, shadows) lives in the MudBlazor
 theme, coming in a moment, and CSS is only for what the theme can't say. `var(--mud-palette-primary)` is how
-CSS asks the theme for a colour, so the focus ring follows it, in light mode and in dark.
+CSS asks the theme for a color, so the focus ring follows it, in light mode and in dark.
 
 ### Starting the app
 
@@ -479,7 +479,7 @@ The **router** looks at the address and picks the page whose `@page` line matche
 frame around every page: the top bar, the menu on the left, and the page in the middle (`@Body`). If you
 came from WebForms, it's the master page.
 
-First, the look. A **theme** is MudBlazor's list of every colour, font size and corner radius the components
+First, the look. A **theme** is MudBlazor's list of every color, font size and corner radius the components
 use. Set it once, and every button, table and field follows. We write it in its own file, because it's long and
 it's design, not code:
 
@@ -591,8 +591,8 @@ What each part decides:
 
 | Part | What it sets | Why |
 |---|---|---|
-| `PaletteLight` | Every colour in light mode, by role: `Primary` for what you can act on, `Background` and `Surface` for the page and its cards, `Lines…` for borders, `Success`/`Warning`/`Error` for status | Pages ask for a role (`Color.Primary`), never a colour code, so changing the brand is one line here |
-| `PaletteDark` | The same roles at night | A lighter blue and softer colours, so text stays readable on a dark background |
+| `PaletteLight` | Every color in light mode, by role: `Primary` for what you can act on, `Background` and `Surface` for the page and its cards, `Lines…` for borders, `Success`/`Warning`/`Error` for status | Pages ask for a role (`Color.Primary`), never a color code, so changing the brand is one line here |
+| `PaletteDark` | The same roles at night | A lighter blue and softer colors, so text stays readable on a dark background |
 | `Typography` | The fonts and sizes of each kind of text | The system's own font, sizes made for dense business screens, and buttons in sentence case instead of capitals |
 | `LayoutProperties` | Corner radius, top bar height, menu width | Slightly rounded, one consistent radius everywhere |
 | `Shadows` | How deep each "elevation" level looks | Levels 1–5 are what sits on the page, so they're flat and use a thin border; menus and dialogs use higher levels and keep their shadow, because they float above the page |
@@ -612,7 +612,7 @@ Now the product's mark, a small component we can reuse:
 }
 ```
 
-`Color.Inherit` means "the colour of the text around me", here the white of the top bar. And the frame itself:
+`Color.Inherit` means "the color of the text around me", here the white of the top bar. And the frame itself:
 
 ```razor
 @* src/Erp.Web/Layout/MainLayout.razor *@
@@ -680,7 +680,7 @@ up is drawn, like the dark-mode button's tooltip. Each appears once, here.
 |---|---|
 | `MudAppBar Elevation="0"` | The deep-blue top bar, flat |
 | `DrawerVariant.Responsive` | The menu sits beside the page on a wide screen and slides over it on a phone |
-| `border-r border-solid mud-border-lines-default` | MudBlazor's own utility classes: a thin border on the right, in the theme's line colour. No CSS of ours |
+| `border-r border-solid mud-border-lines-default` | MudBlazor's own utility classes: a thin border on the right, in the theme's line color. No CSS of ours |
 | `role="main"` | Marks the page's own content as the **main landmark**. A screen reader can jump straight to it, past the bar and the menu, and lesson 06's browser tests look for headings inside it. MudBlazor passes attributes it doesn't know straight on to the element it draws |
 | `pt-8 pb-12 px-4 px-sm-8` | Spacing utilities: more room on a wide screen (`sm` and up) than on a phone |
 | `@bind-IsDarkMode` | Light or dark, for the whole app, in one boolean |

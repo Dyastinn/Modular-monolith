@@ -860,8 +860,8 @@ password", then "Hide password".
 }
 ```
 
-One card, centred on the quiet background: `d-flex align-center justify-center` are MudBlazor's layout classes,
-and `min-height:100vh` makes the container as tall as the window, so "centred" means the middle of the screen.
+One card, centered on the quiet background: `d-flex align-center justify-center` are MudBlazor's layout classes,
+and `min-height:100vh` makes the container as tall as the window, so "centered" means the middle of the screen.
 One clear button, as wide as the form. The subtitle tells a new employee where their password comes from,
 because nobody signs themselves up here.
 
@@ -1405,7 +1405,7 @@ A few details in the code:
 
 - **`using static Microsoft.Playwright.Assertions`** brings in `Expect`. It's part of the Playwright package; the
   NUnit and MSTest base classes use the same one.
-- **`Exact = true`** on the password field, because the eye button is labelled "Show password", and without it
+- **`Exact = true`** on the password field, because the eye button is labeled "Show password", and without it
   Playwright matches any label that *contains* "Password".
 - **Strict by default.** If a locator matches two elements, clicking it fails instead of picking one. That's a
   feature: the fix is a more precise locator (inside the dialog, inside the menu, inside a row), not `.First`.

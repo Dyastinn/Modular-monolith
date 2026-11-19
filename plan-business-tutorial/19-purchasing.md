@@ -770,7 +770,7 @@ public sealed record PurchaseOrderDetail(long Id, string Number, long SupplierId
 
 `Format` gets a date-only overload, `public static string Date(DateOnly date) => date.ToString("MMM d, yyyy", Ph);`,
 and `StatusChip` learns the new statuses: `"Received"` green; `"PartiallyReceived"` and `"Sent"` amber;
-`"Closed"` grey.
+`"Closed"` gray.
 
 The pages are built from parts you know:
 

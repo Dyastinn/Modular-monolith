@@ -620,7 +620,7 @@ One more to try: as the manager, create *and submit* a rack order yourself, then
 Now the way managers will really do it. Sign in to the app as `manager@erp.local` in one browser and as
 `rep@erp.local` in another (or in a private window). As the rep, create a Server Rack order for Epsilon and
 submit it. As the manager, click the **Waiting for approval** tile on the home page, open the order, and
-click **Reject**. The dialog's Reject button stays grey until you type a reason. Type one and confirm; the
+click **Reject**. The dialog's Reject button stays gray until you type a reason. Type one and confirm; the
 rep reloads the order and sees your reason in red.
 
 Finally the tests: `dotnet test` for everything, and with the app running, the browser flow:

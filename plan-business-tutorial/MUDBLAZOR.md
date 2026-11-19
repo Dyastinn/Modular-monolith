@@ -31,8 +31,8 @@ follow Google's **Material Design**, a well-known set of rules for how screens l
 | Offline docs | The package ships XML documentation, so your editor's IntelliSense shows each parameter's description and default |
 | Changes between versions | The release notes and migration guides on MudBlazor's GitHub. Read them before moving to a new major version |
 
-> **Tip.** mudblazor.com is itself a Blazor app. When you need an exact default value, hover over the parameter
-> in your editor: it reads the same XML documentation the site does.
+When you need an exact default value, hover over the parameter in your editor. It reads the same XML
+documentation that mudblazor.com does.
 
 ## How it's wired in (lesson 01)
 
@@ -56,9 +56,9 @@ shows. If one doesn't appear, check the providers first.
 |---|---|---|
 | **MudBlazor components, not HTML** | `MudStack`, `MudText`, `MudPaper`, `MudDataGrid`, never `<div>`, `<table>`, `<b>` | One look and one way of working everywhere. Components bring dark mode, spacing and accessibility for free; raw HTML needs each one added by hand |
 | **MudBlazor's components as they are, never subclassed** | `MudTextField`, `MudDataGrid`, with their settings on the tag | What you read in MudBlazor's documentation is exactly what's on the page. No layer of ours sits between the two |
-| **The same settings on the same kind of component** | Every field: `Variant="Variant.Outlined" Margin="Margin.Normal"`. Every grid: `Striped Hover Dense`, `SortMode.None`, and `Outlined` unless it sits in a frame | One look across the app. A field that forgets them looks different, which is how review catches it |
+| **The same settings on the same kind of component** | Every field: `Variant="Variant.Outlined" Margin="Margin.Normal"`. Every grid: `Striped Hover Dense`, and `Outlined` unless it sits in a frame. A paged list sorts (`SortMode.Single`); a document's lines and a log don't (`SortMode.None`) | One look across the app. A field that forgets them looks different, which is how review catches it |
 | **Utility classes before CSS** | `Class="pa-4 mb-2 d-flex gap-4"` | MudBlazor's spacing and layout classes cover nearly everything. `app.css` holds a few rules, each with a comment saying why MudBlazor can't do it |
-| **The theme owns colour** | `Color="Color.Primary"`, `mud-error-text` | No colour codes in pages, so dark mode works everywhere |
+| **The theme owns color** | `Color="Color.Primary"`, `mud-error-text` | No color codes in pages, so dark mode works everywhere |
 | **Name what has no visible name** | `AriaLabel="Actions"` on an icon-only `MudMenu`, `aria-label="Remove line"` on an icon button | A screen reader announces the name, and a test finds the button by it |
 | **No gradients, little shadow** | `Shadows` levels 1–5 are `none` in `AppTheme` | A flat, calm look; dialogs and menus keep their shadow so they float above the page |
 
@@ -72,14 +72,14 @@ Our own components *use* MudBlazor components; none of them extends one.
 
 | Piece | File | Lesson | What it does |
 |---|---|---|---|
-| `AppTheme` | `Layout/AppTheme.cs` | 01 | Colours (light and dark), fonts, corners, the flat shadows |
+| `AppTheme` | `Layout/AppTheme.cs` | 01 | Colors (light and dark), fonts, corners, the flat shadows |
 | `Brand` | `Shared/Brand.razor` | 01 | The "E · ERP" mark, on the bar and on the sign-in card |
 | `PasswordField` | `Shared/PasswordField.razor` | 06 | A `MudTextField` with an eye button to show what was typed |
 | `PageHeader` | `Shared/PageHeader.razor` | 08 | The top of every page: breadcrumb, title, status, actions (wrapping on a phone), description |
 | `GridPaging.FirstPage()` | `Shared/GridPaging.cs` | 08 | An extension method: back to page 1 of a `MudDataGrid` after a filter changes |
-| `MoneyColumn<T>` | `Shared/MoneyColumn.razor` | 08 | A `TemplateColumn` for pesos: right-aligned; an optional footer `Total`; `Warn` for red |
+| `MoneyColumn.Of<T>(...)` | `Shared/MoneyColumn.cs` | 08 | A method that writes a `PropertyColumn` for pesos, right where you call it: right-aligned, sortable; an optional footer `total`; `warn` for red |
 | `Totals`, `TotalLine` | `Shared/` | 08 | The label-and-amount lines under an order, invoice or purchase order |
-| `StatusChip` | `Shared/StatusChip.razor` | 08 | One colour per status; `Live` makes it a `status` region |
+| `StatusChip` | `Shared/StatusChip.razor` | 08 | One color per status; `Live` makes it a `status` region |
 | `Crumbs` | `Shared/Crumbs.razor` | 08 | The breadcrumb, inside a `nav` landmark |
 | `Tile` | `Shared/Tile.razor` | 08 | A home-page card that is one big link |
 
@@ -103,8 +103,9 @@ What we do instead, by kind:
 | You want | Use | Example |
 |---|---|---|
 | The same look on every component of a kind | The settings on each tag | `<MudTextField ... Variant="Variant.Outlined" Margin="Margin.Normal" />` |
-| Behaviour MudBlazor doesn't have, used on several pages | A component of our own that **holds** MudBlazor's | `PasswordField`, `PageHeader`, `MoneyColumn` |
+| Behavior MudBlazor doesn't have, used on several pages | A component of our own that **holds** MudBlazor's | `PasswordField`, `PageHeader` |
 | A helper method for a MudBlazor component | An **extension method** | `_table.FirstPage()` |
+| The same column on many grids | A **method that writes the column** in place | `@(MoneyColumn.Of<Row>("Total", x => x.Total))` |
 | A look for the whole app | The theme | `AppTheme` |
 
 Before you make a component, apply the rule of three: the third time the same markup is copied, it becomes a
@@ -121,7 +122,7 @@ component. Before that, copying is cheaper than a guess at what will repeat.
 | Buttons and links | `MudButton`, `MudIconButton`, `MudLink` | 01 |
 | A message that stays | `MudAlert` | 01 |
 | A message that comes and goes | `ISnackbar` (through `ApiClient`) | 07 |
-| A table | `MudDataGrid` with `PropertyColumn`, `TemplateColumn`, `MoneyColumn`, `MudDataGridPager` | 07, 08 |
+| A table | `MudDataGrid` with `PropertyColumn`, `TemplateColumn`, `MoneyColumn.Of`, `MudDataGridPager` | 07, 08 |
 | A page's title row | `PageHeader` (ours) | 08 |
 | A status or tag | `MudChip` (through `StatusChip`) | 08 |
 | A question before acting | `IDialogService.ShowMessageBoxAsync` | 08 |
@@ -134,12 +135,17 @@ component. Before that, copying is cheaper than a guess at what will repeat.
 ### Grids in one minute
 
 ```razor
-<MudDataGrid T="SalesOrderSummary" ServerData="Load" RowClick="Open"
-             Outlined="true" Striped="true" Hover="true" Dense="true" SortMode="SortMode.None">
+<MudDataGrid T="SalesOrderSummary" @ref="_table" @key="View.Version" ServerData="Load" RowClick="Open"
+             Outlined="true" Striped="true" Hover="true" Dense="true"
+             SortMode="SortMode.Single" ShowColumnOptions="false">
     <Columns>
-        <PropertyColumn Property="x => x.OrderNumber" Title="Order" />
-        <TemplateColumn Title="Status"><CellTemplate><StatusChip Status="@context.Item.Status" /></CellTemplate></TemplateColumn>
-        <MoneyColumn Title="Total" Amount="x => x.Total" />
+        <PropertyColumn Property="x => x.OrderNumber" Title="Order"
+                        InitialDirection="@View.Initial(nameof(SalesOrderSummary.OrderNumber))" />
+        <PropertyColumn Property="x => x.Status" Title="Status"
+                        InitialDirection="@View.Initial(nameof(SalesOrderSummary.Status))">
+            <CellTemplate><StatusChip Status="@context.Item.Status" /></CellTemplate>
+        </PropertyColumn>
+        @(MoneyColumn.Of<SalesOrderSummary>("Total", x => x.Total, initial: View.Initial(nameof(SalesOrderSummary.Total))))
     </Columns>
     <NoRecordsContent>No orders match.</NoRecordsContent>
     <PagerContent><MudDataGridPager T="SalesOrderSummary" /></PagerContent>
@@ -151,12 +157,18 @@ component. Before that, copying is cheaper than a guess at what will repeat.
 | Data already in memory | `Items="_lines"` |
 | Data paged by the API | `ServerData="Load"`, a method taking `GridState<T>` and a `CancellationToken` and returning `GridData<T>` |
 | A property as it is | `PropertyColumn` |
-| Anything else in a cell | `TemplateColumn`; the row is `context.Item` |
-| An amount | `MoneyColumn` |
-| A total under a column | `MoneyColumn Total="..."` (the grid's footer row) |
+| A property drawn our own way, still sortable | `PropertyColumn` with a `CellTemplate`; the row is `context.Item` |
+| A cell that isn't one property (a menu, a "Yes"/"No") | `TemplateColumn` |
+| An amount | `@(MoneyColumn.Of<Row>("Total", x => x.Total))` |
+| A total under a column | `MoneyColumn.Of(..., total: sum)` (the grid's footer row) |
+| A paged list that sorts | `SortMode="SortMode.Single" ShowColumnOptions="false"`. The API sorts, never the browser: `Load` passes the grid's sort to the query, and the query checks it against the columns it allows |
+| The sort arrow back after a reload or a shared link | `InitialDirection="@View.Initial(nameof(Row.Prop))"` on each sortable column (`View` is the page's `ListAddress`, which keeps the sort in the address) |
+| A column the API can't sort | `Sortable="false"` |
+| A small report with every row already loaded | `Items`, and the grid sorts in the browser |
+| A document's lines, or a log | `SortMode="SortMode.None"`: they keep their own order |
 | Free text that may be long | `CellClass="wrap"` (cells don't wrap otherwise) |
 | A click on a row | `RowClick`, with `RowStyle="cursor:pointer"` |
-| Phones | Nothing: below `Breakpoint.Xs` each row becomes a card, labelled with each column's `Title` |
+| Phones | Nothing: below `Breakpoint.Xs` each row becomes a card, labeled with each column's `Title` |
 
 ## Mistakes we made, so you don't
 
@@ -166,6 +178,7 @@ component. Before that, copying is cheaper than a guess at what will repeat.
 | `aria-label="Actions"` on `MudMenu` | It landed on the wrapper; the ⋮ button had no name | `AriaLabel="Actions"`, the component's own parameter ([lesson 16](16-users-email.md)) |
 | `MudSimpleTable` for small tables | Raw `<tr>`/`<td>` HTML in the middle of a MudBlazor screen | `MudDataGrid` with `Items`, and `Totals` under it |
 | Subclassing MudBlazor components for defaults (`AppTextField : MudTextField`) | Two layers to read; a wrapper of a wrapper for the password field; components rewriting their own parameters | The settings on each tag, and our own components that hold MudBlazor's |
+| An amount column as a component of its own (`<MoneyColumn ... />`) | A column inside a wrapper component joins the grid after its siblings, so every amount landed last, after the ⋮ menu | `MoneyColumn.Of`, a method that writes the `PropertyColumn` in place |
 | `Margin.Dense` on every field | Labels and text crowded together | `Margin="Margin.Normal"` on every field |
 | `MudDatePicker` as it comes | Dates could only be picked from a calendar, never typed | `Editable="true"` on every date field |
 | The dialog provider added after the first dialog | The question never appeared | Each provider in `MainLayout.razor` before the first page needs it |

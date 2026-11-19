@@ -122,7 +122,7 @@ a phone.
 
 **Extension method** (08)
 A method you write for a class you don't own, called as if it were the class's own: `_table.FirstPage()` on a
-`MudDataGrid`. It adds behaviour without wrapping the class.
+`MudDataGrid`. It adds behavior without wrapping the class.
 
 **Slot** (08)
 A `RenderFragment` parameter: markup a page passes into a component, like the buttons between `<Actions>` and

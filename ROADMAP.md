@@ -151,8 +151,9 @@ Approvals and sorting (code ✅ · lessons ⬜):
       amount column rendered last (after the ⋮ menu)
 - [x] Tests: approval rules (unit), PO workflow (unit), credit hold, customer limit, admin-only limit, awaiting-me
       filter, sorting allow-list and order (integration), approvals queue and sort-in-address (browser)
-- [ ] Lessons: 04 (rules), 09–10 (submit/approve), 15 (customer limit), 18 (PO workflow), 08 (sorting) and
-      MUDBLAZOR.md (`MoneyColumn.Of`, sortable columns)
+- [x] MUDBLAZOR.md: `MoneyColumn.Of`, sortable columns (it now runs ahead of lesson 08, which still shows the
+      old `<MoneyColumn>` tag and unsorted lists)
+- [ ] Lessons: 04 (rules), 09–10 (submit/approve), 15 (customer limit), 18 (PO workflow), 08 (sorting)
 
 The buyer gaps, in build order (code ⬜ · lessons ⬜):
 

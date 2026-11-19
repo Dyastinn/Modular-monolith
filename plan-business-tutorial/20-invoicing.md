@@ -1303,7 +1303,7 @@ Here's the top of the printed invoice:
 | **Invoices** (`/invoices`) | Lesson 08's list pattern: search by number, order or customer, a status filter, issue and due dates, total |
 | **One invoice** (`/invoices/{id}`) | A breadcrumb back to **Invoices**, the header (customer, TIN, address, order, dates), the lines (marked when zero-rated or exempt), the totals with the breakdown for its regime, a **Print** button, and for accountants a **Void** button (using lesson 10's `ReasonDialog`) and, on a void invoice, **Reissue** |
 
-The Print button is just a link, labelled by the count:
+The Print button is just a link, labeled by the count:
 
 ```razor
 <MudButton Href="@($"api/invoices/{Id}/pdf")" Target="_blank" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.PictureAsPdf">

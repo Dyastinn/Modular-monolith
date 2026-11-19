@@ -924,7 +924,7 @@ Margin="Margin.Normal"`.
 
 Lesson 07's grid showed a list it already had (`Items`). This one pages through the server, and needs one small
 helper of its own. It's an **extension method**: a method you write for a class you don't own, called as if it
-were the class's own (`_table.FirstPage()`). It adds behaviour to `MudDataGrid` without wrapping or replacing it:
+were the class's own (`_table.FirstPage()`). It adds behavior to `MudDataGrid` without wrapping or replacing it:
 
 ```csharp
 // src/Erp.Web/Shared/GridPaging.cs
@@ -1268,7 +1268,7 @@ second page to need it, so it becomes a component now, before it's copied a thir
 | `Trail` | The breadcrumb, for a page under a list (the `Crumbs` component below draws it) |
 | `Status` | A `StatusChip`, next to the title |
 | `Actions` | The buttons, on the right. They **wrap** under the title on a phone instead of squeezing it |
-| `Description` | A line under the title, in the softer text colour |
+| `Description` | A line under the title, in the softer text color |
 
 A **slot** is a `RenderFragment` parameter: markup a page passes in, written between `<Actions>` and `</Actions>`.
 Each slot that isn't given is simply left out.
