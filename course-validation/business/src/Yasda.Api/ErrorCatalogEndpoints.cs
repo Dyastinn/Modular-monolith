@@ -15,9 +15,11 @@ internal static class ErrorCatalogEndpoints
             TypedResults.Ok(catalogs.SelectMany(c => c.Codes).OrderBy(c => c.Code, StringComparer.Ordinal).ToList()));
 
         errors.MapGet("/{code}", Results<Ok<ErrorCode>, NotFound> (string code, IEnumerable<ErrorCatalog> catalogs) =>
-            catalogs.SelectMany(c => c.Codes).FirstOrDefault(c => c.Code.Equals(code, StringComparison.OrdinalIgnoreCase)) is { } error
-                ? TypedResults.Ok(error)
-                : TypedResults.NotFound());
+        {
+            var error = catalogs.SelectMany(c => c.Codes).FirstOrDefault(c => c.Code.Equals(code, StringComparison.OrdinalIgnoreCase));
+            if (error is null) return TypedResults.NotFound();
+            return TypedResults.Ok(error);
+        });
 
         return api;
     }

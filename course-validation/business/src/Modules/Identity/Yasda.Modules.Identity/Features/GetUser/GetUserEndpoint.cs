@@ -11,7 +11,11 @@ internal static class GetUserEndpoint
     public static void Map(IEndpointRouteBuilder app)
     {
         app.MapGet("/users/{id:long}", async Task<Results<Ok<UserDto>, NotFound>> (long id, GetUserHandler handler, CancellationToken ct) =>
-                await handler.HandleAsync(id, ct) is { } user ? TypedResults.Ok(user) : TypedResults.NotFound())
+            {
+                var user = await handler.HandleAsync(id, ct);
+                if (user is null) return TypedResults.NotFound();
+                return TypedResults.Ok(user);
+            })
             .RequireAuthorization(p => p.RequireRole(Roles.Admin));
     }
 }

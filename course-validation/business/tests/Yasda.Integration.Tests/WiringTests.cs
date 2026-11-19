@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using Yasda.Modules.Identity;
+using Yasda.Modules.Tickets;
 using Yasda.Shared.BuildingBlocks;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -11,7 +12,7 @@ namespace Yasda.Integration.Tests;
 public class WiringTests(CustomWebAppFactory factory)
 {
     private static readonly Type[] Modules =
-        [typeof(IdentityModule)];
+        [typeof(IdentityModule), typeof(TicketsModule)];
 
     [Fact]
     public async Task Every_feature_handler_is_registered()
@@ -30,7 +31,7 @@ public class WiringTests(CustomWebAppFactory factory)
     {
         Type[] handlerInterfaces = [typeof(IDomainEventHandler<>), typeof(IIntegrationEventHandler<>)];
         var handlers = Modules.SelectMany(m => m.Assembly.GetTypes())
-            .Where(t => t is { IsAbstract: false, IsInterface: false })
+            .Where(t => (!t.IsAbstract && !t.IsInterface))
             .SelectMany(t => t.GetInterfaces()
                 .Where(i => i.IsGenericType && handlerInterfaces.Contains(i.GetGenericTypeDefinition()))
                 .Select(i => (Class: t, Interface: i)))

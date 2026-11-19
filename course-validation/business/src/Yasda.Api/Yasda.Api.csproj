@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Modules\Identity\Yasda.Modules.Identity\Yasda.Modules.Identity.csproj" />
+    <ProjectReference Include="..\Modules\Tickets\Yasda.Modules.Tickets\Yasda.Modules.Tickets.csproj" />
     <ProjectReference Include="..\Shared\Yasda.Shared.Infrastructure\Yasda.Shared.Infrastructure.csproj" />
     <!-- The browser app, served by this host from the same address as the API. A normal reference, so its packages'
          files (MudBlazor's CSS and JS) are served too; the alias keeps its classes out of this project's code. -->

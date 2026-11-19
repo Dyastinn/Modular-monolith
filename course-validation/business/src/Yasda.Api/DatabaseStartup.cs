@@ -14,9 +14,9 @@ internal static class DatabaseStartup
         if (!settings.GetValue<bool>("MigrateOnStartup")) return;
 
         // Migrations need the schema owner; the app itself may run as a role that can only read and write rows.
-        var ownerConnectionString = app.Configuration.GetConnectionString("YasdaDbMigrations") is { Length: > 0 } owner
-            ? owner
-            : app.Configuration.GetConnectionString("YasdaDb")!;
+        var ownerConnectionString = app.Configuration.GetConnectionString("YasdaDbMigrations");
+        if (string.IsNullOrEmpty(ownerConnectionString))
+            ownerConnectionString = app.Configuration.GetConnectionString("YasdaDb")!;
         await PostgresDatabase.EnsureExistsAsync(ownerConnectionString, ct);
 
         await using var ownerConnection = new NpgsqlConnection(ownerConnectionString);

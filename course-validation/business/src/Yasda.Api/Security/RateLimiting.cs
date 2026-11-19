@@ -36,10 +36,12 @@ internal static class RateLimiting
         });
     }
 
-    private static string ClientKey(HttpContext ctx) =>
-        ctx.User.FindFirstValue(ClaimTypes.NameIdentifier) is { } userId
-            ? $"user:{userId}"
-            : $"ip:{ctx.Connection.RemoteIpAddress}";
+    private static string ClientKey(HttpContext ctx)
+    {
+        var userId = ctx.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is not null) return $"user:{userId}";
+        return $"ip:{ctx.Connection.RemoteIpAddress}";
+    }
 
     private static FixedWindowRateLimiterOptions PerMinute(int permits) =>
         new() { PermitLimit = permits, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 };

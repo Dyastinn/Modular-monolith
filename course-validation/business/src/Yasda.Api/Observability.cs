@@ -46,8 +46,8 @@ internal static class Observability
     public static IApplicationBuilder UseTraceIdHeader(this IApplicationBuilder app) =>
         app.Use((ctx, next) =>
         {
-            if (Activity.Current is { } activity)
-                ctx.Response.Headers["X-Trace-Id"] = activity.TraceId.ToString();
+            if (Activity.Current is not null)
+                ctx.Response.Headers["X-Trace-Id"] = Activity.Current.TraceId.ToString();
             return next(ctx);
         });
 }

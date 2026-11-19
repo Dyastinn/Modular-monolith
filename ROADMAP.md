@@ -54,11 +54,9 @@ to date by `DeadlinesChanged`.
 ## Milestones
 
 - **Y1 — Reset to YASDA** ✅ code · ✅ lessons 00–02 (2026-11-19). Details below.
-- **Y2 — Tickets core** ⬜ · lessons 03–11: the `TicketsModule` shell exactly as lesson 01 creates it, then create a ticket (requester portal), queues with filters and server sorting,
-  take/assign with a race test, status machine (New → Open ⇄ Pending → Resolved → Closed; reopen; cancel),
-  replies and internal notes, optimistic concurrency. Restores the outbox delivery and redelivery tests with
-  the first real event. Lesson 05 installs PostgreSQL, lesson 06 Playwright's browser; lesson 06 also adds
-  the account row, `AuthorizeView` and the sign-in pages to lesson 01's layout.
+- **Y2 — Tickets core** ✅ code (2026-11-19) · ⬜ lessons 03–11. Details below. Lesson 05 installs PostgreSQL,
+  lesson 06 Playwright's browser; lesson 06 also adds the account row, `AuthorizeView` and the sign-in pages to
+  lesson 01's layout. The outbox delivery and redelivery tests return in Y3 with the first real event.
 - **Y3 — Events, basic SLA, teams** ⬜ · lessons 12–16 (12 installs Podman): the Sla module on the outbox (`TicketCreated` starts 24/7 clocks);
   teams, categories and routing (category → team); email on new replies and assignments.
 - **Y4 — Knowledge base** ⬜ · lesson 17: articles, review flow, audit trail.
@@ -72,6 +70,30 @@ to date by `DeadlinesChanged`.
   the finished screens, and one full read-through of all 25 lessons in order on a fresh machine.
 - **Later, after the course:** inbound email (MailKit), Assets, automation rules, satisfaction survey, live
   queue updates.
+
+### Y2 — Tickets core ✅ code (2026-11-19) · ⬜ lessons 03–11
+
+- [x] `Yasda.Modules.Identity.Contracts`, the first contract: `IUserDirectory` (`IdOfAsync`, `NameOfAsync`,
+      `FindStaffAsync`), implemented in Identity with Dapper; `GET /api/staff` (`identity.list_staff`)
+- [x] `Yasda.Modules.Tickets`: the `Ticket` aggregate with its conversation (`TicketMessage`: replies and internal
+      notes), statuses New → Open ⇄ Pending → Resolved → Closed, reopen within 7 days, cancel with a reason,
+      take (refused if someone else has it), assign (team lead, staff only via the contract), priority; requesters
+      see only their own tickets (404 otherwise); names copied onto the ticket so reads never cross schemas;
+      `xmin` concurrency, with the ticket row touched when a message is added; error codes TICKETS-0001…0011
+- [x] Reads: `tickets.search_tickets`/`count_tickets` (status, priority, me/unassigned, search; sort allow-list incl.
+      priority by urgency via `tickets.priority_rank`), `tickets.get_ticket`/`get_ticket_messages` (notes for staff only)
+- [x] Screens: the queue (filters, sort, paging in the address), New ticket, the ticket page (details, actions by
+      role and status, inline cancel with a reason, priority, assign, conversation, reply or internal note); home
+      and navigation per role
+- [x] Development seed built through the domain (three tickets), user ids through the contract
+- [x] Tests: Tickets unit 31 (incl. an FsCheck property over random action sequences, which found that an agent's
+      reply opened a ticket with no owner, now fixed: replying to an unassigned ticket takes it, and only an
+      Open/Pending ticket can be resolved), architecture 14 (Tickets + the Contracts project), integration 91 (life
+      cycle, isolation, internal notes, the 10-round take race, a stale-copy save refused, assign rules, sorting),
+      browser 16 (filing, take/reply/note seen correctly by each side, queue filters, inline cancel)
+- [x] Readability pass over all code (user: "no fancy way of doing things", start to finish): property patterns,
+      `??=`, one-line LINQ loops and condition-disabled submit buttons replaced by plain code; forms rely on
+      `required` fields instead of buttons disabled until typed (that had broken in a real browser)
 
 ### Y1 — Reset to YASDA ✅ code (2026-11-19)
 

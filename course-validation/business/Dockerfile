@@ -12,6 +12,8 @@ COPY .config/ .config/
 COPY src/Shared/Yasda.Shared.BuildingBlocks/*.csproj src/Shared/Yasda.Shared.BuildingBlocks/
 COPY src/Shared/Yasda.Shared.Infrastructure/*.csproj src/Shared/Yasda.Shared.Infrastructure/
 COPY src/Modules/Identity/Yasda.Modules.Identity/*.csproj src/Modules/Identity/Yasda.Modules.Identity/
+COPY src/Modules/Identity/Yasda.Modules.Identity.Contracts/*.csproj src/Modules/Identity/Yasda.Modules.Identity.Contracts/
+COPY src/Modules/Tickets/Yasda.Modules.Tickets/*.csproj src/Modules/Tickets/Yasda.Modules.Tickets/
 COPY src/Yasda.Web/*.csproj src/Yasda.Web/
 COPY src/Yasda.Api/*.csproj src/Yasda.Api/
 RUN dotnet restore src/Yasda.Api && dotnet tool restore
@@ -21,7 +23,7 @@ RUN dotnet publish src/Yasda.Api -c Release -o /out/app --no-restore
 
 # One migration bundle per module (each has its own DbContext and history), built for this image's CPU.
 RUN rid=linux-$([ "$TARGETARCH" = "arm64" ] && echo arm64 || echo x64) \
- && for m in Identity; do \
+ && for m in Identity Tickets; do \
       dotnet ef migrations bundle --configuration Release -r "$rid" \
         --project "src/Modules/$m/Yasda.Modules.$m" --startup-project "src/Modules/$m/Yasda.Modules.$m" \
         --output "/out/migrations/migrate-$m" --force || exit 1; \

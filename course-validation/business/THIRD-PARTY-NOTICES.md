@@ -37,6 +37,7 @@ the same change.
 | Microsoft.EntityFrameworkCore.Design, dotnet-ef | MIT |
 | xUnit v3 (xunit.v3), running on Microsoft.Testing.Platform | Apache-2.0 |
 | AwesomeAssertions | Apache-2.0 |
+| FsCheck, FsCheck.Xunit.v3 (property-based tests) | BSD-3-Clause |
 | Microsoft.AspNetCore.Mvc.Testing | MIT |
 | Microsoft.Playwright (browser tests; drives the browser already installed) | MIT |
 | Testcontainers, Testcontainers.PostgreSql (a throwaway PostgreSQL per test run) | MIT |

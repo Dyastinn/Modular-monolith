@@ -2,15 +2,16 @@
 @inject Notices Notices
 
 @* The status line. An error carries its code, linked to the page that explains it and its fix. *@
-@if (Notices.Current is { } notice)
+@if (Notices.Current is not null)
 {
+    var notice = Notices.Current;
     @if (notice.IsError)
     {
         <p class="notice error" role="alert">
             <strong>Error:</strong> @notice.Text
-            @if (notice.Code is { } errorCode)
+            @if (notice.Code is not null)
             {
-                <text> </text><a href="@($"errors/{errorCode}")">What does @errorCode mean?</a>
+                <text> </text><a href="@($"errors/{notice.Code}")">What does @notice.Code mean?</a>
             }
         </p>
     }

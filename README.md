@@ -15,7 +15,7 @@ every kind of test. The helpdesk modules are being built now, milestone by miles
 | | |
 |---|---|
 | Architecture | Modular monolith; each module is `internal` behind one public Contracts project; vertical slices inside |
-| Modules | Identity today; Tickets, Sla and Knowledge next ([ROADMAP.md](ROADMAP.md)) |
+| Modules | Identity and Tickets today; Sla and Knowledge next ([ROADMAP.md](ROADMAP.md)) |
 | Stack | .NET 10 minimal APIs (`TypedResults`, no mediator: endpoints call their handler), FluentValidation, EF Core (writes), Dapper + SQL functions (reads), PostgreSQL |
 | Screens | Blazor WebAssembly with **no component library**: plain HTML in the look of [DESIGN.md](DESIGN.md) (warm paper, one serif, blue links), served by the API itself under the same address; the API lives under `/api` |
 | Errors | Every error carries a stable code (`IDENTITY-0003`) and a trace id; the app's **Error codes** page explains each code and its fix |
@@ -44,6 +44,8 @@ src/
     Yasda.Shared.Infrastructure/      implementations: connections, outbox, telemetry. Only the host sees it
   Modules/
     Identity/Yasda.Modules.Identity/  sign-in (ASP.NET Core Identity), accounts, sign-in log, email
+    Identity/Yasda.Modules.Identity.Contracts/  the only part other modules may reference (IUserDirectory)
+    Tickets/Yasda.Modules.Tickets/    tickets, their conversation, queues
       Domain/                         the rules, no database
       Features/                       one folder per feature: XxxHandler.cs + XxxEndpoint.cs
       Infrastructure/                 DbContext, migrations, SQL functions
@@ -106,7 +108,7 @@ And the tests. The integration tests start their own PostgreSQL with Testcontain
 Docker) running; on Linux, enable the Podman socket and point `DOCKER_HOST` at it:
 
 ```bash
-dotnet test     # 4 unit + 14 architecture + 69 integration; the 12 browser tests skip without YASDA_UI_URL
+dotnet test     # 35 unit + 14 architecture + 91 integration; the 16 browser tests skip without YASDA_UI_URL
 # Browser tests, with the app running. Every test signs in, so raise the sign-in limit for the run:
 #   RateLimiting__AuthRequestsPerMinute=1000 dotnet run --project src/Yasda.Api
 YASDA_UI_URL=http://localhost:5264 dotnet test --project tests/Yasda.Web.UiTests

@@ -45,7 +45,7 @@
     protected override async Task OnParametersSetAsync()
     {
         await Auth.GetAuthenticationStateAsync();
-        if (Auth.User is { MustChangePassword: true } && !Nav.Uri.EndsWith("/change-password"))
+        if (Auth.User is not null && Auth.User.MustChangePassword && !Nav.Uri.EndsWith("/change-password"))
             Nav.NavigateTo("change-password");
     }
 

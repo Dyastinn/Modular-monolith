@@ -22,7 +22,7 @@ public sealed class UserAdminUiTests : UiTest
         await Field(page, "Temporary password").FillAsync("a temporary password");
         await page.GetByRole(AriaRole.Button, new() { Name = "Create user" }).ClickAsync();
 
-        await Expect(page.GetByRole(AriaRole.Status)).ToHaveTextAsync("User created.");
+        await Expect(StatusSaying(page, "User created.")).ToBeVisibleAsync();
         await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Nina Lopez · Temporary password" })).ToBeVisibleAsync();
         await Shot(page, "user-created");
 
@@ -31,7 +31,7 @@ public sealed class UserAdminUiTests : UiTest
         await page.GetByRole(AriaRole.Button, new() { Name = "Disable" }).ClickAsync();
 
         await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Nina Lopez · Disabled" })).ToBeVisibleAsync();
-        await Expect(page.GetByRole(AriaRole.Status)).ToContainTextAsync("Disabled.");
+        await Expect(StatusSaying(page, "Disabled.")).ToBeVisibleAsync();
     }
 
     [UiFact]

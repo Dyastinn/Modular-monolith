@@ -1,0 +1,52 @@
+@page "/tickets/new"
+@inject ApiClient Api
+@inject NavigationManager Nav
+@inject IJSRuntime Js
+
+<PageTitle>New ticket · YASDA</PageTitle>
+
+<NavigationLock OnBeforeInternalNavigation="ctx => UnsavedChanges.ConfirmLeave(Js, ctx, Unsaved)" />
+
+<PageHeader Title="New ticket">
+    <Description>Say what's wrong in one line, then the details: what you tried, and since when.</Description>
+</PageHeader>
+
+<EditForm Model="this" OnSubmit="Send">
+    <div class="field">
+        <label for="subject">Subject</label>
+        <InputText id="subject" @bind-Value="_subject" maxlength="200" required aria-describedby="subject-hint" />
+        <span class="hint" id="subject-hint">For example: Printer on the 3rd floor won't print.</span>
+    </div>
+    <div class="field">
+        <label for="message">Details</label>
+        <InputTextArea id="message" @bind-Value="_message" rows="8" maxlength="10000" required />
+    </div>
+    <div class="field">
+        <label for="priority">Priority</label>
+        <InputSelect id="priority" @bind-Value="_priority">
+            @foreach (var p in TicketChoices.Priorities)
+            {
+                <option value="@p">@p</option>
+            }
+        </InputSelect>
+    </div>
+    <div class="actions">
+        <button type="submit" disabled="@Api.Busy">Send ticket</button>
+    </div>
+</EditForm>
+
+@code {
+    private string _subject = "", _message = "", _priority = "Normal";
+
+    private bool Unsaved => _subject.Length > 0 || _message.Length > 0;
+
+    private async Task Send()
+    {
+        var id = await Api.Create("api/tickets", new { subject = _subject.Trim(), message = _message.Trim(), priority = _priority },
+            "Ticket sent. We'll answer here.");
+        if (id is null) return;
+        _subject = "";   // sent: nothing left to lose on the way to the ticket's page
+        _message = "";
+        Nav.NavigateTo($"tickets/{id}");
+    }
+}

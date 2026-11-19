@@ -1,0 +1,220 @@
+@page "/tickets/{Id:long}"
+@inject ApiClient Api
+@inject ListMemory Memory
+@inject CookieAuthenticationStateProvider Auth
+
+<PageTitle>@(_ticket is null ? "Ticket" : $"#{_ticket.Id} {_ticket.Subject}") · YASDA</PageTitle>
+
+@if (_ticket is null)
+{
+    <PageHeader Title="Ticket" Trail="@([("Tickets", Memory.Last("tickets"))])" />
+    <p role="status">Loading…</p>
+}
+else
+{
+    <PageHeader Title="@($"#{_ticket.Id} {_ticket.Subject}")" Trail="@([("Tickets", Memory.Last("tickets"))])">
+        <Status><strong>@_ticket.Status</strong></Status>
+    </PageHeader>
+
+    <div class="table-box">
+        <table>
+            <tbody>
+                <tr><th scope="row">Requester</th><td>@_ticket.RequesterName</td></tr>
+                <tr><th scope="row">Assigned to</th><td>@(_ticket.AssigneeName ?? "Nobody yet")</td></tr>
+                <tr><th scope="row">Priority</th><td>@_ticket.Priority</td></tr>
+                <tr><th scope="row">Filed</th><td>@Format.Date(_ticket.CreatedUtc)</td></tr>
+                <tr><th scope="row">Last change</th><td>@Format.Date(_ticket.UpdatedUtc)</td></tr>
+                @if (_ticket.CancelReason is not null)
+                {
+                    <tr><th scope="row">Cancelled because</th><td>@_ticket.CancelReason</td></tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    @* What this person can do now. The API checks every one of these again; hiding a button is only a convenience. *@
+    <div class="actions">
+        @if (IsStaff && _ticket.IsBeingWorkedOn && _ticket.AssigneeId != MyId)
+        {
+            <button type="button" @onclick="Take" disabled="@Api.Busy">Take it</button>
+        }
+        @if (IsStaff && _ticket.Status == "Open")
+        {
+            <button type="button" @onclick="WaitOnRequester" disabled="@Api.Busy">Wait on requester</button>
+        }
+        @if (IsStaff && (_ticket.Status == "Open" || _ticket.Status == "Pending"))
+        {
+            <button type="button" @onclick="Resolve" disabled="@Api.Busy">Resolve</button>
+        }
+        @if (IsStaff && _ticket.Status == "Resolved")
+        {
+            <button type="button" @onclick="Close" disabled="@Api.Busy">Close</button>
+        }
+        @if (_ticket.Status == "Resolved")
+        {
+            <button type="button" @onclick="Reopen" disabled="@Api.Busy">Reopen</button>
+        }
+        @if (_ticket.IsBeingWorkedOn && !_cancelling)
+        {
+            <button type="button" @onclick="() => _cancelling = true">Cancel ticket</button>
+        }
+    </div>
+
+    @if (_cancelling)
+    {
+        <EditForm Model="this" OnSubmit="Cancel">
+            <p role="alert">Cancel #@_ticket.Id? Nobody will work on it any more, and it can't be reopened.</p>
+            <div class="field">
+                <label for="reason">Why?</label>
+                <InputText id="reason" @bind-Value="_reason" maxlength="500" required aria-describedby="reason-hint" />
+                <span class="hint" id="reason-hint">For example: duplicate of #1042, or fixed itself.</span>
+            </div>
+            <div class="actions">
+                <button type="submit" disabled="@Api.Busy">Cancel ticket</button>
+                <button type="button" @onclick="() => _cancelling = false">Not yet</button>
+            </div>
+        </EditForm>
+    }
+
+    @if (IsStaff && !_ticket.IsFinished)
+    {
+        <EditForm Model="this" OnSubmit="ChangePriority" class="search">
+            <div class="field">
+                <label for="priority">Priority</label>
+                <InputSelect id="priority" @bind-Value="_priority">
+                    @foreach (var p in TicketChoices.Priorities)
+                    {
+                        <option value="@p">@p</option>
+                    }
+                </InputSelect>
+            </div>
+            <button type="submit" disabled="@(_priority == _ticket.Priority || Api.Busy)">Change priority</button>
+        </EditForm>
+    }
+
+    @if (IsLead && _ticket.IsBeingWorkedOn && _staff is not null)
+    {
+        <EditForm Model="this" OnSubmit="Assign" class="search">
+            <div class="field">
+                <label for="assignee">Assign to</label>
+                <InputSelect id="assignee" @bind-Value="_assigneeId">
+                    @foreach (var s in _staff)
+                    {
+                        <option value="@s.Id">@s.FullName (@Format.Words(s.Role))</option>
+                    }
+                </InputSelect>
+            </div>
+            <button type="submit" disabled="@(_assigneeId == _ticket.AssigneeId || Api.Busy)">Assign</button>
+        </EditForm>
+    }
+
+    <h2>Conversation</h2>
+    @foreach (var m in _ticket.Messages)
+    {
+        <article class="message">
+            <h3>
+                @if (m.IsInternal)
+                {
+                    <strong>Internal note</strong><text> · </text>
+                }
+                @m.AuthorName · @Format.Date(m.CreatedUtc)
+            </h3>
+            <p class="message-body">@m.Body</p>
+        </article>
+    }
+
+    @if (!_ticket.IsFinished)
+    {
+        <EditForm Model="this" OnSubmit="Reply">
+            <div class="field">
+                <label for="reply">Your reply</label>
+                <InputTextArea id="reply" @bind-Value="_reply" rows="5" maxlength="10000" required />
+            </div>
+            @if (IsStaff)
+            {
+                <div class="field">
+                    <InputCheckbox id="internal" @bind-Value="_internal" />
+                    <label for="internal">Internal note: only staff will see it</label>
+                </div>
+            }
+            <div class="actions">
+                <button type="submit" disabled="@Api.Busy">
+                    @(_internal ? "Add note" : "Send reply")
+                </button>
+            </div>
+        </EditForm>
+    }
+}
+
+@code {
+    [Parameter] public long Id { get; set; }
+
+    private TicketDetail? _ticket;
+    private List<StaffMember>? _staff;
+    private string _reply = "", _reason = "", _priority = "";
+    private long? _assigneeId;
+    private bool _internal, _cancelling;
+
+    private long? MyId => Auth.User?.Id;
+    private bool IsStaff => TicketChoices.IsStaff(Auth.User?.Role);
+    private bool IsLead => TicketChoices.IsLead(Auth.User?.Role);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Auth.GetAuthenticationStateAsync();
+        await Load();
+        if (IsLead) _staff = await Api.Get<List<StaffMember>>("api/staff");
+    }
+
+    private async Task Load()
+    {
+        _ticket = await Api.Get<TicketDetail>($"api/tickets/{Id}");
+        _priority = _ticket?.Priority ?? "";
+        _assigneeId = _ticket?.AssigneeId;
+        _cancelling = false;
+    }
+
+    private Task Take() => Step("take", "You have this ticket now.");
+    private Task WaitOnRequester() => Step("pending", "Waiting on the requester.");
+    private Task Resolve() => Step("resolve", "Resolved.");
+    private Task Close() => Step("close", "Closed.");
+    private Task Reopen() => Step("reopen", "Reopened.");
+
+    // One status step. Whether it worked or not, show the ticket as it is now.
+    private async Task Step(string action, string success)
+    {
+        await Api.Post($"api/tickets/{Id}/{action}", success: success);
+        await Load();
+    }
+
+    private async Task Reply()
+    {
+        var sent = await Api.Post($"api/tickets/{Id}/replies", new { body = _reply.Trim(), isInternal = _internal },
+            _internal ? "Note added." : "Reply sent.");
+        if (sent)
+        {
+            _reply = "";
+            _internal = false;
+        }
+        await Load();
+    }
+
+    private async Task Cancel()
+    {
+        await Api.Post($"api/tickets/{Id}/cancel", new { reason = _reason.Trim() }, "Cancelled.");
+        _reason = "";
+        await Load();
+    }
+
+    private async Task ChangePriority()
+    {
+        await Api.Put($"api/tickets/{Id}/priority", new { priority = _priority }, "Priority changed.");
+        await Load();
+    }
+
+    private async Task Assign()
+    {
+        await Api.Post($"api/tickets/{Id}/assign", new { assigneeId = _assigneeId }, "Assigned.");
+        await Load();
+    }
+}

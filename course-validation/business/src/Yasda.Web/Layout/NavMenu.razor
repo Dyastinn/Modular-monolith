@@ -3,6 +3,8 @@
 <nav aria-label="Main">
     <ul class="links">
         <li><NavLink href="" Match="NavLinkMatch.All">Home</NavLink></li>
+        <li><NavLink href="tickets" Match="NavLinkMatch.All">Tickets</NavLink></li>
+        <li><NavLink href="tickets/new">New ticket</NavLink></li>
         <AuthorizeView Roles="@Roles.Admin">
             <li><NavLink href="users">Users</NavLink></li>
             <li><NavLink href="sign-in-log">Sign-in log</NavLink></li>

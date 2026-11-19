@@ -1,4 +1,5 @@
 using System.Security.Cryptography.X509Certificates;
+using Yasda.Modules.Identity.Contracts;
 using Yasda.Modules.Identity.Domain;
 using Yasda.Modules.Identity.Features;
 using Yasda.Modules.Identity.Infrastructure;
@@ -27,6 +28,7 @@ public static class IdentityModule
             YasdaIdentityDbContext.Configure(o, sp.GetRequiredService<ISharedConnection>().Connection)
                 .AddInterceptors(sp.GetServices<IInterceptor>()));
         services.AddScoped<IModuleDatabase, IdentityDatabase>();
+        services.AddScoped<IUserDirectory, UserDirectory>();
 
         services.AddIdentityApiEndpoints<AppUser>(o =>
             {
@@ -90,6 +92,7 @@ public static class IdentityModule
         services.AddScoped<CreateUserHandler>();
         services.AddScoped<SearchUsersHandler>();
         services.AddScoped<GetUserHandler>();
+        services.AddScoped<ListStaffHandler>();
         services.AddScoped<UpdateUserHandler>();
         services.AddScoped<SetUserDisabledHandler>();
         services.AddScoped<ResetUserPasswordHandler>();
@@ -117,6 +120,7 @@ public static class IdentityModule
         CreateUserEndpoint.Map(identity);
         SearchUsersEndpoint.Map(identity);
         GetUserEndpoint.Map(identity);
+        ListStaffEndpoint.Map(identity);
         UpdateUserEndpoint.Map(identity);
         SearchSignInAttemptsEndpoint.Map(identity);
         return app;

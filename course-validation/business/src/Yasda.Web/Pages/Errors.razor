@@ -16,7 +16,8 @@
 }
 else
 {
-    if (Selected is { } selected)
+    var selected = Selected;
+    if (selected is not null)
     {
         <section aria-labelledby="selected-code">
             <h2 id="selected-code">@selected.Code: @selected.Title</h2>

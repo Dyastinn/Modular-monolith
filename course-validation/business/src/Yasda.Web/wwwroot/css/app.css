@@ -160,6 +160,13 @@ input[type="checkbox"] {
     width: auto;
 }
 
+/* A checkbox's label sits beside it, not above it like a text field's. */
+input[type="checkbox"] + label {
+    display: inline;
+    font-weight: normal;
+    margin-left: var(--gap-s);
+}
+
 .hint {
     display: block;
     color: var(--text-muted);
@@ -212,7 +219,7 @@ button.link {
 
 .search .field {
     margin: 0;
-    flex: 1 1 16rem;
+    flex: 0 1 20rem;
 }
 
 /* The status line: what just happened, or what went wrong. Color only where it carries meaning. */
@@ -247,4 +254,22 @@ button.link {
 input:disabled, select:disabled, textarea:disabled {
     color: var(--text-muted);
     border-style: dashed;
+}
+
+/* A ticket's conversation: each message under a small heading, separated by a rule, its text kept as typed. */
+.message {
+    border-top: var(--border);
+    padding-top: var(--gap-s);
+    margin-bottom: var(--gap-m);
+}
+
+.message h3 {
+    font-size: var(--size-body);
+    font-weight: normal;
+    margin: 0;
+}
+
+.message-body {
+    white-space: pre-wrap;
+    margin: var(--gap-s) 0 0;
 }

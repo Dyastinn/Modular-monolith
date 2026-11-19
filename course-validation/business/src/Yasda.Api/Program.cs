@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using Yasda.Api;
 using Yasda.Api.Security;
 using Yasda.Modules.Identity;
+using Yasda.Modules.Tickets;
 using Yasda.Shared.BuildingBlocks;
 using Yasda.Shared.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
@@ -18,6 +19,7 @@ builder.Services.AddSharedInfrastructure(builder.Configuration);
 
 // Registration order = migration and seed order.
 builder.Services.AddIdentityModule(builder.Configuration);
+builder.Services.AddTicketsModule();
 
 builder.Services.AddAuthorization();
 // The browser app: the server renders its page, the screens run in the browser as WebAssembly.
@@ -89,6 +91,7 @@ app.MapHealthChecks("/health/ready", new HealthCheckOptions { Predicate = c => c
 var api = app.MapGroup("/api").ValidateRequests();
 api.MapErrorCatalog();
 api.MapIdentityModule();
+api.MapTicketsEndpoints();
 api.MapFallback(() => Results.NotFound());   // an unknown API address is a 404, never the app's page
 
 app.UseAntiforgery();

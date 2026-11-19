@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using AwesomeAssertions;
 using Yasda.Modules.Identity;
+using Yasda.Modules.Tickets;
 using Yasda.Shared.BuildingBlocks;
 
 namespace Yasda.Architecture.Tests;
@@ -14,6 +15,7 @@ public class ErrorCatalogTests
     {
         (typeof(CommonErrors), "YASDA"),
         (CatalogIn(typeof(IdentityModule)), "IDENTITY"),
+        (CatalogIn(typeof(TicketsModule)), "TICKETS"),
     }.ToDictionary(c => c.Item1, c => c.Item2);
 
     private static Type CatalogIn(Type moduleEntry) =>
@@ -43,12 +45,11 @@ public class ErrorCatalogTests
     [Fact]
     public void Every_code_is_used_somewhere()
     {
-        var source = Directory.EnumerateFiles(Path.Combine(RepositoryRoot(), "src"), "*.cs", SearchOption.AllDirectories)
+        var sourceFiles = Directory.EnumerateFiles(Path.Combine(RepositoryRoot(), "src"), "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
             .Where(f => !Catalogs.Keys.Any(c => Path.GetFileNameWithoutExtension(f) == c.Name))
-            .Select(File.ReadAllText)
-            .Aggregate(new System.Text.StringBuilder(), (all, text) => all.AppendLine(text))
-            .ToString();
+            .Select(File.ReadAllText);
+        var source = string.Join(Environment.NewLine, sourceFiles);
 
         AllCodes().Where(c => !Regex.IsMatch(source, $@"\b{c.Catalog.Name}\.{c.Field.Name}\b"))
             .Select(c => $"{c.Error.Code} ({c.Catalog.Name}.{c.Field.Name})")

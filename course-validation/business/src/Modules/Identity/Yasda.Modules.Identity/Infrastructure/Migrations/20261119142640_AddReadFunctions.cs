@@ -14,10 +14,12 @@ namespace Yasda.Modules.Identity.Infrastructure.Migrations
         {
             migrationBuilder.Sql(Sql("identity.search_users.v1.sql"));
             migrationBuilder.Sql(Sql("identity.get_user.v1.sql"));
+            migrationBuilder.Sql(Sql("identity.list_staff.v1.sql"));
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql("DROP FUNCTION IF EXISTS identity.list_staff(bigint);");
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS identity.get_user(bigint);");
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS identity.count_sign_in_attempts(text, boolean);");
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS identity.search_sign_in_attempts(text, boolean, integer, integer);");

@@ -37,8 +37,10 @@
         _busy = true;
         _error = await Auth.SignInAsync(_email.Trim(), _password ?? "");
         _busy = false;
+        if (_error is not null) return;
+
         // Only ever go back inside this app: an outside returnUrl would make this page an open redirect.
-        if (_error is null)
-            Nav.NavigateTo(ReturnUrl is { } back && !back.Contains("//") && !back.Contains(':') ? back : "");
+        var stayInsideTheApp = ReturnUrl is not null && !ReturnUrl.Contains("//") && !ReturnUrl.Contains(':');
+        Nav.NavigateTo(stayInsideTheApp ? ReturnUrl! : "");
     }
 }

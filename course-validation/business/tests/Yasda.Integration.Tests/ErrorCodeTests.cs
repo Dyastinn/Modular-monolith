@@ -59,7 +59,7 @@ public class ErrorCodeTests(CustomWebAppFactory factory)
 
         var all = await client.GetFromJsonAsync<JsonElement[]>("/api/errors");
         all!.Select(e => e.GetProperty("code").GetString()!.Split('-')[0]).Distinct()
-            .Should().BeEquivalentTo(["YASDA", "IDENTITY"]);
+            .Should().BeEquivalentTo(["YASDA", "IDENTITY", "TICKETS"]);
 
         (await client.GetAsync("/api/errors/IDENTITY-9999")).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }

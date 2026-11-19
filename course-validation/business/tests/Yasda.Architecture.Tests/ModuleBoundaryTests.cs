@@ -2,6 +2,8 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using AwesomeAssertions;
 using Yasda.Modules.Identity;
+using Yasda.Modules.Identity.Contracts;
+using Yasda.Modules.Tickets;
 using Yasda.Shared.BuildingBlocks;
 
 namespace Yasda.Architecture.Tests;
@@ -9,10 +11,10 @@ namespace Yasda.Architecture.Tests;
 // CLAUDE.md §4 module rules as tests: a reviewer can miss a stray reference or `public` class; these can't.
 public class ModuleBoundaryTests
 {
-    private static readonly Assembly[] Modules = [typeof(IdentityModule).Assembly];
+    private static readonly Assembly[] Modules = [typeof(IdentityModule).Assembly, typeof(TicketsModule).Assembly];
 
     // Each module's .Contracts project joins this list when it is created.
-    private static readonly Assembly[] ContractsAssemblies = [];
+    private static readonly Assembly[] ContractsAssemblies = [typeof(IUserDirectory).Assembly];
 
     [Fact]
     public void A_module_references_other_modules_only_through_their_Contracts()
@@ -105,7 +107,7 @@ public class ModuleBoundaryTests
         foreach (var module in Modules)
         {
             var handled = HandledBy(module, typeof(IDomainEventHandler<>));
-            module.GetTypes().Where(t => t is { IsAbstract: false, IsInterface: false } && typeof(IDomainEvent).IsAssignableFrom(t))
+            module.GetTypes().Where(t => (!t.IsAbstract && !t.IsInterface) && typeof(IDomainEvent).IsAssignableFrom(t))
                 .Where(e => !handled.Contains(e)).Select(e => e.FullName)
                 .Should().BeEmpty($"every domain event in {module.GetName().Name} needs a handler there");
         }
@@ -121,7 +123,7 @@ public class ModuleBoundaryTests
             var handled = Modules.Where(m => m.GetName().Name != owner)
                 .SelectMany(m => HandledBy(m, typeof(IIntegrationEventHandler<>))).ToHashSet();
 
-            contracts.GetTypes().Where(t => t is { IsAbstract: false, IsInterface: false } && typeof(IIntegrationEvent).IsAssignableFrom(t))
+            contracts.GetTypes().Where(t => (!t.IsAbstract && !t.IsInterface) && typeof(IIntegrationEvent).IsAssignableFrom(t))
                 .Where(e => !handled.Contains(e)).Select(e => e.FullName)
                 .Should().BeEmpty($"every integration event in {contracts.GetName().Name} needs a handler in another module");
         }
@@ -132,7 +134,7 @@ public class ModuleBoundaryTests
     public void Domain_events_never_leave_their_module()
     {
         Modules.Concat(ContractsAssemblies).SelectMany(a => a.GetTypes())
-            .Where(t => t is { IsAbstract: false, IsInterface: false, IsVisible: true } && typeof(IDomainEvent).IsAssignableFrom(t))
+            .Where(t => (!t.IsAbstract && !t.IsInterface && t.IsVisible) && typeof(IDomainEvent).IsAssignableFrom(t))
             .Select(t => t.FullName)
             .Should().BeEmpty("domain events are internal; other modules hear about them through an IIntegrationEvent");
     }
@@ -164,8 +166,9 @@ public class ModuleBoundaryTests
         var setters = Modules.SelectMany(m => m.GetTypes())
             .Where(t => (t.Namespace ?? "").EndsWith(".Domain", StringComparison.Ordinal))
             .SelectMany(t => t.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly))
-            .Where(p => p.SetMethod is { IsPublic: true } setter
-                        && !setter.ReturnParameter.GetRequiredCustomModifiers().Contains(typeof(IsExternalInit)))
+            // A record's init-only property also has a public setter, marked IsExternalInit; those are fine.
+            .Where(p => p.SetMethod is not null && p.SetMethod.IsPublic
+                        && !p.SetMethod.ReturnParameter.GetRequiredCustomModifiers().Contains(typeof(IsExternalInit)))
             .Select(p => $"{p.DeclaringType!.Name}.{p.Name}");
 
         setters.Should().BeEmpty("domain properties have private setters; records' init-only properties are fine");

@@ -46,7 +46,7 @@ else
                            Hint="At least 12 characters. Give it to them in person; they must change it when they first sign in." />
         }
         <div class="actions">
-            <button type="submit" disabled="@(string.IsNullOrWhiteSpace(_fullName) || string.IsNullOrWhiteSpace(_email) || Api.Busy)">
+            <button type="submit" disabled="@Api.Busy">
                 @(_user is null ? "Create user" : "Save")
             </button>
         </div>
@@ -60,7 +60,7 @@ else
             <PasswordField @bind-Value="_temporary" Label="New temporary password" Required="true" Autocomplete="new-password"
                            Hint="At least 12 characters." />
             <div class="actions">
-                <button type="submit" disabled="@(string.IsNullOrEmpty(_temporary) || Api.Busy)">Reset password</button>
+                <button type="submit" disabled="@Api.Busy">Reset password</button>
             </div>
         </EditForm>
 

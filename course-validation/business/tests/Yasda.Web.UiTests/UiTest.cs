@@ -100,4 +100,8 @@ public abstract class UiTest : IAsyncLifetime
     }
 
     protected static ILocator MainNav(IPage page) => page.GetByRole(AriaRole.Navigation, new() { Name = "Main" });
+
+    // The status line with this message. Found by its text: a page may show its own "Loading…" status at the same time.
+    protected static ILocator StatusSaying(IPage page, string text) =>
+        page.GetByRole(AriaRole.Status).Filter(new() { HasText = text });
 }

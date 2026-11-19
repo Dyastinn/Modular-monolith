@@ -1,0 +1,148 @@
+@page "/tickets"
+@inject ApiClient Api
+@inject NavigationManager Nav
+@inject ListMemory Memory
+@inject CookieAuthenticationStateProvider Auth
+
+<PageTitle>Tickets · YASDA</PageTitle>
+
+<PageHeader Title="@(IsStaff ? "Tickets" : "My tickets")">
+    <Actions><a href="tickets/new">New ticket</a></Actions>
+</PageHeader>
+
+@* The list's filters, sort and page live in the address, so Back, a bookmark or a pasted link shows the same list. *@
+<EditForm Model="this" OnSubmit="Find" class="search" role="search">
+    <div class="field">
+        <label for="search">Subject, requester or number</label>
+        <InputText id="search" type="search" @bind-Value="_search" />
+    </div>
+    @if (IsStaff)
+    {
+        <div class="field">
+            <label for="assigned">Assigned to</label>
+            <InputSelect id="assigned" @bind-Value="_assigned">
+                <option value="">Anyone</option>
+                <option value="me">Me</option>
+                <option value="unassigned">Nobody yet</option>
+            </InputSelect>
+        </div>
+    }
+    <div class="field">
+        <label for="status">Status</label>
+        <InputSelect id="status" @bind-Value="_status">
+            <option value="">Any</option>
+            @foreach (var s in TicketChoices.Statuses)
+            {
+                <option value="@s">@s</option>
+            }
+        </InputSelect>
+    </div>
+    <div class="field">
+        <label for="priority">Priority</label>
+        <InputSelect id="priority" @bind-Value="_priority">
+            <option value="">Any</option>
+            @foreach (var p in TicketChoices.Priorities)
+            {
+                <option value="@p">@p</option>
+            }
+        </InputSelect>
+    </div>
+    <button type="submit">Search</button>
+</EditForm>
+
+@if (_result is null)
+{
+    <p role="status">Loading…</p>
+}
+else if (_result.Items.Count == 0)
+{
+    <p>No tickets match.</p>
+}
+else
+{
+    <div class="table-box">
+        <table>
+            <thead>
+                <tr>
+                    <SortHeader Column="id" Title="#" Sort="@Sort" Desc="Desc" />
+                    <SortHeader Column="subject" Title="Subject" Sort="@Sort" Desc="Desc" />
+                    <SortHeader Column="status" Title="Status" Sort="@Sort" Desc="Desc" />
+                    <SortHeader Column="priority" Title="Priority" Sort="@Sort" Desc="Desc" />
+                    @if (IsStaff)
+                    {
+                        <SortHeader Column="requesterName" Title="Requester" Sort="@Sort" Desc="Desc" />
+                    }
+                    <SortHeader Column="assigneeName" Title="Assigned to" Sort="@Sort" Desc="Desc" />
+                    <SortHeader Column="updatedUtc" Title="Updated" Sort="@Sort" Desc="Desc" />
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var t in _result.Items)
+                {
+                    <tr>
+                        <td>@t.Id</td>
+                        <td><a href="@($"tickets/{t.Id}")">@t.Subject</a></td>
+                        <td>@t.Status</td>
+                        <td>
+                            @if (t.Priority is "High" or "Urgent")
+                            {
+                                <strong>@t.Priority</strong>
+                            }
+                            else
+                            {
+                                @t.Priority
+                            }
+                        </td>
+                        @if (IsStaff)
+                        {
+                            <td>@t.RequesterName</td>
+                        }
+                        <td>@(t.AssigneeName ?? "Nobody yet")</td>
+                        <td>@Format.Date(t.UpdatedUtc)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <Pager Page="_result.Page" PageSize="_result.PageSize" Total="_result.TotalCount" Noun="tickets" />
+}
+
+@code {
+    private const int PageSize = 20;
+
+    [SupplyParameterFromQuery] public string? Search { get; set; }
+    [SupplyParameterFromQuery] public string? Assigned { get; set; }
+    [SupplyParameterFromQuery] public string? Status { get; set; }
+    [SupplyParameterFromQuery] public string? Priority { get; set; }
+    [SupplyParameterFromQuery] public string? Sort { get; set; }
+    [SupplyParameterFromQuery] public bool Desc { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+
+    private PagedResult<TicketSummary>? _result;
+    private string? _search, _assigned, _status, _priority;
+
+    private bool IsStaff => TicketChoices.IsStaff(Auth.User?.Role);
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Auth.GetAuthenticationStateAsync();
+        _search = Search;
+        _assigned = Assigned ?? "";
+        _status = Status ?? "";
+        _priority = Priority ?? "";
+        Memory.Remember(Nav.ToBaseRelativePath(Nav.Uri));
+        _result = await Api.Get<PagedResult<TicketSummary>>(Url.With("api/tickets", ("search", Search), ("assigned", Assigned),
+            ("status", Status), ("priority", Priority), ("sort", Sort), ("desc", Desc ? true : null), ("page", PageNumber),
+            ("pageSize", PageSize)));
+    }
+
+    // A new search starts again from page 1: page 3 of the old results may not exist.
+    private void Find() => Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+    {
+        ["search"] = string.IsNullOrWhiteSpace(_search) ? null : _search.Trim(),
+        ["assigned"] = string.IsNullOrEmpty(_assigned) ? null : _assigned,
+        ["status"] = string.IsNullOrEmpty(_status) ? null : _status,
+        ["priority"] = string.IsNullOrEmpty(_priority) ? null : _priority,
+        ["page"] = null,
+    }));
+}
