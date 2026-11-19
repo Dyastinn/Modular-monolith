@@ -90,7 +90,6 @@ public static class IdentityModule
         services.AddScoped<CreateUserHandler>();
         services.AddScoped<SearchUsersHandler>();
         services.AddScoped<GetUserHandler>();
-        services.AddScoped<GetUserDirectoryHandler>();
         services.AddScoped<UpdateUserHandler>();
         services.AddScoped<SetUserDisabledHandler>();
         services.AddScoped<ResetUserPasswordHandler>();

@@ -17,8 +17,8 @@ internal sealed class SecurityHeadersMiddleware(RequestDelegate next)
             headers.ContentSecurityPolicy = "default-src 'none'; frame-ancestors 'none'";
         else if (!ctx.Request.Path.StartsWithSegments("/scalar"))
             headers.ContentSecurityPolicy =
-                "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; " +
-                "img-src 'self' data:; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; " +
+                "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; " +
+                "img-src 'self'; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; " +
                 "form-action 'self'; frame-ancestors 'none'";
 
         return next(ctx);

@@ -242,3 +242,9 @@ button.link {
     background: var(--bg);
     border-top: var(--border);
 }
+
+/* A field that can't be changed says so the same way a disabled button does. */
+input:disabled, select:disabled, textarea:disabled {
+    color: var(--text-muted);
+    border-style: dashed;
+}

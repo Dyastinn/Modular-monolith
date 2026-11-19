@@ -36,13 +36,6 @@ AS $$
     WHERE p_search IS NULL OR u.email ILIKE '%' || p_search || '%' OR u.full_name ILIKE '%' || p_search || '%';
 $$;
 
-CREATE OR REPLACE FUNCTION identity.user_directory()
-RETURNS TABLE (id bigint, full_name text)
-LANGUAGE sql STABLE
-AS $$
-    SELECT u.id, COALESCE(NULLIF(u.full_name, ''), u.email)::text FROM identity.users u ORDER BY u.id;
-$$;
-
 CREATE OR REPLACE FUNCTION identity.search_sign_in_attempts(p_email text, p_failed_only boolean, p_page integer, p_page_size integer)
 RETURNS TABLE (id bigint, email text, user_id bigint, outcome text, ip_address text, occurred_utc timestamptz)
 LANGUAGE sql STABLE

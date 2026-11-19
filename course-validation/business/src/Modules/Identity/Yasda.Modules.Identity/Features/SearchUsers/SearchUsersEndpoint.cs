@@ -12,9 +12,5 @@ internal static class SearchUsersEndpoint
         app.MapGet("/users", async ([AsParameters] SearchUsersQuery query, SearchUsersHandler handler, CancellationToken ct) =>
                 TypedResults.Ok(await handler.HandleAsync(query, ct)))
             .RequireAuthorization(p => p.RequireRole(Roles.Admin));
-
-        app.MapGet("/users/directory", async (GetUserDirectoryHandler handler, CancellationToken ct) =>
-                TypedResults.Ok(await handler.HandleAsync(ct)))
-            .RequireAuthorization();
     }
 }

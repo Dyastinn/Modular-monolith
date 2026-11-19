@@ -1,0 +1,9 @@
+{
+  "stryker-config": {
+    "project": "Yasda.Modules.Identity.csproj",
+    "test-runner": "mtp",
+    "mutate": [ "**/Domain/**/*.cs", "!**/Domain/IdentityErrors.cs" ],
+    "reporters": [ "progress", "html", "cleartext" ],
+    "thresholds": { "high": 90, "low": 80, "break": 75 }
+  }
+}

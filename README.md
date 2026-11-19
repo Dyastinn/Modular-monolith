@@ -1,79 +1,60 @@
-# Erp — a Modular Monolith you build, then run
+# YASDA — Yet Another Service Desk Application
 
-A course that ends in a working ERP for a small business: sales orders with credit checks and approvals, a
-warehouse with an audited item catalog and stock, purchasing, invoicing with gap-free numbers and PDFs laid
-out to the BIR's RR 7-2024, payments and receivables aging, and staff accounts, all with their screens. It's
-built as a **modular monolith** with **vertical slices** on .NET 10 and PostgreSQL. The reference build *is*
-the product: it installs with Compose on Podman (or Docker) and runs.
+An open-source service desk you build, then run: requesters file tickets, agents work queues, SLAs keep
+everyone honest, and a knowledge base answers the common questions before they're asked. It's built as a
+**modular monolith** with **vertical slices** on .NET 10 and PostgreSQL, and comes with a course that teaches
+you to build it. MIT-licensed ([LICENSE](LICENSE)); every dependency is free and permissively licensed.
+
+**Status, 2026-11-19: rebuilding.** Until that day this repo built a Philippine ERP; it was replaced by YASDA
+to leave every domain that needs BIR registration or permits (the ERP is the git tag `erp-final`). The
+platform carried over: sign-in, staff accounts, the outbox, observability, security, Podman deployment and
+every kind of test. The helpdesk modules are being built now, milestone by milestone
+([ROADMAP.md](ROADMAP.md)). **The course is written once the build is finished**; the ERP's lessons were
+removed with it.
 
 | | |
 |---|---|
 | Architecture | Modular monolith; each module is `internal` behind one public Contracts project; vertical slices inside |
-| Modules | Identity, Sales, Inventory, Purchasing, Invoicing |
+| Modules | Identity today; Tickets, Sla and Knowledge next ([ROADMAP.md](ROADMAP.md)) |
 | Stack | .NET 10 minimal APIs (`TypedResults`, no mediator: endpoints call their handler), FluentValidation, EF Core (writes), Dapper + SQL functions (reads), PostgreSQL |
-| Screens | Blazor Web App + MudBlazor running as WebAssembly, served by the API itself; the API lives under `/api` |
-| Errors | Every error carries a stable code (`SALES-0003`) and a trace id; the app's **Error codes** page explains each code and its fix |
-| Sign-in | ASP.NET Core Identity: cookies for the browser, bearer and refresh tokens for programs, lockout, six roles, admin-managed staff accounts |
-| Production | Transactional outbox, OpenTelemetry, health checks, rate limits, HTTPS/HSTS, a Content-Security-Policy, certificate-encrypted sign-in keys, least-privilege database roles |
-| Invoicing and tax | The company's registered details, tax regime, VAT rate and BIR permit kept on a screen; VATable, zero-rated and VAT-exempt items; senior citizen and PWD discounts; tax withheld and BIR Form 2307 tracking; the BIR's required fields, REPRINT marking and permit footer on every PDF |
+| Screens | Blazor WebAssembly with **no component library**: plain HTML in the look of [DESIGN.md](DESIGN.md) (warm paper, one serif, blue links), served by the API itself under the same address; the API lives under `/api` |
+| Errors | Every error carries a stable code (`IDENTITY-0003`) and a trace id; the app's **Error codes** page explains each code and its fix |
+| Sign-in | ASP.NET Core Identity: cookies for the browser, bearer and refresh tokens for programs, lockout, five roles (Admin, TeamLead, Agent, KbEditor, Requester), admin-managed accounts |
+| Production | Transactional outbox, OpenTelemetry, health checks, rate limits, HTTPS/HSTS, a strict Content-Security-Policy, certificate-encrypted sign-in keys, least-privilege database roles |
 | Deployment | Compose on rootless Podman (Docker runs the same files), Caddy for HTTPS, nightly backups, on any Linux server |
-| Tests | Taught from lesson 02, in every lesson, edge cases included: xUnit v3 + AwesomeAssertions unit tests, FsCheck property tests, integration tests on a throwaway PostgreSQL (Testcontainers) run as the least-privilege role, architecture tests, race tests, Playwright browser tests; coverlet coverage and Stryker.NET mutation testing; GitHub Actions CI |
-| Licenses | Permissive open source only; see [THIRD-PARTY-NOTICES.md](course-validation/business/THIRD-PARTY-NOTICES.md) |
+| Tests | xUnit v3 + AwesomeAssertions unit tests, FsCheck property tests, integration tests on a throwaway PostgreSQL (Testcontainers) run as the least-privilege role, architecture tests, Playwright browser tests; coverlet coverage and Stryker.NET mutation testing; GitHub Actions CI |
+| Licenses | MIT for YASDA; permissive open source only for everything it uses ([THIRD-PARTY-NOTICES.md](course-validation/business/THIRD-PARTY-NOTICES.md)) |
 
-## Where to start
-
-**[plan-business-tutorial/](plan-business-tutorial/) is the course.** Open
-[00-START-HERE.md](plan-business-tutorial/00-START-HERE.md) and work through lessons 01 to 25 in order. The
-interface is built along with the logic: from lesson 01 the app opens in your browser, and every lesson that
-adds a feature adds its screen, so each lesson ends in something you click through. And from lesson 02,
-every lesson ends by proving itself with tests, the edge cases included.
-
-| Reference page | What it's for |
-|---|---|
-| [00a-FOUNDATIONS.md](plan-business-tutorial/00a-FOUNDATIONS.md) | The C# the course leans on: interfaces, DI, `async`, generics, records |
-| [00b-WINDOWS-POWERSHELL.md](plan-business-tutorial/00b-WINDOWS-POWERSHELL.md) | Every terminal checkpoint translated into PowerShell |
-| [GLOSSARY.md](plan-business-tutorial/GLOSSARY.md) | Every term, in plain English, with the lesson that introduces it |
-| [ANSWER-KEY.md](plan-business-tutorial/ANSWER-KEY.md) | Model answers to every lesson's "Let's check!" questions |
-| [LEARNING-RESOURCES.md](plan-business-tutorial/LEARNING-RESOURCES.md) | Where to go deeper, and how to get unstuck |
-
-The lessons are written for someone coming from ASP.NET WebForms, too: where an idea has a WebForms
-equivalent, the lesson says so.
-
-For contributors: [CLAUDE.md](CLAUDE.md) holds the rules, [WRITING-STYLE.md](WRITING-STYLE.md) the lesson
-voice, [ROADMAP.md](ROADMAP.md) the plan and progress ([ROADMAP-HISTORY.md](ROADMAP-HISTORY.md) the finished milestones and the log), and
-[course-validation/FINDINGS.md](course-validation/FINDINGS.md) what was verified and what wasn't.
+For contributors: [CLAUDE.md](CLAUDE.md) holds the rules, [DESIGN.md](DESIGN.md) the look,
+[WRITING-STYLE.md](WRITING-STYLE.md) the lesson voice, [ROADMAP.md](ROADMAP.md) the plan and progress
+([ROADMAP-HISTORY.md](ROADMAP-HISTORY.md) the finished milestones, the log and the ERP's history).
 
 ## Solution layout
 
 ```
-Erp.slnx
+Yasda.slnx
 Directory.Build.props, Directory.Packages.props   shared settings; every package version, once
 Dockerfile, .dockerignore                         the app and migrate images
 src/
-  Erp.Api/                          the host: Program.cs, error handling, security, observability; serves Erp.Web
-  Erp.Web/                          the Blazor WebAssembly app: pages, layout, ApiClient
-  Erp.AppHost/                      development only: runs the API next to the Aspire dashboard
+  Yasda.Api/                          the host: Program.cs, error handling, security, observability; serves Yasda.Web
+  Yasda.Web/                          the Blazor WebAssembly app: pages, layout, ApiClient, app.css
+  Yasda.AppHost/                      development only: runs the API next to the Aspire dashboard
   Shared/
-    Erp.Shared.BuildingBlocks/      what every module may use: base classes, Money, Quantity, roles, small interfaces
-    Erp.Shared.Infrastructure/      implementations: connections, outbox, telemetry. Only the host sees it
+    Yasda.Shared.BuildingBlocks/      what every module may use: base classes, roles, error codes, small interfaces
+    Yasda.Shared.Infrastructure/      implementations: connections, outbox, telemetry. Only the host sees it
   Modules/
-    Identity/Erp.Modules.Identity/  sign-in (ASP.NET Core Identity), staff accounts, sign-in log, email
-    Sales/Erp.Modules.Sales/        customers, price list, sales orders and their approval
-      Domain/                       SalesOrder, Customer, SalesItem, ...: the business rules, no database
-      Features/                     one folder per feature: XxxHandler.cs + XxxEndpoint.cs
-      Infrastructure/               SalesDbContext, migrations, SQL functions, event handlers
-      SalesModule.cs                the module's one public type
-    Sales/Erp.Modules.Sales.Contracts/            the only part other modules may reference
-    Inventory/Erp.Modules.Inventory[.Contracts]   item catalog, stock, adjustments, shipments
-    Purchasing/Erp.Modules.Purchasing             suppliers, purchase orders, receiving
-    Invoicing/Erp.Modules.Invoicing[.Contracts]   invoices, PDFs, payments, receivables aging
+    Identity/Yasda.Modules.Identity/  sign-in (ASP.NET Core Identity), accounts, sign-in log, email
+      Domain/                         the rules, no database
+      Features/                       one folder per feature: XxxHandler.cs + XxxEndpoint.cs
+      Infrastructure/                 DbContext, migrations, SQL functions
+      IdentityModule.cs               the module's one public type
 tests/
-  Erp.Modules.<Module>.UnitTests/   each module's rules, no database
-  Erp.Integration.Tests/            the whole API against a throwaway PostgreSQL in a container
-  Erp.Architecture.Tests/           fail the build when a module breaks a boundary
-  Erp.Web.UiTests/                  Playwright, against a running app
-deploy/postgres/create-roles.sql    the two production database accounts
-deploy/compose/                      compose.yaml, .env.example, Caddyfile, migrate and backup scripts
+  Yasda.Modules.<Module>.UnitTests/   each module's rules, no database
+  Yasda.Integration.Tests/            the whole API against a throwaway PostgreSQL in a container
+  Yasda.Architecture.Tests/           fail the build when a module breaks a boundary
+  Yasda.Web.UiTests/                  Playwright, against a running app
+deploy/postgres/create-roles.sql      the two production database accounts
+deploy/compose/                       compose.yaml, .env.example, Caddyfile, migrate and backup scripts
 ```
 
 Three rules hold it together:
@@ -88,30 +69,29 @@ Three rules hold it together:
 ## Running the reference build
 
 You need the .NET 10 SDK and PostgreSQL 16 or later on `localhost:5432`, as the `postgres` user with password
-`erp_dev_only`. The easy way is a container (lesson 12):
+`yasda_dev_only`. The easy way is a container:
 
 ```bash
-podman run -d --name erp-postgres -e POSTGRES_PASSWORD=erp_dev_only -p 5432:5432 \
-  -v erp-pgdata:/var/lib/postgresql docker.io/library/postgres:18
+podman run -d --name yasda-postgres -e POSTGRES_PASSWORD=yasda_dev_only -p 5432:5432 \
+  -v yasda-pgdata:/var/lib/postgresql docker.io/library/postgres:18
 ```
 
 ```bash
 cd course-validation/business
-dotnet run --project src/Erp.Api
+dotnet run --project src/Yasda.Api
 ```
 
-In Development, the app creates the `erp` database, applies every module's migrations and seeds sample
+In Development, the app creates the `yasda` database, applies every module's migrations and seeds sample
 data on start. Open **http://localhost:5264** and sign in. The seeded users all have the password
 `Password123!`:
 
 | Email | Role |
 |---|---|
-| `rep@erp.local` | SalesRep |
-| `manager@erp.local` | SalesManager |
-| `admin@erp.local` | Admin |
-| `clerk@erp.local` | InventoryClerk |
-| `buyer@erp.local` | Purchaser |
-| `accountant@erp.local` | Accountant |
+| `admin@yasda.local` | Admin |
+| `lead@yasda.local` | TeamLead |
+| `agent@yasda.local` | Agent |
+| `editor@yasda.local` | KbEditor |
+| `requester@yasda.local` | Requester |
 
 Also there: **`/scalar`** (the API, clickable; the sign-in cookie works there too), **`/openapi/v1.json`** (its
 description), **`/errors`** (every error code), and **`/health/live`** and **`/health/ready`**.
@@ -119,33 +99,23 @@ description), **`/errors`** (every error code), and **`/health/live`** and **`/h
 To see logs, traces and metrics while you work, run the Aspire AppHost instead. It needs no containers:
 
 ```bash
-dotnet run --project src/Erp.AppHost
+dotnet run --project src/Yasda.AppHost
 ```
 
 And the tests. The integration tests start their own PostgreSQL with Testcontainers, so they need Podman (or
-Docker) running; on Linux, enable the Podman socket and point `DOCKER_HOST` at it (lesson 12):
+Docker) running; on Linux, enable the Podman socket and point `DOCKER_HOST` at it:
 
 ```bash
-dotnet test     # 161 unit + 14 architecture + 114 integration; the 8 browser tests skip without ERP_UI_URL
-ERP_UI_URL=http://localhost:5264 dotnet test --project tests/Erp.Web.UiTests   # with the app running
-dotnet test --coverlet --coverlet-output-format cobertura                    # coverage (lesson 11)
-cd tests/Erp.Modules.Sales.UnitTests && dotnet stryker                       # mutation testing, under a minute
+dotnet test     # 4 unit + 14 architecture + 69 integration; the 12 browser tests skip without YASDA_UI_URL
+# Browser tests, with the app running. Every test signs in, so raise the sign-in limit for the run:
+#   RateLimiting__AuthRequestsPerMinute=1000 dotnet run --project src/Yasda.Api
+YASDA_UI_URL=http://localhost:5264 dotnet test --project tests/Yasda.Web.UiTests
+dotnet test --coverlet --coverlet-output-format cobertura                      # coverage
+cd tests/Yasda.Modules.Identity.UnitTests && dotnet stryker                    # mutation testing
 ```
 
 CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the build and every test on each push.
 
-The reference build is there to check your work, not to replace it. Build it yourself first, by following
-the lessons. To install it on a server, follow [lesson 24](plan-business-tutorial/24-deploy-podman.md), then the
-first-day steps in [lesson 25](plan-business-tutorial/25-production-checklist.md).
-
-## Status
-
-All five modules and their screens are built and tested (ROADMAP M1–M9). Since M9 (2026-11-14) every design
-choice is checked against Microsoft's guidance and practitioners' sources in
-[BEST-PRACTICES-REVIEW.md](BEST-PRACTICES-REVIEW.md). The container images build with
-Podman, and the database, migrate and app containers were run together in Production mode on Podman; the full
-`podman compose up` (with Caddy and the backup container) hasn't been run yet, because no Compose program was
-installed here. The invoice follows RR 7-2024's
-list, but a business must register the system with the BIR (CAS) and have a tax adviser review the printed
-invoice before issuing real ones. [Lesson 25](plan-business-tutorial/25-production-checklist.md) lists what
-isn't built yet.
+To install it on a server: copy [deploy/compose/](course-validation/business/deploy/compose/) to a Linux server
+with Podman, fill in `.env` from [.env.example](course-validation/business/deploy/compose/.env.example), and run
+`podman compose up -d`. The step-by-step install guide comes with the course (ROADMAP Y8).

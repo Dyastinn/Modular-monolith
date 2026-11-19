@@ -57,6 +57,20 @@ public class UserAdministrationTests(CustomWebAppFactory factory)
         (await admin.PostAsync($"/api/users/{me!.Id}/disable", null)).StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
     }
 
+    // The validator is internal to its module, like everything else there. If AddValidatorsFromAssembly ever loses
+    // includeInternalTypes: true, this request gets through to the handler instead of being refused here.
+    [Fact]
+    public async Task A_user_without_a_name_is_rejected_by_the_internal_validator()
+    {
+        var admin = await factory.ClientFor("admin@yasda.local");
+
+        var response = await admin.PostAsJsonAsync("/api/users",
+            new { email = $"nameless-{Guid.NewGuid():N}@yasda.local", fullName = "", role = "Agent", temporaryPassword = Temporary });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("YASDA-0001");
+    }
+
     [Fact]
     public async Task An_unknown_user_is_404()
     {

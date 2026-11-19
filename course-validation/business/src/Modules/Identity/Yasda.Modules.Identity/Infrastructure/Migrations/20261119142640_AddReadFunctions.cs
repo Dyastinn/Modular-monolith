@@ -21,7 +21,6 @@ namespace Yasda.Modules.Identity.Infrastructure.Migrations
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS identity.get_user(bigint);");
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS identity.count_sign_in_attempts(text, boolean);");
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS identity.search_sign_in_attempts(text, boolean, integer, integer);");
-            migrationBuilder.Sql("DROP FUNCTION IF EXISTS identity.user_directory();");
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS identity.count_users(text);");
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS identity.search_users(text, text, boolean, integer, integer);");
         }

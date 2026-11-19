@@ -1,78 +1,73 @@
 ---
 paths:
   - "**/*.razor"
-  - "course-validation/business/src/Erp.Web/**"
-  - "course-validation/business/tests/Erp.Web.UiTests/**"
-  - "plan-business-tutorial/MUDBLAZOR.md"
+  - "**/*.css"
+  - "course-validation/business/src/Yasda.Web/**"
+  - "course-validation/business/tests/Yasda.Web.UiTests/**"
 ---
 
-# Screen rules (Blazor + MudBlazor)
+# Screen rules (plain Blazor + DESIGN.md)
 
-Read this before writing or changing any `.razor` file, in the reference build **or inside a lesson**. These
-rules were moved here from CLAUDE.md §5, unchanged in meaning. The reader-facing version, with the reasons and
-the Playwright recipes per component, is
-[plan-business-tutorial/MUDBLAZOR.md](../../plan-business-tutorial/MUDBLAZOR.md).
+Read this and [DESIGN.md](../../DESIGN.md) before writing or changing any `.razor` or `.css` file, in the
+reference build **or inside a lesson**. DESIGN.md says how a page looks; this file says how it's built.
+Decided 2026-11-19 (user): **no component library**. MudBlazor was removed with the ERP.
 
 ## The look
 
-- **The look lives in the theme** (`Erp.Web/Layout/AppTheme.cs`: light and dark palettes, typography, flat
-  elevations 1–5), not in CSS. Pages ask for roles (`Color.Primary`), never color codes. `app.css` holds only
-  what the theme can't say, each rule with its reason.
-- Dark mode follows the system unless the person picks one (kept in `localStorage`). No gradients.
-- Build screens from MudBlazor components and its utility classes, **never raw HTML** (no `<div>`, `<table>`,
-  `<b>`; `MudElement` only for a landmark like `<nav>`).
-- **Never subclass MudBlazor components** (no `AppTextField : MudTextField`). Use them as they are, with the
-  house settings written on each tag. Shared behavior goes in components that *hold* MudBlazor's, or in
-  extension methods.
+- **Plain HTML, styled by one file:** `Yasda.Web/wwwroot/css/app.css`. Its `:root` tokens are DESIGN.md §2, and
+  nothing else defines a color, font, gap, radius or shadow. No inline `style=` (the CSP has no
+  `'unsafe-inline'`), no CSS framework, no icon font, no dark mode.
+- **If HTML has an element for it, use that element:** `<h1>`, `<nav>`, `<table>`, `<hr>`, `<label>`, `<button>`,
+  `<a>`. A `<div>` only to group fields or actions (`.field`, `.actions`, `.search`, `.table-box`).
+- **Every page reads correctly with CSS switched off** (DESIGN.md §6): order the markup the way it should read.
+- Emphasis is `<strong>`. A status is a word, bold when it needs attention, never a colored badge.
+- **Packages:** none for the UI. Microsoft's own Blazor packages only. QuickGrid is allowed (user, 2026-11-19)
+  but not used: lists are plain tables with link-based sort and paging (below).
 
-## Fields
+## Layout
 
-- Every field (`MudTextField`, `MudNumericField`, `MudSelect`, `MudAutocomplete`, `MudDatePicker`) has
-  `Variant="Variant.Outlined" Margin="Margin.Normal"`. Date fields also have `Editable="true"`.
-- Password fields are our `PasswordField` (show/hide).
-- Rows of fields use `Breakpoint="Breakpoint.Xs"` so they stack on a phone.
+- `MainLayout` draws DESIGN.md's triangle: `Masthead` (logo, name, tagline), the `Main` nav row, a short rule, the
+  `Account` nav row, a full rule, then `<main>` with the `NoticeArea` and the page.
+- Navigation is rows of links (`NavMenu`). No app bar, drawer, tabs, hamburger or tooltip.
+- Every page starts with `PageHeader`: the trail (a page under a list), the `<h1>` title with its status, a
+  description, and the page's actions as links or buttons.
+- A detail page's trail goes back to its list as it was left: `ListMemory.Last("users")`; the list calls
+  `Memory.Remember(...)` when it loads.
 
-## Tables
+## Forms
 
-- **Every table is `MudDataGrid`** with `Striped="true" Hover="true" Dense="true"`, and `Outlined="true"`
-  unless it sits in a framed tab or card. Never `MudTable` or `MudSimpleTable`.
-- **Lists sort.** A paged list is `SortMode="SortMode.Single" ShowColumnOptions="false"` (the column menu's
-  hide and filter don't fit a server list, and its hidden button would push headers off their numbers).
-- A paged list sorts **on the server**: the query's `Sort`/`Desc`, checked by `ValidSort` against an allow-list
-  of the columns' JSON names. The SQL function orders with one `CASE` per column and direction, never text
-  built into SQL.
-- Each sortable column restores its arrow with `InitialDirection="@View.Initial(nameof(Row.Prop))"`. A column
-  the API can't sort says `Sortable="false"`.
-- A small unpaged report grid sorts in the browser. A document's lines (order, invoice, PO) and a log stay
-  `SortMode.None`, in their own order.
-- `PropertyColumn` (with a `CellTemplate` when it needs one) for anything sortable, `TemplateColumn` otherwise.
-- Amounts are `@(MoneyColumn.Of<Row>("Title", x => x.Amount, …))`, which writes the `PropertyColumn` in place
-  (a column wrapped in a component would render last).
-- The column `Title` labels values on phones. Cells don't wrap; free text opts in with `CellClass="wrap"`.
-- Each grid that can be empty has `NoRecordsContent`.
-- Totals under lines use `Totals` + `TotalLine`.
-- Row actions go in a "⋮" `MudMenu` with `AriaLabel`.
+- `EditForm` + Blazor's own inputs (`InputText`, `InputSelect`, `InputCheckbox`), each in a `.field` with its
+  `<label for>` **above** it. A hint is a `.hint` span linked by `aria-describedby`.
+- Passwords use `PasswordField` (a Show/Hide button whose accessible name names the field).
+- Submit buttons are `type="submit"` and `disabled="@Api.Busy"` while a change is on its way.
+- A form with unsaved changes asks before it's left: `NavigationLock` + `UnsavedChanges.ConfirmLeave` (the
+  browser's own confirm box).
 
-## Pages
+## Lists
 
-- Every page's top row is `PageHeader` (title, trail, status, actions, description).
-- Every page under a list (a detail or edit page) has a breadcrumb back to it (`PageHeader Trail=`, drawn by
-  `Crumbs`, a `nav` landmark around `MudBreadcrumbs`), via `ListMemory.Last`.
-- A detail page's status is `StatusChip Live="true"`.
-- A list keeps its search, filters, sort, page and page size in the address (`ListAddress`). A filter change
-  returns to page 1 (`GridPaging.FirstPage`, an extension method).
+- A list is a `<table>` inside `.table-box` (it scrolls sideways on a phone; the page never does), with `<th
+  scope="col">`. Empty: a sentence ("No users match."), not an empty table.
+- **The list's state lives in the address**: search, filters, `sort`, `desc`, `page`, read with
+  `[SupplyParameterFromQuery]` and loaded in `OnParametersSetAsync`. A search is a form whose submit navigates to
+  the new address with `page` cleared.
+- **Sorting is on the server**: each sortable column is a `SortHeader` (a link that sets `?sort=`, then
+  `&desc=true`). The API checks the name with `ValidSort` against an allow-list of the columns' JSON names; the
+  SQL function orders with one `CASE` per column and direction, never text built into SQL. A log or a document's
+  lines have no sort headers.
+- Paging is the `Pager` component: Previous · Page n of m · Next, as links.
 
-## Actions
+## Messages and confirmations
 
-- Buttons that send a change are `Disabled="Api.Busy"`.
-- An action that can't be undone (ship, close short, cancel) asks first, naming the record and the
-  consequence, with verb buttons ("Ship" / "Not yet").
-- A form with unsaved changes asks before it's left (`NavigationLock` + `UnsavedChanges`).
+- `ApiClient` reports every failure to `Notices`; `NoticeArea` shows it as `role="alert"` with a link to the
+  error code's page. Successes are `role="status"`. A message survives the navigation a save makes by itself
+  and clears when the person follows a link.
+- No modal dialogs. An action that can't be undone (disable, close, cancel) asks **inline** first, naming the
+  record and the consequence, with verb buttons ("Disable" / "Not yet"). Editing a record is its own page.
 
 ## Browser tests
 
-- Find things by **role and name** and check with Playwright's `Expect`. Never MudBlazor CSS classes,
-  `WaitForTimeout`, `NetworkIdle`, or read-once checks.
+- Find things by **role and name** and check with Playwright's `Expect`. Never CSS classes, `WaitForTimeout`,
+  `NetworkIdle`, or read-once checks.
 - Each person gets their own browser context. A failed test keeps a trace.
-- If a control can't be found by role, fix its accessibility (`AriaLabel`, `role`); don't reach for CSS.
-- Recipes per component are in MUDBLAZOR.md.
+- If a control can't be found by role, fix its accessibility (a `<label>`, `aria-label`), don't reach for CSS.
+- Run the app for browser tests with `RateLimiting__AuthRequestsPerMinute` raised (every test signs in).

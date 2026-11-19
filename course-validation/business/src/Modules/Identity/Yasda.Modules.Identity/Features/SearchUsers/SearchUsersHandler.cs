@@ -36,16 +36,3 @@ internal sealed class SearchUsersHandler(IDbConnectionFactory connections)
         return new PagedResult<UserDto>(rows, q.Page, q.PageSize, (int)await multi.ReadSingleAsync<long>());
     }
 }
-
-// Names for "approved by", "shipped by" and the like. Every signed-in user may read it; it holds no secrets.
-internal sealed record UserNameDto(long Id, string FullName);
-
-internal sealed class GetUserDirectoryHandler(IDbConnectionFactory connections)
-{
-    public async Task<IReadOnlyList<UserNameDto>> HandleAsync(CancellationToken ct)
-    {
-        await using var conn = connections.Create();
-        return (await conn.QueryAsync<UserNameDto>(new CommandDefinition(
-            "SELECT * FROM identity.user_directory();", cancellationToken: ct))).ToList();
-    }
-}

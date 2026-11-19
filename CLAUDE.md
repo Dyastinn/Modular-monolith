@@ -1,9 +1,10 @@
 # CLAUDE.md — Guardrails for This Repository
 
-> **Read this before editing anything.** This repo is a **course whose end result is a real, sellable
-> product**: a working ERP (Sales, Inventory, Purchasing, Invoicing) built as a **Modular Monolith with
-> Vertical Slice Architecture (VSA)**, with a Blazor front end, that a business can actually run. The
-> lessons teach the reader to build it; the reference build *is* the product. The failure modes here are
+> **Read this before editing anything.** This repo is a **course whose end result is a real, open-source
+> product**: **YASDA** (*Yet Another Service Desk Application*), a service desk (tickets, SLAs, a knowledge
+> base) built as a **Modular Monolith with Vertical Slice Architecture (VSA)**, with a Blazor front end, that
+> an organization can actually run. It is MIT-licensed ([LICENSE](LICENSE)). The lessons teach the reader to
+> build it; the reference build *is* the product. The failure modes here are
 > (a) **derailing** — swapping a decided technology, adding a banned one, or introducing an API the reader
 > hasn't been shown — and (b) **shipping something that only looks finished**. When a request conflicts
 > with a rule here, **stop and flag the conflict** instead of silently breaking the course.
@@ -11,6 +12,14 @@
 > Where an older lesson or code file contradicts this file, **this file wins**: that file is due for
 > conversion, not a precedent. Stale markers from the old SQL Server tutorial: `usp_`, `rowversion`, `GO`,
 > `[brackets]`, LocalDB, `Microsoft.Data.SqlClient`, an IIS path or `web.config`.
+>
+> **The ERP is gone (user decision, 2026-11-19).** The project was a Philippine ERP (Sales, Inventory, Purchasing,
+> Invoicing, BIR tax); it is kept under the git tag `erp-final` and is never brought back piecemeal. Nothing
+> financial or permit-bound comes back either: no money, prices, invoices, tax, fines or dues. **The ERP's
+> lessons were deleted with it (user, 2026-11-19): there is no course until ROADMAP's lesson pass (Y8)**, which
+> writes it fresh from the finished build into `plan-business-tutorial/`. Every rule below about lessons applies
+> to that new course. Stale markers from the ERP: `SalesOrder`, `Customer`, `Money`,
+> `₱`, `BIR`, `MudBlazor`, `Mud*`, `Erp.` namespaces.
 
 ---
 
@@ -18,10 +27,12 @@
 
 | Path | What it is |
 |---|---|
-| `plan-business-tutorial/` | **The course.** The only course. Phases run in order; each ends in something runnable. Plus `00a-FOUNDATIONS.md`, `GLOSSARY.md`, `LEARNING-RESOURCES.md`, `ANSWER-KEY.md`, `MUDBLAZOR.md`. |
-| `course-validation/business/` | **The reference build = the product.** The complete, runnable app the course ends in. Every lesson's code must match it. `FINDINGS.md` is the validation log. |
+| `plan-business-tutorial/` | **The course**, the only one, written in Y8 (absent until then). Phases run in order; each ends in something runnable. Plus the companion pages: foundations, glossary, learning resources, answer key. |
+| `course-validation/business/` | **The reference build = the product.** The complete, runnable app the course ends in (`Yasda.slnx`). Every lesson's code must match it. |
+| `DESIGN.md` | **How every screen looks**: warm paper, one serif, blue links, plain HTML, DESIGN.md's tokens and nothing else. |
 | `WRITING-STYLE.md` | **How every lesson is written.** Read it in full before writing or editing a lesson. |
-| `.claude/rules/blazor-ui.md` | The screen rules (MudBlazor, grids, pages, browser tests). Read it before writing any `.razor`. |
+| `.claude/rules/blazor-ui.md` | The screen rules (plain Blazor, tables, forms, messages, browser tests). Read it and DESIGN.md before writing any `.razor` or `.css`. |
+| `LICENSE` | MIT, for YASDA itself. |
 | `ROADMAP.md` | The plan: decisions, the milestone in progress, open risks. Update it as work lands. |
 | `ROADMAP-HISTORY.md` | Finished milestones and the dated log. Read only when you need the history. |
 | `README.md` | The front door. Keep it in sync with any structural change. |
@@ -36,8 +47,8 @@
 - **Read a lesson by section.** List its headings first, then read the part you need. Lessons are 30–95 KB.
 - **Read only the milestone in progress** in ROADMAP.md. Open ROADMAP-HISTORY.md only for a specific question.
 - **While iterating, run only the test project you touched.** Run the whole suite once, at the end.
-- **Build first, lessons after**, where ROADMAP says so (M10): finish the code and its tests, then write the
-  lesson from the finished code in a second pass.
+- **Build first, lessons after**, for the whole YASDA rebuild (ROADMAP): finish the code and its tests, then
+  write the lessons from the finished code in a second pass.
 
 ---
 
@@ -88,7 +99,8 @@ the section order, and a sample.
 
 - **Don't** open with "In today's fast-paced world," "Let's dive in," "It's important to note that," "By
   leveraging," or "In conclusion," and don't end a section by summarising it.
-- **Do** use concrete numbers and real names from this domain (`SalesOrder`, `SalesManager`, ₱).
+- **Do** use concrete numbers and real names from this domain (`Ticket`, `TeamLead`, "respond within 4 business
+  hours").
 - **Cut ruthlessly.** If a paragraph can lose half its words and keep its meaning, it should.
 - **Consistent analogies** — the outbox dispatcher = *post office* (it delivers each event to whoever
   subscribed; the sender never knows who); atomicity = *turnstile*; modules = *islands with one
@@ -112,14 +124,14 @@ the section order, and a sample.
 | Validation | **FluentValidation**, run by one endpoint filter on `/api` |
 | Errors | **Stable error codes** on every problem response, with a catalog page |
 | Auth | **ASP.NET Core Identity** (`AddIdentityApiEndpoints` / `MapIdentityApi`): cookies for the browser, bearer + refresh tokens for other clients, lockout, password policy, role-based authorization; keys persisted to PostgreSQL |
-| Front end | **Blazor Web App + MudBlazor**, global interactive WebAssembly (prerender off), served by `Erp.Api` |
+| Front end | **Blazor Web App, no component library** (user, 2026-11-19): plain HTML, Blazor's own forms, one CSS file of [DESIGN.md](DESIGN.md)'s tokens; global interactive WebAssembly (prerender off), served by `Yasda.Api` |
 | Observability | **OpenTelemetry** (traces, metrics, logs, OTLP export) + health checks; **Aspire AppHost** as the dev-only dashboard |
 | API docs | **`Microsoft.AspNetCore.OpenApi`** + **Scalar** (dev-only API page) |
 | Time | `TimeProvider` (tests: `FakeTimeProvider`) |
 | Events | **Transactional outbox** |
 | Tests | **xUnit v3 on Microsoft.Testing.Platform + AwesomeAssertions**, **FsCheck.Xunit.v3** (property-based), **Testcontainers.PostgreSql** (from lesson 12), **coverlet.MTP**, **Stryker.NET** (`test-runner: mtp`), **GitHub Actions** CI |
 | Analyzers | `latest-recommended`; warnings fail the CI build |
-| Documents, email | **PdfSharp/MigraDoc 6.2.4** for invoices · **MailKit** for email |
+| Email | **MailKit** (sending now; receiving tickets by email later) |
 | Containers | **Podman** for the dev database (from lesson 12), tests and deployment: Linux containers, **Compose** files run with `podman compose`, Caddy for HTTPS |
 
 - **Keep every container file Docker-compatible** (plain Compose spec, OCI `Dockerfile`, no Quadlet or other
@@ -135,15 +147,16 @@ the section order, and a sample.
   rotation. If Identity can't do something, say so and choose another *library* (OpenIddict for SSO/OAuth)
   rather than writing token code. `/auth/register` is blocked: staff accounts are created by admins.
 
-### Licensing rule — the source code is sold
+### Licensing rule — free for everyone, forever
 
-Buyers receive the source and inherit every dependency's license. **Only permissive open-source licenses
-(MIT, Apache-2.0, BSD).** Never a per-developer commercial license, a revenue-threshold "community"
-license, or a copyleft license that would bind the buyer. Known traps, all **banned**: MediatR (paid since
-2025), FluentAssertions ≥ 8 (paid), AutoMapper (paid since 2025), MassTransit ≥ 9 (paid), QuestPDF
-(revenue-gated — use PDFsharp/MigraDoc **6.2.4**: 6.5 and later are AGPL-3.0, checked 2026-11-06),
-Telerik/Syncfusion/DevExpress, Seq (commercial), Duende IdentityServer (revenue-gated). **Check the
-license of any package before adding it**, and record it in the third-party notices file.
+YASDA is MIT open source: anyone may run, change and redistribute it, and inherits every dependency's
+license. **Nothing in it may ever cost money** (user, 2026-11-19). **Only permissive open-source licenses
+(MIT, Apache-2.0, BSD, PostgreSQL).** Never a per-developer or per-seat commercial license, a
+revenue-threshold "community" license, or a copyleft license that would bind whoever runs it. Known traps,
+all **banned**: MediatR (paid since 2025), FluentAssertions ≥ 8 (paid), AutoMapper (paid since 2025),
+MassTransit ≥ 9 (paid), QuestPDF (revenue-gated), PDFsharp/MigraDoc ≥ 6.5 (AGPL-3.0),
+Telerik/Syncfusion/DevExpress, Seq (commercial), Duende IdentityServer (revenue-gated). **Check the license
+of any package before adding it**, and record it in the third-party notices file.
 
 ### Banned in the built solution
 
@@ -160,12 +173,12 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
 
 ## 4. The non-negotiable architecture rules
 
-1. **Modules are islands with one service window.** A module is `Erp.Modules.X` (**everything `internal`**
-   except its one public entry class, e.g. `SalesModule.AddSalesModule`) plus, as soon as another module
-   needs something from it, `Erp.Modules.X.Contracts` (**the only public surface**: contract interfaces,
+1. **Modules are islands with one service window.** A module is `Yasda.Modules.X` (**everything `internal`**
+   except its one public entry class, e.g. `TicketsModule.AddTicketsModule`) plus, as soon as another module
+   needs something from it, `Yasda.Modules.X.Contracts` (**the only public surface**: contract interfaces,
    their DTOs, integration events). Don't create an empty Contracts project ahead of need. A module may reference **other modules'
    `.Contracts` projects only — never another module's main project.** Contracts projects reference nothing
-   but `Erp.Shared.BuildingBlocks`. This is what keeps the reference graph acyclic when modules call each
+   but `Yasda.Shared.BuildingBlocks`. This is what keeps the reference graph acyclic when modules call each
    other in both directions.
 2. **No cross-schema SQL.** No `JOIN` or FK across module schemas (not even to `identity.users` for a
    "created by" column — store the id, no FK); no DbContext mapping another module's tables. Cross-module data goes through a contract call or an integration event.
@@ -174,33 +187,33 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
    `MapXEndpoints()` (maps its endpoints). Handlers are registered **by hand**, one line each, and a test proves
    every one is registered; `AddValidatorsFromAssembly` **must** pass `includeInternalTypes: true`. .NET 10's
    built-in `AddValidation()` silently skips internal models, which is why validation is FluentValidation.
-   `InternalsVisibleTo` is granted **only to test assemblies** — not even to `Erp.Api`, so the compiler keeps
+   `InternalsVisibleTo` is granted **only to test assemblies** — not even to `Yasda.Api`, so the compiler keeps
    the host away from a module's internals. Keep the regression tests that prove each of these (e.g.
-   `Order_with_no_lines_is_rejected_by_the_internal_validator`, `Every_feature_handler_is_registered`) and the
+   `A_user_without_a_name_is_rejected_by_the_internal_validator`, `Every_feature_handler_is_registered`) and the
    architecture test that fails if a module grants `InternalsVisibleTo` to anything but a test project.
-4. **Keep the Domain pure.** `Domain/` depends only on `Erp.Shared.BuildingBlocks`. No EF Core attributes,
+4. **Keep the Domain pure.** `Domain/` depends only on `Yasda.Shared.BuildingBlocks`. No EF Core attributes,
    SQL, ASP.NET Core, Dapper, or `HttpContext` in the domain. EF mapping lives in `Infrastructure/` as
    `IEntityTypeConfiguration<T>` (fluent API only).
-5. **`Shared/` is exactly two projects.** `Erp.Shared.BuildingBlocks` (one flat namespace; folders
+5. **`Shared/` is exactly two projects.** `Yasda.Shared.BuildingBlocks` (one flat namespace; folders
    `Domain/`, `Abstractions/`, `Messaging/`) depends on nothing heavy and holds what every module may use.
-   `Erp.Shared.Infrastructure` holds implementations and is referenced **only by `Erp.Api`**. Don't re-split
+   `Yasda.Shared.Infrastructure` holds implementations and is referenced **only by `Yasda.Api`**. Don't re-split
    `BuildingBlocks` — *a project boundary exists to make something a compile error; folders organise code
    you're allowed to use.*
 6. **Where each kind of logic lives** — the core skill the course teaches. Keep it sacred:
 
    | Concern | Home |
    |---|---|
-   | "Is the request well-formed?" (shape: positive ids, ≥1 line) | **Validator** (FluentValidation) on the type the endpoint binds: a request in the endpoint file, or a query record in the handler file. Run by the `/api` filter; answered 400 with `ERP-0001`, no exception |
-   | "Is this operation allowed?" (blocked customer, credit limit, status transition, approval threshold) | **Domain** — a method on the entity/value object, throwing `DomainException(XErrors.Code, detail)` → 422 with the code |
+   | "Is the request well-formed?" (shape: positive ids, a subject, a known priority) | **Validator** (FluentValidation) on the type the endpoint binds: a request in the endpoint file, or a query record in the handler file. Run by the `/api` filter; answered 400 with `YASDA-0001`, no exception |
+   | "Is this operation allowed?" (status transition, replying to a closed ticket, reopening after the window, disabling yourself) | **Domain** — a method on the entity/value object, throwing `DomainException(XErrors.Code, detail)` → 422 with the code |
    | "Does the thing in the URL exist?" | **Handler** returns `null`/`false`; the **endpoint** answers `TypedResults.NotFound()`. An unknown id *inside the body* is a coded 422 |
    | "Load → do → save" coordination | **Command handler** (EF Core, no business `if`s) |
    | Reading data for a screen or report | **Query handler** → Dapper → SQL function |
-   | Safety when two people act at once (reserve stock, lost-update guard) | **EF Core** — the `xmin` row version as a concurrency token, or one atomic `ExecuteUpdate` with a guard in the `WHERE` |
+   | Safety when two people act at once (two agents taking one ticket, lost-update guard) | **EF Core** — the `xmin` row version as a concurrency token, or one atomic `ExecuteUpdate` with a guard in the `WHERE` |
    | One module needs another (must be same transaction) | **Synchronous contract** in the other module's `.Contracts` |
    | Something reacts afterward, in the same module | **Domain event** (internal) raised by the aggregate → `OutboxInterceptor` writes it in the same `SaveChanges` → `OutboxDispatcher` delivers it to the module's `IDomainEventHandler<T>` after commit. At-least-once: **handlers must be idempotent** |
    | Another module reacts afterward | The owning module's domain event handler maps it to a public **integration event** (`.Contracts`) and calls `IIntegrationEventPublisher`, which hands it to every `IIntegrationEventHandler<T>` inside the same outbox delivery |
    | "This endpoint is role-X only, full stop" | **Endpoint** (`RequireAuthorization` / role policy) |
-   | Auth that depends on the data ("your own customers only") | **Handler/domain** via `ICurrentUser` |
+   | Auth that depends on the data ("requesters see their own tickets only") | **Handler/domain** via `ICurrentUser` |
 
    A business `if` in a handler, a business rule in a validator or stored procedure, or a rule that needs a
    database to unit-test is a **defect**.
@@ -213,7 +226,7 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
 
 - **Two files per feature:** `XxxHandler.cs` (Command/Query + Result/DTOs + Handler, plus the validator of a query
   bound with `[AsParameters]`) and `XxxEndpoint.cs` (Request + its validator + a static `Map` method). Closely related actions on one thing may share a
-  feature folder (`UpdateCustomer` also holds block/unblock; `ItemCategories` holds list and save). **Never**
+  feature folder (`UpdateUser` also holds disable, enable and reset password). **Never**
   technical-layer folders (`Commands/`, `Handlers/`, `Validators/`, `Endpoints/`).
 - **Handlers:** plain `internal sealed class XxxHandler` with `Task<T> HandleAsync(XxxCommand|XxxQuery, CancellationToken)`,
   registered `AddScoped` in the module and injected into the endpoint. Commands and queries stay separate records
@@ -222,7 +235,7 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
   `TypedResults` with declared `Results<…>` unions, so OpenAPI lists every answer. Handlers never publish events
   themselves — the outbox does. Tracing per request comes from ASP.NET Core's OpenTelemetry instrumentation.
 - **Error codes:** every `DomainException` carries an `ErrorCode` from its module's internal catalog
-  (`Domain/SalesErrors.cs`: `SALES-0001`…, Title, Fix), registered with `ErrorCatalog.From`. Codes are never
+  (`Domain/IdentityErrors.cs`: `IDENTITY-0001`…, Title, Fix), registered with `ErrorCatalog.From`. Codes are never
   renumbered or reused; tests prove they are unique, documented and used. Every problem response has `code`,
   `type: /errors/{code}` and `traceId`; `/api/errors` serves the catalog and the app's `/errors/{code}` page shows it.
 - **Time:** inject `TimeProvider` (the host registers `CompanyTimeProvider`, whose local zone is the company's);
@@ -230,20 +243,21 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
 
 ### Domain
 
-- **Base types** in `Erp.Shared.BuildingBlocks`: `Entity<TId>`, `AggregateRoot<TId>` (`where TId : struct`,
+- **Base types** in `Yasda.Shared.BuildingBlocks`: `Entity<TId>`, `AggregateRoot<TId>` (`where TId : struct`,
   repeated on derived classes), `IDomainEvent`, `DomainException`.
-- **Strongly-typed IDs** (`readonly record struct SalesOrderId(long Value)`) with EF value converters; never a
+- **Strongly-typed IDs** (`readonly record struct TicketId(long Value)`) with EF value converters; never a
   bare `long` id in the domain.
-- **Rich domain:** private setters, `Create()` factory + private parameterless constructor for EF, computed
-  `Total`, guarded state transitions, value objects (`Money`, `Quantity`) that reject invalid values.
+- **Rich domain:** private setters, `Create()` factory + private parameterless constructor for EF, guarded
+  state transitions, value objects (a ticket's subject, an SLA's business-hours duration) that reject invalid
+  values.
 - **Value objects that appear in domain events** need `[JsonConstructor]` on their validating constructor, or
   the outbox round-trip silently zeroes them (caught by `An_event_survives_the_round_trip_through_the_outbox`).
 - **Domain events:** raise an event only in the same change that adds its first handler. Domain events are
   `internal`; integration events live in a module's `.Contracts` project and are plain data. Each module registers
   its own event handlers; tests prove every event has a handler and every handler is registered.
-- **Roles** live once in `Erp.Shared.BuildingBlocks.Roles` (`SalesRep`, `SalesManager`, `Admin`; later
-  `InventoryClerk`, `Purchaser`, `Accountant`) and are seeded into `identity.roles` by migration. Staff have
-  exactly one role. Never type a role string.
+- **Roles** live once in `Yasda.Shared.BuildingBlocks.Roles` (`Admin`, `TeamLead`, `Agent`, `KbEditor`,
+  `Requester`) and are seeded into `identity.roles` by migration. Every account, staff or requester, has
+  exactly one role and is created by an admin. Never type a role string.
 
 ### Data
 
@@ -257,12 +271,12 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
   which is what lets a contract join the caller's transaction. Concurrency: a shadow
   `Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin")` on each aggregate root (PostgreSQL's
   built-in row version); `DbUpdateConcurrencyException` → 409. An aggregate whose child rows can change on
-  their own (order lines) must touch the root row on save, or its version is never checked — see
-  `SalesDbContext.SaveChangesAsync` and its integration test.
+  their own (a ticket's replies) must touch the root row on save, or its version is never checked (the ERP's
+  `SalesDbContext.SaveChangesAsync`, tag `erp-final`, shows the pattern and its integration test).
 - **Each module's DbContext has a static `Configure(options, connection)`** used both at runtime and by its
   `IDesignTimeDbContextFactory`, so `dotnet ef` and the running app can never disagree. Table names are
-  explicit and singular (`ToTable("sales_order")`).
-- **Reads:** query handlers call SQL functions with Dapper (`SELECT * FROM sales.search_sales_orders(@...)`).
+  explicit and singular (`ToTable("ticket")`).
+- **Reads:** query handlers call SQL functions with Dapper (`SELECT * FROM identity.search_users(@...)`).
   Functions are **schema-qualified in their definition and every C# call**, live as one `.sql` file per read in
   the module's `Infrastructure/Sql/Functions/` named `schema.function.vN.sql` (with its companions: the
   `count_` for a search, the `_lines` for a get), and are applied by a migration via `migrationBuilder.Sql`.
@@ -277,44 +291,33 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
   release's migrations freeze.)
 - **Dev seed data** lives in each module's `Infrastructure/Sql/DevSeed.sql`, runs only when
   `Database:SeedDevelopmentData` is true (Development/tests), and is idempotent.
-- **Least privilege in production:** the app connects as `erp_app` (rows only), migrations run as `erp_owner`
-  via `ConnectionStrings:ErpDbMigrations` (see `deploy/postgres/create-roles.sql`).
+- **Least privilege in production:** the app connects as `yasda_app` (rows only), migrations run as `yasda_owner`
+  via `ConnectionStrings:YasdaDbMigrations` (see `deploy/postgres/create-roles.sql`).
 
 ### Business data
 
-- **Money is Philippine Pesos (₱)**, `numeric(18,2)`. Quantities are whole numbers today; they become
-  `numeric(18,3)` when items gain units of measure.
-- **Business values live in tables, edited on screens; `appsettings` describes the installation.**
-  The company's registered details, tax regime, VAT rate, invoice title and BIR permit
-  are Invoicing's `company_profile` (Accountant/Admin, **Company and tax** page, validated by the domain); the
-  special-discount programs are Sales' `special_discount_program` table (seeded SC/PWD); the approval limits are
-  `sales_settings` and `purchasing_settings` (Admin, **Approval rules** page), with a per-customer override on
-  `customer.approval_threshold`. Only connection
-  strings, certificates, SMTP, fonts, the time zone, telemetry and the first admin stay in configuration. Never
-  put a rate, a TIN or a permit number in `appsettings.json` or `.env`.
-- **Tax is data, never a constant.** Each item has a `TaxType` (VATable, zero-rated, VAT-exempt) and a
-  special-discount flag, copied onto order and invoice lines; each invoice **stores** its regime, rate,
-  breakdown, discount and a copy of the seller's details, and is never recalculated. Sales gets the tax policy
-  through `IInvoicingSetup` (Invoicing.Contracts). Special discounts are computed once, by
-  `SpecialDiscount.Apply` in BuildingBlocks, on the order **and** at issue, so the invoice total always equals
-  the order total charged to the customer's balance. The printed invoice follows BIR RR 7-2024 Sec. 6(B),
-  including (B.18); a change to its layout must keep every field on that list.
+- **No money, anywhere.** YASDA has no prices, invoices, tax, fines or dues (see the note at the top).
+- **Business values live in tables, edited on screens; `appsettings` describes the installation.** SLA
+  policies, business hours, holidays, categories, teams and routing rules are data an admin or team lead edits
+  on a screen. Only connection strings, certificates, SMTP, the time zone, telemetry and the first admin stay
+  in configuration. Never put a deadline, an hour or a holiday in `appsettings.json` or `.env`.
+- **Time is the domain's hard part.** Deadlines are stored (never timers in memory) and computed in business
+  hours in the organization's time zone, with holidays as rows (Philippine holidays seeded, editable).
 
 ### Screens
 
-- **Full rules: [.claude/rules/blazor-ui.md](.claude/rules/blazor-ui.md). Read it before writing any `.razor`,
-  in the build or in a lesson.** The ones that must never be broken:
-  build screens from MudBlazor components, **never raw HTML**; **never subclass a MudBlazor component**;
-  **every table is `MudDataGrid`** (never `MudTable` or `MudSimpleTable`); the look lives in the theme
-  (`AppTheme`), not in CSS or color codes; paged lists sort **on the server**; every field is
-  `Variant="Variant.Outlined" Margin="Margin.Normal"`.
-- **Browser tests find things by role and name and check with Playwright's `Expect`** (never MudBlazor CSS classes,
+- **Full rules: [.claude/rules/blazor-ui.md](.claude/rules/blazor-ui.md) and the look: [DESIGN.md](DESIGN.md).
+  Read both before writing any `.razor` or `.css`, in the build or in a lesson.** The ones that must never be
+  broken: **plain HTML and Blazor's own components, no component library**; every color, font and gap comes
+  from `app.css`'s `:root` tokens; no inline styles (the CSP forbids them); every page reads correctly with
+  CSS off; a list's search, sort and page live in the address, and it sorts **on the server**.
+- **Browser tests find things by role and name and check with Playwright's `Expect`** (never CSS classes,
   `WaitForTimeout`, `NetworkIdle`, or read-once checks). If a control can't be found by role, fix its
-  accessibility (`AriaLabel`, `role`), don't reach for CSS.
-- **The host references `Erp.Web` normally, with `Aliases="ErpWeb" PrivateAssets="all"`.** Never
-  `ReferenceOutputAssembly="false"`: the host would stop serving the app's package files (MudBlazor's CSS and
-  JS), and the app would run unstyled. `App.razor` (the page) and `Routes.razor` both live in `Erp.Web`; the host
-  maps `MapRazorComponents<ErpWeb::Erp.Web.App>().AddInteractiveWebAssemblyRenderMode().AllowAnonymous()` and sets
+  accessibility (a `<label>`, `aria-label`), don't reach for CSS.
+- **The host references `Yasda.Web` normally, with `Aliases="YasdaWeb" PrivateAssets="all"`.** Never
+  `ReferenceOutputAssembly="false"`: the host would stop serving the app's static files (its CSS and logo),
+  and the app would run unstyled. `App.razor` (the page) and `Routes.razor` both live in `Yasda.Web`; the host
+  maps `MapRazorComponents<YasdaWeb::Yasda.Web.App>().AddInteractiveWebAssemblyRenderMode().AllowAnonymous()` and sets
   `RequiresAspNetWebAssets` (it has no `.razor` files of its own, so the SDK wouldn't serve `blazor.web.js`).
 
 ### Code
@@ -330,9 +333,10 @@ These may appear only in a lesson's *"when you'd add this later, and why not now
 The finished product has **no deliberate shortcuts**. In particular the old tutorial simplifications are
 **resolved**, not documented:
 
-- Credit limit counts committed **and** in-flight (submitted/approved, unbilled) exposure.
-- Stock moves for real: receiving increases `OnHand`, shipping decreases it, adjustments are audited.
-- Approval is an actual workflow (pending → approved/rejected), not a flag.
+- SLA clocks survive a restart: deadlines are rows, a breach is found by a scheduler polling them, and pausing
+  (waiting on the requester) really stops the clock.
+- Requesters see only their own tickets, proven by tests at the API, not just hidden on screen.
+- Attachments are size- and type-limited, stored outside the web root, and downloaded with safe headers.
 - Cross-module reactions go through a **transactional outbox**; no event is lost on a crash.
 - Rate limiting, HTTPS/HSTS, security headers, and a CSP for the Blazor app are on.
 - Observability: structured logs, traces and metrics via OpenTelemetry; `/health/live` and

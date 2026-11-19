@@ -13,7 +13,7 @@ What each part of this page applies to:
 | Page | The voice and the lesson shape | The format rules and the teaching rules |
 |---|---|---|
 | A numbered lesson (`01-…md` to `25-…md`) | Yes, all of it | Yes |
-| A companion page (`00-START-HERE`, `00a-FOUNDATIONS`, `MUDBLAZOR`, `GLOSSARY`, `LEARNING-RESOURCES`) | The voice, yes. The nine-part shape, no: a reference page is organized by what the reader looks up | Yes |
+| A companion page (`00-START-HERE`, `00a-FOUNDATIONS`, `GLOSSARY`, `LEARNING-RESOURCES`) | The voice, yes. The nine-part shape, no: a reference page is organized by what the reader looks up | Yes |
 | `ANSWER-KEY.md` | Plain answers, in the same friendly "you" | Yes |
 
 ## The reader

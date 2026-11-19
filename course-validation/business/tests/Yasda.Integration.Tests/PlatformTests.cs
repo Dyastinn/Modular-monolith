@@ -35,7 +35,7 @@ public class PlatformTests(CustomWebAppFactory factory)
         var pageCsp = (await client.GetAsync("/")).Headers.GetValues("Content-Security-Policy").Single();
         var apiCsp = (await client.GetAsync("/api/auth/me")).Headers.GetValues("Content-Security-Policy").Single();
 
-        pageCsp.Should().Contain("script-src 'self' 'wasm-unsafe-eval'").And.NotContain("unsafe-inline' 'self' 'wasm");
+        pageCsp.Should().Contain("script-src 'self' 'wasm-unsafe-eval'").And.NotContain("unsafe-inline");
         apiCsp.Should().StartWith("default-src 'none'");
     }
 }
