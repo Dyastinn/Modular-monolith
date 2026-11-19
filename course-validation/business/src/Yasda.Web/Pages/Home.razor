@@ -1,0 +1,18 @@
+@page "/"
+
+<PageTitle>Home · YASDA</PageTitle>
+
+<AuthorizeView Context="auth">
+    <PageHeader Title="@($"Good day, {auth.User.Identity?.Name}")">
+        <Description>Here's where your work starts.</Description>
+    </PageHeader>
+
+    <ul>
+        <AuthorizeView Roles="@Roles.Admin" Context="admin">
+            <li><a href="users">Users</a>: add staff and requesters, set their roles, reset passwords.</li>
+            <li><a href="sign-in-log">Sign-in log</a>: who signed in, and every failed attempt.</li>
+        </AuthorizeView>
+        <li><a href="change-password">Change password</a>: choose a new one any time.</li>
+        <li><a href="errors">Error codes</a>: what each message means and how to fix it.</li>
+    </ul>
+</AuthorizeView>

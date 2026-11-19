@@ -1,0 +1,78 @@
+@page "/sign-in-log"
+@attribute [Authorize(Roles = Roles.Admin)]
+@inject ApiClient Api
+@inject NavigationManager Nav
+
+<PageTitle>Sign-in log · YASDA</PageTitle>
+
+<PageHeader Title="Sign-in log" />
+
+@* Newest first, always: a log reads in time order, so it has no sort headers. *@
+<EditForm Model="this" OnSubmit="Find" class="search" role="search">
+    <div class="field">
+        <label for="email">Email</label>
+        <InputText id="email" type="search" @bind-Value="_email" />
+    </div>
+    <div>
+        <InputCheckbox id="failed-only" @bind-Value="_failedOnly" />
+        <label for="failed-only">Failed only</label>
+    </div>
+    <button type="submit">Search</button>
+</EditForm>
+
+@if (_result is null)
+{
+    <p role="status">Loading…</p>
+}
+else if (_result.Items.Count == 0)
+{
+    <p>No sign-in attempts match.</p>
+}
+else
+{
+    <div class="table-box">
+        <table>
+            <thead>
+                <tr><th scope="col">When</th><th scope="col">Email</th><th scope="col">Outcome</th><th scope="col">From</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var a in _result.Items)
+                {
+                    <tr>
+                        <td>@Format.Date(a.OccurredUtc)</td>
+                        <td>@a.Email</td>
+                        <td>@if (a.Outcome == "Succeeded") { @Format.Words(a.Outcome) } else { <strong>@Format.Words(a.Outcome)</strong> }</td>
+                        <td>@a.IpAddress</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <Pager Page="_result.Page" PageSize="_result.PageSize" Total="_result.TotalCount" Noun="attempts" />
+}
+
+@code {
+    private const int PageSize = 50;
+
+    [SupplyParameterFromQuery] public string? Email { get; set; }
+    [SupplyParameterFromQuery] public bool FailedOnly { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+
+    private PagedResult<SignInAttempt>? _result;
+    private string? _email;
+    private bool _failedOnly;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        (_email, _failedOnly) = (Email, FailedOnly);
+        _result = await Api.Get<PagedResult<SignInAttempt>>(Url.With("api/sign-in-attempts", ("email", Email),
+            ("failedOnly", FailedOnly ? true : null), ("page", PageNumber), ("pageSize", PageSize)));
+    }
+
+    private void Find() => Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+    {
+        ["email"] = string.IsNullOrWhiteSpace(_email) ? null : _email.Trim(),
+        ["failedOnly"] = _failedOnly ? "true" : null,
+        ["page"] = null,
+    }));
+}

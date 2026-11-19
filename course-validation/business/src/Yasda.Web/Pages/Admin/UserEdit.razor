@@ -1,0 +1,151 @@
+@page "/users/new"
+@page "/users/{Id:long}"
+@attribute [Authorize(Roles = Roles.Admin)]
+@inject ApiClient Api
+@inject NavigationManager Nav
+@inject ListMemory Memory
+@inject IJSRuntime Js
+
+<PageTitle>@Title · YASDA</PageTitle>
+
+<NavigationLock OnBeforeInternalNavigation="ctx => UnsavedChanges.ConfirmLeave(Js, ctx, Unsaved)" />
+
+<PageHeader Title="@Title" Trail="@([("Users", Memory.Last("users"))])">
+    <Status>@if (_user is not null) { <strong>@_user.Status</strong> }</Status>
+</PageHeader>
+
+@if (Id is not null && _user is null)
+{
+    <p role="status">Loading…</p>
+}
+else
+{
+    <EditForm Model="this" OnSubmit="Save">
+        <div class="field">
+            <label for="email">Email</label>
+            <InputText id="email" type="email" @bind-Value="_email" disabled="@(_user is not null)" required
+                       aria-describedby="email-hint" />
+            <span class="hint" id="email-hint">They sign in with it. It can't be changed later.</span>
+        </div>
+        <div class="field">
+            <label for="full-name">Full name</label>
+            <InputText id="full-name" @bind-Value="_fullName" maxlength="100" required />
+        </div>
+        <div class="field">
+            <label for="role">Role</label>
+            <InputSelect id="role" @bind-Value="_role">
+                @foreach (var r in Roles.All)
+                {
+                    <option value="@r">@Format.Words(r)</option>
+                }
+            </InputSelect>
+        </div>
+        @if (_user is null)
+        {
+            <PasswordField @bind-Value="_password" Label="Temporary password" Required="true" Autocomplete="new-password"
+                           Hint="At least 12 characters. Give it to them in person; they must change it when they first sign in." />
+        }
+        <div class="actions">
+            <button type="submit" disabled="@(string.IsNullOrWhiteSpace(_fullName) || string.IsNullOrWhiteSpace(_email) || Api.Busy)">
+                @(_user is null ? "Create user" : "Save")
+            </button>
+        </div>
+    </EditForm>
+
+    @if (_user is not null)
+    {
+        <h2>Password</h2>
+        <p>Sets a temporary password and unlocks the account. They must choose their own when they next sign in.</p>
+        <EditForm Model="this" OnSubmit="ResetPassword">
+            <PasswordField @bind-Value="_temporary" Label="New temporary password" Required="true" Autocomplete="new-password"
+                           Hint="At least 12 characters." />
+            <div class="actions">
+                <button type="submit" disabled="@(string.IsNullOrEmpty(_temporary) || Api.Busy)">Reset password</button>
+            </div>
+        </EditForm>
+
+        <h2>Access</h2>
+        @if (!_confirmingAccess)
+        {
+            <p>@(_user.IsDisabled ? "This account is disabled: they can't sign in." : "This account can sign in.")</p>
+            <div class="actions">
+                <button type="button" @onclick="() => _confirmingAccess = true">@(_user.IsDisabled ? "Enable" : "Disable")</button>
+            </div>
+        }
+        else
+        {
+            <p role="alert">
+                @(_user.IsDisabled
+                    ? $"Enable {_user.FullName}? They can sign in again with their current password."
+                    : $"Disable {_user.FullName}? They can't sign in, and their open sessions end within a minute.")
+            </p>
+            <div class="actions">
+                <button type="button" @onclick="ToggleDisabled" disabled="@Api.Busy">@(_user.IsDisabled ? "Enable" : "Disable")</button>
+                <button type="button" @onclick="() => _confirmingAccess = false">Not yet</button>
+            </div>
+        }
+    }
+}
+
+@code {
+    [Parameter] public long? Id { get; set; }
+
+    private User? _user;
+    private string _email = "", _fullName = "", _role = Roles.Requester;
+    private string? _password = "", _temporary = "";
+    private bool _confirmingAccess;
+
+    private string Title => _user?.FullName ?? (Id is null ? "New user" : "User");
+
+    // Leaving with typed-in changes asks first. A new user counts as changed once anything is typed.
+    private bool Unsaved => _user is null
+        ? _email.Length > 0 || _fullName.Length > 0
+        : _fullName != _user.FullName || _role != _user.Role;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _confirmingAccess = false;
+        if (Id is null) return;
+        await Load(Id.Value);
+    }
+
+    private async Task Load(long id)
+    {
+        _user = await Api.Get<User>($"api/users/{id}");
+        if (_user is not null) (_email, _fullName, _role) = (_user.Email, _user.FullName, _user.Role);
+    }
+
+    private async Task Save()
+    {
+        if (_user is null)
+        {
+            var id = await Api.Create("api/users",
+                new { email = _email.Trim(), fullName = _fullName.Trim(), role = _role, temporaryPassword = _password }, "User created.");
+            if (id is null) return;
+            (_email, _fullName) = ("", "");   // saved: nothing left to lose on the way to the new user's page
+            Nav.NavigateTo($"users/{id}");
+        }
+        else if (await Api.Put($"api/users/{_user.Id}", new { fullName = _fullName.Trim(), role = _role }, "User saved."))
+        {
+            await Load(_user.Id);
+        }
+    }
+
+    private async Task ResetPassword()
+    {
+        if (await Api.Post($"api/users/{_user!.Id}/reset-password", new { temporaryPassword = _temporary }, "Password reset."))
+        {
+            _temporary = "";
+            await Load(_user.Id);
+        }
+    }
+
+    private async Task ToggleDisabled()
+    {
+        var user = _user!;
+        if (await Api.Post($"api/users/{user.Id}/{(user.IsDisabled ? "enable" : "disable")}",
+                success: user.IsDisabled ? "Enabled." : "Disabled. Their sessions end within a minute."))
+            await Load(user.Id);
+        _confirmingAccess = false;
+    }
+}

@@ -1,0 +1,12 @@
+@* Each person sees the parts of the system their role uses. The API enforces the same rules; hiding a link is
+   only a convenience. *@
+<nav aria-label="Main">
+    <ul class="links">
+        <li><NavLink href="" Match="NavLinkMatch.All">Home</NavLink></li>
+        <AuthorizeView Roles="@Roles.Admin">
+            <li><NavLink href="users">Users</NavLink></li>
+            <li><NavLink href="sign-in-log">Sign-in log</NavLink></li>
+        </AuthorizeView>
+        <li><NavLink href="errors">Error codes</NavLink></li>
+    </ul>
+</nav>

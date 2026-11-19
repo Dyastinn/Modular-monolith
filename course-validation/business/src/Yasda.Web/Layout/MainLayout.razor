@@ -1,0 +1,57 @@
+@inherits LayoutComponentBase
+@inject CookieAuthenticationStateProvider Auth
+@inject NavigationManager Nav
+
+@* DESIGN.md's triangle: the narrow identity on top, then navigation, then the page, widest at the bottom. *@
+<div class="page">
+    <AuthorizeView>
+        <Authorized Context="auth">
+            <header class="masthead">
+                <Masthead />
+                <NavMenu />
+                <hr class="short" />
+                <nav aria-label="Account">
+                    <ul class="links">
+                        <li><strong>@auth.User.Identity?.Name</strong> (@Format.Words(RoleOf(auth)))</li>
+                        <li><a href="change-password">Change password</a></li>
+                        <li><button type="button" class="link" @onclick="() => SignOut(false)">Sign out</button></li>
+                        <li><button type="button" class="link" @onclick="() => SignOut(true)">Sign out everywhere</button></li>
+                    </ul>
+                </nav>
+            </header>
+            <hr />
+            <main>
+                <NoticeArea />
+                @Body
+            </main>
+        </Authorized>
+        <NotAuthorized>
+            <header class="masthead">
+                <Masthead />
+            </header>
+            <hr />
+            <main>
+                @Body
+            </main>
+        </NotAuthorized>
+    </AuthorizeView>
+</div>
+
+@code {
+    private static string RoleOf(AuthenticationState state) =>
+        state.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? "";
+
+    // A temporary password from an admin must be replaced before anything else.
+    protected override async Task OnParametersSetAsync()
+    {
+        await Auth.GetAuthenticationStateAsync();
+        if (Auth.User is { MustChangePassword: true } && !Nav.Uri.EndsWith("/change-password"))
+            Nav.NavigateTo("change-password");
+    }
+
+    private async Task SignOut(bool everywhere)
+    {
+        await Auth.SignOutAsync(everywhere);
+        Nav.NavigateTo("login");
+    }
+}

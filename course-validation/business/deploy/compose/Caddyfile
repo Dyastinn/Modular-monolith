@@ -1,6 +1,6 @@
-# HTTPS for ERP_DOMAIN, with a certificate Caddy obtains and renews by itself (Let's Encrypt). With
-# ERP_DOMAIN=localhost it uses its own local certificate instead, for trying the stack on one machine.
-{$ERP_DOMAIN} {
+# HTTPS for YASDA_DOMAIN, with a certificate Caddy obtains and renews by itself (Let's Encrypt). With
+# YASDA_DOMAIN=localhost it uses its own local certificate instead, for trying the stack on one machine.
+{$YASDA_DOMAIN} {
     encode zstd gzip
     reverse_proxy api:8080
 }

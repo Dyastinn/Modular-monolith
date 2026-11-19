@@ -1,0 +1,32 @@
+@* The page the server sends for every address of the app. Only Routes (and the page title) run in the browser, as
+   WebAssembly; prerender is off because every screen needs the signed-in user's data from the API. *@
+@attribute [AllowAnonymous]
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="icon" type="image/svg+xml" href="@Assets["logo.svg"]" />
+    <link rel="stylesheet" href="@Assets["css/app.css"]" />
+    <HeadOutlet @rendermode="InBrowser" />
+</head>
+
+<body>
+    <Routes @rendermode="InBrowser" />
+
+    <div id="blazor-error-ui">
+        Something went wrong. <a href="." class="reload">Reload</a>
+    </div>
+
+    @* No inline scripts anywhere: the Content-Security-Policy forbids them. *@
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+</body>
+
+</html>
+
+@code {
+    private static readonly IComponentRenderMode InBrowser = new InteractiveWebAssemblyRenderMode(prerender: false);
+}

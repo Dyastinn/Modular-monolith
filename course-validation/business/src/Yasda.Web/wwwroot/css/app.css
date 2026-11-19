@@ -1,0 +1,244 @@
+/* The whole look, from DESIGN.md: warm paper, black text, blue links, one serif, no shadows, no rounded corners.
+   Everything is plain HTML, so the page still reads in order with this file switched off. */
+
+:root {
+    --bg: #FEF1CD;
+    --text: #000000;
+    --text-muted: #333333;
+    --link: #0069C2;
+    --line: #000000;
+    --error: #A00000;
+
+    --font: Georgia, "Times New Roman", serif;
+    --size-body: 1.0625rem;
+    --size-title: 2rem;
+    --line-height: 1.5;
+
+    --max-width: 900px;
+    --gap-s: 0.5rem;
+    --gap-m: 1rem;
+    --gap-l: 2rem;
+    --border: 1px solid var(--line);
+}
+
+html {
+    background: var(--bg);
+}
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: var(--size-body);
+    line-height: var(--line-height);
+}
+
+.page {
+    max-width: var(--max-width);
+    margin: 2.5rem auto var(--gap-l);
+    padding: 0 var(--gap-m);
+}
+
+a {
+    color: var(--link);
+    text-decoration: underline;
+}
+
+/* Keyboard users always see where they are: the only "effect" DESIGN.md allows. */
+:focus-visible {
+    outline: 2px solid var(--link);
+    outline-offset: 2px;
+}
+
+hr {
+    border: 0;
+    border-top: var(--border);
+    margin: var(--gap-m) 0;
+}
+
+hr.short {
+    width: 50%;
+    margin-inline: auto;
+}
+
+/* The triangle's top: logo, name, tagline and navigation, centered and narrow. */
+.masthead {
+    text-align: center;
+}
+
+.masthead img {
+    display: block;
+    margin: 0 auto var(--gap-s);
+}
+
+.site-name {
+    font-size: var(--size-title);
+    font-weight: bold;
+    margin: 0;
+}
+
+.tagline {
+    color: var(--text-muted);
+    margin: 0 0 var(--gap-m);
+}
+
+.links {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--gap-s) var(--gap-m);
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+h1 {
+    font-size: 1.5rem;
+    margin: 0 0 var(--gap-s);
+}
+
+h2 {
+    font-size: 1.25rem;
+    margin: var(--gap-l) 0 var(--gap-s);
+}
+
+.muted {
+    color: var(--text-muted);
+}
+
+.trail {
+    margin: 0 0 var(--gap-s);
+}
+
+/* Tables: collapsed 1px black borders, bold header, small padding. A wide table scrolls inside its own box on a phone,
+   never the page. */
+.table-box {
+    overflow-x: auto;
+    margin-bottom: var(--gap-m);
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+th, td {
+    border: var(--border);
+    padding: 0.25rem 0.5rem;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    font-weight: bold;
+}
+
+/* Forms: label above the field, 1px black border, nothing else. */
+.field {
+    margin-bottom: var(--gap-m);
+}
+
+.field label {
+    display: block;
+    font-weight: bold;
+}
+
+input, select, textarea {
+    font: inherit;
+    color: inherit;
+    background: transparent;
+    border: var(--border);
+    border-radius: 0;
+    padding: 0.25rem 0.5rem;
+    box-sizing: border-box;
+    width: 100%;
+    max-width: 28rem;
+}
+
+input[type="checkbox"] {
+    width: auto;
+}
+
+.hint {
+    display: block;
+    color: var(--text-muted);
+}
+
+.field-error {
+    display: block;
+    color: var(--error);
+}
+
+button {
+    font: inherit;
+    color: var(--text);
+    background: transparent;
+    border: var(--border);
+    border-radius: 0;
+    padding: 0.25rem 0.75rem;
+    cursor: pointer;
+}
+
+button:disabled {
+    color: var(--text-muted);
+    border-style: dashed;
+    cursor: not-allowed;
+}
+
+/* A button that reads as a link (sign out, a row action), so a row of actions stays a row of words. */
+button.link {
+    border: 0;
+    padding: 0;
+    color: var(--link);
+    text-decoration: underline;
+}
+
+.actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--gap-s) var(--gap-m);
+    margin: var(--gap-s) 0 var(--gap-m);
+}
+
+.search {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: var(--gap-s);
+    margin-bottom: var(--gap-m);
+}
+
+.search .field {
+    margin: 0;
+    flex: 1 1 16rem;
+}
+
+/* The status line: what just happened, or what went wrong. Color only where it carries meaning. */
+.notice {
+    border: var(--border);
+    padding: var(--gap-s) var(--gap-m);
+    margin-bottom: var(--gap-m);
+}
+
+.notice.error {
+    border-color: var(--error);
+    color: var(--error);
+}
+
+.narrow {
+    max-width: 28rem;
+    margin-inline: auto;
+}
+
+#blazor-error-ui {
+    display: none;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: var(--gap-s) var(--gap-m);
+    background: var(--bg);
+    border-top: var(--border);
+}

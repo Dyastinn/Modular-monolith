@@ -1,0 +1,75 @@
+@page "/errors"
+@page "/errors/{Code}"
+@attribute [AllowAnonymous]
+@inject HttpClient Http
+
+@* Every error the app shows carries a code, like a compiler's CS0122. This page says what each one means and what to
+   do about it. Open to anyone: the link in an error message must work even after the session has ended. *@
+
+<PageTitle>@(Code is null ? "Error codes" : Code) · YASDA</PageTitle>
+
+<PageHeader Title="Error codes" />
+
+@if (_codes is null)
+{
+    <p role="status">Loading…</p>
+}
+else
+{
+    if (Selected is { } selected)
+    {
+        <section aria-labelledby="selected-code">
+            <h2 id="selected-code">@selected.Code: @selected.Title</h2>
+            <p><strong>What to do:</strong> @selected.Fix</p>
+            <p class="muted">If this doesn't solve it, send support the code and the trace id from the message.</p>
+        </section>
+        <hr />
+    }
+    else if (Code is not null)
+    {
+        <p class="notice" role="status">There is no error code @Code.</p>
+    }
+
+    <div class="search">
+        <div class="field">
+            <label for="search">Search</label>
+            <input id="search" type="search" @bind="_search" @bind:event="oninput" />
+        </div>
+    </div>
+    <div class="table-box">
+        <table>
+            <thead>
+                <tr><th scope="col">Code</th><th scope="col">Meaning</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var c in Filtered)
+                {
+                    <tr>
+                        <td><a href="@($"errors/{c.Code}")">@c.Code</a></td>
+                        <td>@c.Title</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    @if (!Filtered.Any())
+    {
+        <p>No code matches.</p>
+    }
+}
+
+@code {
+    [Parameter] public string? Code { get; set; }
+
+    private sealed record ErrorCode(string Code, string Title, string Fix);
+
+    private List<ErrorCode>? _codes;
+    private string _search = "";
+
+    private ErrorCode? Selected => _codes?.FirstOrDefault(c => string.Equals(c.Code, Code, StringComparison.OrdinalIgnoreCase));
+
+    private IEnumerable<ErrorCode> Filtered => (_codes ?? []).Where(c =>
+        c.Code.Contains(_search, StringComparison.OrdinalIgnoreCase) || c.Title.Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync() => _codes = await Http.GetFromJsonAsync<List<ErrorCode>>("api/errors");
+}

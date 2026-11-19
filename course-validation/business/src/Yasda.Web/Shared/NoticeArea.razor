@@ -1,0 +1,29 @@
+@implements IDisposable
+@inject Notices Notices
+
+@* The status line. An error carries its code, linked to the page that explains it and its fix. *@
+@if (Notices.Current is { } notice)
+{
+    @if (notice.IsError)
+    {
+        <p class="notice error" role="alert">
+            <strong>Error:</strong> @notice.Text
+            @if (notice.Code is { } errorCode)
+            {
+                <text> </text><a href="@($"errors/{errorCode}")">What does @errorCode mean?</a>
+            }
+        </p>
+    }
+    else
+    {
+        <p class="notice" role="status">@notice.Text</p>
+    }
+}
+
+@code {
+    protected override void OnInitialized() => Notices.Changed += Refresh;
+
+    private void Refresh() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Notices.Changed -= Refresh;
+}

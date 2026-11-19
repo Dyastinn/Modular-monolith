@@ -1,0 +1,25 @@
+@inject NavigationManager Nav
+
+@* A column heading that sorts the list on the server: a link to the same list with ?sort= set. The first click sorts
+   ascending, the next descending. The API checks the name against its own list (ValidSort). *@
+<th scope="col" aria-sort="@AriaSort">
+    <a href="@Href">@Title</a>@Arrow
+</th>
+
+@code {
+    [Parameter, EditorRequired] public string Column { get; set; } = "";
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+    [Parameter] public string? Sort { get; set; }
+    [Parameter] public bool Desc { get; set; }
+
+    private bool Active => string.Equals(Sort, Column, StringComparison.Ordinal);
+    private string Arrow => Active ? (Desc ? " ▼" : " ▲") : "";
+    private string AriaSort => Active ? (Desc ? "descending" : "ascending") : "none";
+
+    private string Href => Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+    {
+        ["sort"] = Column,
+        ["desc"] = Active && !Desc ? "true" : null,
+        ["page"] = null,
+    });
+}

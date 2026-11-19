@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <!-- Serve the framework's blazor.web.js. The SDK turns this on by itself only when the project has .razor files;
+       here they all live in Yasda.Web, so it's said explicitly. -->
+  <PropertyGroup>
+    <RequiresAspNetWebAssets>true</RequiresAspNetWebAssets>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Modules\Identity\Yasda.Modules.Identity\Yasda.Modules.Identity.csproj" />
+    <ProjectReference Include="..\Shared\Yasda.Shared.Infrastructure\Yasda.Shared.Infrastructure.csproj" />
+    <!-- The browser app, served by this host from the same address as the API. A normal reference, so its packages'
+         files (MudBlazor's CSS and JS) are served too; the alias keeps its classes out of this project's code. -->
+    <ProjectReference Include="..\Yasda.Web\Yasda.Web.csproj" Aliases="YasdaWeb" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+    <PackageReference Include="Npgsql.OpenTelemetry" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Runtime" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Scalar.AspNetCore" />
+  </ItemGroup>
+
+</Project>

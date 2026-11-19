@@ -7,13 +7,13 @@ while true; do
     [ "$target" -le "$(date +%s)" ] && target=$(date -d "tomorrow ${BACKUP_TIME:-01:00}" +%s)
     sleep $((target - $(date +%s)))
 
-    file="/backups/erp-$(date +%F).dump"
-    if pg_dump --host db --username erp_owner --dbname erp --format=custom --file "$file.partial"; then
+    file="/backups/yasda-$(date +%F).dump"
+    if pg_dump --host db --username yasda_owner --dbname yasda --format=custom --file "$file.partial"; then
         mv "$file.partial" "$file"
         echo "$(date) backup written: $file"
     else
         rm -f "$file.partial"
         echo "$(date) BACKUP FAILED" >&2
     fi
-    find /backups -name 'erp-*.dump' -mtime +"${KEEP_DAYS:-14}" -delete
+    find /backups -name 'yasda-*.dump' -mtime +"${KEEP_DAYS:-14}" -delete
 done

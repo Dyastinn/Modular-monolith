@@ -1,9 +1,9 @@
 #!/bin/sh
-# Brings every module's schema up to date, as erp_owner, then exits. Safe to run on every deploy: each bundle
+# Brings every module's schema up to date, as yasda_owner, then exits. Safe to run on every deploy: each bundle
 # applies only the migrations that database hasn't had yet.
 set -e
-for module in Identity Sales Inventory Purchasing Invoicing; do
+for module in Identity; do
     echo "== $module"
-    "/migrations/migrate-$module" --connection "$ERP_OWNER_CONNECTION"
+    "/migrations/migrate-$module" --connection "$YASDA_OWNER_CONNECTION"
 done
 echo "All schemas are up to date."

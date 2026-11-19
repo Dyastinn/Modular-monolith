@@ -1,0 +1,29 @@
+@inject NavigationManager Nav
+
+@* Previous and next as links (?page=), so every page of a list has its own address. *@
+@if (Total > 0)
+{
+    <nav aria-label="Pages" class="actions">
+        @if (Page > 1)
+        {
+            <a href="@HrefFor(Page - 1)">Previous</a>
+        }
+        <span>Page @Page of @Pages (@Total @Noun)</span>
+        @if (Page < Pages)
+        {
+            <a href="@HrefFor(Page + 1)">Next</a>
+        }
+    </nav>
+}
+
+@code {
+    [Parameter, EditorRequired] public int Page { get; set; }
+    [Parameter, EditorRequired] public int PageSize { get; set; }
+    [Parameter, EditorRequired] public int Total { get; set; }
+    [Parameter] public string Noun { get; set; } = "rows";
+
+    private int Pages => Math.Max(1, (Total + PageSize - 1) / PageSize);
+
+    private string HrefFor(int page) =>
+        Nav.GetUriWithQueryParameter("page", page > 1 ? page : null);
+}

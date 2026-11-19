@@ -1,0 +1,85 @@
+@page "/users"
+@attribute [Authorize(Roles = Roles.Admin)]
+@inject ApiClient Api
+@inject NavigationManager Nav
+@inject ListMemory Memory
+
+<PageTitle>Users · YASDA</PageTitle>
+
+<PageHeader Title="Users">
+    <Actions><a href="users/new">New user</a></Actions>
+</PageHeader>
+
+@* The list's search, sort and page live in the address, so Back, a bookmark or a pasted link shows the same list. *@
+<EditForm Model="this" OnSubmit="Find" class="search" role="search">
+    <div class="field">
+        <label for="search">Name or email</label>
+        <InputText id="search" type="search" @bind-Value="_search" />
+    </div>
+    <button type="submit">Search</button>
+</EditForm>
+
+@if (_result is null)
+{
+    <p role="status">Loading…</p>
+}
+else if (_result.Items.Count == 0)
+{
+    <p>No users match.</p>
+}
+else
+{
+    <div class="table-box">
+        <table>
+            <thead>
+                <tr>
+                    <SortHeader Column="fullName" Title="Name" Sort="@Sort" Desc="Desc" />
+                    <SortHeader Column="email" Title="Email" Sort="@Sort" Desc="Desc" />
+                    <SortHeader Column="role" Title="Role" Sort="@Sort" Desc="Desc" />
+                    <th scope="col">Status</th>
+                    <SortHeader Column="lastSignIn" Title="Last sign-in" Sort="@Sort" Desc="Desc" />
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var u in _result.Items)
+                {
+                    <tr>
+                        <td><a href="@($"users/{u.Id}")">@u.FullName</a></td>
+                        <td>@u.Email</td>
+                        <td>@Format.Words(u.Role)</td>
+                        <td>@(u.Status == "Active" ? u.Status : null)<strong>@(u.Status == "Active" ? null : u.Status)</strong></td>
+                        <td>@Format.Date(u.LastSignIn)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <Pager Page="_result.Page" PageSize="_result.PageSize" Total="_result.TotalCount" Noun="users" />
+}
+
+@code {
+    private const int PageSize = 20;
+
+    [SupplyParameterFromQuery] public string? Search { get; set; }
+    [SupplyParameterFromQuery] public string? Sort { get; set; }
+    [SupplyParameterFromQuery] public bool Desc { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+
+    private PagedResult<User>? _result;
+    private string? _search;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _search = Search;
+        Memory.Remember(Nav.ToBaseRelativePath(Nav.Uri));
+        _result = await Api.Get<PagedResult<User>>(Url.With("api/users", ("search", Search), ("sort", Sort),
+            ("desc", Desc ? true : null), ("page", PageNumber), ("pageSize", PageSize)));
+    }
+
+    // A new search starts again from page 1: page 3 of the old results may not exist.
+    private void Find() => Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+    {
+        ["search"] = string.IsNullOrWhiteSpace(_search) ? null : _search.Trim(),
+        ["page"] = null,
+    }));
+}

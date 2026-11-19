@@ -1,0 +1,19 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Yasda.Api/Yasda.Api.csproj" />
+    <Project Path="src/Yasda.AppHost/Yasda.AppHost.csproj" />
+  </Folder>
+  <Folder Name="/src/Shared/">
+    <Project Path="src/Shared/Yasda.Shared.BuildingBlocks/Yasda.Shared.BuildingBlocks.csproj" />
+    <Project Path="src/Shared/Yasda.Shared.Infrastructure/Yasda.Shared.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Identity/">
+    <Project Path="src/Modules/Identity/Yasda.Modules.Identity/Yasda.Modules.Identity.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Yasda.Modules.Identity.UnitTests/Yasda.Modules.Identity.UnitTests.csproj" />
+    <Project Path="tests/Yasda.Integration.Tests/Yasda.Integration.Tests.csproj" />
+    <Project Path="tests/Yasda.Architecture.Tests/Yasda.Architecture.Tests.csproj" />
+    <Project Path="tests/Yasda.Web.UiTests/Yasda.Web.UiTests.csproj" />
+  </Folder>
+</Solution>
