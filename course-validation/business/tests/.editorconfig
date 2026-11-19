@@ -1,5 +1,5 @@
 [*.cs]
-# Test names are sentences (An_order_without_lines_is_refused): the xUnit convention, so underscores are wanted here.
+# Test names are sentences (A_closed_ticket_refuses_a_reply): the xUnit convention, so underscores are wanted here.
 dotnet_diagnostic.CA1707.severity = none
 # xUnit1051 asks every call to pass TestContext.Current.CancellationToken, so a cancelled run stops a little sooner.
 # These tests finish in milliseconds against an in-memory server; a token on every line would bury what each one checks.

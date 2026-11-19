@@ -76,7 +76,9 @@ this page stands on its own.
    [Tests in every lesson](#tests-in-every-lesson).
 8. **The course never ends on a shortcut.** A lesson may start with a simpler version to teach an idea. A
    later lesson replaces it, and says so.
-9. **Lean.** If a paragraph can lose half its words and keep its meaning, it should. Burying the point under
+9. **Assume nothing is installed.** The lesson that first uses a tool installs it, for Windows, macOS, Fedora
+   and Ubuntu, and shows the command that proves it worked.
+10. **Lean.** If a paragraph can lose half its words and keep its meaning, it should. Burying the point under
    explanation fails the reader as surely as skipping the reason.
 
 ## The shape of every lesson

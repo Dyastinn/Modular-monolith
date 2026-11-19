@@ -9,8 +9,8 @@ you to build it. MIT-licensed ([LICENSE](LICENSE)); every dependency is free and
 to leave every domain that needs BIR registration or permits (the ERP is the git tag `erp-final`). The
 platform carried over: sign-in, staff accounts, the outbox, observability, security, Podman deployment and
 every kind of test. The helpdesk modules are being built now, milestone by milestone
-([ROADMAP.md](ROADMAP.md)). **The course is written once the build is finished**; the ERP's lessons were
-removed with it.
+([ROADMAP.md](ROADMAP.md)). **The course grows with it**: each milestone ships its lessons, starting from
+[00 — Start here](plan-business-tutorial/00-START-HERE.md), and assumes you have nothing installed yet.
 
 | | |
 |---|---|
@@ -118,4 +118,4 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the build and eve
 
 To install it on a server: copy [deploy/compose/](course-validation/business/deploy/compose/) to a Linux server
 with Podman, fill in `.env` from [.env.example](course-validation/business/deploy/compose/.env.example), and run
-`podman compose up -d`. The step-by-step install guide comes with the course (ROADMAP Y8).
+`podman compose up -d`. The step-by-step install guide arrives with lesson 24.

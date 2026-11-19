@@ -9,10 +9,12 @@ Until 2026-11-19 this repo built a Philippine ERP. The user replaced it to leave
 registration or permits. The ERP is the git tag `erp-final`; its roadmap and log are in
 [ROADMAP-HISTORY.md](ROADMAP-HISTORY.md).
 
-**Order of work:** code first, lessons second, for the whole rebuild. Each milestone lands in the reference
-build ([course-validation/business/](course-validation/business/)) with the build and every test suite green.
-The course is written fresh from the finished code in Y8. The ERP's 25 lessons were deleted on 2026-11-19
-(they're in the tag `erp-final`, a template for structure and voice if useful).
+**Order of work (user, 2026-11-19):** each milestone lands its code in the reference build
+([course-validation/business/](course-validation/business/)) with the build and every test suite green, **then
+its lessons**, written from that working code and followed in a scratch folder to prove they build and pass. A
+milestone is done only when both are. The repo exists to learn from, so the course is never far behind. The
+course assumes the reader has nothing installed: each lesson installs the tools it first needs. The ERP's
+lessons are in the tag `erp-final`, a template for structure and voice.
 
 ---
 
@@ -51,23 +53,23 @@ to date by `DeadlinesChanged`.
 
 ## Milestones
 
-- **Y1 — Reset to YASDA** ✅ code (2026-11-19). Details below.
-- **Y2 — Tickets core** ⬜: create a ticket (requester portal), queues with filters and server sorting,
+- **Y1 — Reset to YASDA** ✅ code · ✅ lessons 00–02 (2026-11-19). Details below.
+- **Y2 — Tickets core** ⬜ · lessons 03–11: the `TicketsModule` shell exactly as lesson 01 creates it, then create a ticket (requester portal), queues with filters and server sorting,
   take/assign with a race test, status machine (New → Open ⇄ Pending → Resolved → Closed; reopen; cancel),
   replies and internal notes, optimistic concurrency. Restores the outbox delivery and redelivery tests with
-  the first real event.
-- **Y3 — Events, basic SLA, teams** ⬜: the Sla module on the outbox (`TicketCreated` starts 24/7 clocks);
+  the first real event. Lesson 05 installs PostgreSQL, lesson 06 Playwright's browser; lesson 06 also adds
+  the account row, `AuthorizeView` and the sign-in pages to lesson 01's layout.
+- **Y3 — Events, basic SLA, teams** ⬜ · lessons 12–16 (12 installs Podman): the Sla module on the outbox (`TicketCreated` starts 24/7 clocks);
   teams, categories and routing (category → team); email on new replies and assignments.
-- **Y4 — Knowledge base** ⬜: articles, review flow, audit trail.
-- **Y5 — Real SLA** ⬜: business hours, Philippine holidays as editable data, pause/resume, FsCheck
+- **Y4 — Knowledge base** ⬜ · lesson 17: articles, review flow, audit trail.
+- **Y5 — Real SLA** ⬜ · lessons 18–19: business hours, Philippine holidays as editable data, pause/resume, FsCheck
   properties; the breach scheduler with warnings, breaches and escalation.
-- **Y6 — Attachments and search** ⬜: storage on a volume, limits, safe downloads; PostgreSQL full-text search
+- **Y6 — Attachments and search** ⬜ · lessons 20–21: storage on a volume, limits, safe downloads; PostgreSQL full-text search
   over tickets and articles; suggested articles.
-- **Y7 — Reports, security, deployment** ⬜: SLA compliance, response and resolve times, CSV export;
+- **Y7 — Reports, security, deployment** ⬜ · lessons 22–25: SLA compliance, response and resolve times, CSV export;
   requesters see only their own tickets (API tests); attachments in backups; `podman compose up` end to end.
-- **Y8 — The lesson pass** ⬜: write lessons 01–25 from the finished build (mapping below), the start page,
-  foundations, glossary, learning resources and answer key; a reader-facing version of DESIGN.md and the screen
-  rules. Screenshots taken from the finished screens.
+- **Y8 — Course polish** ⬜: a C# foundations page for readers new to C#, learning resources, screenshots of
+  the finished screens, and one full read-through of all 25 lessons in order on a fresh machine.
 - **Later, after the course:** inbound email (MailKit), Assets, automation rules, satisfaction survey, live
   queue updates.
 
@@ -87,6 +89,11 @@ to date by `DeadlinesChanged`.
       address, error-code link, phone width, unsaved-changes guard); all green
 - [x] MIT [LICENSE](LICENSE), [DESIGN.md](DESIGN.md) in the repo, CLAUDE.md, README, screen rules and
       third-party notices updated
+- [x] Lessons 00 (start here), 01 (installing the tools from nothing, solution, plain-Blazor shell to DESIGN.md)
+      and 02 (testing), plus ANSWER-KEY and GLOSSARY entries, all followed step by step in a scratch folder:
+      lesson 01 builds with 0 warnings and serves its pages; lesson 02's 12 tests pass. Following them found two
+      errors, now fixed: the Blazor template's "Restore failed" needed explaining, and `/tickets` answers 404
+      until a page claims it (the ERP lesson had the same wrong claim)
 - [x] Cleared out (user, 2026-11-19): the 25 ERP lessons and companion pages, MUDBLAZOR.md and the ERP
       screenshots, BEST-PRACTICES-REVIEW.md, course-validation/FINDINGS.md, the unused `/api/users/directory`
       endpoint and `identity.user_directory()`, the unused FsCheck and FakeTimeProvider pins (back when a test
@@ -96,7 +103,7 @@ to date by `DeadlinesChanged`.
 
 ---
 
-## Lesson mapping for Y8
+## Lesson mapping (old ERP lesson → YASDA lesson)
 
 | # | Was (ERP, tag `erp-final`) | Becomes (YASDA) |
 |---|---|---|
@@ -132,8 +139,10 @@ to date by `DeadlinesChanged`.
 
 Retired risks are in [ROADMAP-HISTORY.md](ROADMAP-HISTORY.md).
 
-- **There is no course until Y8.** By design (build first). README says so at the top; the risk is Y8 growing
-  large, so keep notes per milestone of what each lesson must teach.
+- **A milestone's lessons cost as much as its code.** Writing and then following each lesson in a scratch folder
+  is slow; it's also the only proof the course works. Don't mark a milestone done without it.
+- **Install steps go stale** (package names, winget ids, Ubuntu's .NET source). Recheck lesson 01's commands
+  on each OS before a release.
 - **Business-hours math is easy to get subtly wrong** (time zones, a clock paused over a holiday, a deadline
   landing at closing time). Retire it in Y5 with FsCheck properties before any screen depends on it.
 - **The breach scheduler must survive restarts** and never double-escalate: deadlines in the database, an

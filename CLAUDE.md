@@ -15,10 +15,10 @@
 >
 > **The ERP is gone (user decision, 2026-11-19).** The project was a Philippine ERP (Sales, Inventory, Purchasing,
 > Invoicing, BIR tax); it is kept under the git tag `erp-final` and is never brought back piecemeal. Nothing
-> financial or permit-bound comes back either: no money, prices, invoices, tax, fines or dues. **The ERP's
-> lessons were deleted with it (user, 2026-11-19): there is no course until ROADMAP's lesson pass (Y8)**, which
-> writes it fresh from the finished build into `plan-business-tutorial/`. Every rule below about lessons applies
-> to that new course. Stale markers from the ERP: `SalesOrder`, `Customer`, `Money`,
+> financial or permit-bound comes back either: no money, prices, invoices, tax, fines or dues. **The course
+> is written fresh for YASDA, along with each milestone (user, 2026-11-19)**: the repo exists to learn from, so
+> a milestone isn't done until its lessons, answer-key entries and glossary terms are written. Lessons 00–02
+> exist; ROADMAP says which lessons each milestone brings. Stale markers from the ERP: `SalesOrder`, `Customer`, `Money`,
 > `₱`, `BIR`, `MudBlazor`, `Mud*`, `Erp.` namespaces.
 
 ---
@@ -27,7 +27,7 @@
 
 | Path | What it is |
 |---|---|
-| `plan-business-tutorial/` | **The course**, the only one, written in Y8 (absent until then). Phases run in order; each ends in something runnable. Plus the companion pages: foundations, glossary, learning resources, answer key. |
+| `plan-business-tutorial/` | **The course**, the only one, growing milestone by milestone. Phases run in order; each ends in something runnable. Plus `00-START-HERE.md`, `GLOSSARY.md` and `ANSWER-KEY.md`, which grow with it. |
 | `course-validation/business/` | **The reference build = the product.** The complete, runnable app the course ends in (`Yasda.slnx`). Every lesson's code must match it. |
 | `DESIGN.md` | **How every screen looks**: warm paper, one serif, blue links, plain HTML, DESIGN.md's tokens and nothing else. |
 | `WRITING-STYLE.md` | **How every lesson is written.** Read it in full before writing or editing a lesson. |
@@ -47,8 +47,9 @@
 - **Read a lesson by section.** List its headings first, then read the part you need. Lessons are 30–95 KB.
 - **Read only the milestone in progress** in ROADMAP.md. Open ROADMAP-HISTORY.md only for a specific question.
 - **While iterating, run only the test project you touched.** Run the whole suite once, at the end.
-- **Build first, lessons after**, for the whole YASDA rebuild (ROADMAP): finish the code and its tests, then
-  write the lessons from the finished code in a second pass.
+- **Code, then its lessons, per milestone.** Finish a milestone's code and tests first, then write its lessons
+  from the working code, then follow the lessons in a scratch folder to prove they build and pass, before the
+  milestone counts as done.
 
 ---
 
@@ -79,7 +80,11 @@ every piece of it — and no more words than that took.
    lesson ends with tests for what it built: the ones that teach something new in full, then a table of every
    edge case (test name + why). Each test kind is set up and explained in the lesson that first needs it. A
    test that has never failed proves nothing: make each one fail once.
-8. **Production means production.** The final build has no "known shortcut" left in it. If an early phase
+8. **Assume nothing is installed (user, 2026-11-19).** The lesson that first uses a tool teaches installing it,
+   for Windows, macOS and Linux (Fedora and Ubuntu), with a command that proves it worked: .NET, Git and an
+   editor in lesson 01, PostgreSQL in 05, a test browser in 06, Podman in 12. Say so when a tool's license has
+   conditions, and give the free alternative.
+9. **Production means production.** The final build has no "known shortcut" left in it. If an early phase
    uses a simpler version for teaching, a later phase **replaces it** and says so — the course never ends
    on a shortcut.
 
@@ -344,7 +349,7 @@ The finished product has **no deliberate shortcuts**. In particular the old tuto
 - The app installs from the docs alone: Compose on Podman (Docker-compatible), migration bundles, first-run admin, backups.
 - Sign-in keys (data protection) are encrypted at rest with a certificate in Production.
 
-A lesson may still *start* from a simpler version for teaching — rule 2.8 — as long as a later phase
+A lesson may still *start* from a simpler version for teaching — rule 2.9 — as long as a later phase
 replaces it.
 
 ---
