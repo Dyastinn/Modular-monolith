@@ -458,3 +458,39 @@ write the test that kills it, or decide the change doesn't matter.
 So the report is made even when a test failed, which is when it helps most. The mutation run runs the tests once per mutant,
 which is slow, so it runs only when someone presses **Run workflow**.
 
+---
+
+## Lesson 13 — Events and the outbox
+
+**1. Why is calling Sla from `CreateTicketHandler` unsafe even if Tickets were allowed to reference it?**
+It is two separate writes with no transaction around both. A crash between them saves a ticket with no clock; swapping the order gives a clock for a ticket that doesn't exist. That is the dual write problem.
+
+**2. What does the outbox write in the same transaction as the ticket, and what does that guarantee?**
+The ticket's events, as rows in the module's `outbox_message` table. Either the ticket and its events are both saved, or neither is, so an event can't be lost or invented.
+
+**3. What is the difference between a domain event and an integration event? Which one lives in a `.Contracts` project?**
+A domain event is in the module's own words and `internal`; only its own module hears it. An integration event is plain data, `public`, and other modules hear it. The integration event lives in `.Contracts`.
+
+**4. The outbox delivers at least once. What must every handler therefore be, and how does `StartClockOnTicketCreated` achieve it?**
+Idempotent: hearing an event twice must leave the same result as once. It checks whether the clock exists first, and treats a unique-key violation (a racing delivery got there first) as success.
+
+**5. Why did a new ticket's event say "ticket #0" before we added the sequence?**
+The interceptor writes the event before PostgreSQL hands out the identity value, so the new ticket still had number 0.
+
+**6. Why does the migration drop the identity before it creates `ticket_id_seq`, and why does it call `setval`?**
+An identity column owns a sequence named `ticket_id_seq`, the very name we want; dropping the identity removes it. `setval` starts our sequence above the highest existing ticket so the next ticket doesn't reuse a number.
+
+**7. Why does `SlaClock` compute due times from the event's time and not from "now"?**
+A delivery can arrive hours late. A deadline worked out from "now" would move; from the event's own time it never does.
+
+**8. Why does `StartClockOnTicketCreated` catch a unique-key violation instead of letting it fail?**
+Two deliveries of one message can race; both see "no clock yet", one wins. The loser's failure means the clock exists, which is the answer wanted, so it must count as success.
+
+**9. What does `FOR UPDATE SKIP LOCKED` let two copies of the app do?**
+Each takes different messages: rows one dispatcher has locked are skipped by the other, so nothing is delivered twice at the same moment.
+
+**10. What happens to a message whose handler fails ten times, and why is that better than deleting it?**
+It is parked: left in the table with its error. A parked message is a fact a person needs to look at; deleting it would hide that something that should have happened did not.
+
+**11. A ticket is resolved with no reply and shows "Breached". Is that a bug? Why?**
+No, it is a decision. Only an agent's public reply stops the response target, so a ticket fixed without ever answering keeps showing its unanswered target. The cost is that a quickly fixed ticket can still look breached.

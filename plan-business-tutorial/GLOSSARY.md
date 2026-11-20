@@ -423,3 +423,42 @@ Testcontainers' cleaner container: it removes the test containers even if the te
 GitHub's servers running a list of steps (a **workflow**, a YAML file in `.github/workflows`) whenever something happens in the
 repository, such as a push.
 
+---
+
+## Events and the outbox
+
+**Domain event** (13)
+A fact a module's domain records in its own words ("ticket created"). Saved in the same transaction as the change, `internal` to its module.
+
+**Integration event** (13)
+The public form of an event: plain data in a `.Contracts` project, which other modules listen to.
+
+**Transactional outbox** (13)
+A table in each module where events are saved in the same transaction as the change that raised them. *The mailbox: the aggregate writes the letter.*
+
+**Dispatcher** (13)
+The background service that reads the outbox after the commit and delivers each event to its handlers. *The post office.*
+
+**At least once** (13)
+The guarantee that an event is delivered one or more times, never zero. The price: a handler may see it twice.
+
+**Idempotent** (13)
+Safe to run twice: the second run leaves the same result as the first.
+
+**Parked message** (13)
+An outbox message given up on after ten failed deliveries, left in the table with its error for a person to look at.
+
+**Dual write** (13)
+Changing two things (a database and another module) with no transaction around both, so a crash can leave one done and not the other.
+
+**Sequence** (13)
+PostgreSQL's own counter. `nextval` takes the next number, so a ticket's number is known before it is saved.
+
+**Partial index** (13)
+An index of only the rows that match a condition, such as the outbox rows still waiting.
+
+**SLA, SLA clock, SLA policy** (13)
+A service level agreement: how long a team has to answer and to resolve a ticket. The **clock** holds one ticket's two deadlines; the **policy** is the row that says how long each priority gets.
+
+**FakeTimeProvider** (13)
+A clock a test controls: set it, move it, by hand.
