@@ -703,7 +703,6 @@ means "one for as long as the tab is open".
 @using Microsoft.JSInterop
 @using Yasda.Web
 @using Yasda.Web.Layout
-@using Yasda.Web.Shared
 ```
 
 `_Imports.razor` applies its `using` lines to every `.razor` file in the project, so pages stay short.

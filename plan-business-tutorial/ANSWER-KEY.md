@@ -9,7 +9,7 @@ understanding without the understanding.
 
 The course grows with the product, so this page grows with it: each lesson's answers arrive with the lesson.
 
-**Jump to:** [01](#lesson-01--solution-setup) · [02](#lesson-02--testing)
+**Jump to:** [01](#lesson-01--solution-setup) · [02](#lesson-02--testing) · [03](#lesson-03--features) · [04](#lesson-04--the-domain-model)
 
 ---
 
@@ -94,3 +94,84 @@ catch?**
 An integration test: the API, the handlers, the rules and the database all run for real, but no screen does.
 It can't catch a bug in the page itself: a button that calls the wrong address, a status shown in the wrong
 place, a form that never sends the priority. That's what the end-to-end tests are for.
+
+## Lesson 03 — Features
+
+**1. What does the endpoint do, what does the handler do, and what does the validator do? Why are they three
+separate pieces?**
+The endpoint turns HTTP into a message and the answer back into HTTP. The handler does the work and knows
+nothing about HTTP. The validator says what a well-formed request looks like. Apart, the handler is tested
+with `new` and a call, the validator is written once and run for every request, and the endpoint stays too
+thin to hide a bug.
+
+**2. What is the difference between a command and a query? Give one of each for a ticket.**
+A command changes something; a query only reads. `CreateTicketCommand` or "take this ticket" is a command;
+`GetTicketQuery` or "list the open tickets" is a query. Any pair like that is right.
+
+**3. Why does the validation filter answer with a `400` instead of throwing an exception?**
+A person leaving a box empty is an everyday event, not an exceptional one. An exception is slower, fills the
+logs with noise, and the filter can answer the request directly, with the field names a form needs.
+
+**4. Why do we use FluentValidation and not .NET 10's built-in validation?**
+The built-in one only checks public classes, and our request types are `internal`. It skips them silently
+and lets bad data through with a 200.
+
+**5. You add a validator and it never seems to run, and nothing reports an error. What are the two most likely
+causes?**
+`AddValidatorsFromAssembly` was called without `includeInternalTypes: true`, so it skipped the internal
+validator; or the `/api` group lacks `.ValidateRequests()`, so no filter runs validators at all.
+
+**6. Why does a unit test of the validator not replace the integration test that sends an empty message?**
+The unit test proves the rule is right. It can't prove the rule is *used*: that depends on module
+registration and on the filter, and forgetting either leaves the unit test green while the API accepts bad
+input.
+
+**7. What does `AddScoped<PingHandler>()` do, and how do you find out you forgot one?**
+It registers the handler so each HTTP request gets its own instance, injected into the endpoint. If it's
+missing, the endpoint can't be built; `Every_feature_handler_is_registered` names the unregistered handler.
+
+**8. Why may only test projects get `InternalsVisibleTo`, and what test makes sure of it?**
+Any other friend (the host, another module) can then use the module's internals, which turns two islands into
+one. `Internals_are_shared_only_with_tests` reads the attributes out of each module and fails on any name that
+doesn't end in `Tests`.
+
+## Lesson 04 — The domain model
+
+**1. Why are `Ticket`'s setters private, and what test makes sure of it?**
+So the only way to change a ticket is through its methods, which check the rules. A public setter would let
+any caller skip them. `Domain_state_changes_only_through_its_methods` fails on any public setter in a
+`.Domain` namespace.
+
+**2. What does `Reply` do differently for a requester's answer and an agent's reply?**
+A requester's answer takes a Pending ticket back to Open and reopens a Resolved one (within 7 days); a
+requester can't write internal notes. An agent's public reply records the first-response time and takes a
+ticket nobody has; an internal note does neither, because the requester never sees it.
+
+**3. Why does `Ticket.Create` take the time as a parameter instead of reading the clock?**
+So a test chooses exactly when things happen, with no waiting and no flaky edges. The window of 7 days is
+tested to the tick because the test controls "now".
+
+**4. What's the difference between a validator's refusal and a `DomainException`? Give a ticket example of
+each.**
+A validator says the request is malformed (an empty subject, an unknown priority) and answers 400 before
+anything runs. A `DomainException` says a well-formed request breaks a business rule (taking a ticket Alan
+already has, reopening after 8 days) and carries a `TICKETS-` code. Malformed versus not allowed.
+
+**5. Why do ids have their own types (`TicketId`, `UserId`) and not plain `long`?**
+With plain `long`s the compiler accepts a ticket's number where a person's belongs. With two types, mixing
+them up doesn't compile.
+
+**6. What does a property-based test do that an ordinary test doesn't? What did ours find?**
+It states a rule that must always hold and lets FsCheck try hundreds of generated cases, including ones nobody
+thought of. Ours found that an agent's reply to a New ticket opened it with nobody responsible; the fix is that
+replying to an unassigned ticket takes it.
+
+**7. A teammate wants to reuse `TICKETS-0007` for a new rule because the old one is no longer used. What do you
+tell them?**
+No. A published code never changes meaning and its number is never reused: someone may have written it in a
+message or a log. The new rule gets the next number at the end of the list.
+
+**8. Why must the domain not reference ASP.NET Core or EF Core, and what test says so?**
+Plain C# with no database or web server is what makes every rule testable in milliseconds, and keeps the rules
+from depending on how data is stored or served. `The_domain_does_not_depend_on_data_access_or_web` fails if a
+domain class names such a type.

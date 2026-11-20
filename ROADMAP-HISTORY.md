@@ -422,6 +422,16 @@ App; errors gain stable, documented codes.
   `AddReadFunctions` keeps its hand-written `migrationBuilder.Sql` body, which ef cannot scaffold). Dev `yasda` database dropped
   on WSL PostgreSQL and recreated by the app. Unit 35, architecture 14, integration 91 (Podman machine) and browser 19 (app on
   WSL PostgreSQL) all green. Lessons 03–11 and the `y2-done` tag still open.
+- **2026-11-20** — Lesson 03 (Features) written and followed in a scratch folder built from lessons 01–02: Ping feature
+  (handler, validator, endpoint), `RequestValidation` filter, `AddTicketsModule`/`MapTicketsEndpoints`, form CSS, the Ping
+  page, Tickets unit tests (4), integration tests (4 more) and architecture tests (3); 23 tests green, each "make it fail once"
+  step confirmed. Following found one error in lesson 01, now fixed: its `_Imports.razor` had `@using Yasda.Web.Shared`
+  for a namespace that doesn't exist until later, which failed the build. Lessons 04–11 and the `y2-done` tag still open.
+- **2026-11-20** — Lesson 04 (Domain model) written from the working code and followed in the scratch folder: BuildingBlocks
+  (`Entity`, `AggregateRoot`, `DomainException`, `ErrorCode`), typed ids, `TicketsErrors` 0001–0010, `Ticket` built in four
+  passes, 31 domain unit tests, the FsCheck property (make-it-fail-once confirmed: removing the auto-take in `Reply` is found
+  in 2 tries), two architecture tests. 56 tests green. `TicketMessage`'s constructor made plain (no tuple assignment) in the
+  build to match the lesson. Lessons 05–11 and the `y2-done` tag still open.
 
 ---
 

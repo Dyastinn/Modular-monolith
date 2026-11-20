@@ -88,9 +88,23 @@ ends with the named test project green; run the whole suite once at the end of e
       written later would describe code that no longer exists. Then tag the commit: `git tag y2-done`.
       - [x] **D1 rename done (2026-11-20).** `Urgent` → `Critical` everywhere; Tickets migrations regenerated;
         all suites green (see the history log). Still open: lessons 03–11 and the tag.
-- [ ] **Restore the `erp-final` tag.** It is missing locally and on `origin`, though its commit `ab58472` exists.
-      The user runs `git tag erp-final ab58472` and `git push origin erp-final`. CLAUDE.md and this file both point
-      at the tag.
+      - [ ] **Lessons 03–11, one at a time, in order** (03–04 done 2026-11-20; next is 05) (topics in the lesson mapping below). For each one:
+        1. Read [WRITING-STYLE.md](WRITING-STYLE.md) in full first, and pass its checklist before calling the
+           lesson done.
+        2. Use the ERP lesson with the same number for structure and voice only:
+           `git show erp-final:plan-business-tutorial/` lists them. Never copy its domain.
+        3. **Teach the code step by step, not the squashed final state.** A lesson adds only what it uses
+           (CLAUDE.md §2.3). Lesson 03 has no database yet; each schema change is a new migration in the reader's
+           project (the squash is for the build only).
+        4. **Lessons 05–11 use a natively installed PostgreSQL** (05 teaches installing it on four OSes). Their
+           integration tests need a simpler factory pointed at the local database. The build's Testcontainers
+           `CustomWebAppFactory` arrives only in lesson 12, which shows the before and after. Don't copy it into
+           05.
+        5. Add the ANSWER-KEY and GLOSSARY entries.
+        6. Follow the lesson in a scratch folder, starting from the end of the previous lesson, until it builds
+           and its tests pass. Fix the lesson wherever following it fails, and report what was fixed.
+        7. Tick the lesson here, add a history log line, then go on to the next lesson.
+- [x] **Restore the `erp-final` tag.** Done 2026-11-20: tagged `ab58472` and pushed to `origin`.
 - [x] **Decisions, confirmed by the user 2026-11-20:**
 
       | # | Question | Decision |
@@ -498,7 +512,7 @@ Confirmed by the user, 2026-11-20:
 |---|---|---|
 | 01 | Solution setup | Same, named YASDA, plain Blazor shell to DESIGN.md |
 | 02 | Testing | Same, new examples |
-| 03 | Features (slices) | First slice: create a ticket |
+| 03 | Features (slices) | First slice: a stand-in `ping` feature, the validation filter; removed in 07 when filing a ticket replaces it |
 | 04 | Domain model | The Ticket aggregate and its status machine |
 | 05 | Database | The `tickets` schema |
 | 06 | Sign-in | Same, new roles |

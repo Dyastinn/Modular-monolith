@@ -100,8 +100,8 @@ course is written alongside the product, so the lessons without a link are still
 |---|---|---|
 | 01 | [Solution setup](01-solution-setup.md) | Your tools installed, the projects, the module walls, and the browser app, served from day one |
 | 02 | [Testing](02-testing.md) | Why we test, how to set tests up and use them, and the edge-case checklist every lesson after uses |
-| 03 | Features | The first slice, "create a ticket": endpoint, handler, validator; the first unit and architecture tests |
-| 04 | Domain model | The `Ticket` and its status rules in plain C#, with unit and property-based tests |
+| 03 | [Features](03-features.md) | The first slice, a stand-in `ping`: endpoint, handler, validator, one validation filter for the whole API; the first unit and architecture tests |
+| 04 | [Domain model](04-domain-model.md) | The `Ticket` and its status rules in plain C#, with unit and property-based tests |
 | 05 | Database | PostgreSQL installed, EF Core, migrations, seed data; tests against a real database |
 | 06 | Sign-in | ASP.NET Core Identity, the five roles, the sign-in page; the first browser tests |
 | 07 | File a ticket | The requester's form, from the browser to the database, with proper error responses |

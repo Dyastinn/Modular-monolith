@@ -5,8 +5,14 @@ internal sealed class TicketMessage
 {
     private TicketMessage() { }
 
-    internal TicketMessage(UserId authorId, string authorName, string body, bool isInternal, DateTime createdUtc) =>
-        (AuthorId, AuthorName, Body, IsInternal, CreatedUtc) = (authorId, authorName, body, isInternal, createdUtc);
+    internal TicketMessage(UserId authorId, string authorName, string body, bool isInternal, DateTime createdUtc)
+    {
+        AuthorId = authorId;
+        AuthorName = authorName;
+        Body = body;
+        IsInternal = isInternal;
+        CreatedUtc = createdUtc;
+    }
 
     public long Id { get; private set; }
     public UserId AuthorId { get; private set; }

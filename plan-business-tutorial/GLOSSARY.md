@@ -67,6 +67,76 @@ The one program that runs: `Yasda.Api`. It plugs the modules in and serves the b
 Classes ask for what they need in their constructor, and the app hands it to them from its list of services
 (`IServiceCollection`).
 
+**Feature** (03)
+One thing the product can do, in its own folder: a handler file and an endpoint file. *One drawer in the taco
+drawer.*
+
+**Handler** (03)
+A plain class with one `HandleAsync` method that does a feature's work. It knows nothing about HTTP.
+
+**Endpoint** (03)
+The HTTP part of a feature: it turns a request into a message for the handler and the answer back into HTTP.
+
+**Command / Query** (03)
+The two kinds of message to a handler. A command changes something; a query only reads. Together:
+**CQRS-lite**.
+
+**Validator** (03)
+A class (FluentValidation) that says what a well-formed request looks like. It runs before the endpoint, and a
+bad request is answered `400 Bad Request`.
+
+**Endpoint filter** (03)
+Code ASP.NET Core runs before (and after) an endpoint. We set one on the whole `/api` group to run every
+validator.
+
+**Problem details** (03)
+The standard JSON shape (RFC 9457) of an HTTP error: a title, a status, a detail and, for validation, the
+messages grouped by field.
+
+**Mediator** (03)
+A library that sits between an endpoint and its handler. We don't use one: the endpoint calls its handler
+directly.
+
+**`internal`** (03)
+A C# keyword: visible only inside the project. Everything in a module is `internal` except its entry class.
+
+**Architecture test** (03)
+A test that reads the compiled assemblies and fails when a structural rule breaks: an extra `public` class, a
+forbidden reference, a folder named after a technical layer.
+
+## The domain
+
+**Domain** (04)
+The business rules, as plain C# with no database and no web code. In Tickets: the `Ticket`, its messages, its
+statuses and its error codes.
+
+**Entity** (04)
+Something with an identity that stays the same while its data changes. Ticket #7 is still #7 after it changes
+hands.
+
+**Value object** (04)
+Defined only by its value, never changed. *Any ₱1,000 bill is as good as any other.* `TicketId(7)` equals any
+other `TicketId(7)`.
+
+**Aggregate / aggregate root** (04)
+A group of objects changed as one unit, with one root the outside world talks to. A ticket and its messages.
+
+**Typed id** (04)
+A small struct (`TicketId`, `UserId`) used instead of a plain `long`, so the compiler refuses a mix-up.
+
+**State machine** (04)
+The allowed moves between statuses (New → Open → Resolved → Closed). Each action lists the statuses it allows.
+
+**Domain exception** (04)
+How a business rule says no: it carries an error code and becomes HTTP 422 (lesson 07).
+
+**Error code** (04)
+A stable name for one kind of refusal, such as `TICKETS-0007`, with a title and a fix. Never renumbered or
+reused.
+
+**Property-based test** (04)
+A test that states a rule that must always hold and checks it against hundreds of generated inputs (FsCheck).
+
 ## The browser app
 
 **Blazor Web App** (01)

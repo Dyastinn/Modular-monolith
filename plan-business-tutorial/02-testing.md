@@ -569,8 +569,8 @@ git commit -m "Lesson 02: the first tests"
 
 And that's where this lesson ends. Your app now checks itself in a second, and you have a checklist for
 finding the bugs that hide at the edges. Next time, we write our first feature the way every feature will
-be written: an endpoint, a handler and a validator for filing a ticket, and we write our first unit tests and
-our first test of the module walls. Good luck, developer!
+be written: an endpoint, a handler and a validator (on a small stand-in feature, since there's no database yet), and we
+write our first unit tests and our first test of the module walls. Good luck, developer!
 
 ---
 
