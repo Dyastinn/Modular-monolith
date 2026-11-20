@@ -551,3 +551,31 @@ A probe every few seconds would bury the real requests.
 **8. Why is the dashboard its own project, and what does the app know about where telemetry goes?**
 It is development only and must never be deployed. The app knows one setting, `OTEL_EXPORTER_OTLP_ENDPOINT`, and nothing about any vendor.
 
+---
+
+## Lesson 16 — Users and the sign-in log
+
+**1. Why do we never write to Identity's tables with our own SQL?**
+We would skip what Identity does for us: hashing the password, checking its strength, keeping the lockout count and the security stamp. We use `UserManager` to write, and our SQL functions only to read.
+
+**2. Which rules live in `StaffAccountRules`, and why in the domain?**
+Nobody disables their own account, the last active admin stays, nobody changes their own role, and a role must exist. They are business rules ("is this allowed?"), so they are plain functions that throw a `DomainException` with a code, testable without a database.
+
+**3. What does a new security stamp do, and when do we change it?**
+It makes every cookie and token the person holds stop working at its next check. We change it when a role changes, when an account is disabled, and when someone signs out everywhere.
+
+**4. Why is a failed sign-in for an unknown email recorded as `InvalidCredentials`?**
+So neither the log nor the API's answer reveals which emails exist: a wrong guess at a real account and at a made-up one look the same.
+
+**5. Why does the first admin come from configuration, and why does it do nothing once users exist?**
+A fresh install has no users and self sign-up is blocked, so nobody could create the first account. Once users exist it is ignored, so a setting someone forgot to remove can't recreate an account later.
+
+**6. What are the two documented hooks we use on `SignInManager`?**
+`CanSignInAsync`, where a disabled account is refused, and `PasswordSignInAsync`, where every attempt is recorded. Hashing, lockout and tokens stay Identity's.
+
+**7. Why does the change-password handler sign the person in again?**
+Changing the password changes the security stamp, which would end the current session too. Signing in again re-issues the cookie.
+
+**8. Why is `SmtpEmailSender` allowed to log the message instead of sending it?**
+With no SMTP host configured (development), logging lets the forgot-password flow be followed without a mail server. In production the host is set and it sends.
+

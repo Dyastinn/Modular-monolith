@@ -494,3 +494,25 @@ The W3C text that carries a trace id and span id. Saved in the outbox row, it le
 **Aspire dashboard** (15)
 A development-only page that shows traces, logs and metrics as you use the app. MIT-licensed, never deployed.
 
+---
+
+## Accounts and signing in
+
+**Security stamp** (16)
+A value on an account; when it changes, every cookie and token the person holds stops working. How an admin ends someone's sessions.
+
+**Temporary password** (16)
+A password an admin chooses for a new or reset account. The account is marked "must change password", and the person can't use the app until they pick their own.
+
+**Sign-in log** (16)
+One row for every password sign-in attempt, successful or not, never changed afterwards. It answers "who tried to get in?".
+
+**Lockout** (16)
+Identity's rule that five wrong passwords block an account for fifteen minutes.
+
+**SignInManager** (16)
+Identity's class that checks a password and starts a session. We hook two of its methods and leave the rest alone.
+
+**MailKit** (16)
+A library (MIT) that speaks SMTP, used to send the password mail.
+

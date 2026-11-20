@@ -934,8 +934,8 @@ Now `/health/ready` answers `Degraded`, and the `yasda.outbox.parked` gauge show
 7. Why is `/health` left out of the traces?
 8. Why is the dashboard its own project, and what does the app know about where telemetry goes?
 
-And that's where this lesson ends. A request now leaves a trace you can follow into the post office and out the other side, the post office counts what it does, and the system raises a flag when it gives up on something. Next time, we give tickets somewhere to go: teams, categories, and routing a ticket to the right team. Good luck, developer!
+And that's where this lesson ends. A request now leaves a trace you can follow into the post office and out the other side, the post office counts what it does, and the system raises a flag when it gives up on something. Next time, we give the system its people: accounts an admin manages, and a log of who tried to sign in. Good luck, developer!
 
 ---
 
-← [Lesson 14 — Sla answers, the screens show it](14-sla-answers.md) · Next: Lesson 16 — Teams, categories and routing (coming with milestone Y3) →
+← [Lesson 14 — Sla answers, the screens show it](14-sla-answers.md) · Next: [Lesson 16 — Users and the sign-in log](16-users.md) →
