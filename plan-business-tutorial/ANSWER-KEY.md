@@ -9,7 +9,7 @@ understanding without the understanding.
 
 The course grows with the product, so this page grows with it: each lesson's answers arrive with the lesson.
 
-**Jump to:** [01](#lesson-01--solution-setup) · [02](#lesson-02--testing) · [03](#lesson-03--features) · [04](#lesson-04--the-domain-model)
+**Jump to:** [01](#lesson-01--solution-setup) · [02](#lesson-02--testing) · [03](#lesson-03--features) · [04](#lesson-04--the-domain-model) · [05](#lesson-05--the-database)
 
 ---
 
@@ -175,3 +175,39 @@ message or a log. The new rule gets the next number at the end of the list.
 Plain C# with no database or web server is what makes every rule testable in milliseconds, and keeps the rules
 from depending on how data is stored or served. `The_domain_does_not_depend_on_data_access_or_web` fails if a
 domain class names such a type.
+
+## Lesson 05 — The database
+
+**1. Why does each module get its own schema and its own migration history?**
+So a module owns its tables the way it owns its code: nobody else reads or changes them, and each module can
+migrate, be tested and later be moved on its own. A shared history would tie every module's releases together.
+
+**2. What is change tracking, and what does it cost?**
+EF Core remembers every object it loaded, and on save writes only what changed. The cost is memory and time for
+all that remembering, fine for writing one ticket at a time, too heavy for long lists, which is why reads move
+to Dapper in lesson 08.
+
+**3. Why do we store a ticket's status by name instead of by number?**
+The table is readable in plain SQL (`'Open'`), and reordering or inserting into the C# enum later can't
+silently change what old rows mean.
+
+**4. A teammate edits `InitialCreate` to add a column. Why is that a problem, and what should they do instead?**
+Any database that already ran `InitialCreate` never runs it again, so it never gets the column, and the
+schemas drift apart. A shipped migration is never edited: change the map and add a new migration.
+
+**5. What makes the seed data idempotent, and why does the app depend on that?**
+It first checks whether any tickets exist and does nothing if so. The app seeds on every development startup, so
+without the check each restart would add three more tickets.
+
+**6. Why does `A_ticket_and_its_conversation_survive_a_round_trip` read in a second scope?**
+A new scope is a new `DbContext` with no memory. In the same scope EF Core would hand back the very object it
+just saved, and the test would pass without the database being involved at all.
+
+**7. Why does the connection string for production come from the server's settings, not from
+`appsettings.json`?**
+It's a secret and it differs per installation; `appsettings.json` is committed with the code. Configuration
+describes the installation, and the code doesn't.
+
+**8. What does the check constraint on `status` protect against that the domain doesn't?**
+Anything that bypasses the domain: a hand-written SQL statement, a future bug or another tool writing to the
+table. The database refuses a status it doesn't know whatever wrote it.

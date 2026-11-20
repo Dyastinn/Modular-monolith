@@ -432,6 +432,12 @@ App; errors gain stable, documented codes.
   passes, 31 domain unit tests, the FsCheck property (make-it-fail-once confirmed: removing the auto-take in `Reply` is found
   in 2 tries), two architecture tests. 56 tests green. `TicketMessage`'s constructor made plain (no tuple assignment) in the
   build to match the lesson. Lessons 05–11 and the `y2-done` tag still open.
+- **2026-11-20** — Lesson 05 (Database) written and followed in the scratch folder: PostgreSQL install section (Windows, macOS,
+  Fedora, Ubuntu; **not run on this machine**, only the WSL Fedora server was used to run it), `TicketsDbContext`, `TicketsDatabase`,
+  `IModuleDatabase`, `PostgresDatabase.EnsureExistsAsync`, `InitialCreate`, appsettings, the shared-app test collection and six
+  database tests. 62 tests green; make-it-fail-once confirmed on the seed. Following found: the EF 10.0.4/10.0.14 version
+  warning (fixed by pinning `Microsoft.EntityFrameworkCore.Relational`), the host needing the design package for `dotnet ef`,
+  migrations being public classes (architecture-test exception), CA1848/CA1873. Lessons 06–11 and the `y2-done` tag still open.
 
 ---
 

@@ -137,6 +137,44 @@ reused.
 **Property-based test** (04)
 A test that states a rule that must always hold and checks it against hundreds of generated inputs (FsCheck).
 
+## The database
+
+**PostgreSQL** (05)
+The free, open-source database server this product stores everything in. Version 16 or newer.
+
+**Schema** (05)
+A named folder of tables inside one PostgreSQL database. Each module owns one, named after itself (`tickets`).
+
+**EF Core** (05)
+Entity Framework Core, Microsoft's library that saves and loads objects. Used for every write.
+
+**DbContext** (05)
+EF Core's main class: one instance is one conversation with the database, holding change tracking and a
+`DbSet` per kind of thing.
+
+**Change tracking** (05)
+EF Core remembering every object it loaded, so on save it writes only what changed.
+
+**Migration** (05)
+A small file of C# that changes the schema (create this table, add that column), applied once and recorded in a
+history table. Never edited after it has shipped.
+
+**Check constraint** (05)
+A rule the database itself enforces on a column, such as "status is one of these six names".
+
+**Seed data** (05)
+Sample rows added in development so there is something to click through. Idempotent: running it again adds
+nothing.
+
+**Idempotent** (05)
+Doing it twice has the same result as doing it once.
+
+**Connection string** (05)
+The text that says which server, database and login to use. Configuration, never code.
+
+**Collection** (05)
+xUnit's way to say "these test classes share one fixture and run one after the other".
+
 ## The browser app
 
 **Blazor Web App** (01)
