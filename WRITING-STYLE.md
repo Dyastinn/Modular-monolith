@@ -29,7 +29,7 @@ A friendly instructor explaining something to one person sitting beside them. Wa
 textbook, not a blog post, not a chatbot.
 
 - **Open with a greeting** and what we'll do today, then invite them in:
-  *"Good day, developer! Today we give our Sales module its memory: a real PostgreSQL database. Are you
+  *"Good day, developer! Today we give our Tickets module its memory: a real PostgreSQL database. Are you
   ready? Let's begin!"*
 - **Talk to "you", and walk together as "we" and "let's":** *"Now let's talk about…"*, *"Let's look at…"*,
   *"Here's what happens when…"*
@@ -50,11 +50,11 @@ textbook, not a blog post, not a chatbot.
 | Don't write | Write | Why |
 |---|---|---|
 | "Note: validators must be registered with `includeInternalTypes: true`." | "One thing to watch out for: our validators are `internal`, and FluentValidation skips those unless we pass `includeInternalTypes: true`." | A label is not a sentence, and the reason is missing |
-| "In this lesson, we will dive into the domain model." | "Good day, developer! Today we give the Sales module its rules. Are you ready? Let's begin!" | The greeting says what today builds |
-| "The handler leverages the DbContext to persist the aggregate." | "The handler loads the order, asks it to submit itself, and saves." | Plain verbs, in the order things happen |
+| "In this lesson, we will dive into the domain model." | "Good day, developer! Today we give the Tickets module its rules. Are you ready? Let's begin!" | The greeting says what today builds |
+| "The handler leverages the DbContext to persist the aggregate." | "The handler loads the ticket, asks it to resolve itself, and saves." | Plain verbs, in the order things happen |
 | "As you know, EF Core tracks changes." | "EF Core remembers every object it loaded, and on save it writes only what changed. That is **change tracking**." | Never assume; name the term where it is first needed |
 | "In summary, we added a validator, a handler and an endpoint." | *(nothing: end the section on its last real point)* | Don't repeat what the reader just read |
-| "A large order needs approval." | "An order over ₱50,000 waits for a `SalesManager`." | Real numbers and real names from this domain |
+| "Some tickets can't be reopened." | "A resolved ticket can be reopened for 7 days; after that, the requester files a new one." | Real numbers and real names from this domain |
 
 ## The teaching rules
 
@@ -89,7 +89,7 @@ In this order:
 2. **What we'll build** — the concrete result.
 3. **Why we build it this way** — the obvious approach first, why it hurts, then the fix.
 4. **The steps** — numbered `##` sections with the code. From lesson 02 on, the last numbered step is the
-   tests, titled **"Prove it: …"** (for example *"5. Prove it: the customer's edges"*).
+   tests, titled **"Prove it: …"** (for example *"5. Prove it: the ticket's edges"*).
 5. **How a request flows** — a short trace or a Mermaid diagram.
 6. **Mistakes to avoid** — the traps, as short bullets.
 7. **Let's run it!** — the checkpoint: commands and the output to expect.
@@ -131,8 +131,9 @@ reader who comes back to look something up. A lesson with no request to trace (s
   only when Mermaid can't express it, such as a screenshot of a screen.
 - **Links** to other lessons and files as Markdown links, never bare paths and never a path in backticks.
 - **American spelling** (behavior, license, organize, color), matching the code.
-- **Concrete numbers and real names from this domain:** `SalesOrder`, `SalesManager`, ₱50,000. Not "an
-  entity", "a user", "some amount".
+- **Concrete numbers and real names from this domain:** `Ticket`, `TeamLead`, "respond within 4 business
+  hours". Not "an entity", "a user", "some time". Never an ERP name (`SalesOrder`, `Customer`, `Money`, ₱
+  amounts): see CLAUDE.md.
 - **One analogy per idea, used consistently:** the outbox dispatcher is a post office; a module is an island with one
   service window; vertical slices are a taco drawer; a value object is any ₱1,000 bill; atomicity is a
   turnstile. Don't invent a second analogy for an idea that already has one.
@@ -193,13 +194,13 @@ schema is the same.
 ## A sample paragraph
 
 > Good day, developer! Last time, our endpoints learned to hand their work to a handler. Today we'll give
-> the Sales module its rules: what makes a customer blocked, when an order needs a manager, and why nobody
-> can approve their own order. And we'll do it without a database in sight. Are you ready? Let's begin!
+> the Tickets module its rules: who can take a ticket, how long a resolved one can be reopened, and why
+> nobody can reply to a closed one. And we'll do it without a database in sight. Are you ready? Let's begin!
 >
 > Now let's talk about where a rule should live. The easy thing is to write the check right where you load
-> the data, inside the handler. That works for the first feature. By the third, the credit check exists in
-> three places, and one of them is already different. So instead, we put each rule on the thing it's about.
-> Easy, right?
+> the data, inside the handler. That works for the first feature. By the third, the "is it closed?" check
+> exists in three places, and one of them is already different. So instead, we put each rule on the thing
+> it's about. Easy, right?
 >
 > To remember it easily: if the question is "is this allowed?", the answer lives in the domain.
 
