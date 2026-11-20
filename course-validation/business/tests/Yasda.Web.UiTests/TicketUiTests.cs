@@ -34,6 +34,21 @@ public sealed class TicketUiTests : UiTest
     }
 
     [UiFact]
+    public async Task An_agent_takes_a_ticket_and_it_becomes_theirs()
+    {
+        var (_, address) = await FileTicket($"Projector {Guid.NewGuid():N}");
+        var agent = await SignIn("agent@yasda.local");
+        await agent.GotoAsync(address);
+
+        await agent.GetByRole(AriaRole.Button, new() { Name = "Take it" }).ClickAsync();
+
+        await Expect(StatusSaying(agent, "You have this ticket now.")).ToBeVisibleAsync();
+        await Expect(agent.GetByText("Assigned: Alan Reyes")).ToBeVisibleAsync();
+        await Expect(agent.GetByText("Status: Open")).ToBeVisibleAsync();
+        await Expect(agent.GetByRole(AriaRole.Button, new() { Name = "Take it" })).ToHaveCountAsync(0);
+    }
+
+    [UiFact]
     public async Task An_agent_takes_answers_and_notes_and_the_requester_sees_only_the_answer()
     {
         var (requester, address) = await FileTicket($"Scanner {Guid.NewGuid():N}");
@@ -71,6 +86,27 @@ public sealed class TicketUiTests : UiTest
         await Expect(page.GetByText("Showing: assigned to nobody yet.")).ToBeVisibleAsync();
         var assigneeCells = page.GetByRole(AriaRole.Row).Locator("td:nth-child(6)");
         await Expect(assigneeCells.First).ToHaveTextAsync("Nobody yet");
+    }
+
+    [UiFact]
+    public async Task An_agent_works_a_ticket_to_resolved_and_the_requester_reopens_it()
+    {
+        var (requester, address) = await FileTicket($"Keyboard {Guid.NewGuid():N}");
+        var agent = await SignIn("agent@yasda.local");
+        await agent.GotoAsync(address);
+
+        await agent.GetByRole(AriaRole.Button, new() { Name = "Take it" }).ClickAsync();
+        await Expect(agent.GetByText("Status: Open")).ToBeVisibleAsync();
+        await agent.GetByRole(AriaRole.Button, new() { Name = "Wait on requester" }).ClickAsync();
+        await Expect(agent.GetByText("Status: Pending")).ToBeVisibleAsync();
+        await agent.GetByRole(AriaRole.Button, new() { Name = "Resolve" }).ClickAsync();
+        await Expect(agent.GetByText("Status: Resolved")).ToBeVisibleAsync();
+        await Expect(agent.GetByRole(AriaRole.Button, new() { Name = "Close" })).ToBeVisibleAsync();
+
+        await requester.ReloadAsync();
+        await requester.GetByRole(AriaRole.Button, new() { Name = "Reopen" }).ClickAsync();
+        await Expect(requester.GetByText("Status: Open")).ToBeVisibleAsync();
+        await Expect(requester.GetByRole(AriaRole.Button, new() { Name = "Reopen" })).ToHaveCountAsync(0);
     }
 
     [UiFact]

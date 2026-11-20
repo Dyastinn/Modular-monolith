@@ -260,6 +260,24 @@ The `?status=Open&page=2` part of an address. A list's filters, sort and page li
 **Embedded resource** (08)
 A file compiled into an assembly, so a migration can read it from the module itself.
 
+## Two people at once
+
+**Race condition** (09)
+A bug where the result depends on who gets there first. Two agents both see a ticket nobody has, and both take it.
+
+**Row version** (09)
+A value the database changes every time a row changes. A save that says "only if it's still the version I saw" can tell
+that someone else got there first. In PostgreSQL it is the hidden `xmin` column.
+
+**Optimistic concurrency** (09)
+Letting everyone read freely, and catching the conflict when they save. The loser gets an exception and a `409`.
+
+**Shadow property** (09)
+A column EF Core keeps track of without a field in the C# class, so the domain stays free of database details.
+
+**Conflict (409)** (09)
+The answer to "someone else changed this first". Show the message, then show the thing as it is now.
+
 ## The browser app
 
 **Blazor Web App** (01)
@@ -300,6 +318,10 @@ compressed and cached.
 **Fingerprint** (01)
 A short code in a file's name (`app.tl0z91yx0a.css`) that changes whenever the file does, so a browser never
 uses an old copy.
+
+**Inline confirmation** (10)
+Asking "are you sure?" on the page itself, with a sentence naming the consequence and buttons that say what they do
+("Cancel ticket" / "Not yet"), instead of a pop-up dialog.
 
 ## Testing
 

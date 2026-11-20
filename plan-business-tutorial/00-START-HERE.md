@@ -106,8 +106,8 @@ course is written alongside the product, so the lessons without a link are still
 | 06 | [Sign-in](06-sign-in.md) | ASP.NET Core Identity, the five roles, the sign-in page; the first browser tests |
 | 07 | [File a ticket](07-file-a-ticket.md) | The requester's form, from the browser to the database, with proper error responses |
 | 08 | [Queues](08-queues.md) | Dapper and SQL functions; agent queues with filters, sorting and paging in the address |
-| 09 | Take a ticket | Assigning safely when two agents click at once; race tests |
-| 10 | The ticket's life | Pending, resolved, reopened, closed, cancelled |
+| 09 | [Take a ticket](09-take-a-ticket.md) | Assigning safely when two agents click at once; race tests |
+| 10 | [The ticket's life](10-the-tickets-life.md) | Pending, resolved, reopened, closed, cancelled |
 | 11 | Replies and notes | The conversation, internal notes, lost updates stopped; coverage and mutation testing |
 | 12 | Containers and CI | Podman installed, the database in a container, every test on every push |
 | 13 | Events and the outbox | The Sla module starts each ticket's clock, reliably |

@@ -11,12 +11,15 @@ internal sealed class AssignTicketHandler(TicketsDbContext db, ICurrentUser curr
 {
     public async Task<bool> HandleAsync(AssignTicketCommand cmd, CancellationToken ct)
     {
-        var ticket = await db.GetVisibleTicketAsync(cmd.TicketId, new UserId(currentUser.UserId), userIsStaff: true, ct);
+        var me = new UserId(currentUser.UserId);
+        var ticket = await db.GetVisibleTicketAsync(cmd.TicketId, me, userIsStaff: true, ct);
         if (ticket is null) return false;
 
-        // Only Identity knows who is staff. An id that isn't, inside the body, is refused with its code.
-        var assignee = await users.FindStaffAsync(cmd.AssigneeId, ct)
-            ?? throw new DomainException(TicketsErrors.AssigneeNotStaff, $"User {cmd.AssigneeId} isn't an active agent, team lead or admin.");
+        // Only Identity knows who is staff. An id in the body that isn't, is refused with its code.
+        var assignee = await users.FindStaffAsync(cmd.AssigneeId, ct);
+        if (assignee is null)
+            throw new DomainException(TicketsErrors.AssigneeNotStaff, $"User {cmd.AssigneeId} isn't an active agent, team lead or admin.");
+
         ticket.Assign(new UserId(assignee.Id), assignee.FullName, time.GetUtcNow().UtcDateTime);
 
         await db.SaveChangesAsync(ct);

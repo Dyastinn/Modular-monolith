@@ -10,15 +10,24 @@ internal sealed record AssignTicketRequest(long AssigneeId);
 
 internal sealed class AssignTicketRequestValidator : AbstractValidator<AssignTicketRequest>
 {
-    public AssignTicketRequestValidator() => RuleFor(x => x.AssigneeId).GreaterThan(0);
+    public AssignTicketRequestValidator()
+    {
+        RuleFor(x => x.AssigneeId).GreaterThan(0);
+    }
 }
 
 internal static class AssignTicketEndpoint
 {
     // Handing work to someone else is the team lead's call.
-    public static void Map(IEndpointRouteBuilder app) =>
+    public static void Map(IEndpointRouteBuilder app)
+    {
         app.MapPost("/tickets/{id:long}/assign",
-                async Task<Results<NoContent, NotFound>> (long id, AssignTicketRequest body, AssignTicketHandler handler, CancellationToken ct) =>
-                    await handler.HandleAsync(new AssignTicketCommand(id, body.AssigneeId), ct) ? TypedResults.NoContent() : TypedResults.NotFound())
-            .RequireAuthorization(p => p.RequireRole(TicketRoles.Leads));
+            async Task<Results<NoContent, NotFound>> (long id, AssignTicketRequest body, AssignTicketHandler handler, CancellationToken ct) =>
+        {
+            var found = await handler.HandleAsync(new AssignTicketCommand(id, body.AssigneeId), ct);
+            if (!found) return TypedResults.NotFound();
+            return TypedResults.NoContent();
+        })
+        .RequireAuthorization(policy => policy.RequireRole(TicketRoles.Leads));
+    }
 }

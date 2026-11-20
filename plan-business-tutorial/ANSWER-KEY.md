@@ -9,7 +9,7 @@ understanding without the understanding.
 
 The course grows with the product, so this page grows with it: each lesson's answers arrive with the lesson.
 
-**Jump to:** [01](#lesson-01--solution-setup) · [02](#lesson-02--testing) · [03](#lesson-03--features) · [04](#lesson-04--the-domain-model) · [05](#lesson-05--the-database) · [06](#lesson-06--sign-in) · [07](#lesson-07--file-a-ticket) · [08](#lesson-08--queues)
+**Jump to:** [01](#lesson-01--solution-setup) · [02](#lesson-02--testing) · [03](#lesson-03--features) · [04](#lesson-04--the-domain-model) · [05](#lesson-05--the-database) · [06](#lesson-06--sign-in) · [07](#lesson-07--file-a-ticket) · [08](#lesson-08--queues) · [09](#lesson-09--take-a-ticket) · [10](#lesson-10--the-tickets-life)
 
 ---
 
@@ -316,3 +316,72 @@ A `tickets.search_tickets.v2.sql` with the new parameter, and a new migration th
 **8. Why does `search_tickets` end its `ORDER BY` with `t.id DESC`?**
 Two tickets can share an update time. Without a tie-breaker, the database may order them differently from one page to
 the next, so a ticket could appear on two pages or on none.
+
+## Lesson 09 — Take a ticket
+
+**1. Why isn't "check that nobody has it, then save" enough to stop two agents taking the same ticket?**
+The check and the save are two moments. Both agents can load the ticket while nobody has it, both checks pass, and the
+second save quietly writes over the first. What was checked is out of date by the time of the save.
+
+**2. What does the row version do on a save, and what does EF Core throw when it doesn't match?**
+The save says "update this row only if its version is still the one I loaded". If someone changed the row in between, no
+row matches, nothing is written, and EF Core throws `DbUpdateConcurrencyException`, which the API answers with `409`.
+
+**3. Name the two ways the second agent can lose. For each, who stops them, and what do they get back?**
+They loaded the ticket before the first agent saved: the row version stops them, and they get `409` with `YASDA-0003`.
+They loaded it after: `Ticket.Take` sees someone has it and throws, and they get `422` with `TICKETS-0007`.
+
+**4. We added no column for `xmin`, and the migration ran no SQL. Why?**
+Every PostgreSQL row already has `xmin`, and Npgsql knows it is a system column, so it leaves the `ALTER TABLE` out. The
+migration only records itself and updates the snapshot, so EF Core's pending-changes check stays quiet.
+
+**5. Why does the race test run ten rounds and accept either of two losing answers? Why do we also have the stale-copy test?**
+One lucky ordering proves nothing, and which losing answer comes back depends on timing, so the test insists only on what
+must always hold: exactly one `204`. The stale-copy test arranges the order itself, so it fails every time the row version
+is missing, instead of only sometimes.
+
+**6. Tickets needs to know whether a person is staff. Why does it call `FindStaffAsync` instead of reading the users table?**
+Who is staff is Identity's knowledge, and a module may not read another module's tables. The contract is the one service
+window, and Identity can change how it answers without Tickets noticing.
+
+**7. A request assigns a ticket to person `-5`, another to person `9999` who is a requester, another to ticket `0`. What status does each get, and what produces it?**
+`-5` is `400`, from the validator, before the handler. A requester's id is `422` with `TICKETS-0011`, from the handler after asking Identity.
+Ticket `0` doesn't exist, so the handler returns `false` and the endpoint answers `404`.
+
+**8. Why is the role check on the endpoint, but "is the ticket taken?" in the domain?**
+"Only role X may call this" doesn't depend on any data, so the endpoint's door answers it before the handler runs.
+"Is it taken?" depends on the ticket's own state, so it is a rule of the ticket, in one place.
+
+## Lesson 10 — The ticket's life
+
+**1. Why is there one `ChangeTicketStatusHandler` for five endpoints, and what is the cost of that choice?**
+The five handlers would be the same except for one line, so a bug fixed in one would be forgotten in the other four. The
+cost is a `switch` with five branches: a new step means a new branch. It stays honest as long as every branch only
+dispatches, and every rule stays in `Ticket`.
+
+**2. A requester calls `/resolve` on their own ticket, and another requester cancels it. What does each get, and which door answered?**
+The first gets `403`, from the endpoint's role door, before the handler runs. The second gets `404`, from the handler's
+load: `GetVisibleTicketAsync` returns `null` for a ticket that isn't theirs, so the endpoint can't tell it from a missing one.
+
+**3. Why does `GetVisibleTicketAsync` return `null` for both "no such ticket" and "not yours"?**
+A `403` would tell a stranger that the ticket exists. A `404` tells them nothing, not even that ticket #7 is real.
+
+**4. Lesson 09's handlers loaded a ticket by id. What changed, and why did `userIsStaff: true` stay safe there?**
+They now load through `GetVisibleTicketAsync`, the one shared way. `userIsStaff: true` is safe because the endpoint's role door
+only lets staff reach those handlers, so the handler never sees a requester.
+
+**5. A resolved ticket is eight days old, and its requester clicks Reopen. What happens, and which code does the person see?**
+`Ticket.Reopen` finds the 7-day window passed and throws, so the API answers `422` with `TICKETS-0009`. The status line
+shows the message and a link to the code's page, and the ticket stays resolved.
+
+**6. Why does the cancel button ask first, and why inline instead of in a pop-up?**
+Cancelling can't be undone, so the person should read what it does before it happens. Inline, the question sits on the page
+with buttons that say what they do, and it doesn't steal focus or break the back button like a pop-up dialog.
+
+**7. What does `Fail<T>` do for `Get`, `Post` and `Create`, and what did each of them do before?**
+It shows the error and answers "nothing" in the caller's own type: `null` for `Get` and `Create`, `false` for `Post`. Before, `Fail`
+answered nothing and every caller wrote its own `return default`, with the busy-counting lines repeated in each method.
+
+**8. Nothing closes a resolved ticket after seven days. Why is that honest, and when will it change?**
+The reopen window is enforced (a late reopen is refused), but the ticket stays `Resolved` until an agent closes it, and the
+lesson says so. Closing by itself needs a scheduler and a setting an admin turns on, which arrive in a later milestone.

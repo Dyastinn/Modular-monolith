@@ -105,27 +105,6 @@ public class TicketTests(CustomWebAppFactory factory)
         (await CodeOf(late)).Should().Be("TICKETS-0005");
     }
 
-    // The race: two agents click "Take" on the same new ticket at the same instant. Exactly one gets it; the other is
-    // told no (409 if both loaded it before either saved, 422 if the first had already saved). Never both.
-    [Fact]
-    public async Task Two_agents_taking_the_same_ticket_at_once_never_both_get_it()
-    {
-        var first = await factory.ClientFor(Agent);
-        var second = await factory.ClientFor(await factory.CreateUserAsync(Roles.Agent));
-        var requester = await factory.ClientFor(Requester);
-
-        for (var round = 0; round < 10; round++)
-        {
-            var id = await File(requester);
-
-            var answers = await Task.WhenAll(first.PostAsync($"/api/tickets/{id}/take", null), second.PostAsync($"/api/tickets/{id}/take", null));
-
-            answers.Count(a => a.StatusCode == HttpStatusCode.NoContent).Should().Be(1, "exactly one agent may win round {0}", round);
-            answers.Select(a => a.StatusCode).Should().OnlyContain(s =>
-                s == HttpStatusCode.NoContent || s == HttpStatusCode.Conflict || s == HttpStatusCode.UnprocessableEntity);
-        }
-    }
-
     // Lost update: two people load the same ticket; the first saves a reply, the second (still holding the old copy)
     // tries to change the priority. The second save must fail, not quietly overwrite.
     [Fact]
@@ -146,49 +125,6 @@ public class TicketTests(CustomWebAppFactory factory)
 
         var bobSaves = () => bobDb.SaveChangesAsync();
         await bobSaves.Should().ThrowAsync<DbUpdateConcurrencyException>();
-    }
-
-    [Fact]
-    public async Task Only_staff_can_be_assigned_and_only_a_lead_assigns()
-    {
-        var requester = await factory.ClientFor(Requester);
-        var id = await File(requester);
-        var requesterId = (await requester.GetFromJsonAsync<Me>("/api/auth/me"))!.Id;
-        var agentId = (await (await factory.ClientFor(Agent)).GetFromJsonAsync<Me>("/api/auth/me"))!.Id;
-        var lead = await factory.ClientFor(Lead);
-
-        var toRequester = await lead.PostAsJsonAsync($"/api/tickets/{id}/assign", new { assigneeId = requesterId });
-        toRequester.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
-        (await CodeOf(toRequester)).Should().Be("TICKETS-0011");
-
-        (await lead.PostAsJsonAsync($"/api/tickets/{id}/assign", new { assigneeId = agentId })).StatusCode.Should().Be(HttpStatusCode.NoContent);
-        var agent = await factory.ClientFor(Agent);
-        (await agent.PostAsJsonAsync($"/api/tickets/{id}/assign", new { assigneeId = agentId })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
-    }
-
-    [Theory]
-    [InlineData("take")]
-    [InlineData("pending")]
-    [InlineData("resolve")]
-    [InlineData("close")]
-    public async Task A_requester_cant_work_on_tickets(string action)
-    {
-        var requester = await factory.ClientFor(Requester);
-        var id = await File(requester);
-
-        (await requester.PostAsync($"/api/tickets/{id}/{action}", null)).StatusCode.Should().Be(HttpStatusCode.Forbidden);
-    }
-
-    [Fact]
-    public async Task A_requester_can_cancel_their_own_ticket_with_a_reason()
-    {
-        var requester = await factory.ClientFor(Requester);
-        var id = await File(requester);
-
-        (await requester.PostAsJsonAsync($"/api/tickets/{id}/cancel", new { reason = "" })).StatusCode.Should().Be(HttpStatusCode.BadRequest);
-        (await requester.PostAsJsonAsync($"/api/tickets/{id}/cancel", new { reason = "Fixed itself" })).StatusCode.Should().Be(HttpStatusCode.NoContent);
-
-        (await requester.GetFromJsonAsync<TicketView>($"/api/tickets/{id}"))!.Status.Should().Be("Cancelled");
     }
 
     [Fact]

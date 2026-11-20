@@ -46,7 +46,9 @@ tracking, no objects you don't need. This split is **CQRS-lite**, which lesson 0
 something, a query only reads, and now they even use different libraries. An architecture test will keep them apart.
 
 **Second, the SQL lives in the database, as functions.** A PostgreSQL **function** is a named query stored in the
-schema: `SELECT * FROM tickets.search_tickets(...)`. Our code passes parameters, never SQL text. It shows in one file
+schema: `SELECT * FROM tickets.search_tickets(...)`. Our code passes parameters, never SQL text. (Parameters are what stop injection: a parameterized query written in the handler would be just as safe. What the
+functions add is one reviewed definition per query, shipped the same way as the tables, and a production login that can be
+given permission to call them without any permission on the tables.) It shows in one file
 per function, reviewed like code, and shipped by a migration so every database has the same one. (They're functions,
 not "stored procedures", because in PostgreSQL a procedure can't return rows; a function that `RETURNS TABLE` can.)
 
@@ -2004,4 +2006,4 @@ when two agents click at the same moment. Good luck, developer!
 
 ---
 
-← [Lesson 07 — File a ticket](07-file-a-ticket.md) · Next: Lesson 09 — Take a ticket (coming with milestone Y2) →
+← [Lesson 07 — File a ticket](07-file-a-ticket.md) · Next: [Lesson 09 — Take a ticket](09-take-a-ticket.md) →

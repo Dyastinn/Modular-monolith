@@ -88,7 +88,7 @@ ends with the named test project green; run the whole suite once at the end of e
       written later would describe code that no longer exists. Then tag the commit: `git tag y2-done`.
       - [x] **D1 rename done (2026-11-20).** `Urgent` → `Critical` everywhere; Tickets migrations regenerated;
         all suites green (see the history log). Still open: lessons 03–11 and the tag.
-      - [ ] **Lessons 03–11, one at a time, in order** (03–08 done 2026-11-20; next is 09) (topics in the lesson mapping below). For each one:
+      - [ ] **Lessons 03–11, one at a time, in order** (03–10 done 2026-11-20; next is 11) (topics in the lesson mapping below). For each one:
         1. Read [WRITING-STYLE.md](WRITING-STYLE.md) in full first, and pass its checklist before calling the
            lesson done.
         2. Use the ERP lesson with the same number for structure and voice only:
