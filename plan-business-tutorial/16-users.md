@@ -2393,4 +2393,4 @@ And that's where this lesson ends. A company can now add and remove its own peop
 
 ---
 
-← [Lesson 15 — Observability](15-observability.md) · Next: Lesson 17 — Teams (coming with milestone Y3) →
+← [Lesson 15 — Observability](15-observability.md) · Next: [Lesson 17 — Teams](17-teams.md) →

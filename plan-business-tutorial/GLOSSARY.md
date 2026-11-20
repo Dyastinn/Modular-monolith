@@ -516,3 +516,19 @@ Identity's class that checks a password and starts a session. We hook two of its
 **MailKit** (16)
 A library (MIT) that speaks SMTP, used to send the password mail.
 
+---
+
+## Teams
+
+**Team** (17)
+An aggregate in Identity: a name, an active flag, its members and a notify mode.
+
+**Notify mode** (17)
+Who is told about work nobody has taken: the team leads only, the leads plus selected members, or everyone in the team.
+
+**Owned collection** (17)
+Rows that belong to an aggregate and can only be changed through it, like a team's members.
+
+**Service window** (17)
+The one public interface a module offers others in its Contracts project. For teams, `ITeamDirectory`.
+

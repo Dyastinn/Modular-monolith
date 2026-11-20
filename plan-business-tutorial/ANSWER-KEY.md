@@ -579,3 +579,31 @@ Changing the password changes the security stamp, which would end the current se
 **8. Why is `SmtpEmailSender` allowed to log the message instead of sending it?**
 With no SMTP host configured (development), logging lets the forgot-password flow be followed without a mail server. In production the host is set and it sends.
 
+---
+
+## Lesson 17 — Teams
+
+**1. Why do teams live in Identity, and what will Tickets keep of one?**
+A team is a set of people, and people belong to Identity. Tickets keeps only the team's number and a copy of its name, with no foreign key across schemas.
+
+**2. What are the three notify modes, and who is told in each?**
+Team leads only (the leads); team leads and selected members (the leads plus the ticked members); everyone (every member). Only active accounts are told.
+
+**3. Who hears about a ticket that has no team?**
+Every active team lead.
+
+**4. Why can't a team's members change without going through the team?**
+Adding one has a rule (only staff), and the team's own row must change when its members do, or its row version would never be checked and a stale save would slip through.
+
+**5. Why is "is this name taken?" answered outside the `Team` and passed in?**
+It needs the database, and the domain must stay free of data access. The caller finds out and passes `nameTaken`; the team decides what to do about it.
+
+**6. Why does `team_member.user_id` have no foreign key, and what is the cost?**
+The ids have different types, and the island rule keeps later modules from joining across schemas. The cost: the database wouldn't stop a member row pointing at a deleted user. Accounts are only ever disabled, and disabled members are never told.
+
+**7. Why is the notify list one query behind `ITeamDirectory` and not copied where it is needed?**
+Two copies drift apart. Identity owns the data, so Identity answers, and everyone asks the same question the same way.
+
+**8. Why does changing `list_staff`'s arguments need a `.v2` file and a migration that drops the old function?**
+A released script is never edited, and a function with different arguments is a different function: the old one would stay beside the new one unless the migration drops it.
+
