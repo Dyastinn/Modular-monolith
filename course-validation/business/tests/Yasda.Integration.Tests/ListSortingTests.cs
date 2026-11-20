@@ -42,6 +42,8 @@ public class ListSortingTests(CustomWebAppFactory factory)
     [InlineData("/api/users?sort=Email")]            // the names are exact, the way the JSON writes them
     [InlineData("/api/users?sort=password")]         // not a column the list sorts by
     [InlineData("/api/tickets?sort=requesterId")]
+    [InlineData("/api/tickets?page=0")]
+    [InlineData("/api/tickets?pageSize=101")]
     [InlineData("/api/tickets?status=open")]          // statuses are exact names too
     public async Task A_sort_the_list_does_not_offer_is_a_400(string url)
     {
@@ -55,6 +57,7 @@ public class ListSortingTests(CustomWebAppFactory factory)
     [InlineData("/api/users?sort=lastSignIn&desc=true")]
     [InlineData("/api/tickets?sort=priority&desc=true")]
     [InlineData("/api/tickets?sort=assigneeName")]
+    [InlineData("/api/tickets?sort=requesterName&desc=true")]
     [InlineData("/api/tickets?sort=updatedUtc&status=Open&assigned=unassigned")]
     public async Task Every_offered_sort_runs(string url)
     {

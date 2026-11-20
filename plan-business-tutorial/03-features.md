@@ -875,4 +875,4 @@ Good luck, developer!
 
 ---
 
-← [Lesson 02 — Testing](02-testing.md) · Next: Lesson 04 — Domain model (coming with milestone Y2) →
+← [Lesson 02 — Testing](02-testing.md) · Next: [Lesson 04 — Domain model](04-domain-model.md) →

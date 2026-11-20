@@ -913,4 +913,4 @@ EF Core saving and loading the ticket we just wrote. Good luck, developer!
 
 ---
 
-← [Lesson 03 — Features](03-features.md) · Next: Lesson 05 — Database (coming with milestone Y2) →
+← [Lesson 03 — Features](03-features.md) · Next: [Lesson 05 — Database](05-database.md) →

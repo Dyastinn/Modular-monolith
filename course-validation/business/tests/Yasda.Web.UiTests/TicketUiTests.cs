@@ -112,4 +112,19 @@ public sealed class TicketUiTests : UiTest
         await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "TICKETS-0005: This ticket is closed" })).ToBeVisibleAsync();
         await Expect(page.GetByText("What to do:")).ToBeVisibleAsync();
     }
+
+    [UiFact]
+    public async Task A_column_heading_sorts_the_list_through_the_address()
+    {
+        var page = await SignIn("agent@yasda.local");
+        await page.GotoAsync("/tickets");
+
+        await page.GetByRole(AriaRole.Columnheader, new() { Name = "Priority" }).GetByRole(AriaRole.Link).ClickAsync();
+        await Expect(page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("sort=priority"));
+        await Expect(page.GetByRole(AriaRole.Columnheader, new() { Name = "Priority" })).ToHaveAttributeAsync("aria-sort", "ascending");
+
+        await page.GetByRole(AriaRole.Columnheader, new() { Name = "Priority" }).GetByRole(AriaRole.Link).ClickAsync();
+        await Expect(page).ToHaveURLAsync(new System.Text.RegularExpressions.Regex("desc=true"));
+        await Expect(page.GetByRole(AriaRole.Columnheader, new() { Name = "Priority" })).ToHaveAttributeAsync("aria-sort", "descending");
+    }
 }

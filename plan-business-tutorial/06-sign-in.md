@@ -1637,4 +1637,4 @@ requester's form to the database. Good luck, developer!
 
 ---
 
-← [Lesson 05 — The database](05-database.md) · Next: Lesson 07 — File a ticket (coming with milestone Y2) →
+← [Lesson 05 — The database](05-database.md) · Next: [Lesson 07 — File a ticket](07-file-a-ticket.md) →

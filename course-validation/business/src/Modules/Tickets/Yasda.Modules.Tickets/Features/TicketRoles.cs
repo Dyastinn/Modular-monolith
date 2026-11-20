@@ -9,5 +9,8 @@ internal static class TicketRoles
     public static readonly string[] Handlers = [Roles.Agent, Roles.TeamLead, Roles.Admin];
     public static readonly string[] Leads = [Roles.TeamLead, Roles.Admin];
 
-    public static bool IsHandler(string role) => Handlers.Contains(role);
+    public static bool IsHandler(string role)
+    {
+        return Handlers.Contains(role);
+    }
 }

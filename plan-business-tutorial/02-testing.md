@@ -574,4 +574,4 @@ write our first unit tests and our first test of the module walls. Good luck, de
 
 ---
 
-← [Lesson 01 — Solution setup](01-solution-setup.md) · Next: Lesson 03 — Features (coming with milestone Y2) →
+← [Lesson 01 — Solution setup](01-solution-setup.md) · Next: [Lesson 03 — Features](03-features.md) →

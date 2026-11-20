@@ -4,8 +4,9 @@ namespace Yasda.Shared.BuildingBlocks;
 // so a search for "50%" finds "50%" instead of everything that contains "50".
 public static class SearchText
 {
-    public static string? ForLike(string? text) =>
-        string.IsNullOrWhiteSpace(text)
-            ? null
-            : text.Trim().Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_");
+    public static string? ForLike(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) return null;
+        return text.Trim().Replace(@"\", @"\\").Replace("%", @"\%").Replace("_", @"\_");
+    }
 }

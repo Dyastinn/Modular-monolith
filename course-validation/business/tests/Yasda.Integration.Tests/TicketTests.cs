@@ -302,4 +302,105 @@ public class TicketTests(CustomWebAppFactory factory)
         var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
         problem.GetProperty("code").GetString().Should().Be("YASDA-0004");
     }
+
+    // ---- Reading tickets back: the queue and the ticket page ----
+
+    private sealed record QueueRow(long Id, string Subject, string Status, string Priority, string RequesterName, long? AssigneeId);
+    private sealed record QueuePage(List<QueueRow> Items, int Page, int PageSize, int TotalCount);
+    private sealed record TicketPageView(long Id, string Subject, string Status, string Priority, List<MessageView> Messages);
+    private sealed record MessageView(string AuthorName, string Body, bool IsInternal);
+
+    private static async Task<long> FileOne(HttpClient client, string subject, string priority = "Normal")
+    {
+        var response = await client.PostAsJsonAsync("/api/tickets", new { subject, message = "Details for " + subject, priority });
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        return (await response.Content.ReadFromJsonAsync<CreatedId>())!.Id;
+    }
+
+    [Fact]
+    public async Task The_ticket_page_shows_the_ticket_and_its_first_message()
+    {
+        var requester = await factory.ClientFor("requester@yasda.local");
+        var id = await FileOne(requester, $"Scanner {Guid.NewGuid():N}", "High");
+
+        var ticket = await requester.GetFromJsonAsync<TicketPageView>($"/api/tickets/{id}");
+
+        ticket!.Status.Should().Be("New");
+        ticket.Priority.Should().Be("High");
+        ticket.Messages.Should().ContainSingle().Which.Body.Should().StartWith("Details for Scanner");
+    }
+
+    [Fact]
+    public async Task A_ticket_that_does_not_exist_is_404()
+    {
+        var agent = await factory.ClientFor("agent@yasda.local");
+
+        var response = await agent.GetAsync("/api/tickets/999999999");
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task Staff_see_everyones_tickets_and_a_requester_only_their_own()
+    {
+        var someoneElse = await factory.ClientFor(await factory.CreateUserAsync(Roles.Requester));
+        var theirs = await FileOne(someoneElse, $"Theirs {Guid.NewGuid():N}");
+        var requester = await factory.ClientFor("requester@yasda.local");
+        var mine = await FileOne(requester, $"Mine {Guid.NewGuid():N}");
+        var agent = await factory.ClientFor("agent@yasda.local");
+
+        var staffQueue = await agent.GetFromJsonAsync<QueuePage>("/api/tickets?pageSize=100");
+        var myQueue = await requester.GetFromJsonAsync<QueuePage>("/api/tickets?pageSize=100");
+
+        staffQueue!.Items.Select(t => t.Id).Should().Contain([mine, theirs]);
+        myQueue!.Items.Select(t => t.Id).Should().Contain(mine).And.NotContain(theirs);
+        (await requester.GetAsync($"/api/tickets/{theirs}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task The_queue_filters_by_priority_and_by_search_text()
+    {
+        var requester = await factory.ClientFor("requester@yasda.local");
+        var word = Guid.NewGuid().ToString("N");
+        var critical = await FileOne(requester, $"Server {word} is down", "Critical");
+        await FileOne(requester, $"Server {word} is slow", "Low");
+        var agent = await factory.ClientFor("agent@yasda.local");
+
+        var found = await agent.GetFromJsonAsync<QueuePage>($"/api/tickets?search={word}&priority=Critical");
+
+        found!.TotalCount.Should().Be(1);
+        found.Items.Should().ContainSingle().Which.Id.Should().Be(critical);
+    }
+
+    [Fact]
+    public async Task A_search_for_a_percent_sign_matches_it_literally()
+    {
+        var requester = await factory.ClientFor("requester@yasda.local");
+        var word = Guid.NewGuid().ToString("N");
+        var literal = await FileOne(requester, $"{word} battery at 50% already");
+        await FileOne(requester, $"{word} battery at 500 already");
+        var agent = await factory.ClientFor("agent@yasda.local");
+
+        var found = await agent.GetFromJsonAsync<QueuePage>($"/api/tickets?search={Uri.EscapeDataString(word + " battery at 50%")}");
+
+        found!.Items.Should().ContainSingle().Which.Id.Should().Be(literal);
+    }
+
+    [Fact]
+    public async Task The_queue_pages_and_reports_the_total()
+    {
+        var requester = await factory.ClientFor("requester@yasda.local");
+        var word = Guid.NewGuid().ToString("N");
+        for (var i = 1; i <= 3; i++)
+            await FileOne(requester, $"Paged {word} number {i}");
+        var agent = await factory.ClientFor("agent@yasda.local");
+
+        var first = await agent.GetFromJsonAsync<QueuePage>($"/api/tickets?search={word}&pageSize=2&sort=id");
+        var second = await agent.GetFromJsonAsync<QueuePage>($"/api/tickets?search={word}&pageSize=2&sort=id&page=2");
+
+        first!.TotalCount.Should().Be(3);
+        first.Items.Should().HaveCount(2);
+        second!.Items.Should().HaveCount(1);
+        first.Items.Select(t => t.Id).Should().NotIntersectWith(second.Items.Select(t => t.Id));
+    }
 }

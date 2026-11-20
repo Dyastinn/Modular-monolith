@@ -1989,4 +1989,4 @@ Dapper, SQL functions, and a queue you can filter, sort and page through the add
 
 ---
 
-← [Lesson 06 — Sign-in](06-sign-in.md) · Next: Lesson 08 — Queues (coming with milestone Y2) →
+← [Lesson 06 — Sign-in](06-sign-in.md) · Next: [Lesson 08 — Queues](08-queues.md) →

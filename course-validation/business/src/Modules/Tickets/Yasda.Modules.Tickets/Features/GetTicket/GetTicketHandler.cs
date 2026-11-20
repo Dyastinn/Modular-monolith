@@ -22,7 +22,8 @@ internal sealed class GetTicketHandler(IDbConnectionFactory connections, ICurren
     {
         // Staff see every ticket and the internal notes; anyone else only their own tickets, without the notes.
         var isStaff = TicketRoles.IsHandler(currentUser.Role);
-        long? requesterId = isStaff ? null : currentUser.UserId;
+        long? requesterId = null;
+        if (!isStaff) requesterId = currentUser.UserId;
 
         await using var conn = connections.Create();
         using var multi = await conn.QueryMultipleAsync(new CommandDefinition(

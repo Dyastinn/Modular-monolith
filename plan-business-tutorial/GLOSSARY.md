@@ -236,6 +236,30 @@ The browser app's one way of calling the API, so every page handles failures, bu
 **Extension method** (06)
 A method you call on a type as if it belonged to it, written in a static class with `this` on the first parameter.
 
+## Reading data
+
+**Dapper** (08)
+A tiny library that runs SQL and maps each row to a C# record. We use it for every read; EF Core for every write.
+
+**SQL function** (08)
+A named query stored in a PostgreSQL schema (`tickets.search_tickets(...)`), called with parameters. In PostgreSQL a
+function can return rows; a "procedure" can't.
+
+**SQL injection** (08)
+Request text becoming part of a SQL statement, so the sender controls the database. Prevented by parameters and an allow-list.
+
+**Allow-list** (08)
+The fixed list of values a request may use (the sortable columns), checked before anything runs.
+
+**CQRS-lite** (03, 08)
+A command changes something; a query only reads. Here they even use different libraries.
+
+**Query string** (08)
+The `?status=Open&page=2` part of an address. A list's filters, sort and page live there.
+
+**Embedded resource** (08)
+A file compiled into an assembly, so a migration can read it from the module itself.
+
 ## The browser app
 
 **Blazor Web App** (01)

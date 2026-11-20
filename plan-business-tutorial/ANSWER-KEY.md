@@ -9,7 +9,7 @@ understanding without the understanding.
 
 The course grows with the product, so this page grows with it: each lesson's answers arrive with the lesson.
 
-**Jump to:** [01](#lesson-01--solution-setup) · [02](#lesson-02--testing) · [03](#lesson-03--features) · [04](#lesson-04--the-domain-model) · [05](#lesson-05--the-database) · [06](#lesson-06--sign-in) · [07](#lesson-07--file-a-ticket)
+**Jump to:** [01](#lesson-01--solution-setup) · [02](#lesson-02--testing) · [03](#lesson-03--features) · [04](#lesson-04--the-domain-model) · [05](#lesson-05--the-database) · [06](#lesson-06--sign-in) · [07](#lesson-07--file-a-ticket) · [08](#lesson-08--queues)
 
 ---
 
@@ -282,3 +282,37 @@ Looking up an error that can't happen. A code nobody throws is a promise nobody 
 **8. A test needs to prove the architecture test for module references can fail. Why isn't adding a project reference enough?**
 The compiler leaves a reference out of the compiled module when no code uses it, and the test reads the compiled
 module. The code must use a type from the other module, such as `typeof(IdentityModule)`.
+
+## Lesson 08 — Queues
+
+**1. Why do reads use Dapper while writes use EF Core? Give one cost of EF Core that a list doesn't need.**
+Writes need the domain's rules and change tracking, which EF Core gives. A list only needs rows shown fast. EF Core
+builds a full object for every row and tracks it in memory in case it changes, which a list never does.
+
+**2. What is SQL injection, and which two things in this lesson stop a `?sort=` from becoming one?**
+Letting request text become part of a SQL statement, so whoever controls the text controls the database. The validator's
+allow-list refuses any sort not on the list, and the SQL function picks the order with `CASE` from fixed names, so it never
+builds an `ORDER BY` from the text.
+
+**3. How does a requester end up seeing only their own tickets, and where is that rule written?**
+The handler passes the requester's id to the SQL function, which filters on it. For staff the id is null, which means all.
+The rule is in the handler's decision and the function's `WHERE` line, and tests prove it for the list and the page.
+
+**4. Why does the API answer `404`, not `403`, for someone else's ticket?**
+A 403 says the ticket exists but you may not see it. A 404 tells a stranger nothing, not even that ticket #7 exists.
+
+**5. Why must `ValidSort` list the names *exactly*, and what would it let through if it ignored case?**
+The names are the columns' JSON names, and the SQL matches them exactly. Ignoring case would let `Subject` through to
+a `CASE` that doesn't know it, so the list would quietly use the default order instead of saying the request was wrong.
+
+**6. Why does the queue keep its filters, sort and page in the address instead of in the page's fields?**
+Back and Forward work, a bookmark or pasted link shows the same list, and a sort or page is just a link, with no state
+to lose on reload.
+
+**7. A teammate wants to add a "team" filter to `search_tickets`. What do they create, and what do they leave alone?**
+A `tickets.search_tickets.v2.sql` with the new parameter, and a new migration that runs it. They leave the released
+`.v1.sql` and its migration untouched.
+
+**8. Why does `search_tickets` end its `ORDER BY` with `t.id DESC`?**
+Two tickets can share an update time. Without a tie-breaker, the database may order them differently from one page to
+the next, so a ticket could appear on two pages or on none.

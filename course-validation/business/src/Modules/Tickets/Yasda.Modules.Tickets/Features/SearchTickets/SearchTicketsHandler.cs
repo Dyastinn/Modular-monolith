@@ -1,7 +1,7 @@
 using Dapper;
+using FluentValidation;
 using Yasda.Modules.Tickets.Domain;
 using Yasda.Shared.BuildingBlocks;
-using FluentValidation;
 
 namespace Yasda.Modules.Tickets.Features;
 
@@ -30,8 +30,11 @@ internal sealed class SearchTicketsHandler(IDbConnectionFactory connections, ICu
     public async Task<PagedResult<TicketSummaryDto>> HandleAsync(SearchTicketsQuery q, CancellationToken ct)
     {
         // A requester only ever sees their own tickets, whatever the query asks for.
-        long? requesterId = TicketRoles.IsHandler(currentUser.Role) ? null : currentUser.UserId;
-        long? assigneeId = q.Assigned == "me" ? currentUser.UserId : null;
+        long? requesterId = null;
+        if (!TicketRoles.IsHandler(currentUser.Role)) requesterId = currentUser.UserId;
+
+        long? assigneeId = null;
+        if (q.Assigned == "me") assigneeId = currentUser.UserId;
         var unassignedOnly = q.Assigned == "unassigned";
 
         var args = new
@@ -48,6 +51,7 @@ internal sealed class SearchTicketsHandler(IDbConnectionFactory connections, ICu
             """, args, cancellationToken: ct));
 
         var items = (await multi.ReadAsync<TicketSummaryDto>()).ToList();
-        return new PagedResult<TicketSummaryDto>(items, q.Page, q.PageSize, (int)await multi.ReadSingleAsync<long>());
+        var total = (int)await multi.ReadSingleAsync<long>();
+        return new PagedResult<TicketSummaryDto>(items, q.Page, q.PageSize, total);
     }
 }

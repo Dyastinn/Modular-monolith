@@ -467,6 +467,11 @@ App; errors gain stable, documented codes.
   module). Build: six `TicketTests` and two browser tests added to match the lesson, build integration `TicketTests` (22) and `TicketUiTests` (6)
   green; the comment in `ErrorProblems` no longer mentions ₱. Not yet taught, still in the build: the UnsavedChanges guard on New ticket (lesson 11),
   the ticket page after filing (lesson 08/10). Lessons 08–11 and the `y2-done` tag still open.
+- **2026-11-20** — Lesson 08 (Queues) written and followed in the scratch folder: Dapper, `IDbConnectionFactory` + `NpgsqlDataSource`, the SQL functions and
+  `AddReadFunctions`, `SearchTickets` and `GetTicket`, `PagedResult`/`SearchText`/`ValidSort`, the queue and ticket pages, `ApiClient.Get`, sorting, and the
+  CQRS architecture test. 106 tests + 13 browser tests green (real Edge); make-it-fail-once confirmed for the sort allow-list, the privacy rule and the
+  CQRS rule. Build changed to match: plain-form handlers/endpoints/helpers, eight new integration tests, sorting and page-size rows, public-schema
+  function check, a sorting browser test. Build integration 113, architecture 14, browser 22, all green. Lessons 09–11 and the `y2-done` tag still open.
 
 ---
 

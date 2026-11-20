@@ -1074,4 +1074,4 @@ sign-in page, plus our first browser tests. Good luck, developer!
 
 ---
 
-← [Lesson 04 — The domain model](04-domain-model.md) · Next: Lesson 06 — Sign-in (coming with milestone Y2) →
+← [Lesson 04 — The domain model](04-domain-model.md) · Next: [Lesson 06 — Sign-in](06-sign-in.md) →
