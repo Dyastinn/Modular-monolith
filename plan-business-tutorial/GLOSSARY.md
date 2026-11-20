@@ -462,3 +462,10 @@ A service level agreement: how long a team has to answer and to resolve a ticket
 
 **FakeTimeProvider** (13)
 A clock a test controls: set it, move it, by hand.
+
+**Eventual consistency** (14)
+A copy that catches up a moment after the original changes, like Tickets' copy of the deadlines.
+
+**Event version** (14)
+A counter on an event so a receiver can ignore an older answer that arrives after a newer one.
+

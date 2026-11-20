@@ -494,3 +494,32 @@ It is parked: left in the table with its error. A parked message is a fact a per
 
 **11. A ticket is resolved with no reply and shows "Breached". Is that a bug? Why?**
 No, it is a decision. Only an agent's public reply stops the response target, so a ticket fixed without ever answering keeps showing its unanswered target. The cost is that a quickly fixed ticket can still look breached.
+
+---
+
+## Lesson 14 — Sla answers, the screens show it
+
+**1. Why does Tickets keep a copy of the deadlines instead of asking Sla for each row?**
+A page of twenty rows would be twenty calls into another module, and the queue could not sort by deadline in one SQL query, since no SQL may cross a schema.
+
+**2. What does "eventual consistency" mean for the queue, and why is it fine here?**
+The copy catches up a moment after Sla's answer, so for a second or two the queue can show the old deadline. Deadlines are measured in hours, so nobody can tell.
+
+**3. Why is `ticket_sla` its own table, and not columns on `ticket`?**
+Saving deadlines must not change the ticket's row, or its `xmin` row version would change and an agent's save would fail for no visible reason. A separate table also raises no ticket event.
+
+**4. What does `TicketSla.Apply` do with a version it has already seen, and with an older one?**
+Nothing: `if (version <= Version) return false;`. Only a newer version is taken, and the caller learns whether it was.
+
+**5. Why does the v2 migration drop the old functions before creating the new ones?**
+A function can't change what it returns, so `CREATE OR REPLACE` would fail. The old ones are dropped, and the v2 files create them again.
+
+**6. Where is a requester's deadline removed, and which test proves it?**
+In the handlers: `SearchTicketsHandler` empties the two columns and `GetTicketHandler` leaves the whole `Sla` null for anyone who isn't staff. `A_requester_never_receives_SLA_fields` proves it at the API.
+
+**7. Why does the browser compare two times with "now" instead of asking the server how long is left?**
+The server decides what "at risk" means and sends two times. The browser compares them with its own clock, so "1h 10m left" stays true as minutes pass without any request.
+
+**8. Why does the architecture test for integration events wait until this lesson?**
+It fails for an integration event no other module handles. Until Tickets listened to `DeadlinesChanged` it would have failed; now it can pass.
+
