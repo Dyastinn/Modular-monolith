@@ -219,4 +219,87 @@ public class TicketTests(CustomWebAppFactory factory)
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
+
+    // ---- Filing: what the request itself is checked for, before and after it reaches the handler ----
+
+    [Fact]
+    public async Task A_requester_files_a_ticket_and_it_is_saved_with_their_name()
+    {
+        var requester = await factory.ClientFor(Requester);
+
+        var response = await requester.PostAsJsonAsync("/api/tickets",
+            new { subject = "Projector in room 2 is blank", message = "It says no signal.", priority = "High" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await response.Content.ReadFromJsonAsync<CreatedId>();
+        response.Headers.Location!.ToString().Should().Be($"/api/tickets/{created!.Id}");
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<TicketsDbContext>();
+        var ticket = await db.Tickets.SingleAsync(t => t.Id == new TicketId(created.Id));
+        ticket.Subject.Should().Be("Projector in room 2 is blank");
+        ticket.Priority.Should().Be(TicketPriority.High);
+        ticket.Status.Should().Be(TicketStatus.New);
+        ticket.RequesterName.Should().Be("Rita Cruz", "the name is copied from Identity, through its contract");
+        ticket.Messages.Should().ContainSingle().Which.Body.Should().Be("It says no signal.");
+    }
+
+    [Fact]
+    public async Task The_priority_is_normal_when_the_request_leaves_it_out()
+    {
+        var requester = await factory.ClientFor(Requester);
+
+        var response = await requester.PostAsJsonAsync("/api/tickets", new { subject = "No priority given", message = "Help" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created);
+        var created = await response.Content.ReadFromJsonAsync<CreatedId>();
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<TicketsDbContext>();
+        var ticket = await db.Tickets.SingleAsync(t => t.Id == new TicketId(created!.Id));
+        ticket.Priority.Should().Be(TicketPriority.Normal);
+    }
+
+    [Fact]
+    public async Task Filing_a_ticket_without_signing_in_is_401()
+    {
+        var response = await factory.CreateClient().PostAsJsonAsync("/api/tickets", new { subject = "Hello", message = "Anyone?" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+
+    [Fact]
+    public async Task A_refused_request_names_the_field_and_carries_the_validation_code()
+    {
+        var requester = await factory.ClientFor(Requester);
+
+        var response = await requester.PostAsync("/api/tickets",
+            new StringContent("""{ "subject": "", "message": "Help" }""", System.Text.Encoding.UTF8, "application/json"));
+
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        problem.GetProperty("code").GetString().Should().Be("YASDA-0001");
+        problem.GetProperty("errors").GetProperty("Subject")[0].GetString().Should().Contain("must not be empty");
+    }
+
+    [Fact]
+    public async Task A_subject_over_200_characters_is_refused()
+    {
+        var requester = await factory.ClientFor(Requester);
+
+        var response = await requester.PostAsJsonAsync("/api/tickets", new { subject = new string('a', 201), message = "Help" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task A_body_that_is_not_json_is_a_400_with_its_own_code()
+    {
+        var requester = await factory.ClientFor(Requester);
+
+        var response = await requester.PostAsync("/api/tickets",
+            new StringContent("{ this is not json", System.Text.Encoding.UTF8, "application/json"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var problem = await response.Content.ReadFromJsonAsync<JsonElement>();
+        problem.GetProperty("code").GetString().Should().Be("YASDA-0004");
+    }
 }

@@ -212,6 +212,30 @@ A library that drives a real browser for tests: it finds things by role and name
 **Browser context** (06)
 One person's own browser session: their own cookies, like their own computer.
 
+## Modules talking, and errors
+
+**Contracts project** (07)
+A module's service window: a small public project of interfaces and plain data that other modules may call. It
+references only BuildingBlocks.
+
+**Exception handler** (07)
+The one class that turns whatever was thrown into a problem response: a `DomainException` becomes a 422 with its code.
+
+**Catalog (error catalog)** (07)
+The list of error codes a module can answer with, each with a title and a fix. The host serves all of them.
+
+**OpenAPI** (07)
+A standard JSON document that describes every address and answer of an API, generated from the endpoints.
+
+**Status line** (07)
+The place beside a page's title where what just happened, or what went wrong, is shown. An error carries its code.
+
+**ApiClient** (07)
+The browser app's one way of calling the API, so every page handles failures, busy state and an ended session alike.
+
+**Extension method** (06)
+A method you call on a type as if it belonged to it, written in a static class with `this` on the first parameter.
+
 ## The browser app
 
 **Blazor Web App** (01)

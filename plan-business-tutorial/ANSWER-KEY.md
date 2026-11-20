@@ -9,7 +9,7 @@ understanding without the understanding.
 
 The course grows with the product, so this page grows with it: each lesson's answers arrive with the lesson.
 
-**Jump to:** [01](#lesson-01--solution-setup) · [02](#lesson-02--testing) · [03](#lesson-03--features) · [04](#lesson-04--the-domain-model) · [05](#lesson-05--the-database) · [06](#lesson-06--sign-in)
+**Jump to:** [01](#lesson-01--solution-setup) · [02](#lesson-02--testing) · [03](#lesson-03--features) · [04](#lesson-04--the-domain-model) · [05](#lesson-05--the-database) · [06](#lesson-06--sign-in) · [07](#lesson-07--file-a-ticket)
 
 ---
 
@@ -248,3 +248,37 @@ If they asked for a sign-in, nobody could ever reach the sign-in page.
 Role and name is how a person or screen reader finds it, so a control that can't be found that way has an
 accessibility bug; a CSS class can change without anyone noticing. `Expect` retries until the page shows the thing
 or time runs out; reading once races the page and fails at random.
+
+## Lesson 07 — File a ticket
+
+**1. Why does Tickets copy the requester's name onto the ticket instead of reading it from Identity each time?**
+A list of hundreds of tickets must show names without asking Identity for each one, and without a join across
+schemas, which the module rules forbid. The cost: a person who is renamed keeps their old name on old tickets.
+
+**2. What is in a Contracts project, and what may it reference? Why that last part?**
+Interfaces, their data types and (later) integration events: the module's service window. It may reference only
+`Yasda.Shared.BuildingBlocks`, so that two modules calling each other can never create a cycle of project
+references.
+
+**3. Which two kinds of failure are answered *without* an exception, and which kind is thrown as a
+`DomainException`?**
+A malformed request (the validation filter answers 400) and a missing record (the endpoint answers 404) need no
+exception: they're everyday events. A well-formed request that breaks a business rule throws a `DomainException`.
+
+**4. What does the exception handler answer for a `DomainException`, and where does the code in the answer come from?**
+`422 Unprocessable Entity`, with the rule's own code, a link `/errors/{code}`, its title, the exception's message as
+the detail, and a trace id. The code comes from the module's error catalog (`TicketsErrors`), through the exception.
+
+**5. Why must the error catalog's endpoints be open to a signed-out visitor?**
+The link inside an error message has to work even when the error is "your session ended". If it asked you to
+sign in, the explanation would be locked behind the problem it explains.
+
+**6. What does `Every_code_is_used_somewhere` protect the people who read the catalog from?**
+Looking up an error that can't happen. A code nobody throws is a promise nobody keeps, so the test fails on one.
+
+**7. Why does `ApiClient` disable the Send button while a change is on its way?**
+`Busy` is true until the answer arrives, so a double click can't send the same ticket twice.
+
+**8. A test needs to prove the architecture test for module references can fail. Why isn't adding a project reference enough?**
+The compiler leaves a reference out of the compiled module when no code uses it, and the test reads the compiled
+module. The code must use a type from the other module, such as `typeof(IdentityModule)`.

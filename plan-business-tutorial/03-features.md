@@ -770,7 +770,7 @@ entry class, but found {"Yasda.Modules.Tickets.TicketsHelpers", "Yasda.Modules.T
 ```
 
 Delete it again. These tests grow with the course: the domain model lesson adds two that keep
-the domain pure, the second module (lesson 06) adds the ones about references between modules, and lesson 13 adds the ones that catch an
+the domain pure, the first service window (lesson 07) adds the ones about references between modules, and lesson 13 adds the ones that catch an
 event nobody handles.
 
 ### Edge cases covered in this lesson

@@ -42,7 +42,7 @@ internal sealed class GlobalExceptionHandler(ILogger<GlobalExceptionHandler> log
         problem.Extensions["traceId"] = Activity.Current?.TraceId.ToString() ?? ctx.TraceIdentifier;
 
         ctx.Response.StatusCode = status;
-        // charset spelled out: some clients (Windows PowerShell 5.1) don't assume UTF-8, and ₱ arrives garbled.
+        // charset spelled out: some clients (Windows PowerShell 5.1) don't assume UTF-8, and an accented name (Peña) arrives garbled.
         await ctx.Response.WriteAsJsonAsync(problem, options: null, contentType: "application/problem+json; charset=utf-8", ct);
         return true;
     }

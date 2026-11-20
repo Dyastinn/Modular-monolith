@@ -460,6 +460,13 @@ App; errors gain stable, documented codes.
   metadata: winget id `PostgreSQL.PostgreSQL.18` exists, Fedora's `postgresql-server` (18.x) provides `postgresql-setup`; macOS and
   Ubuntu commands are still unverified here. Lesson 06's Identity `.csproj` no longer lists packages twice. WRITING-STYLE now says
   throwaway lesson code (the `ping` tests) is exempt from "every test exists in the build".
+- **2026-11-20** — Lesson 07 (File a ticket) written and followed in the scratch folder: `Identity.Contracts` + `UserDirectory`, the `CreateTicket`
+  slice, `CommonErrors` + `ErrorCatalog`, `GlobalExceptionHandler`, `ErrorProblems`, catalog endpoints, OpenAPI + Scalar, `AddSharedInfrastructure`,
+  `ApiClient`, `Notices`, `NoticeArea`, `PageHeader`, New ticket and Error codes pages, Ping removed. 87 tests + 10 browser tests (real Edge) green;
+  make-it-fail-once confirmed for the unused code and the module reference (the reference test only fails once code *uses* a type from the other
+  module). Build: six `TicketTests` and two browser tests added to match the lesson, build integration `TicketTests` (22) and `TicketUiTests` (6)
+  green; the comment in `ErrorProblems` no longer mentions ₱. Not yet taught, still in the build: the UnsavedChanges guard on New ticket (lesson 11),
+  the ticket page after filing (lesson 08/10). Lessons 08–11 and the `y2-done` tag still open.
 
 ---
 

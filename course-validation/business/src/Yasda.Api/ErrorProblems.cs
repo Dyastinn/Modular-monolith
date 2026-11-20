@@ -19,7 +19,7 @@ internal static class ErrorProblems
     };
 
     // The framework writes "application/problem+json" with no charset. Some clients (Windows PowerShell 5.1) then don't
-    // assume UTF-8, and ₱ arrives garbled, so every problem body says it plainly.
+    // assume UTF-8, and an accented name (Peña) arrives garbled, so every problem body says it plainly.
     public static IApplicationBuilder UseUtf8ProblemBodies(this IApplicationBuilder app) =>
         app.Use((ctx, next) =>
         {

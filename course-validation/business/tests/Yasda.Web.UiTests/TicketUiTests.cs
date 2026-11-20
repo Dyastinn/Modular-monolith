@@ -90,4 +90,26 @@ public sealed class TicketUiTests : UiTest
         await Expect(page.GetByText("Status: Cancelled")).ToBeVisibleAsync();
         await Expect(page.GetByText("Cancelled because: Fixed itself")).ToBeVisibleAsync();
     }
+
+    [UiFact]
+    public async Task The_home_page_offers_to_submit_a_ticket()
+    {
+        var page = await SignIn("requester@yasda.local");
+
+        await page.GetByRole(AriaRole.Link, new() { Name = "Submit a ticket" }).ClickAsync();
+
+        await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "New ticket" })).ToBeVisibleAsync();
+    }
+
+    // The link in an error message must work even for someone whose session just ended, so the page is public.
+    [UiFact]
+    public async Task The_error_code_page_explains_a_code_to_anyone()
+    {
+        var page = await NewPage();
+
+        await page.GotoAsync("/errors/TICKETS-0005");
+
+        await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "TICKETS-0005: This ticket is closed" })).ToBeVisibleAsync();
+        await Expect(page.GetByText("What to do:")).ToBeVisibleAsync();
+    }
 }

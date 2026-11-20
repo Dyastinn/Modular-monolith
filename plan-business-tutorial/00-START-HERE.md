@@ -104,7 +104,7 @@ course is written alongside the product, so the lessons without a link are still
 | 04 | [Domain model](04-domain-model.md) | The `Ticket` and its status rules in plain C#, with unit and property-based tests |
 | 05 | [Database](05-database.md) | PostgreSQL installed, EF Core, migrations, seed data; tests against a real database |
 | 06 | [Sign-in](06-sign-in.md) | ASP.NET Core Identity, the five roles, the sign-in page; the first browser tests |
-| 07 | File a ticket | The requester's form, from the browser to the database, with proper error responses |
+| 07 | [File a ticket](07-file-a-ticket.md) | The requester's form, from the browser to the database, with proper error responses |
 | 08 | Queues | Dapper and SQL functions; agent queues with filters, sorting and paging in the address |
 | 09 | Take a ticket | Assigning safely when two agents click at once; race tests |
 | 10 | The ticket's life | Pending, resolved, reopened, closed, cancelled |
