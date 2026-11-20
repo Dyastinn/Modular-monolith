@@ -12,7 +12,7 @@ using Yasda.Modules.Identity.Infrastructure;
 namespace Yasda.Modules.Identity.Infrastructure.Migrations
 {
     [DbContext(typeof(YasdaIdentityDbContext))]
-    [Migration("20261120163410_InitialCreate")]
+    [Migration("20261120170943_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -518,6 +518,11 @@ namespace Yasda.Modules.Identity.Infrastructure.Migrations
                     b.Property<DateTime?>("ProcessedUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("processed_utc");
+
+                    b.Property<string>("TraceParent")
+                        .HasMaxLength(55)
+                        .HasColumnType("character varying(55)")
+                        .HasColumnName("trace_parent");
 
                     b.Property<string>("Type")
                         .IsRequired()

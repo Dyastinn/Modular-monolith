@@ -12,8 +12,8 @@ using Yasda.Modules.Tickets.Infrastructure;
 namespace Yasda.Modules.Tickets.Infrastructure.Migrations
 {
     [DbContext(typeof(TicketsDbContext))]
-    [Migration("20261120151442_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20261120171003_AddReadFunctions")]
+    partial class AddReadFunctions
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -267,6 +267,11 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
                     b.Property<DateTime?>("ProcessedUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("processed_utc");
+
+                    b.Property<string>("TraceParent")
+                        .HasMaxLength(55)
+                        .HasColumnType("character varying(55)")
+                        .HasColumnName("trace_parent");
 
                     b.Property<string>("Type")
                         .IsRequired()

@@ -43,7 +43,8 @@ namespace Yasda.Modules.Identity.Infrastructure.Migrations
                     occurred_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     processed_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     attempts = table.Column<int>(type: "integer", nullable: false),
-                    last_error = table.Column<string>(type: "text", nullable: true)
+                    last_error = table.Column<string>(type: "text", nullable: true),
+                    trace_parent = table.Column<string>(type: "character varying(55)", maxLength: 55, nullable: true)
                 },
                 constraints: table =>
                 {

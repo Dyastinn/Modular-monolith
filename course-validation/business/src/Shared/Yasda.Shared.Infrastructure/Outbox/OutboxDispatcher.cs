@@ -1,7 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
+using System.Collections.Concurrent;
 using System.Reflection;
-using System.Text.RegularExpressions;
 using Dapper;
 using Yasda.Shared.BuildingBlocks;
 using Microsoft.Extensions.Configuration;
@@ -22,15 +22,35 @@ public sealed class OutboxOptions
 // Delivers outbox events to their module's IDomainEventHandler<T> classes after commit. At-least-once: a handler may see an event twice, so handlers must be
 // idempotent. FOR UPDATE SKIP LOCKED keeps several app instances from taking the same message. After
 // MaxAttempts failures a message is left, with its last_error, for a person to look at.
-public sealed partial class OutboxDispatcher(
+public sealed class OutboxDispatcher(
     IServiceScopeFactory scopes,
     NpgsqlDataSource dataSource,
     IConfiguration config,
+    OutboxBacklog backlog,
     TimeProvider time,
     ILogger<OutboxDispatcher> log) : BackgroundService
 {
     private static readonly Counter<long> Dispatched = YasdaTelemetry.Meter.CreateCounter<long>("yasda.outbox.dispatched");
     private static readonly Counter<long> Failed = YasdaTelemetry.Meter.CreateCounter<long>("yasda.outbox.failed");
+
+    // What the last tick saw in each module's outbox. A gauge is read when the metrics are collected, so the latest
+    // numbers wait here until then.
+    private static readonly ConcurrentDictionary<string, long> PendingBySchema = new();
+    private static readonly ConcurrentDictionary<string, long> ParkedBySchema = new();
+
+    static OutboxDispatcher()
+    {
+        YasdaTelemetry.Meter.CreateObservableGauge("yasda.outbox.pending", () => ReadGauge(PendingBySchema));
+        YasdaTelemetry.Meter.CreateObservableGauge("yasda.outbox.parked", () => ReadGauge(ParkedBySchema));
+    }
+
+    private static List<Measurement<long>> ReadGauge(ConcurrentDictionary<string, long> bySchema)
+    {
+        var measurements = new List<Measurement<long>>();
+        foreach (var pair in bySchema)
+            measurements.Add(new Measurement<long>(pair.Value, new KeyValuePair<string, object?>("schema", pair.Key)));
+        return measurements;
+    }
 
     private readonly OutboxOptions _options = config.GetSection("Outbox").Get<OutboxOptions>() ?? new();
 
@@ -66,6 +86,10 @@ public sealed partial class OutboxDispatcher(
                     var delivered = await DispatchBatchAsync(schema, stoppingToken);
                     moreWaiting = delivered == _options.BatchSize;
                 }
+
+                var counts = await backlog.CountAsync(schema, stoppingToken);
+                PendingBySchema[schema] = counts.Pending;
+                ParkedBySchema[schema] = counts.Parked;
             }
             catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
             {
@@ -74,19 +98,18 @@ public sealed partial class OutboxDispatcher(
         }
     }
 
-    private sealed record Row(Guid Id, string Type, string Payload);
+    private sealed record Row(Guid Id, string Type, string Payload, string? TraceParent);
 
     public async Task<int> DispatchBatchAsync(string schema, CancellationToken ct)
     {
-        if (!SafeIdentifier().IsMatch(schema)) throw new ArgumentException($"Bad schema name '{schema}'.");
-        var table = $"{schema}.outbox_message";
+        var table = OutboxTable.NameOf(schema);
 
         await using var conn = await dataSource.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
 
         var rows = await conn.QueryAsync<Row>(
             $"""
-            SELECT id, type, payload FROM {table}
+            SELECT id, type, payload, trace_parent AS TraceParent FROM {table}
             WHERE processed_utc IS NULL AND attempts < @MaxAttempts
             ORDER BY occurred_utc
             LIMIT @BatchSize
@@ -97,7 +120,10 @@ public sealed partial class OutboxDispatcher(
 
         foreach (var message in batch)
         {
-            using var activity = YasdaTelemetry.Source.StartActivity("outbox deliver", ActivityKind.Consumer);
+            // The delivery joins the trace of the request that raised the event, so one trace shows both.
+            ActivityContext requestContext = default;
+            if (message.TraceParent is not null) ActivityContext.TryParse(message.TraceParent, null, out requestContext);
+            using var activity = YasdaTelemetry.Source.StartActivity("outbox deliver", ActivityKind.Consumer, requestContext);
             activity?.SetTag("yasda.outbox.type", message.Type);
             try
             {
@@ -136,7 +162,4 @@ public sealed partial class OutboxDispatcher(
         foreach (var handler in services.GetServices<IDomainEventHandler<TEvent>>())
             await handler.HandleAsync(domainEvent, ct);
     }
-
-    [GeneratedRegex("^[a-z_][a-z0-9_]*$")]
-    private static partial Regex SafeIdentifier();
 }

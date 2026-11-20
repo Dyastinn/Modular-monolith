@@ -432,6 +432,15 @@ differs from the plan above, and why:
 - Identity's migration pair was regenerated again (`outgoing_mail`): the dev database must be dropped and recreated.
 - Lesson 16 must also say: an internal note's text is in the outbox row (the event carries the body), though it is never mailed.
 
+#### Decisions made while the user was away (2026-11-21, user asleep; user said "split it, then continue everything")
+
+Reported to the user at the end. Kept here so it survives a long session.
+
+1. **Lesson 13 is split** (it was 168 KB, twice the longest): **13 "Tickets tells, Sla listens"** (events, outbox, Tickets raises events, Sla clocks and policies page) and
+   **14 "Sla answers, the screens show it"** (`DeadlinesChanged`, `TicketSla`, v2 read functions, SLA column and header). Cut chosen so each lesson builds, runs and
+   passes its own tests: nothing in 13 raises an event nobody handles. Later lessons shift by one.
+2. Tools for writing and following lessons live in `~/Projects/dotnet/yasda-scratch/tools` (generators, `follow.py`, `port.sh`, browser-test runner).
+
 #### Part D: lessons (after A–C are green)
 
 **The migrations differ between the build and the lessons.** Squashing and regenerating (A6, B1) is for the build
@@ -453,8 +462,20 @@ in Parts A–C is a new migration in its lesson, and every changed read function
         mutation job runs Tickets, then Identity (Identity's unit tests arrive in lesson 15/16, which adds that step).
       - Ryuk works on rootless Podman here without `TESTCONTAINERS_RYUK_DISABLED`; the lesson mentions the variable as the fix
         if it doesn't. Tickets' mutation score on the reader's domain is 75.79 % (the build's: 81 %).
-- [ ] **13 Events and the outbox:** Part A.
-- [ ] **14 Observability:** the code already exists. It shows the outbox metrics (`yasda.outbox.*`). The mail metrics (`yasda.mail.*`) come with `MailSender` in lesson 16, which adds them to what lesson 14 shows.
+- [ ] **13 Events and the outbox:** Part A. **Draft written 2026-11-21** ([13-events-outbox.md](plan-business-tutorial/13-events-outbox.md), generated from the working code in
+      `~/Projects/dotnet/yasda-scratch/yasda`, commit "Lesson 13"; 122 integration, 19 browser and all unit tests pass there). It is **168 KB, about twice the
+      longest lesson**, because the reader's project has no outbox, events or Sla module yet. Open decision for the user: split it (outbox + Tickets events + the
+      clock; then hearing the answer + the screens) or keep one. Not done yet: the full follow from the lesson-12 commit, ANSWER-KEY and GLOSSARY entries.
+      Reader-vs-build differences it teaches: per-module connection string (no `ISharedConnection`), `Schema` on `IModuleDatabase`, `.v2.sql` plus a migration for changed
+      functions, the identity-sequence name collision in Tickets' migration, `Seeding_twice_changes_nothing` picking the Tickets `IModuleDatabase` by name,
+      `Outbox:PollIntervalMs` 200 in the factory, Dapper in the integration tests, and EF Core Relational pinned in Sla.
+- [ ] **14 Observability:** built 2026-11-21 (user decision: teach why each lesson matters). The lesson is about finding out that an
+      event was lost, and why. Besides the telemetry already in the build, it covers three things added to the outbox:
+      the request's `traceparent` is saved in `outbox_message.trace_parent` and the "outbox deliver" span joins that trace; the gauges
+      `yasda.outbox.pending` and `yasda.outbox.parked` (per schema, refreshed each dispatcher tick); and `OutboxHealthCheck`,
+      which reports **Degraded** (still HTTP 200) when messages were given up on. Tests: `OutboxObservabilityTests` (3). The mail
+      metrics (`yasda.mail.*`) come with `MailSender` in lesson 16. Lesson 13 must show the outbox table *without* `trace_parent`;
+      lesson 14 adds the column in its own migration (and the squashed build has it from the start).
 - [ ] **15 Teams, categories, routing:** Part B.
 - [ ] **16 Users and email:** Part C.
 - [ ] Follow each lesson in a scratch folder. Add the ANSWER-KEY and GLOSSARY entries (outbox, at-least-once,

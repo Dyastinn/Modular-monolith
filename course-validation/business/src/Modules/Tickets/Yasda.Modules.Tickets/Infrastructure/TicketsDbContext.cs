@@ -61,6 +61,7 @@ internal sealed class TicketsDbContext(DbContextOptions<TicketsDbContext> option
             e.HasKey(x => x.Id);
             e.Property(x => x.Type).HasMaxLength(500);
             e.Property(x => x.Payload).HasColumnType("jsonb");
+            e.Property(x => x.TraceParent).HasMaxLength(55);   // a W3C traceparent is always 55 characters
             e.HasIndex(x => x.OccurredUtc).HasFilter("processed_utc IS NULL");
         });
 

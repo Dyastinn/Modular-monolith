@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 
 namespace Yasda.Shared.BuildingBlocks;
@@ -12,6 +13,8 @@ public sealed class OutboxMessage
     public DateTime? ProcessedUtc { get; private set; }
     public int Attempts { get; private set; }
     public string? LastError { get; private set; }
+    // The request that raised the event, so its delivery can join the same trace. Null when nothing was being traced.
+    public string? TraceParent { get; private set; }
 
     private OutboxMessage() { }
 
@@ -24,7 +27,8 @@ public sealed class OutboxMessage
             // No assembly version, so messages written before an upgrade still load after it.
             Type = $"{type.FullName}, {type.Assembly.GetName().Name}",
             Payload = JsonSerializer.Serialize(domainEvent, type),
-            OccurredUtc = nowUtc
+            OccurredUtc = nowUtc,
+            TraceParent = Activity.Current?.Id
         };
     }
 

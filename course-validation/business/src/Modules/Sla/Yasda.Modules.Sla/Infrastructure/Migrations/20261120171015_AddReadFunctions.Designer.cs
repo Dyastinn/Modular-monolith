@@ -12,8 +12,8 @@ using Yasda.Modules.Sla.Infrastructure;
 namespace Yasda.Modules.Sla.Infrastructure.Migrations
 {
     [DbContext(typeof(SlaDbContext))]
-    [Migration("20261120133519_InitialCreate")]
-    partial class InitialCreate
+    [Migration("20261120171015_AddReadFunctions")]
+    partial class AddReadFunctions
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -202,6 +202,11 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
                     b.Property<DateTime?>("ProcessedUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("processed_utc");
+
+                    b.Property<string>("TraceParent")
+                        .HasMaxLength(55)
+                        .HasColumnType("character varying(55)")
+                        .HasColumnName("trace_parent");
 
                     b.Property<string>("Type")
                         .IsRequired()

@@ -28,7 +28,9 @@ builder.Services.AddAuthorization();
 // The browser app: the server renders its page, the screens run in the browser as WebAssembly.
 builder.Services.AddRazorComponents().AddInteractiveWebAssemblyComponents();
 builder.Services.AddYasdaRateLimiting(builder.Configuration);
-builder.Services.AddHealthChecks().AddCheck<DatabaseHealthCheck>("database", tags: ["ready"]);
+builder.Services.AddHealthChecks()
+    .AddCheck<DatabaseHealthCheck>("database", tags: ["ready"])
+    .AddCheck<OutboxHealthCheck>("outbox", tags: ["ready"]);
 builder.Services.AddExceptionHandler<GlobalExceptionHandler>();
 // Enums travel as their names ("Cash"), not numbers, in both directions.
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.Converters.Add(new JsonStringEnumConverter()));

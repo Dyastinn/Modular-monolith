@@ -25,6 +25,7 @@ public static class DependencyInjection
 
         // Every module's DbContext picks up the registered interceptors (see each module's AddXModule).
         services.AddSingleton<IInterceptor, OutboxInterceptor>();
+        services.AddSingleton<OutboxBacklog>();
         services.AddHostedService<OutboxDispatcher>();
         services.AddScoped<IIntegrationEventPublisher, IntegrationEventPublisher>();
 
