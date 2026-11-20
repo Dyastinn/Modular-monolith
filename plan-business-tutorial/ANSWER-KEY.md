@@ -420,3 +420,41 @@ including whatever the other person just wrote.
 
 **8. Why can't staff edit a message or a subject?**
 They are what people said. If they could be rewritten, nobody could trust the history of a ticket.
+
+---
+
+## Lesson 12 — Containers and CI
+
+**1. Name three problems the shared `yasda_test` database caused.**
+Yesterday's rows were still there, so a test could pass only because of leftovers. Two runs at once changed the same tables
+and failed for no reason in the code. And every machine needed the same PostgreSQL, installed and set up the same way, which a
+fresh machine, such as a build server, doesn't have.
+
+**2. What is the difference between an image and a container? And a volume?**
+An image is the frozen program with everything it needs, one file. A container is a running copy of it, isolated from the
+machine. A volume is storage that lives outside the container, so the data survives when the container is removed.
+
+**3. Give two reasons the course uses Podman. Would anything change if your company uses Docker?**
+It's free for any use under the Apache license, and it runs rootless with no background service. Nothing changes with Docker:
+both use the same OCI images, and Testcontainers talks to whichever it finds.
+
+**4. Why did no test change when the factory moved to Testcontainers?**
+Every test reached the database through `factory.OpenDatabase()`, so the factory was the only place that knew where the
+database was.
+
+**5. What does Ryuk do, and when does it matter?**
+It's Testcontainers' cleaner: a small container that removes the test containers when the test run ends. It matters when the
+run crashes or is stopped halfway, because then nothing else would remove them.
+
+**6. A test run reports 95 percent coverage. What has that told you, and what hasn't it?**
+That 95 percent of the lines ran during the tests. It hasn't said whether any test checked what those lines did: a line can run
+without anything asserting on it.
+
+**7. What is a surviving mutant, and what should you do about one?**
+A small change Stryker made to the code that no test noticed: every test still passed. It's a bug your tests would miss. Either
+write the test that kills it, or decide the change doesn't matter.
+
+**8. Why does the coverage step say `if: always()`, and why doesn't the mutation job run on every push?**
+So the report is made even when a test failed, which is when it helps most. The mutation run runs the tests once per mutant,
+which is slow, so it runs only when someone presses **Run workflow**.
+

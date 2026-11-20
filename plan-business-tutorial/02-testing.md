@@ -139,7 +139,7 @@ We don't set up every kind today. Each one arrives in the lesson that first need
 | **Database test** | Migrations, SQL functions and saved values are right (integration tests with a real database) | Seconds | Lesson 05 |
 | **End-to-end (browser) test** | A real browser can click through the real screens | Seconds | Lesson 06 |
 | **Race test** | Two people acting at the same instant can't break the rules | Seconds | Lesson 09 |
-| **Coverage and mutation testing** | Which code no test runs, and which bugs no test would notice | Minutes | Lesson 11 |
+| **Coverage and mutation testing** | Which code no test runs, and which bugs no test would notice | Minutes | Lesson 12 |
 | **CI** | All of it, on a clean machine, on every push | Minutes | Lesson 12 |
 
 Why start with integration tests, the middle of the pyramid? Because lesson 01 built no business rules yet,

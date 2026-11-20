@@ -701,4 +701,4 @@ developer!
 
 ---
 
-← [Lesson 10 — The ticket's life](10-the-tickets-life.md) · Next: Lesson 12 — Containers and CI (coming with milestone Y3) →
+← [Lesson 10 — The ticket's life](10-the-tickets-life.md) · Next: [Lesson 12 — Containers and CI](12-containers-ci.md) →

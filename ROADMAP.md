@@ -440,11 +440,21 @@ in Parts A–C is a new migration in its lesson, and every changed read function
 `count_tickets`, `get_ticket` and `identity.list_staff`. The switch from an identity column to a sequence is lesson
 13's own migration, taught problem first: the event carries ticket id 0.
 
-- [ ] **12 Containers and CI:** the code already exists (Testcontainers, Compose, CI). The lesson moves the
-      reader's integration tests from the native PostgreSQL of lessons 05–11 to Testcontainers, and installs
-      Podman.
+- [x] **12 Containers and CI** (written and followed in `~/Projects/dotnet/yasda-scratch/yasda` on 2026-11-21). It moves the reader's
+      integration tests from the native PostgreSQL of lessons 05–11 to Testcontainers, installs Podman, and teaches coverage
+      (coverlet.MTP, ReportGenerator) and mutation testing (Stryker, on the Tickets domain), which lesson 02's table had
+      pointed at "lesson 11" by mistake (fixed to 12). Placement decisions:
+      - The lesson's factory is the plain one (the container's own login, one connection string). **Least privilege** (the
+        `yasda_owner`/`yasda_app` roles, `create-roles.sql`, `YasdaDbMigrations`, `WithResourceMapping`) and **Compose, the
+        Dockerfile and the migrate image** belong to lesson 23/24, which also swaps the build's current factory in.
+      - The dev container is created with `POSTGRES_USER=yasda_dev`, so lesson 05's `appsettings.Development.json` doesn't change.
+        The build's file and README were changed to match (they said `postgres`).
+      - `ci.yml`: the lesson's file has no `working-directory` and no `-Yasda.AppHost` filter (lesson 14 adds it). The build's
+        mutation job runs Tickets, then Identity (Identity's unit tests arrive in lesson 15/16, which adds that step).
+      - Ryuk works on rootless Podman here without `TESTCONTAINERS_RYUK_DISABLED`; the lesson mentions the variable as the fix
+        if it doesn't. Tickets' mutation score on the reader's domain is 75.79 % (the build's: 81 %).
 - [ ] **13 Events and the outbox:** Part A.
-- [ ] **14 Observability:** the code already exists. Add the outbox and mail metrics to what it shows.
+- [ ] **14 Observability:** the code already exists. It shows the outbox metrics (`yasda.outbox.*`). The mail metrics (`yasda.mail.*`) come with `MailSender` in lesson 16, which adds them to what lesson 14 shows.
 - [ ] **15 Teams, categories, routing:** Part B.
 - [ ] **16 Users and email:** Part C.
 - [ ] Follow each lesson in a scratch folder. Add the ANSWER-KEY and GLOSSARY entries (outbox, at-least-once,

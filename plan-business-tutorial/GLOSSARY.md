@@ -372,3 +372,54 @@ back.
 
 **Smoke test** (02)
 A few quick checks that the app starts and its front page loads.
+
+**Coverage** (12)
+The share of your code's lines that ran while the tests ran. It shows what no test touches, not whether the tests that ran
+check anything.
+
+**Mutation testing, mutant, killed, survived** (12)
+A tool changes your code in small ways, one at a time (`>` to `>=`, a line removed), and runs the tests on each changed copy,
+a **mutant**. A mutant a test catches is **killed**; one every test passes is **survived**, a bug your tests would miss. The
+share killed is the **mutation score**.
+
+**Continuous integration (CI)** (12)
+A server that builds and tests every change as soon as it's pushed. *Your machine says "it works for me"; CI says "it works
+for anyone".*
+
+---
+
+## Containers
+
+**Container image** (12)
+A program plus everything it needs to run, frozen into one file. `postgres:18` is PostgreSQL 18, ready to start. *A shipping
+container packed at the factory.*
+
+**Container** (12)
+A running copy of an image, isolated from the rest of the machine. Start it, use it, throw it away.
+
+**Registry** (12)
+A library of images. `docker.io/library/postgres:18` is the Docker Hub registry's official `postgres` image, version 18.
+
+**Volume** (12)
+Storage that lives outside a container, so the data survives when the container is removed.
+
+**Podman** (12)
+Runs containers: free (Apache-2.0), rootless, no background service. It runs the same OCI images as Docker.
+
+**Rootless** (12)
+A container started with only your own user's rights, so something that escapes it can do no more than you could.
+
+**OCI** (12)
+The standard that image formats follow. Because of it, an image built with Podman runs on Docker, and the other way round.
+
+**Testcontainers** (12)
+A library that starts a container from inside a test, waits until it's ready, hands over its address and removes it when the
+tests end.
+
+**Ryuk** (12)
+Testcontainers' cleaner container: it removes the test containers even if the test run crashes.
+
+**GitHub Actions, workflow** (12)
+GitHub's servers running a list of steps (a **workflow**, a YAML file in `.github/workflows`) whenever something happens in the
+repository, such as a push.
+

@@ -74,11 +74,11 @@ Three rules hold it together:
 
 ## Running the reference build
 
-You need the .NET 10 SDK and PostgreSQL 16 or later on `localhost:5432`, as the `postgres` user with password
+You need the .NET 10 SDK and PostgreSQL 16 or later on `localhost:5432`, as the `yasda_dev` user (a superuser, so the app can create its database) with password
 `yasda_dev_only`. The easy way is a container:
 
 ```bash
-podman run -d --name yasda-postgres -e POSTGRES_PASSWORD=yasda_dev_only -p 5432:5432 \
+podman run -d --name yasda-postgres -e POSTGRES_USER=yasda_dev -e POSTGRES_PASSWORD=yasda_dev_only -p 5432:5432 \
   -v yasda-pgdata:/var/lib/postgresql docker.io/library/postgres:18
 ```
 
