@@ -278,6 +278,14 @@ A column EF Core keeps track of without a field in the C# class, so the domain s
 **Conflict (409)** (09)
 The answer to "someone else changed this first". Show the message, then show the thing as it is now.
 
+**Internal note** (11)
+A message on a ticket that only staff can read. It is stored in the same conversation as a reply, with `IsInternal` set, and
+the query leaves it out for a requester.
+
+**Child row** (11)
+A row that belongs to another, such as a ticket's message. Saving a new one doesn't touch the parent's row, so the parent's row
+version isn't checked unless something else about the parent changes too.
+
 ## The browser app
 
 **Blazor Web App** (01)

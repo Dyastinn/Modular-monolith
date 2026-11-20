@@ -50,7 +50,7 @@ else
         }
         @if (_ticket.IsBeingWorkedOn && !_cancelling)
         {
-            <button type="button" @onclick="() => _cancelling = true">Cancel ticket</button>
+            <button type="button" @onclick="StartCancelling">Cancel ticket</button>
         }
     </div>
 
@@ -65,7 +65,7 @@ else
             </div>
             <div class="actions">
                 <button type="submit" disabled="@Api.Busy">Cancel ticket</button>
-                <button type="button" @onclick="() => _cancelling = false">Not yet</button>
+                <button type="button" @onclick="StopCancelling">Not yet</button>
             </div>
         </EditForm>
     }
@@ -103,46 +103,45 @@ else
     }
 
     <section class="thread" aria-labelledby="conversation">
-    <h2 id="conversation">Conversation</h2>
-    @foreach (var m in _ticket.Messages)
-    {
-        <article class="message">
-            <h3>@m.AuthorName, <TimeAgo Utc="m.CreatedUtc" /></h3>
-            @if (m.IsInternal)
-            {
-                <p><strong>Internal note:</strong> only staff see this.</p>
-            }
-            <p class="message-body">@m.Body</p>
-        </article>
-    }
+        <h2 id="conversation">Conversation</h2>
+        @foreach (var m in _ticket.Messages)
+        {
+            <article class="message">
+                <h3>@m.AuthorName, <TimeAgo Utc="m.CreatedUtc" /></h3>
+                @if (m.IsInternal)
+                {
+                    <p><strong>Internal note:</strong> only staff see this.</p>
+                }
+                <p class="message-body">@m.Body</p>
+            </article>
+        }
 
-    @if (!_ticket.IsFinished)
-    {
-        <EditForm Model="this" OnSubmit="Reply">
-            <div class="field">
-                <label for="reply">Your reply</label>
-                <InputTextArea id="reply" @bind-Value="_reply" rows="5" maxlength="10000" required />
-            </div>
-            @if (IsStaff)
-            {
-                <div class="check">
-                    <InputCheckbox id="internal" @bind-Value="_internal" />
-                    <label for="internal">Internal note: only staff will see it</label>
+        @if (!_ticket.IsFinished)
+        {
+            <EditForm Model="this" OnSubmit="Reply">
+                <div class="field">
+                    <label for="reply">Your reply</label>
+                    <InputTextArea id="reply" @bind-Value="_reply" rows="5" maxlength="10000" required />
                 </div>
-            }
-            <div class="actions">
-                <button type="submit" disabled="@Api.Busy">
-                    @(_internal ? "Add note" : "Send reply")
-                </button>
-            </div>
-        </EditForm>
-    }
+                @if (IsStaff)
+                {
+                    <div class="check">
+                        <InputCheckbox id="internal" @bind-Value="_internal" />
+                        <label for="internal">Internal note: only staff will see it</label>
+                    </div>
+                }
+                <div class="actions">
+                    <button type="submit" disabled="@Api.Busy">
+                        @(_internal ? "Add note" : "Send reply")
+                    </button>
+                </div>
+            </EditForm>
+        }
     </section>
 }
 
 @code {
     [Parameter] public long Id { get; set; }
-
     private TicketDetail? _ticket;
     private List<StaffMember>? _staff;
     private string _reply = "", _reason = "", _priority = "";
@@ -168,11 +167,30 @@ else
         _cancelling = false;
     }
 
-    private Task Take() => Step("take", "You have this ticket now.");
-    private Task WaitOnRequester() => Step("pending", "Waiting on the requester.");
-    private Task Resolve() => Step("resolve", "Resolved.");
-    private Task Close() => Step("close", "Closed.");
-    private Task Reopen() => Step("reopen", "Reopened.");
+    private async Task Take()
+    {
+        await Step("take", "You have this ticket now.");
+    }
+
+    private async Task WaitOnRequester()
+    {
+        await Step("pending", "Waiting on the requester.");
+    }
+
+    private async Task Resolve()
+    {
+        await Step("resolve", "Resolved.");
+    }
+
+    private async Task Close()
+    {
+        await Step("close", "Closed.");
+    }
+
+    private async Task Reopen()
+    {
+        await Step("reopen", "Reopened.");
+    }
 
     // One status step. Whether it worked or not, show the ticket as it is now.
     private async Task Step(string action, string success)
@@ -191,6 +209,16 @@ else
             _internal = false;
         }
         await Load();
+    }
+
+    private void StartCancelling()
+    {
+        _cancelling = true;
+    }
+
+    private void StopCancelling()
+    {
+        _cancelling = false;
     }
 
     private async Task Cancel()

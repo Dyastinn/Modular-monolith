@@ -595,8 +595,10 @@ dotnet test tests/Yasda.Integration.Tests
 ```
 
 Both tests go red: the stale-copy test says the save didn't throw, and the race test says that two agents both got a `204`.
-Put it back: restore the line, then take the experiment out with `dotnet ef migrations remove` (same `--project` and
-`--startup-project`). Run again and both are green.
+Put it back: restore the line, then take the experiment out with `dotnet ef migrations remove --force` (same `--project` and
+`--startup-project`). Without `--force`, the command first connects to a database to check the migration was never applied, and
+its design-time connection has no password, so it stops with a login error. `--force` skips that check, which is safe here:
+the experiment only ever touched the throwaway test database. Run again and both are green.
 
 The other way to lose has its own test. It needs no timing either: the first agent finishes, and the second asks afterward.
 
@@ -720,6 +722,17 @@ to drop the `r.name IN (...)` condition. The test goes red (the requester is "fo
 succeeds). Put it back.
 
 ### The button, in a browser
+
+The test needs a way to find the status line by what it says. Add this method to `UiTest`, under `MainNav`. A page can show
+its own "Loading…" status at the same moment, so the helper looks for the status that contains the text, not just any status:
+
+```csharp
+// tests/Yasda.Web.UiTests/UiTest.cs (add under MainNav)
+    protected static ILocator StatusSaying(IPage page, string text)
+    {
+        return page.GetByRole(AriaRole.Status).Filter(new() { HasText = text });
+    }
+```
 
 Add this test to `TicketUiTests`, above the existing tests that take a ticket. It files a ticket as a requester, then
 signs in as an agent and takes it:

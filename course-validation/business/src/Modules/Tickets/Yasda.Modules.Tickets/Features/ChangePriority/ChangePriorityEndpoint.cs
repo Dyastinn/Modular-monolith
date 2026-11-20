@@ -11,15 +11,23 @@ internal sealed record ChangePriorityRequest(TicketPriority Priority);
 
 internal sealed class ChangePriorityRequestValidator : AbstractValidator<ChangePriorityRequest>
 {
-    public ChangePriorityRequestValidator() => RuleFor(x => x.Priority).IsInEnum();
+    public ChangePriorityRequestValidator()
+    {
+        RuleFor(x => x.Priority).IsInEnum();
+    }
 }
 
 internal static class ChangePriorityEndpoint
 {
-    // The requester suggests a priority when filing; after that, staff decide.
-    public static void Map(IEndpointRouteBuilder app) =>
-        app.MapPut("/tickets/{id:long}/priority",
-                async Task<Results<NoContent, NotFound>> (long id, ChangePriorityRequest body, ChangePriorityHandler handler, CancellationToken ct) =>
-                    await handler.HandleAsync(new ChangePriorityCommand(id, body.Priority), ct) ? TypedResults.NoContent() : TypedResults.NotFound())
-            .RequireAuthorization(p => p.RequireRole(TicketRoles.Handlers));
+    public static void Map(IEndpointRouteBuilder app)
+    {
+        // The requester suggests a priority when filing; after that, staff decide.
+        app.MapPut("/tickets/{id:long}/priority", async Task<Results<NoContent, NotFound>> (long id, ChangePriorityRequest body, ChangePriorityHandler handler, CancellationToken ct) =>
+        {
+            var found = await handler.HandleAsync(new ChangePriorityCommand(id, body.Priority), ct);
+            if (!found) return TypedResults.NotFound();
+            return TypedResults.NoContent();
+        })
+        .RequireAuthorization(policy => policy.RequireRole(TicketRoles.Handlers));
+    }
 }

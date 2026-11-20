@@ -1275,6 +1275,17 @@ A browser test needs a *running* app, since it loads real pages. So these tests 
 them, and skip themselves if you don't. They use the Edge (Windows) or Chrome (elsewhere) you already have, so
 there's nothing extra to download.
 
+If you have neither (a fresh Linux machine, say), Playwright can download a browser of its own, once. Build the test project
+first (`dotnet build`), then run Playwright's installer with the copy of Node that comes inside the package. On Linux:
+
+```bash
+tests/Yasda.Web.UiTests/bin/Debug/net10.0/.playwright/node/linux-x64/node \
+  tests/Yasda.Web.UiTests/bin/Debug/net10.0/.playwright/package/cli.js install chromium
+```
+
+On macOS the folder is `darwin-arm64` (or `darwin-x64` on an Intel Mac), and on Windows it's `win32_x64`, with `node.exe`.
+Then set `YASDA_UI_BROWSER=chromium` whenever you run the browser tests, as the comment in `UiTest.cs` below says.
+
 ```bash
 dotnet new classlib -n Yasda.Web.UiTests -o tests/Yasda.Web.UiTests
 rm tests/Yasda.Web.UiTests/Class1.cs

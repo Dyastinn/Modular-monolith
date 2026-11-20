@@ -718,8 +718,9 @@ psql "host=localhost dbname=yasda user=yasda_dev password=yasda_dev_only" \
 ```
 
 The statuses are the ones the domain methods left behind: the VPN ticket was taken, answered and marked pending;
-the mouse ticket was resolved. Run the app again, and the log has no `fail:` line and no second seeding: the
-migrations are already applied, and there are tickets already.
+the mouse ticket was resolved. Run the app again, and the log has no `fail:` line: the migrations are already
+applied. The "seeded" line still prints, but nothing is added, because there are tickets already. Run the `psql` query
+again and you still see three.
 
 ## 7. Prove it: the database and the map
 
@@ -743,12 +744,7 @@ After:
 
 ```csharp
 // tests/Yasda.Integration.Tests/CustomWebAppFactory.cs
-using System.Net.Http.Headers;
-using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.Extensions.DependencyInjection;
-using Yasda.Modules.Identity.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Npgsql;
 
@@ -758,9 +754,6 @@ namespace Yasda.Integration.Tests;
 // never touch the data you click through in development.
 public sealed class CustomWebAppFactory : WebApplicationFactory<Program>
 {
-    // The password every development user has.
-    public const string Password = IdentityDatabase.DevPassword;
-
     // The server these tests use. Set YASDA_TEST_DB to point at another one.
     private static readonly string ConnectionString =
         Environment.GetEnvironmentVariable("YASDA_TEST_DB")
@@ -770,38 +763,6 @@ public sealed class CustomWebAppFactory : WebApplicationFactory<Program>
     {
         builder.UseEnvironment("Development");
         builder.UseSetting("ConnectionStrings:YasdaDb", ConnectionString);
-    }
-
-    public sealed record Tokens(string AccessToken, string RefreshToken);
-
-    public static async Task<Tokens> LoginAsync(HttpClient client, string email, string password = Password)
-    {
-        var response = await client.PostAsJsonAsync("/api/auth/login", new { email, password });
-        response.EnsureSuccessStatusCode();
-        return (await response.Content.ReadFromJsonAsync<Tokens>())!;
-    }
-
-    // A client that has signed in as someone and sends their bearer token with every call. Without
-    // useCookies, Identity's login answers with tokens instead of a cookie: the way a program signs in.
-    public async Task<HttpClient> ClientFor(string email)
-    {
-        var client = CreateClient();
-        var tokens = await LoginAsync(client, email);
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
-        return client;
-    }
-
-    // A throwaway account, for tests that lock someone out or need a person nobody else uses.
-    public async Task<string> CreateUserAsync(string role)
-    {
-        await using var scope = Services.CreateAsyncScope();
-        var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
-        var email = $"user-{Guid.NewGuid():N}@yasda.local";
-        var user = new AppUser { UserName = email, Email = email, EmailConfirmed = true, FullName = "Test User" };
-        var created = await users.CreateAsync(user, Password);
-        if (!created.Succeeded) throw new InvalidOperationException(string.Join(" ", created.Errors.Select(e => e.Description)));
-        await users.AddToRoleAsync(user, role);
-        return email;
     }
 
     // A connection for tests that look at the database itself. Starts the app first if no test has yet: the app is

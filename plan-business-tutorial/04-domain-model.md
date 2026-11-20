@@ -602,6 +602,13 @@ no, not only that something did. Now the tests that teach something new:
     {
         var ticket = NewTicket();
 
+        ticket.Status.Should().Be(TicketStatus.New);
+        ticket.AssigneeId.Should().BeNull();
+        ticket.Messages.Should().ContainSingle();
+        ticket.Messages[0].Body.Should().Be("It says paper jam.");
+        ticket.Messages[0].IsInternal.Should().BeFalse();
+    }
+
     [Fact]
     public void A_subject_of_exactly_200_characters_is_fine_and_201_is_too_long()
     {

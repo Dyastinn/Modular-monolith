@@ -385,3 +385,38 @@ answered nothing and every caller wrote its own `return default`, with the busy-
 **8. Nothing closes a resolved ticket after seven days. Why is that honest, and when will it change?**
 The reopen window is enforced (a late reopen is refused), but the ticket stays `Resolved` until an agent closes it, and the
 lesson says so. Closing by itself needs a scheduler and a setting an admin turns on, which arrive in a later milestone.
+
+---
+
+## Lesson 11 — Replies and notes
+
+**1. Why do a reply and an internal note share one handler and one endpoint? Where is the difference decided?**
+They are the same act with one difference: who may read the message. The request carries an `isInternal` flag, and
+`Ticket.Reply` decides what it means: only staff may write a note, and a note isn't a response to the requester.
+
+**2. A requester sends `{ "body": "Psst", "isInternal": true }`. What do they get back, and which layer said no?**
+A `422` with `TICKETS-0008`. The domain said no: `Ticket.Reply` knows the author isn't staff. The validator can't know,
+because the body is well-formed.
+
+**3. Why did lesson 09's version check not cover replies by itself? Which one line makes it cover them?**
+A reply only inserts a message row, so without another change there is no `UPDATE` of the ticket and no version check.
+`UpdatedUtc = nowUtc;` at the end of `Ticket.Reply` changes the ticket's row, so the save checks `xmin`.
+
+**4. What does the stale-copy test use an internal note for, instead of an agent's public reply?**
+A public reply from an agent also takes the ticket and opens it, which changes the row for other reasons and would hide the
+missing `UpdatedUtc`. A note changes nothing on the ticket except `UpdatedUtc`, so it tests exactly that line.
+
+**5. Two agents reply to the same ticket at the same moment. What does the slower one see, and what is the honest cost of that?**
+A `409`, "Someone else changed this first", and the page reloads showing the other reply. The cost is that the second agent must
+send theirs again. It's the price of never answering a ticket whose state you didn't see.
+
+**6. Why is the priority change a `PUT` and not a `POST`, and why is `userIsStaff: true` safe in its handler?**
+It replaces one field of something that exists, where a `POST` starts an action. `userIsStaff: true` is safe because the
+endpoint's role door lets only staff in.
+
+**7. Why does `Reply()` in the page keep the text when the send fails, and reload the ticket either way?**
+The person typed a paragraph, and a `409` or a lost connection mustn't eat it. The reload shows the ticket as it is now,
+including whatever the other person just wrote.
+
+**8. Why can't staff edit a message or a subject?**
+They are what people said. If they could be rewritten, nobody could trust the history of a ticket.

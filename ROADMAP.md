@@ -54,7 +54,7 @@ to date by `DeadlinesChanged`.
 ## Milestones
 
 - **Y1 — Reset to YASDA** ✅ code · ✅ lessons 00–02 (2026-11-19). Details below.
-- **Y2 — Tickets core** ✅ code (2026-11-19) · ⬜ lessons 03–11. Details below. Lesson 05 installs PostgreSQL,
+- **Y2 — Tickets core** ✅ code (2026-11-19) · ✅ lessons 03–11 (written and followed in a scratch folder, 2026-11-20; tag `y2-done` still to make). Details below. Lesson 05 installs PostgreSQL,
   lesson 06 Playwright's browser; lesson 06 also adds the account row, `AuthorizeView` and the sign-in pages to
   lesson 01's layout. The outbox delivery and redelivery tests return in Y3 with the first real event.
 - **Y3 — Events, basic SLA, teams** ⬜ · lessons 12–16 (12 installs Podman): the Sla module on the outbox (`TicketCreated` starts 24/7 clocks);
@@ -87,8 +87,8 @@ ends with the named test project green; run the whole suite once at the end of e
       write lessons 03–11 from Y2's code. Y3 rewrites `Ticket.Create`, the squashed Tickets migrations and `search_tickets.v1.sql`. Lessons
       written later would describe code that no longer exists. Then tag the commit: `git tag y2-done`.
       - [x] **D1 rename done (2026-11-20).** `Urgent` → `Critical` everywhere; Tickets migrations regenerated;
-        all suites green (see the history log). Still open: lessons 03–11 and the tag.
-      - [ ] **Lessons 03–11, one at a time, in order** (03–10 done 2026-11-20; next is 11) (topics in the lesson mapping below). For each one:
+        all suites green (see the history log). Still open: the tag.
+      - [x] **Lessons 03–11, one at a time, in order** (all written and followed in a scratch folder from nothing, 2026-11-20; the tag `y2-done` is the one thing left) (topics in the lesson mapping below). For each one:
         1. Read [WRITING-STYLE.md](WRITING-STYLE.md) in full first, and pass its checklist before calling the
            lesson done.
         2. Use the ERP lesson with the same number for structure and voice only:
@@ -446,7 +446,7 @@ Confirmed by the user, 2026-11-20:
   - Attachment hardening (Y6) gets its own API tests: type sniffing, size limit, `Content-Disposition: attachment`,
     `X-Content-Type-Options`.
 
-### Y2 — Tickets core ✅ code (2026-11-19) · ⬜ lessons 03–11
+### Y2 — Tickets core ✅ code (2026-11-19) · ✅ lessons 03–11 (2026-11-20)
 
 - [x] `Yasda.Modules.Identity.Contracts`, the first contract: `IUserDirectory` (`IdOfAsync`, `NameOfAsync`,
       `FindStaffAsync`), implemented in Identity with Dapper; `GET /api/staff` (`identity.list_staff`)

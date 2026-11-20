@@ -469,8 +469,9 @@ public class HostTests(CustomWebAppFactory factory) : IClassFixture<CustomWebApp
 }
 ```
 
-Make each new one fail once: add `ReferenceOutputAssembly="false"` to the app's reference and watch the
-app's-own-files tests go red; remove `api.MapFallback` and watch the API tests go red; remove the
+Make each new one fail once: remove `app.MapStaticAssets();` and watch the app's-own-files tests go red (adding
+`ReferenceOutputAssembly="false"` would stop the build before any test ran, because `Program.cs` uses the app's `App` class);
+remove `api.MapFallback` and watch the API tests go red; remove the
 `UseStatusCodePagesWithReExecute` line and watch the unknown page lose its HTML. Then undo all three.
 
 ## 8. Using tests every day

@@ -565,17 +565,8 @@ else
 }
 ```
 
-`TicketDetail.IsBeingWorkedOn` is new, and it's the page's way of asking the question the domain answered with
-`EnsureIn`. In `Models.cs`, give `TicketDetail` a body, replacing its closing `);`:
-
-```csharp
-public sealed record TicketDetail(long Id, string Subject, string Status, string Priority, long RequesterId, string RequesterName,
-    long? AssigneeId, string? AssigneeName, DateTime CreatedUtc, DateTime UpdatedUtc, DateTime? FirstResponseUtc,
-    DateTime? ResolvedUtc, DateTime? ClosedUtc, string? CancelReason, List<TicketMessage> Messages)
-{
-    public bool IsBeingWorkedOn => Status is "New" or "Open" or "Pending";
-}
-```
+`TicketDetail.IsBeingWorkedOn` is the property lesson 09 added to `Models.cs`, and it's the page's way of asking the
+question the domain answered with `EnsureIn`: is this ticket still being worked on? The page uses it for the Take and cancel buttons.
 
 The cancel button is the one step that **can't be undone**, so it asks first, inline: a `role="alert"` sentence naming the
 ticket and what cancelling means, a field for the reason and two buttons, "Cancel ticket" and "Not yet". There are no
@@ -898,4 +889,4 @@ people change the same ticket at once. Good luck, developer!
 
 ---
 
-← [Lesson 09 — Take a ticket](09-take-a-ticket.md) · Next: Lesson 11 — Replies and notes (coming with milestone Y3) →
+← [Lesson 09 — Take a ticket](09-take-a-ticket.md) · Next: [Lesson 11 — Replies and notes](11-replies-and-notes.md) →

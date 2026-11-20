@@ -25,9 +25,22 @@ public sealed class ApiClient(HttpClient http, Notices notices, CookieAuthentica
         return await response.Content.ReadFromJsonAsync<T>();
     }
 
-    public Task<bool> Post(string url, object? body = null, string? success = null) => Send(HttpMethod.Post, url, body, success);
-    public Task<bool> Put(string url, object body, string? success = null) => Send(HttpMethod.Put, url, body, success);
-    public Task<bool> Delete(string url, string? success = null) => Send(HttpMethod.Delete, url, null, success);
+    // For actions: true when the API said yes. The body is optional ("take this ticket" has none).
+    public async Task<bool> Post(string url, object? body = null, string? success = null)
+    {
+        return await Send(HttpMethod.Post, url, body, success);
+    }
+
+    // For changes to something that already exists, such as a ticket's priority.
+    public async Task<bool> Put(string url, object body, string? success = null)
+    {
+        return await Send(HttpMethod.Put, url, body, success);
+    }
+
+    public async Task<bool> Delete(string url, string? success = null)
+    {
+        return await Send(HttpMethod.Delete, url, null, success);
+    }
 
     // For "create" calls: the API answers 201 with { id }.
     public async Task<long?> Create(string url, object body, string? success = null)
@@ -40,7 +53,9 @@ public sealed class ApiClient(HttpClient http, Notices notices, CookieAuthentica
 
     private async Task<bool> Send(HttpMethod method, string url, object? body, string? success)
     {
-        using var request = new HttpRequestMessage(method, url) { Content = body is null ? null : JsonContent.Create(body) };
+        using var request = new HttpRequestMessage(method, url);
+        if (body is not null) request.Content = JsonContent.Create(body);
+
         var response = await Change(() => http.SendAsync(request));
         if (!response.IsSuccessStatusCode) return await Fail<bool>(response);
         if (success is not null) notices.Success(success);
@@ -52,8 +67,14 @@ public sealed class ApiClient(HttpClient http, Notices notices, CookieAuthentica
     {
         notices.Clear();
         _saving++;
-        try { return await send(); }
-        finally { _saving--; }
+        try
+        {
+            return await send();
+        }
+        finally
+        {
+            _saving--;
+        }
     }
 
     private async Task<T?> Fail<T>(HttpResponseMessage response)

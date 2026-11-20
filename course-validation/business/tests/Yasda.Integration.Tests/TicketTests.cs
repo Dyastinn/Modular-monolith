@@ -50,83 +50,8 @@ public class TicketTests(CustomWebAppFactory factory)
         mine!.Items.Select(t => t.Id).Should().Contain(id);
     }
 
-    [Fact]
-    public async Task Another_requesters_ticket_is_404_and_missing_from_their_list()
-    {
-        var id = await File(await factory.ClientFor(Requester));
-        var someoneElse = await factory.ClientFor(await factory.CreateUserAsync(Roles.Requester));
-
-        (await someoneElse.GetAsync($"/api/tickets/{id}")).StatusCode.Should().Be(HttpStatusCode.NotFound);
-        (await someoneElse.PostAsJsonAsync($"/api/tickets/{id}/replies", new { body = "Me too" })).StatusCode.Should().Be(HttpStatusCode.NotFound);
-        var theirs = await someoneElse.GetFromJsonAsync<Page>("/api/tickets?pageSize=100");
-        theirs!.Items.Should().NotContain(t => t.Id == id);
-    }
-
-    [Fact]
-    public async Task Internal_notes_are_hidden_from_the_requester()
-    {
-        var requester = await factory.ClientFor(Requester);
-        var agent = await factory.ClientFor(Agent);
-        var id = await File(requester);
-
-        (await agent.PostAsJsonAsync($"/api/tickets/{id}/replies", new { body = "On my way.", isInternal = false })).EnsureSuccessStatusCode();
-        (await agent.PostAsJsonAsync($"/api/tickets/{id}/replies", new { body = "Fuser again, I bet.", isInternal = true })).EnsureSuccessStatusCode();
-
-        var asRequester = await requester.GetFromJsonAsync<TicketView>($"/api/tickets/{id}");
-        var asAgent = await agent.GetFromJsonAsync<TicketView>($"/api/tickets/{id}");
-        asRequester!.Messages.Select(m => m.Body).Should().Equal("It says paper jam.", "On my way.");
-        asAgent!.Messages.Should().HaveCount(3).And.ContainSingle(m => m.IsInternal);
-    }
-
-    [Fact]
-    public async Task A_ticket_goes_from_new_to_closed_and_then_refuses_replies()
-    {
-        var requester = await factory.ClientFor(Requester);
-        var agent = await factory.ClientFor(Agent);
-        var id = await File(requester);
-
-        async Task<string> StatusOf() => (await agent.GetFromJsonAsync<TicketView>($"/api/tickets/{id}"))!.Status;
-
-        (await agent.PostAsync($"/api/tickets/{id}/take", null)).StatusCode.Should().Be(HttpStatusCode.NoContent);
-        (await StatusOf()).Should().Be("Open");
-        (await agent.PostAsync($"/api/tickets/{id}/pending", null)).EnsureSuccessStatusCode();
-        (await StatusOf()).Should().Be("Pending");
-        (await requester.PostAsJsonAsync($"/api/tickets/{id}/replies", new { body = "It's the 3rd floor one." })).EnsureSuccessStatusCode();
-        (await StatusOf()).Should().Be("Open");
-        (await agent.PostAsync($"/api/tickets/{id}/resolve", null)).EnsureSuccessStatusCode();
-        (await requester.PostAsync($"/api/tickets/{id}/reopen", null)).EnsureSuccessStatusCode();
-        (await StatusOf()).Should().Be("Open");
-        (await agent.PostAsync($"/api/tickets/{id}/resolve", null)).EnsureSuccessStatusCode();
-        (await agent.PostAsync($"/api/tickets/{id}/close", null)).EnsureSuccessStatusCode();
-        (await StatusOf()).Should().Be("Closed");
-
-        var late = await requester.PostAsJsonAsync($"/api/tickets/{id}/replies", new { body = "Hello?" });
-        late.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
-        (await CodeOf(late)).Should().Be("TICKETS-0005");
-    }
-
     // Lost update: two people load the same ticket; the first saves a reply, the second (still holding the old copy)
     // tries to change the priority. The second save must fail, not quietly overwrite.
-    [Fact]
-    public async Task A_change_based_on_a_stale_copy_of_the_ticket_is_refused()
-    {
-        var id = await File(await factory.ClientFor(Requester));
-
-        await using var alice = factory.Services.CreateAsyncScope();
-        await using var bob = factory.Services.CreateAsyncScope();
-        var aliceDb = alice.ServiceProvider.GetRequiredService<TicketsDbContext>();
-        var bobDb = bob.ServiceProvider.GetRequiredService<TicketsDbContext>();
-        var aliceCopy = await aliceDb.Tickets.SingleAsync(t => t.Id == new TicketId(id));
-        var bobCopy = await bobDb.Tickets.SingleAsync(t => t.Id == new TicketId(id));
-
-        aliceCopy.Reply(new UserId(3), "Alan Reyes", "Looking now.", isInternal: false, authorIsStaff: true, DateTime.UtcNow);
-        await aliceDb.SaveChangesAsync();
-        bobCopy.ChangePriority(TicketPriority.Critical, DateTime.UtcNow);
-
-        var bobSaves = () => bobDb.SaveChangesAsync();
-        await bobSaves.Should().ThrowAsync<DbUpdateConcurrencyException>();
-    }
-
     [Fact]
     public async Task The_queues_show_unassigned_tickets_and_my_own()
     {

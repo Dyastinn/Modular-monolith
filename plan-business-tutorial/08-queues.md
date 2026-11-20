@@ -220,10 +220,11 @@ builder.Services.AddSharedInfrastructure(builder.Configuration);
 
 ## 2. The SQL functions
 
-One file per function, in the module, named `schema.function.vN.sql`. The `v1` is a promise from lesson 05: **a
+One file per function, in the module's `Infrastructure/Sql/Functions` folder, named `schema.function.vN.sql`. The `v1` is a promise from lesson 05: **a
 released script is never edited.** To change a function, you add a `.v2.sql` file and a new migration.
 
 ```sql
+-- src/Modules/Tickets/Yasda.Modules.Tickets/Infrastructure/Sql/Functions/tickets.priority_rank.v1.sql
 -- Released scripts are never edited: change a function with a .v2 file and a new migration.
 -- Priorities sort by urgency, not alphabetically ("High" < "Low" < "Normal" < "Critical" would be nonsense).
 CREATE OR REPLACE FUNCTION tickets.priority_rank(p_priority text)
@@ -235,6 +236,7 @@ $$;
 ```
 
 ```sql
+-- src/Modules/Tickets/Yasda.Modules.Tickets/Infrastructure/Sql/Functions/tickets.search_tickets.v1.sql
 -- Released scripts are never edited: change a function with a .v2 file and a new migration.
 -- The queues and "my tickets". p_requester_id limits a requester to their own; p_assignee_id / p_unassigned pick a
 -- queue. The sort is one of the allow-listed names (SearchTicketsValidator), matched by CASE, never pasted in.
@@ -275,21 +277,6 @@ AS $$
     OFFSET (p_page - 1) * p_page_size
     LIMIT p_page_size;
 $$;
-
-CREATE OR REPLACE FUNCTION tickets.count_tickets(
-    p_requester_id bigint, p_status text, p_priority text, p_assignee_id bigint, p_unassigned boolean, p_search text)
-RETURNS bigint
-LANGUAGE sql STABLE
-AS $$
-    SELECT COUNT(*) FROM tickets.ticket t
-    WHERE (p_requester_id IS NULL OR t.requester_id = p_requester_id)
-      AND (p_status IS NULL OR t.status = p_status)
-      AND (p_priority IS NULL OR t.priority = p_priority)
-      AND (p_assignee_id IS NULL OR t.assignee_id = p_assignee_id)
-      AND (NOT p_unassigned OR t.assignee_id IS NULL)
-      AND (p_search IS NULL OR t.subject ILIKE '%' || p_search || '%' OR t.requester_name ILIKE '%' || p_search || '%'
-           OR t.id::text = p_search);
-$$;
 ```
 
 This is the queue. Let's read it:
@@ -307,9 +294,10 @@ This is the queue. Let's read it:
   "Critical" comes before "High" and "Low" before "Normal", which is nonsense.
 - **`OFFSET ... LIMIT`** is the page.
 
-The same filters count the total, for "Page 1 of 9". It's in the same file, under the search:
+The same filters count the total, for "Page 1 of 9". It goes in the same file, under the search:
 
 ```sql
+-- src/Modules/Tickets/Yasda.Modules.Tickets/Infrastructure/Sql/Functions/tickets.search_tickets.v1.sql (add under the search function)
 CREATE OR REPLACE FUNCTION tickets.count_tickets(
     p_requester_id bigint, p_status text, p_priority text, p_assignee_id bigint, p_unassigned boolean, p_search text)
 RETURNS bigint
@@ -329,6 +317,7 @@ $$;
 And one ticket, with its conversation:
 
 ```sql
+-- src/Modules/Tickets/Yasda.Modules.Tickets/Infrastructure/Sql/Functions/tickets.get_ticket.v1.sql
 -- Released scripts are never edited: change a function with a .v2 file and a new migration.
 -- One ticket, or no row when it doesn't exist or p_requester_id says the caller may only see their own.
 CREATE OR REPLACE FUNCTION tickets.get_ticket(p_id bigint, p_requester_id bigint)

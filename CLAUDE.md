@@ -312,9 +312,9 @@ A lesson may mention these only in a *"when you'd add this later, and why not no
 - **Concurrency:**
   - Each aggregate root has a shadow `Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin")`
     (PostgreSQL's built-in row version). `DbUpdateConcurrencyException` → 409.
-  - If an aggregate's child rows can change on their own (a ticket's replies), saving must also touch the root
-    row, or its version is never checked. (Tag `erp-final`, `SalesDbContext.SaveChangesAsync`, shows the pattern
-    and its integration test.)
+  - If an aggregate's child rows can change on their own (a ticket's replies), the same change must also touch
+    the root row, or its version is never checked. In YASDA the domain method does it (`Ticket.Reply` sets
+    `UpdatedUtc`), and `A_change_based_on_a_stale_copy_of_the_ticket_is_refused` fails if that line goes.
 - **Reads:**
   - Query handlers call SQL functions with Dapper: `SELECT * FROM identity.search_users(@...)`.
   - Functions are **schema-qualified** in their definition and in every C# call.

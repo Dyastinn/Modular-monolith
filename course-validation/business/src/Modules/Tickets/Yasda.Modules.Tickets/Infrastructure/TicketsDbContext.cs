@@ -83,17 +83,6 @@ internal sealed class TicketsDbContext(DbContextOptions<TicketsDbContext> option
             e.Navigation(x => x.Messages).HasField("_messages").UsePropertyAccessMode(PropertyAccessMode.Field);
         });
     }
-
-    public override Task<int> SaveChangesAsync(CancellationToken ct = default)
-    {
-        // A reply alone adds a message row and never updates the ticket row, so the ticket's xmin would never be
-        // checked. Touch it, so two people replying to a ticket that just closed can't both get through.
-        if (ChangeTracker.Entries<TicketMessage>().Any(m => m.State == EntityState.Added))
-            foreach (var ticket in ChangeTracker.Entries<Ticket>().Where(t => t.State == EntityState.Unchanged))
-                ticket.Property(t => t.UpdatedUtc).IsModified = true;
-
-        return base.SaveChangesAsync(ct);
-    }
 }
 
 internal sealed class TicketIdConverter() : ValueConverter<TicketId, long>(v => v.Value, v => new TicketId(v));
