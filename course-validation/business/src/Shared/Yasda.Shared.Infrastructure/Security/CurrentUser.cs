@@ -7,10 +7,17 @@ namespace Yasda.Shared.Infrastructure;
 
 public sealed class CurrentUser(IHttpContextAccessor accessor) : ICurrentUser
 {
-    private ClaimsPrincipal User => accessor.HttpContext?.User
-        ?? throw new InvalidOperationException("No HTTP context.");
+    private ClaimsPrincipal User
+    {
+        get
+        {
+            var context = accessor.HttpContext;
+            if (context is null) throw new InvalidOperationException("No HTTP context.");
+            return context.User;
+        }
+    }
 
     public long UserId => long.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!, CultureInfo.InvariantCulture);
     public string Username => User.FindFirstValue(ClaimTypes.Name)!;
-    public string Role => User.FindFirstValue(ClaimTypes.Role)!;   // staff have exactly one role
+    public string Role => User.FindFirstValue(ClaimTypes.Role)!;   // every account has exactly one role
 }

@@ -9,7 +9,7 @@ understanding without the understanding.
 
 The course grows with the product, so this page grows with it: each lesson's answers arrive with the lesson.
 
-**Jump to:** [01](#lesson-01--solution-setup) · [02](#lesson-02--testing) · [03](#lesson-03--features) · [04](#lesson-04--the-domain-model) · [05](#lesson-05--the-database)
+**Jump to:** [01](#lesson-01--solution-setup) · [02](#lesson-02--testing) · [03](#lesson-03--features) · [04](#lesson-04--the-domain-model) · [05](#lesson-05--the-database) · [06](#lesson-06--sign-in)
 
 ---
 
@@ -211,3 +211,40 @@ describes the installation, and the code doesn't.
 **8. What does the check constraint on `status` protect against that the domain doesn't?**
 Anything that bypasses the domain: a hand-written SQL statement, a future bug or another tool writing to the
 table. The database refuses a status it doesn't know whatever wrote it.
+
+## Lesson 06 — Sign-in
+
+**1. Why do we keep a browser app's sign-in in an `HttpOnly` cookie instead of a token in the page's own code?**
+Anything the page's code can read, a script injected into the page can read too, and anything shipped to a browser
+is public. An `HttpOnly` cookie can't be read by the page's code at all; the browser just attaches it to each call.
+The app learns who you are by asking `/api/auth/me`.
+
+**2. What does lockout protect against, and what does the user experience after the fifth wrong password?**
+Guessing: someone trying thousands of passwords on one account. After the fifth wrong one, the account is locked
+for 15 minutes and even the right password is refused until then.
+
+**3. Why does the API answer 401 instead of redirecting to the sign-in page?**
+A client of an API (the browser app, a test, a script) wants a status it can act on. A redirect to an HTML page
+would be followed silently and answer 200 with the wrong content.
+
+**4. Why is `/auth/register` switched off, and what test proves it?**
+Accounts are created by an administrator; a service desk where strangers can make accounts isn't one.
+`Self_registration_is_disabled` expects a 404.
+
+**5. What is an open redirect, and which line of `Login.razor` prevents one?**
+A sign-in page that sends the person wherever `returnUrl` says, including another site, so a crafted link can
+bounce a freshly signed-in person to a fake page. `stayInsideTheApp` accepts only addresses with no `//` and no `:`.
+
+**6. Why does `_Imports.razor` carry `@attribute [Authorize]`? What happens to a new page you forget to think about?**
+It makes "needs a signed-in user" the default for every page. A forgotten page is protected, not public; a public
+page has to say `[AllowAnonymous]` on purpose.
+
+**7. Why must `App.razor` and the page server be `AllowAnonymous`?**
+They send the page that contains the router, and the router is what sends a signed-out person to the sign-in page.
+If they asked for a sign-in, nobody could ever reach the sign-in page.
+
+**8. Why does a browser test find a button by its role and name instead of its CSS class, and what does
+`Expect(...)` do that reading a value once doesn't?**
+Role and name is how a person or screen reader finds it, so a control that can't be found that way has an
+accessibility bug; a CSS class can change without anyone noticing. `Expect` retries until the page shows the thing
+or time runs out; reading once races the page and fails at random.

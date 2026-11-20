@@ -103,7 +103,7 @@ course is written alongside the product, so the lessons without a link are still
 | 03 | [Features](03-features.md) | The first slice, a stand-in `ping`: endpoint, handler, validator, one validation filter for the whole API; the first unit and architecture tests |
 | 04 | [Domain model](04-domain-model.md) | The `Ticket` and its status rules in plain C#, with unit and property-based tests |
 | 05 | [Database](05-database.md) | PostgreSQL installed, EF Core, migrations, seed data; tests against a real database |
-| 06 | Sign-in | ASP.NET Core Identity, the five roles, the sign-in page; the first browser tests |
+| 06 | [Sign-in](06-sign-in.md) | ASP.NET Core Identity, the five roles, the sign-in page; the first browser tests |
 | 07 | File a ticket | The requester's form, from the browser to the database, with proper error responses |
 | 08 | Queues | Dapper and SQL functions; agent queues with filters, sorting and paging in the address |
 | 09 | Take a ticket | Assigning safely when two agents click at once; race tests |

@@ -175,6 +175,43 @@ The text that says which server, database and login to use. Configuration, never
 **Collection** (05)
 xUnit's way to say "these test classes share one fixture and run one after the other".
 
+## Sign-in and security
+
+**ASP.NET Core Identity** (06)
+The library that ships with .NET for users, roles, password hashing, lockout and sign-in cookies. We never write
+those ourselves.
+
+**Authentication / authorization** (06)
+Authentication asks "who are you?"; authorization asks "may you do this?". `UseAuthentication` and
+`UseAuthorization`, in that order.
+
+**Role** (06)
+A name for what an account may do: `Admin`, `TeamLead`, `Agent`, `KbEditor`, `Requester`. Every account has exactly
+one.
+
+**Claim** (06)
+One fact about the signed-in person (their id, name or role) carried in the cookie.
+
+**Cookie** (06)
+A small value the server asks the browser to keep and send back with every request. Ours is `HttpOnly` and
+`SameSite=Strict`.
+
+**Lockout** (06)
+After five wrong passwords an account refuses all sign-ins for 15 minutes.
+
+**Open redirect** (06)
+A page that sends people wherever a link tells it to, including to another site. Prevented by only accepting
+addresses inside the app.
+
+**ICurrentUser** (06)
+How a handler asks who is calling, without touching HTTP.
+
+**Playwright** (06)
+A library that drives a real browser for tests: it finds things by role and name and waits for what should appear.
+
+**Browser context** (06)
+One person's own browser session: their own cookies, like their own computer.
+
 ## The browser app
 
 **Blazor Web App** (01)

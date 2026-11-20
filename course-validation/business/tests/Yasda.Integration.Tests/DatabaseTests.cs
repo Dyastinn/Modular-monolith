@@ -1,5 +1,7 @@
 using AwesomeAssertions;
 using Dapper;
+using Yasda.Modules.Tickets.Domain;
+using Yasda.Modules.Tickets.Infrastructure;
 using Yasda.Shared.BuildingBlocks;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
@@ -80,6 +82,53 @@ public class DatabaseTests(CustomWebAppFactory factory)
             """);
 
         crossing.Should().BeEmpty();
+    }
+
+    // A status the database doesn't know is refused by the database itself, whatever the code does.
+    [Fact]
+    public async Task The_database_refuses_a_status_it_does_not_know()
+    {
+        await using var conn = factory.OpenDatabase();
+
+        var insert = () => conn.ExecuteAsync(
+            """
+            INSERT INTO tickets.ticket (subject, priority, status, requester_id, requester_name, created_utc, updated_utc)
+            VALUES ('x', 'Normal', 'Banana', 1, 'Rita', now(), now())
+            """);
+
+        var failure = await insert.Should().ThrowAsync<PostgresException>();
+        failure.Which.ConstraintName.Should().Be("ck_ticket_status");
+    }
+
+    // Written in one scope and read in another: a new DbContext remembers nothing, so the data really comes back
+    // from the database.
+    [Fact]
+    public async Task A_ticket_and_its_conversation_survive_a_round_trip()
+    {
+        var now = new DateTime(2026, 11, 19, 9, 0, 0, DateTimeKind.Utc);
+        long id;
+        await using (var writeScope = factory.Services.CreateAsyncScope())
+        {
+            var db = writeScope.ServiceProvider.GetRequiredService<TicketsDbContext>();
+            var ticket = Ticket.Create("Round trip", "First words", TicketPriority.High, new UserId(5), "Rita Cruz", now);
+            ticket.Take(new UserId(3), "Alan Reyes", now);
+            ticket.Reply(new UserId(3), "Alan Reyes", "A note for us", isInternal: true, authorIsStaff: true, now);
+            db.Tickets.Add(ticket);
+            await db.SaveChangesAsync();
+            id = ticket.Id.Value;
+        }
+
+        await using var readScope = factory.Services.CreateAsyncScope();
+        var reader = readScope.ServiceProvider.GetRequiredService<TicketsDbContext>();
+        var loaded = await reader.Tickets.FindAsync(new TicketId(id));
+
+        loaded.Should().NotBeNull();
+        loaded.Subject.Should().Be("Round trip");
+        loaded.Priority.Should().Be(TicketPriority.High);
+        loaded.Status.Should().Be(TicketStatus.Open);
+        loaded.AssigneeId.Should().Be(new UserId(3));
+        loaded.Messages.Should().HaveCount(2);
+        loaded.Messages[1].IsInternal.Should().BeTrue();
     }
 
     // The app seeds on every development start, so the seed must be safe to run again.

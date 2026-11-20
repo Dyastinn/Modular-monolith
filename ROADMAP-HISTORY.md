@@ -438,6 +438,28 @@ App; errors gain stable, documented codes.
   database tests. 62 tests green; make-it-fail-once confirmed on the seed. Following found: the EF 10.0.4/10.0.14 version
   warning (fixed by pinning `Microsoft.EntityFrameworkCore.Relational`), the host needing the design package for `dotnet ef`,
   migrations being public classes (architecture-test exception), CA1848/CA1873. Lessons 06–11 and the `y2-done` tag still open.
+- **2026-11-20** — Lesson 06 (Sign-in) written and followed in the scratch folder: Identity module (AppUser, `YasdaIdentityDbContext`
+  with seeded roles and data-protection keys, dev users, `/auth/me`, `/auth/logout`, register blocked), `ICurrentUser`, cookie sign-in,
+  `AuthorizeRouteView`, `Login`, `PasswordField`, signed-in test clients, `AuthTests`, and `Yasda.Web.UiTests` (7 Playwright tests, run
+  in the real Edge against a live app on WSL PostgreSQL: all green). 73 + 7 browser tests. Following found: the home page answered 401
+  until `App.razor` and `MapRazorComponents` were `AllowAnonymous`, and Identity's API has no logout (own endpoint). Lesson 05 fixes made
+  on the way: migrations marked `generated_code`, CA1711 off for xUnit collections, `DatabaseTests` made module-aware. Lessons 07–11
+  and the `y2-done` tag still open.
+- **2026-11-20** — Lesson/build alignment pass for 03–06 (user: neither is the source of truth). Lessons changed to match the build: test
+  helpers and names (`ClientFor`, `CreateUserAsync`, bearer tokens for API clients, `Wrong_password_is_401`, `Self_registration_is_disabled`,
+  `Five_wrong_passwords_lock_the_account`, `Seeding_twice_changes_nothing`), `OpenDatabase` starting the app first (a real bug in the first
+  draft of lesson 05). Build changed to match the lessons: `The_database_refuses_a_status_it_does_not_know`,
+  `A_ticket_and_its_conversation_survive_a_round_trip`, `Each_development_user_has_the_role_their_address_says` added; `CurrentUser` and
+  `GetCurrentUserEndpoint` written in plain form. Build DatabaseTests (8) and AuthTests (19) green on the Podman machine. Known, intended
+  differences until later lessons: the lessons' `Configure(options, connectionString)` and per-module `IModuleDatabase` without a connection
+  (the build's shared connection arrives with the first contract call in lesson 07), the throwaway `ping` feature, and the Testcontainers
+  factory (lesson 12).
+- **2026-11-20** — Bug sweep over lessons 01–06 and the build. Re-ran the build's suites after the alignment edits: Tickets unit 31,
+  Identity unit 4, architecture 14, integration 98, all green. Lesson link/placeholder/style scan clean. Lesson 03's claims checked in
+  a real browser (Ping answers "pong: hello", an empty message shows "The server answered 400."). Install commands checked against
+  metadata: winget id `PostgreSQL.PostgreSQL.18` exists, Fedora's `postgresql-server` (18.x) provides `postgresql-setup`; macOS and
+  Ubuntu commands are still unverified here. Lesson 06's Identity `.csproj` no longer lists packages twice. WRITING-STYLE now says
+  throwaway lesson code (the `ping` tests) is exempt from "every test exists in the build".
 
 ---
 

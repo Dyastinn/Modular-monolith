@@ -29,6 +29,19 @@ public class AuthTests(CustomWebAppFactory factory)
         me.Role.Should().Be(Roles.TeamLead);
     }
 
+    [Theory]
+    [InlineData("admin@yasda.local", Roles.Admin)]
+    [InlineData("lead@yasda.local", Roles.TeamLead)]
+    [InlineData("agent@yasda.local", Roles.Agent)]
+    [InlineData("editor@yasda.local", Roles.KbEditor)]
+    [InlineData("requester@yasda.local", Roles.Requester)]
+    public async Task Each_development_user_has_the_role_their_address_says(string email, string role)
+    {
+        var me = await (await factory.ClientFor(email)).GetFromJsonAsync<Me>("/api/auth/me");
+
+        me!.Role.Should().Be(role);
+    }
+
     [Fact]
     public async Task Refresh_issues_a_new_access_token()
     {

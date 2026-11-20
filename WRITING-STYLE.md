@@ -112,7 +112,9 @@ reader who comes back to look something up. A lesson with no request to trace (s
   property-based, integration, browser, race, coverage, mutation.
 - **Make each test fail once.** A test that has never failed proves nothing. Tell the reader what to break,
   what the failure looks like, and to put it back.
-- **Every test named in a lesson exists in the reference build**, with the same name.
+- **Every test named in a lesson exists in the reference build**, with the same name. The one exception is a
+  lesson's own throwaway code, which a later lesson deletes (lesson 03's `ping` feature and its tests, gone in
+  lesson 07).
 
 ## Format rules
 

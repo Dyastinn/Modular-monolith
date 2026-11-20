@@ -743,7 +743,12 @@ After:
 
 ```csharp
 // tests/Yasda.Integration.Tests/CustomWebAppFactory.cs
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.DependencyInjection;
+using Yasda.Modules.Identity.Infrastructure;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Npgsql;
 
@@ -753,6 +758,9 @@ namespace Yasda.Integration.Tests;
 // never touch the data you click through in development.
 public sealed class CustomWebAppFactory : WebApplicationFactory<Program>
 {
+    // The password every development user has.
+    public const string Password = IdentityDatabase.DevPassword;
+
     // The server these tests use. Set YASDA_TEST_DB to point at another one.
     private static readonly string ConnectionString =
         Environment.GetEnvironmentVariable("YASDA_TEST_DB")
@@ -764,9 +772,43 @@ public sealed class CustomWebAppFactory : WebApplicationFactory<Program>
         builder.UseSetting("ConnectionStrings:YasdaDb", ConnectionString);
     }
 
-    // A connection for tests that look at the database itself.
-    public static NpgsqlConnection OpenDatabase()
+    public sealed record Tokens(string AccessToken, string RefreshToken);
+
+    public static async Task<Tokens> LoginAsync(HttpClient client, string email, string password = Password)
     {
+        var response = await client.PostAsJsonAsync("/api/auth/login", new { email, password });
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<Tokens>())!;
+    }
+
+    // A client that has signed in as someone and sends their bearer token with every call. Without
+    // useCookies, Identity's login answers with tokens instead of a cookie: the way a program signs in.
+    public async Task<HttpClient> ClientFor(string email)
+    {
+        var client = CreateClient();
+        var tokens = await LoginAsync(client, email);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", tokens.AccessToken);
+        return client;
+    }
+
+    // A throwaway account, for tests that lock someone out or need a person nobody else uses.
+    public async Task<string> CreateUserAsync(string role)
+    {
+        await using var scope = Services.CreateAsyncScope();
+        var users = scope.ServiceProvider.GetRequiredService<UserManager<AppUser>>();
+        var email = $"user-{Guid.NewGuid():N}@yasda.local";
+        var user = new AppUser { UserName = email, Email = email, EmailConfirmed = true, FullName = "Test User" };
+        var created = await users.CreateAsync(user, Password);
+        if (!created.Succeeded) throw new InvalidOperationException(string.Join(" ", created.Errors.Select(e => e.Description)));
+        await users.AddToRoleAsync(user, role);
+        return email;
+    }
+
+    // A connection for tests that look at the database itself. Starts the app first if no test has yet: the app is
+    // what migrates the database.
+    public NpgsqlConnection OpenDatabase()
+    {
+        _ = Server;
         var connection = new NpgsqlConnection(ConnectionString);
         connection.Open();
         return connection;
@@ -775,7 +817,7 @@ public sealed class CustomWebAppFactory : WebApplicationFactory<Program>
 ```
 
 `UseSetting` overrides one configuration value for the test app, so the same code runs against `yasda_test`.
-`OpenDatabase` is `static` (it needs nothing from a running app) and hands a test a plain connection for looking at the tables themselves. Set `YASDA_TEST_DB` to a
+`OpenDatabase` hands a test a plain connection for looking at the tables themselves. It touches `Server` first, which starts the app if no test has yet: the app is what migrates the database, and a database test that ran first would otherwise find no tables. Set `YASDA_TEST_DB` to a
 connection string if your server or login differs.
 
 This is a simpler factory than a real product wants, and we'll replace it with a throwaway database in a
@@ -837,11 +879,24 @@ public class DatabaseTests(CustomWebAppFactory factory)
 {
     private static readonly DateTime Now = new(2026, 11, 19, 9, 0, 0, DateTimeKind.Utc);
 
-    // One column of text from a query, as a list.
-    private static async Task<List<string>> Column(string sql)
+    // Every module that registered a database, so these tests grow with the app without being edited.
+    // A module's schema is its name in lower case: Tickets -> tickets.
+    private string[] Schemas
     {
-        await using var connection = CustomWebAppFactory.OpenDatabase();
+        get
+        {
+            using var scope = factory.Services.CreateScope();
+            var modules = scope.ServiceProvider.GetServices<IModuleDatabase>();
+            return modules.Select(m => m.Module.ToLowerInvariant()).ToArray();
+        }
+    }
+
+    // One column of text from a query, as a list.
+    private async Task<List<string>> Column(string sql, params string[] schemas)
+    {
+        await using var connection = factory.OpenDatabase();
         await using var command = new NpgsqlCommand(sql, connection);
+        command.Parameters.AddWithValue("schemas", schemas);
         await using var reader = await command.ExecuteReaderAsync();
         var values = new List<string>();
         while (await reader.ReadAsync())
@@ -850,12 +905,12 @@ public class DatabaseTests(CustomWebAppFactory factory)
     }
 
     [Fact]
-    public async Task The_tickets_schema_has_its_own_migration_history()
+    public async Task Every_module_has_its_own_schema_and_migration_history()
     {
         var histories = await Column(
             "SELECT table_schema FROM information_schema.tables WHERE table_name = '__EFMigrationsHistory'");
 
-        histories.Should().BeEquivalentTo(["tickets"]);
+        histories.Should().BeEquivalentTo(Schemas);
     }
 
     [Fact]
@@ -872,9 +927,9 @@ public class DatabaseTests(CustomWebAppFactory factory)
         var names = await Column(
             """
             SELECT table_name || '.' || column_name FROM information_schema.columns
-            WHERE table_schema = 'tickets' AND table_name <> '__EFMigrationsHistory'
+            WHERE table_schema = ANY(@schemas) AND table_name <> '__EFMigrationsHistory'
               AND (table_name ~ '[A-Z]' OR column_name ~ '[A-Z]')
-            """);
+            """, Schemas);
 
         names.Should().BeEmpty("EFCore.NamingConventions maps every name to snake_case");
     }
@@ -883,7 +938,7 @@ public class DatabaseTests(CustomWebAppFactory factory)
     [Fact]
     public async Task The_database_refuses_a_status_it_does_not_know()
     {
-        await using var connection = CustomWebAppFactory.OpenDatabase();
+        await using var connection = factory.OpenDatabase();
         await using var command = new NpgsqlCommand(
             """
             INSERT INTO tickets.ticket (subject, priority, status, requester_id, requester_name, created_utc, updated_utc)
@@ -925,7 +980,7 @@ public class DatabaseTests(CustomWebAppFactory factory)
     }
 
     [Fact]
-    public async Task Seeding_twice_adds_nothing()
+    public async Task Seeding_twice_changes_nothing()
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<TicketsDbContext>();
@@ -942,6 +997,8 @@ public class DatabaseTests(CustomWebAppFactory factory)
 
 A few things to see:
 
+- **`Schemas`** asks the app for every module that registered a database, and turns each name into its schema
+  (`Tickets` becomes `tickets`). Today that's one. When Identity arrives, the tests check it too, unedited.
 - **`Column`** runs one query and returns the first column as a list. Plain ADO.NET with Npgsql, no helper
   library yet. In lesson 08 Dapper makes this shorter.
 - **`The_database_refuses_a_status_it_does_not_know`** inserts a row straight into the table with a made-up
@@ -956,7 +1013,7 @@ Make one fail once. In `TicketsDatabase`, delete the line `if (await db.Tickets.
 `dotnet test tests/Yasda.Integration.Tests`:
 
 ```
-failed Yasda.Integration.Tests.DatabaseTests.Seeding_twice_adds_nothing
+failed Yasda.Integration.Tests.DatabaseTests.Seeding_twice_changes_nothing
   Expected db.Tickets.Count() to be 10, but found 13 (difference of 3).
 ```
 
@@ -966,12 +1023,12 @@ Your numbers will differ, but the difference is 3: three more tickets each time.
 
 | Test | The edge | Why it matters |
 |---|---|---|
-| `The_tickets_schema_has_its_own_migration_history` | Where the history lives | Each module migrates on its own, from its own schema |
+| `Every_module_has_its_own_schema_and_migration_history` | Where the history lives | Each module migrates on its own, from its own schema |
 | `Nothing_of_ours_lands_in_the_public_schema` | A table in the default schema | Modules are islands, even in the database |
 | `Tables_and_columns_are_snake_case` | A `RequesterId` column | Hand-written SQL in lesson 08 relies on the naming |
 | `The_database_refuses_a_status_it_does_not_know` | Writing around the domain | The last line of defense is the database |
 | `A_ticket_and_its_conversation_survive_a_round_trip` | A trip with nothing remembered | The mapping works in both directions |
-| `Seeding_twice_adds_nothing` | A second startup | Seed data must be idempotent |
+| `Seeding_twice_changes_nothing` | A second startup | Seed data must be idempotent |
 
 ## Mistakes to avoid
 
