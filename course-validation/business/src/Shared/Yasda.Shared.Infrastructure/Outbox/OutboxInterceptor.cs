@@ -24,10 +24,9 @@ public sealed class OutboxInterceptor(TimeProvider time) : SaveChangesIntercepto
     {
         if (db is null) return;
 
-        var aggregates = db.ChangeTracker.Entries<IAggregateRoot>()
-            .Select(e => e.Entity)
-            .Where(a => a.DomainEvents.Count > 0)
-            .ToList();
+        // Copied to a list first: adding outbox rows changes the change tracker while we'd still be reading it.
+        var entries = db.ChangeTracker.Entries<IAggregateRoot>();
+        var aggregates = entries.Select(e => e.Entity).Where(a => a.DomainEvents.Count > 0).ToList();
 
         var now = time.GetUtcNow().UtcDateTime;
         foreach (var aggregate in aggregates)

@@ -11,26 +11,45 @@ namespace Yasda.Architecture.Tests;
 public class ErrorCatalogTests
 {
     // Every new module's catalog joins this list, with its prefix.
-    private static readonly Dictionary<Type, string> Catalogs = new[]
+    private static readonly Dictionary<Type, string> Catalogs = new()
     {
-        (typeof(CommonErrors), "YASDA"),
-        (CatalogIn(typeof(IdentityModule)), "IDENTITY"),
-        (CatalogIn(typeof(TicketsModule)), "TICKETS"),
-    }.ToDictionary(c => c.Item1, c => c.Item2);
+        [typeof(CommonErrors)] = "YASDA",
+        [CatalogIn(typeof(IdentityModule))] = "IDENTITY",
+        [CatalogIn(typeof(TicketsModule))] = "TICKETS",
+    };
 
-    private static Type CatalogIn(Type moduleEntry) =>
-        moduleEntry.Assembly.GetTypes().Single(t => t.Name.EndsWith("Errors", StringComparison.Ordinal)
-                                                    && t.Namespace!.EndsWith(".Domain", StringComparison.Ordinal));
+    // The module's one XxxErrors class in its Domain folder.
+    private static Type CatalogIn(Type moduleEntry)
+    {
+        var catalogs = new List<Type>();
+        foreach (var type in moduleEntry.Assembly.GetTypes())
+        {
+            var isErrors = type.Name.EndsWith("Errors", StringComparison.Ordinal);
+            var isDomain = (type.Namespace ?? "").EndsWith(".Domain", StringComparison.Ordinal);
+            if (isErrors && isDomain)
+                catalogs.Add(type);
+        }
+        return catalogs.Single();
+    }
 
-    private static IEnumerable<(Type Catalog, FieldInfo Field, ErrorCode Error)> AllCodes() =>
-        Catalogs.Keys.SelectMany(c => c.GetFields(BindingFlags.Public | BindingFlags.Static)
-            .Where(f => f.FieldType == typeof(ErrorCode))
-            .Select(f => (c, f, (ErrorCode)f.GetValue(null)!)));
+    private static List<(Type Catalog, FieldInfo Field, ErrorCode Error)> AllCodes()
+    {
+        var all = new List<(Type, FieldInfo, ErrorCode)>();
+        foreach (var catalog in Catalogs.Keys)
+        {
+            foreach (var field in catalog.GetFields(BindingFlags.Public | BindingFlags.Static))
+            {
+                if (field.FieldType == typeof(ErrorCode))
+                    all.Add((catalog, field, (ErrorCode)field.GetValue(null)!));
+            }
+        }
+        return all;
+    }
 
     [Fact]
     public void Every_code_is_unique_well_formed_and_documented()
     {
-        var codes = AllCodes().ToList();
+        var codes = AllCodes();
 
         codes.Select(c => c.Error.Code).Should().OnlyHaveUniqueItems("a code names one problem, forever");
         foreach (var (catalog, field, error) in codes)
@@ -45,21 +64,39 @@ public class ErrorCatalogTests
     [Fact]
     public void Every_code_is_used_somewhere()
     {
-        var sourceFiles = Directory.EnumerateFiles(Path.Combine(RepositoryRoot(), "src"), "*.cs", SearchOption.AllDirectories)
-            .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}", StringComparison.Ordinal))
-            .Where(f => !Catalogs.Keys.Any(c => Path.GetFileNameWithoutExtension(f) == c.Name))
-            .Select(File.ReadAllText);
-        var source = string.Join(Environment.NewLine, sourceFiles);
+        var catalogFileNames = new HashSet<string>();
+        foreach (var catalog in Catalogs.Keys)
+            catalogFileNames.Add(catalog.Name);
 
-        AllCodes().Where(c => !Regex.IsMatch(source, $@"\b{c.Catalog.Name}\.{c.Field.Name}\b"))
-            .Select(c => $"{c.Error.Code} ({c.Catalog.Name}.{c.Field.Name})")
-            .Should().BeEmpty("every code in the catalog must be thrown or returned somewhere");
+        // All source code except build output and the catalog files themselves (a code is "used" outside them).
+        var objFolder = $"{Path.DirectorySeparatorChar}obj{Path.DirectorySeparatorChar}";
+        var source = new System.Text.StringBuilder();
+        foreach (var file in Directory.EnumerateFiles(Path.Combine(RepositoryRoot(), "src"), "*.cs", SearchOption.AllDirectories))
+        {
+            if (file.Contains(objFolder, StringComparison.Ordinal)) continue;
+            if (catalogFileNames.Contains(Path.GetFileNameWithoutExtension(file))) continue;
+            source.AppendLine(File.ReadAllText(file));
+        }
+        var allSource = source.ToString();
+
+        var unused = new List<string>();
+        foreach (var (catalog, field, error) in AllCodes())
+        {
+            if (!Regex.IsMatch(allSource, $@"\b{catalog.Name}\.{field.Name}\b"))
+                unused.Add($"{error.Code} ({catalog.Name}.{field.Name})");
+        }
+
+        unused.Should().BeEmpty("every code in the catalog must be thrown or returned somewhere");
     }
 
     private static string RepositoryRoot()
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
-        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "Yasda.slnx"))) dir = dir.Parent;
-        return dir?.FullName ?? throw new InvalidOperationException("Yasda.slnx not found above the test output folder.");
+        while (dir is not null)
+        {
+            if (File.Exists(Path.Combine(dir.FullName, "Yasda.slnx"))) return dir.FullName;
+            dir = dir.Parent;
+        }
+        throw new InvalidOperationException("Yasda.slnx not found above the test output folder.");
     }
 }

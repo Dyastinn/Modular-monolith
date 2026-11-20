@@ -38,9 +38,11 @@ public sealed class CookieAuthenticationStateProvider(HttpClient http) : Authent
         if (!response.IsSuccessStatusCode)
         {
             var body = await response.Content.ReadAsStringAsync();
-            return body.Contains("LockedOut") ? "This account is locked for 15 minutes after too many wrong passwords."
-                : body.Contains("NotAllowed") ? "This account is disabled. Ask an administrator."
-                : "Wrong email or password.";
+            if (body.Contains("LockedOut"))
+                return "This account is locked for 15 minutes after too many wrong passwords.";
+            if (body.Contains("NotAllowed"))
+                return "This account is disabled. Ask an administrator.";
+            return "Wrong email or password.";
         }
         Refresh();
         return null;

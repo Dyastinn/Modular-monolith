@@ -14,8 +14,25 @@
     [Parameter] public string? Class { get; set; }
 
     private bool Active => string.Equals(Sort, Column, StringComparison.Ordinal);
-    private string Arrow => Active ? (Desc ? " ▼" : " ▲") : "";
-    private string AriaSort => Active ? (Desc ? "descending" : "ascending") : "none";
+    private string Arrow
+    {
+        get
+        {
+            if (!Active) return "";
+            if (Desc) return " ▼";
+            return " ▲";
+        }
+    }
+
+    private string AriaSort
+    {
+        get
+        {
+            if (!Active) return "none";
+            if (Desc) return "descending";
+            return "ascending";
+        }
+    }
 
     private string Href => Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
     {

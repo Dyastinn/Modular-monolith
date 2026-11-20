@@ -12,11 +12,12 @@ public sealed class ErrorCatalog(IReadOnlyList<ErrorCode> codes)
     public IReadOnlyList<ErrorCode> Codes { get; } = codes;
 
     // Every public static ErrorCode field of a catalog class such as IdentityErrors.
-    public static ErrorCatalog From(Type catalogClass) =>
-        new(catalogClass.GetFields(BindingFlags.Public | BindingFlags.Static)
-            .Where(f => f.FieldType == typeof(ErrorCode))
-            .Select(f => (ErrorCode)f.GetValue(null)!)
-            .ToList());
+    public static ErrorCatalog From(Type catalogClass)
+    {
+        var fields = catalogClass.GetFields(BindingFlags.Public | BindingFlags.Static);
+        var codes = fields.Where(f => f.FieldType == typeof(ErrorCode)).Select(f => (ErrorCode)f.GetValue(null)!).ToList();
+        return new ErrorCatalog(codes);
+    }
 }
 
 // Codes that belong to no module: the HTTP layer and the platform.

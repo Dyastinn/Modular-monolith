@@ -35,8 +35,9 @@ Decided 2026-11-19 (user): **no component library**. MudBlazor was removed with 
   page's facts line, a Form page's one sentence on what happens after submit), then the page's actions.
 - Shared pieces: `TableBox` (the named, scrollable region round every table), `TimeAgo` (relative times in
   `<time>`), `PriorityText` (DESIGN.md §5.2; `Urgent` gets the Critical style).
-- Keep the code plain: a beginner reads it. Sequential `await`s, `if`/`else`, plain null checks. No clever LINQ,
-  pattern-matching tricks or parallel calls where a simple version reads as well (user, 2026-11-20).
+- Keep the code plain: a beginner reads it. Sequential `await`s, `if`/`else`, plain null checks; parallel calls
+  only when they really matter.
+  What is allowed and banned is listed once, in CLAUDE.md §5 "Write plain, boring code" (user, 2026-11-20).
 - A detail page's trail goes back to its list as it was left: `ListMemory.Last("users")`; the list calls
   `Memory.Remember(...)` when it loads.
 

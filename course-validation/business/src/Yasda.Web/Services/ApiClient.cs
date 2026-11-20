@@ -21,7 +21,8 @@ public sealed class ApiClient(HttpClient http, Notices notices, CookieAuthentica
     public async Task<T?> Get<T>(string url)
     {
         var response = await http.GetAsync(url);
-        return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync<T>() : await Fail<T>(response);
+        if (!response.IsSuccessStatusCode) return await Fail<T>(response);
+        return await response.Content.ReadFromJsonAsync<T>();
     }
 
     public Task<bool> Post(string url, object? body = null, string? success = null) => Send(HttpMethod.Post, url, body, success);
@@ -64,14 +65,25 @@ public sealed class ApiClient(HttpClient http, Notices notices, CookieAuthentica
         }
 
         var problem = await ReadProblem(response);
+
+        // The server's own words, when it sent any.
+        var serverMessage = $"The server answered {(int)response.StatusCode}.";
+        string? code = null;
+        if (problem is not null)
+        {
+            if (problem.Detail is not null) serverMessage = problem.Detail;
+            else if (problem.Title is not null) serverMessage = problem.Title;
+            code = problem.Code;
+        }
+
         var message = response.StatusCode switch
         {
             HttpStatusCode.Forbidden => "You don't have permission to do that.",
             HttpStatusCode.TooManyRequests => "Too many requests. Wait a moment and try again.",
-            _ => problem?.Detail ?? problem?.Title ?? $"The server answered {(int)response.StatusCode}."
+            _ => serverMessage
         };
         // The status line links the code to its catalog entry (see Pages/Errors.razor).
-        notices.Error(message, problem?.Code);
+        notices.Error(message, code);
         return default;
     }
 

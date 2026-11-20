@@ -36,27 +36,42 @@ public sealed partial class OutboxDispatcher(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        string[] schemas;
+        List<string> schemas;
         await using (var scope = scopes.CreateAsyncScope())
-            schemas = scope.ServiceProvider.GetServices<IModuleDatabase>().Select(m => m.Schema).ToArray();
+        {
+            var modules = scope.ServiceProvider.GetServices<IModuleDatabase>();
+            schemas = modules.Select(m => m.Schema).ToList();
+        }
+
+        // Once right away (events may have waited through a restart), then on every tick.
+        await DispatchAllAsync(schemas, stoppingToken);
 
         using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(_options.PollIntervalMs));
-        do
+        while (await timer.WaitForNextTickAsync(stoppingToken))
         {
-            foreach (var schema in schemas)
+            await DispatchAllAsync(schemas, stoppingToken);
+        }
+    }
+
+    private async Task DispatchAllAsync(List<string> schemas, CancellationToken stoppingToken)
+    {
+        foreach (var schema in schemas)
+        {
+            try
             {
-                try
+                // A full batch means more may be waiting, so go again until a batch comes back short.
+                var moreWaiting = true;
+                while (moreWaiting)
                 {
-                    // A full batch means more may be waiting.
-                    while (await DispatchBatchAsync(schema, stoppingToken) == _options.BatchSize) { }
-                }
-                catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
-                {
-                    log.LogError(ex, "Outbox dispatch for schema {Schema} failed; will retry next tick", schema);
+                    var delivered = await DispatchBatchAsync(schema, stoppingToken);
+                    moreWaiting = delivered == _options.BatchSize;
                 }
             }
+            catch (Exception ex) when (!stoppingToken.IsCancellationRequested)
+            {
+                log.LogError(ex, "Outbox dispatch for schema {Schema} failed; will retry next tick", schema);
+            }
         }
-        while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 
     private sealed record Row(Guid Id, string Type, string Payload);
@@ -69,7 +84,7 @@ public sealed partial class OutboxDispatcher(
         await using var conn = await dataSource.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
 
-        var batch = (await conn.QueryAsync<Row>(
+        var rows = await conn.QueryAsync<Row>(
             $"""
             SELECT id, type, payload FROM {table}
             WHERE processed_utc IS NULL AND attempts < @MaxAttempts
@@ -77,7 +92,8 @@ public sealed partial class OutboxDispatcher(
             LIMIT @BatchSize
             FOR UPDATE SKIP LOCKED
             """,
-            new { _options.MaxAttempts, _options.BatchSize }, tx)).ToList();
+            new { _options.MaxAttempts, _options.BatchSize }, tx);
+        var batch = rows.ToList();
 
         foreach (var message in batch)
         {

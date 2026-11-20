@@ -17,29 +17,57 @@ public class WiringTests(CustomWebAppFactory factory)
     [Fact]
     public async Task Every_feature_handler_is_registered()
     {
-        var handlers = Modules.SelectMany(m => m.Assembly.GetTypes())
-            .Where(t => t.Name.EndsWith("Handler", StringComparison.Ordinal) && (t.Namespace ?? "").EndsWith(".Features", StringComparison.Ordinal))
-            .ToList();
-
         await using var scope = factory.Services.CreateAsyncScope();
         var isService = scope.ServiceProvider.GetRequiredService<IServiceProviderIsService>();
-        handlers.Where(h => !isService.IsService(h)).Select(h => h.Name).Should().BeEmpty("an endpoint can only use a registered handler");
+
+        var unregistered = new List<string>();
+        foreach (var module in Modules)
+        {
+            foreach (var type in module.Assembly.GetTypes())
+            {
+                var isHandler = type.Name.EndsWith("Handler", StringComparison.Ordinal);
+                var isFeature = (type.Namespace ?? "").EndsWith(".Features", StringComparison.Ordinal);
+                if (isHandler && isFeature && !isService.IsService(type))
+                    unregistered.Add(type.Name);
+            }
+        }
+
+        unregistered.Should().BeEmpty("an endpoint can only use a registered handler");
     }
 
     [Fact]
     public async Task Every_event_handler_class_is_registered()
     {
         Type[] handlerInterfaces = [typeof(IDomainEventHandler<>), typeof(IIntegrationEventHandler<>)];
-        var handlers = Modules.SelectMany(m => m.Assembly.GetTypes())
-            .Where(t => (!t.IsAbstract && !t.IsInterface))
-            .SelectMany(t => t.GetInterfaces()
-                .Where(i => i.IsGenericType && handlerInterfaces.Contains(i.GetGenericTypeDefinition()))
-                .Select(i => (Class: t, Interface: i)))
-            .ToList();
-
         await using var scope = factory.Services.CreateAsyncScope();
-        handlers.Where(h => !scope.ServiceProvider.GetServices(h.Interface).Any(s => s!.GetType() == h.Class))
-            .Select(h => $"{h.Class.Name} as {h.Interface.Name}<{h.Interface.GetGenericArguments()[0].Name}>")
-            .Should().BeEmpty("a handler that isn't registered never runs");
+
+        var unregistered = new List<string>();
+        foreach (var module in Modules)
+        {
+            foreach (var type in module.Assembly.GetTypes())
+            {
+                if (type.IsAbstract || type.IsInterface) continue;
+
+                foreach (var implemented in type.GetInterfaces())
+                {
+                    if (!implemented.IsGenericType) continue;
+                    if (!handlerInterfaces.Contains(implemented.GetGenericTypeDefinition())) continue;
+
+                    if (!IsRegisteredAs(scope.ServiceProvider, implemented, type))
+                        unregistered.Add($"{type.Name} as {implemented.Name}<{implemented.GetGenericArguments()[0].Name}>");
+                }
+            }
+        }
+
+        unregistered.Should().BeEmpty("a handler that isn't registered never runs");
+    }
+
+    private static bool IsRegisteredAs(IServiceProvider services, Type handlerInterface, Type handlerClass)
+    {
+        foreach (var registered in services.GetServices(handlerInterface))
+        {
+            if (registered!.GetType() == handlerClass) return true;
+        }
+        return false;
     }
 }

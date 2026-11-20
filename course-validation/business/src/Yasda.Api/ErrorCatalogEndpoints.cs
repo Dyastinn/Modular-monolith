@@ -12,15 +12,30 @@ internal static class ErrorCatalogEndpoints
         var errors = api.MapGroup("/errors").AllowAnonymous().WithTags("Errors");
 
         errors.MapGet("/", (IEnumerable<ErrorCatalog> catalogs) =>
-            TypedResults.Ok(catalogs.SelectMany(c => c.Codes).OrderBy(c => c.Code, StringComparer.Ordinal).ToList()));
+        {
+            var all = AllCodes(catalogs);
+            all.Sort((a, b) => string.CompareOrdinal(a.Code, b.Code));
+            return TypedResults.Ok(all);
+        });
 
         errors.MapGet("/{code}", Results<Ok<ErrorCode>, NotFound> (string code, IEnumerable<ErrorCatalog> catalogs) =>
         {
-            var error = catalogs.SelectMany(c => c.Codes).FirstOrDefault(c => c.Code.Equals(code, StringComparison.OrdinalIgnoreCase));
-            if (error is null) return TypedResults.NotFound();
-            return TypedResults.Ok(error);
+            foreach (var error in AllCodes(catalogs))
+            {
+                if (error.Code.Equals(code, StringComparison.OrdinalIgnoreCase))
+                    return TypedResults.Ok(error);
+            }
+            return TypedResults.NotFound();
         });
 
         return api;
+    }
+
+    private static List<ErrorCode> AllCodes(IEnumerable<ErrorCatalog> catalogs)
+    {
+        var all = new List<ErrorCode>();
+        foreach (var catalog in catalogs)
+            all.AddRange(catalog.Codes);
+        return all;
     }
 }

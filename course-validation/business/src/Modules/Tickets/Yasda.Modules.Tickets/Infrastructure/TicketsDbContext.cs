@@ -24,7 +24,9 @@ internal sealed class TicketsDbContext(DbContextOptions<TicketsDbContext> option
     {
         var id = new TicketId(ticketId);
         var ticket = await Tickets.SingleOrDefaultAsync(t => t.Id == id, ct);
-        return ticket is not null && ticket.IsVisibleTo(user, userIsStaff) ? ticket : null;
+        if (ticket is null) return null;
+        if (!ticket.IsVisibleTo(user, userIsStaff)) return null;
+        return ticket;
     }
 
     protected override void ConfigureConventions(ModelConfigurationBuilder c)

@@ -73,9 +73,25 @@ else
 
     private ErrorCode? Selected => _codes?.FirstOrDefault(c => string.Equals(c.Code, Code, StringComparison.OrdinalIgnoreCase));
 
-    private IEnumerable<ErrorCode> Filtered => (_codes ?? []).Where(c => string.IsNullOrWhiteSpace(Search)
-        || c.Code.Contains(Search.Trim(), StringComparison.OrdinalIgnoreCase)
-        || c.Title.Contains(Search.Trim(), StringComparison.OrdinalIgnoreCase));
+    private List<ErrorCode> Filtered
+    {
+        get
+        {
+            var matches = new List<ErrorCode>();
+            if (_codes is null) return matches;
+            if (string.IsNullOrWhiteSpace(Search)) return _codes;
+
+            var search = Search.Trim();
+            foreach (var code in _codes)
+            {
+                var codeMatches = code.Code.Contains(search, StringComparison.OrdinalIgnoreCase);
+                var titleMatches = code.Title.Contains(search, StringComparison.OrdinalIgnoreCase);
+                if (codeMatches || titleMatches)
+                    matches.Add(code);
+            }
+            return matches;
+        }
+    }
 
     protected override async Task OnInitializedAsync() => _codes = await Http.GetFromJsonAsync<List<ErrorCode>>("api/errors");
 

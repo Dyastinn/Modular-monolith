@@ -16,14 +16,23 @@ public class ModuleBoundaryTests
     // Each module's .Contracts project joins this list when it is created.
     private static readonly Assembly[] ContractsAssemblies = [typeof(IUserDirectory).Assembly];
 
+    private const BindingFlags Everything =
+        BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic;
+
     [Fact]
     public void A_module_references_other_modules_only_through_their_Contracts()
     {
         foreach (var module in Modules)
         {
-            var illegal = module.GetReferencedAssemblies()
-                .Select(a => a.Name!)
-                .Where(n => n.StartsWith("Yasda.Modules.", StringComparison.Ordinal) && !n.EndsWith(".Contracts", StringComparison.Ordinal));
+            var illegal = new List<string>();
+            foreach (var reference in module.GetReferencedAssemblies())
+            {
+                var name = reference.Name!;
+                var isModule = name.StartsWith("Yasda.Modules.", StringComparison.Ordinal);
+                var isContracts = name.EndsWith(".Contracts", StringComparison.Ordinal);
+                if (isModule && !isContracts)
+                    illegal.Add(name);
+            }
 
             illegal.Should().BeEmpty($"{module.GetName().Name} may reference another module's .Contracts only");
         }
@@ -33,18 +42,28 @@ public class ModuleBoundaryTests
     public void Contracts_reference_no_module_so_no_cycle_can_form()
     {
         foreach (var contracts in ContractsAssemblies)
-            contracts.GetReferencedAssemblies().Select(a => a.Name!)
-                .Where(n => n.StartsWith("Yasda.Modules.", StringComparison.Ordinal))
-                .Should().BeEmpty($"{contracts.GetName().Name} must not depend on any module");
+        {
+            var names = contracts.GetReferencedAssemblies().Select(a => a.Name!);
+            var modules = names.Where(n => n.StartsWith("Yasda.Modules.", StringComparison.Ordinal));
+
+            modules.Should().BeEmpty($"{contracts.GetName().Name} must not depend on any module");
+        }
     }
 
     [Fact]
     public void Only_the_host_references_shared_infrastructure()
     {
-        foreach (var module in Modules.Concat(ContractsAssemblies))
-            module.GetReferencedAssemblies().Select(a => a.Name)
-                .Should().NotContain("Yasda.Shared.Infrastructure",
-                    $"{module.GetName().Name} must code against BuildingBlocks interfaces, never their implementations");
+        var checkedAssemblies = new List<Assembly>();
+        checkedAssemblies.AddRange(Modules);
+        checkedAssemblies.AddRange(ContractsAssemblies);
+
+        foreach (var assembly in checkedAssemblies)
+        {
+            var names = assembly.GetReferencedAssemblies().Select(a => a.Name);
+
+            names.Should().NotContain("Yasda.Shared.Infrastructure",
+                $"{assembly.GetName().Name} must code against BuildingBlocks interfaces, never their implementations");
+        }
     }
 
     [Fact]
@@ -52,10 +71,9 @@ public class ModuleBoundaryTests
     {
         foreach (var module in Modules)
         {
-            var publicTypes = module.GetExportedTypes()
-                // EF generates migrations as public classes.
-                .Where(t => !(t.Namespace ?? "").EndsWith(".Migrations", StringComparison.Ordinal))
-                .Select(t => t.FullName);
+            // EF generates migrations as public classes.
+            var exported = module.GetExportedTypes().Where(t => !IsInNamespace(t, ".Migrations"));
+            var publicTypes = exported.Select(t => t.FullName);
 
             publicTypes.Should().ContainSingle($"{module.GetName().Name} should expose only its AddXModule entry class")
                 .Which.Should().EndWith("Module");
@@ -83,19 +101,22 @@ public class ModuleBoundaryTests
 
         foreach (var module in Modules)
         {
-            var domainTypes = module.GetTypes().Where(t => (t.Namespace ?? "").EndsWith(".Domain", StringComparison.Ordinal));
-            foreach (var type in domainTypes)
+            foreach (var type in module.GetTypes())
             {
-                var used = type.GetFields(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
-                    .Select(f => f.FieldType)
-                    .Concat(type.GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                        .SelectMany(c => c.GetParameters()).Select(p => p.ParameterType))
-                    .Concat(type.GetMethods(BindingFlags.Instance | BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly)
-                        .SelectMany(m => m.GetParameters().Select(p => p.ParameterType).Append(m.ReturnType)));
+                if (!IsInNamespace(type, ".Domain")) continue;
 
-                used.Select(t => t.Assembly.GetName().Name!)
-                    .Where(a => forbidden.Any(f => a.StartsWith(f, StringComparison.Ordinal)))
-                    .Should().BeEmpty($"{type.FullName} is domain code and must stay free of data access and web types");
+                var usedAssemblies = new List<string>();
+                foreach (var usedType in TypesUsedBy(type))
+                {
+                    var assemblyName = usedType.Assembly.GetName().Name!;
+                    foreach (var prefix in forbidden)
+                    {
+                        if (assemblyName.StartsWith(prefix, StringComparison.Ordinal))
+                            usedAssemblies.Add(assemblyName);
+                    }
+                }
+
+                usedAssemblies.Should().BeEmpty($"{type.FullName} is domain code and must stay free of data access and web types");
             }
         }
     }
@@ -107,9 +128,15 @@ public class ModuleBoundaryTests
         foreach (var module in Modules)
         {
             var handled = HandledBy(module, typeof(IDomainEventHandler<>));
-            module.GetTypes().Where(t => (!t.IsAbstract && !t.IsInterface) && typeof(IDomainEvent).IsAssignableFrom(t))
-                .Where(e => !handled.Contains(e)).Select(e => e.FullName)
-                .Should().BeEmpty($"every domain event in {module.GetName().Name} needs a handler there");
+
+            var unhandled = new List<string>();
+            foreach (var type in module.GetTypes())
+            {
+                if (IsConcreteEvent(type, typeof(IDomainEvent)) && !handled.Contains(type))
+                    unhandled.Add(type.FullName!);
+            }
+
+            unhandled.Should().BeEmpty($"every domain event in {module.GetName().Name} needs a handler there");
         }
     }
 
@@ -120,12 +147,22 @@ public class ModuleBoundaryTests
         foreach (var contracts in ContractsAssemblies)
         {
             var owner = contracts.GetName().Name![..^".Contracts".Length];
-            var handled = Modules.Where(m => m.GetName().Name != owner)
-                .SelectMany(m => HandledBy(m, typeof(IIntegrationEventHandler<>))).ToHashSet();
 
-            contracts.GetTypes().Where(t => (!t.IsAbstract && !t.IsInterface) && typeof(IIntegrationEvent).IsAssignableFrom(t))
-                .Where(e => !handled.Contains(e)).Select(e => e.FullName)
-                .Should().BeEmpty($"every integration event in {contracts.GetName().Name} needs a handler in another module");
+            var handled = new HashSet<Type>();
+            foreach (var module in Modules)
+            {
+                if (module.GetName().Name == owner) continue;
+                handled.UnionWith(HandledBy(module, typeof(IIntegrationEventHandler<>)));
+            }
+
+            var unhandled = new List<string>();
+            foreach (var type in contracts.GetTypes())
+            {
+                if (IsConcreteEvent(type, typeof(IIntegrationEvent)) && !handled.Contains(type))
+                    unhandled.Add(type.FullName!);
+            }
+
+            unhandled.Should().BeEmpty($"every integration event in {contracts.GetName().Name} needs a handler in another module");
         }
     }
 
@@ -133,18 +170,22 @@ public class ModuleBoundaryTests
     [Fact]
     public void Domain_events_never_leave_their_module()
     {
-        Modules.Concat(ContractsAssemblies).SelectMany(a => a.GetTypes())
-            .Where(t => (!t.IsAbstract && !t.IsInterface && t.IsVisible) && typeof(IDomainEvent).IsAssignableFrom(t))
-            .Select(t => t.FullName)
-            .Should().BeEmpty("domain events are internal; other modules hear about them through an IIntegrationEvent");
-    }
+        var checkedAssemblies = new List<Assembly>();
+        checkedAssemblies.AddRange(Modules);
+        checkedAssemblies.AddRange(ContractsAssemblies);
 
-    private static HashSet<Type> HandledBy(Assembly module, Type openHandler) =>
-        module.GetTypes()
-            .SelectMany(t => t.GetInterfaces())
-            .Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == openHandler)
-            .Select(i => i.GetGenericArguments()[0])
-            .ToHashSet();
+        var publicDomainEvents = new List<string>();
+        foreach (var assembly in checkedAssemblies)
+        {
+            foreach (var type in assembly.GetTypes())
+            {
+                if (IsConcreteEvent(type, typeof(IDomainEvent)) && type.IsVisible)
+                    publicDomainEvents.Add(type.FullName!);
+            }
+        }
+
+        publicDomainEvents.Should().BeEmpty("domain events are internal; other modules hear about them through an IIntegrationEvent");
+    }
 
     // Vertical slices: a feature's files sit together. Folders named after a technical layer pull them apart again.
     [Fact]
@@ -152,24 +193,45 @@ public class ModuleBoundaryTests
     {
         string[] layers = [".Commands", ".Queries", ".Handlers", ".Validators", ".Endpoints", ".Repositories", ".Services"];
 
-        Modules.SelectMany(m => m.GetTypes())
-            .Select(t => t.Namespace ?? "")
-            .Distinct()
-            .Where(ns => layers.Any(l => ns.EndsWith(l, StringComparison.Ordinal)))
-            .Should().BeEmpty("a feature folder holds its handler and endpoint together");
+        var layerNamespaces = new HashSet<string>();
+        foreach (var module in Modules)
+        {
+            foreach (var type in module.GetTypes())
+            {
+                foreach (var layer in layers)
+                {
+                    if (IsInNamespace(type, layer))
+                        layerNamespaces.Add(type.Namespace!);
+                }
+            }
+        }
+
+        layerNamespaces.Should().BeEmpty("a feature folder holds its handler and endpoint together");
     }
 
     // A rich domain changes state through methods that check the rules. A public setter would let anyone skip them.
     [Fact]
     public void Domain_state_changes_only_through_its_methods()
     {
-        var setters = Modules.SelectMany(m => m.GetTypes())
-            .Where(t => (t.Namespace ?? "").EndsWith(".Domain", StringComparison.Ordinal))
-            .SelectMany(t => t.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly))
-            // A record's init-only property also has a public setter, marked IsExternalInit; those are fine.
-            .Where(p => p.SetMethod is not null && p.SetMethod.IsPublic
-                        && !p.SetMethod.ReturnParameter.GetRequiredCustomModifiers().Contains(typeof(IsExternalInit)))
-            .Select(p => $"{p.DeclaringType!.Name}.{p.Name}");
+        var setters = new List<string>();
+        foreach (var module in Modules)
+        {
+            foreach (var type in module.GetTypes())
+            {
+                if (!IsInNamespace(type, ".Domain")) continue;
+
+                foreach (var property in type.GetProperties(BindingFlags.Instance | BindingFlags.Public | BindingFlags.DeclaredOnly))
+                {
+                    var setter = property.SetMethod;
+                    if (setter is null || !setter.IsPublic) continue;
+
+                    // A record's init-only property also has a public setter, marked IsExternalInit; those are fine.
+                    var isInitOnly = setter.ReturnParameter.GetRequiredCustomModifiers().Contains(typeof(IsExternalInit));
+                    if (!isInitOnly)
+                        setters.Add($"{type.Name}.{property.Name}");
+                }
+            }
+        }
 
         setters.Should().BeEmpty("domain properties have private setters; records' init-only properties are fine");
     }
@@ -179,20 +241,103 @@ public class ModuleBoundaryTests
     [Fact]
     public void Queries_read_with_Dapper_and_commands_write_with_EF_Core()
     {
-        foreach (var handler in Modules.SelectMany(m => m.GetTypes()).Where(t => t.Name.EndsWith("Handler", StringComparison.Ordinal) && (t.Namespace ?? "").EndsWith(".Features", StringComparison.Ordinal)))
+        foreach (var module in Modules)
         {
-            var messages = handler.GetMethods().Where(m => m.Name == "HandleAsync")
-                .Select(m => m.GetParameters().First().ParameterType.Name).ToList();
-            var dependencies = handler.GetConstructors().Single().GetParameters().Select(p => p.ParameterType).ToList();
-            var isQuery = messages.Any(m => m.EndsWith("Query", StringComparison.Ordinal))
-                          || handler.Name.StartsWith("Get", StringComparison.Ordinal) || handler.Name.StartsWith("List", StringComparison.Ordinal) || handler.Name.StartsWith("Search", StringComparison.Ordinal);
+            foreach (var handler in module.GetTypes())
+            {
+                if (!IsFeatureHandler(handler)) continue;
 
-            if (isQuery)
-                dependencies.Where(d => d.IsSubclassOf(typeof(Microsoft.EntityFrameworkCore.DbContext))).Select(d => d.Name)
-                    .Should().BeEmpty($"{handler.Name} is a query: it reads with Dapper, never through a DbContext");
-            else if (messages.Any(m => m.EndsWith("Command", StringComparison.Ordinal)))
-                dependencies.Should().NotContain(typeof(IDbConnectionFactory),
-                    $"{handler.Name} is a command: it writes through the DbContext and the domain, never with Dapper");
+                var messageNames = new List<string>();
+                foreach (var method in handler.GetMethods())
+                {
+                    if (method.Name == "HandleAsync")
+                        messageNames.Add(method.GetParameters()[0].ParameterType.Name);
+                }
+
+                var dependencies = new List<Type>();
+                foreach (var parameter in handler.GetConstructors().Single().GetParameters())
+                    dependencies.Add(parameter.ParameterType);
+
+                if (IsQueryHandler(handler, messageNames))
+                {
+                    var dbContexts = new List<string>();
+                    foreach (var dependency in dependencies)
+                    {
+                        if (dependency.IsSubclassOf(typeof(Microsoft.EntityFrameworkCore.DbContext)))
+                            dbContexts.Add(dependency.Name);
+                    }
+                    dbContexts.Should().BeEmpty($"{handler.Name} is a query: it reads with Dapper, never through a DbContext");
+                }
+                else if (EndsWithAny(messageNames, "Command"))
+                {
+                    dependencies.Should().NotContain(typeof(IDbConnectionFactory),
+                        $"{handler.Name} is a command: it writes through the DbContext and the domain, never with Dapper");
+                }
+            }
         }
+    }
+
+    private static bool IsInNamespace(Type type, string suffix) =>
+        (type.Namespace ?? "").EndsWith(suffix, StringComparison.Ordinal);
+
+    private static bool IsFeatureHandler(Type type) =>
+        type.Name.EndsWith("Handler", StringComparison.Ordinal) && IsInNamespace(type, ".Features");
+
+    private static bool IsConcreteEvent(Type type, Type eventInterface) =>
+        !type.IsAbstract && !type.IsInterface && eventInterface.IsAssignableFrom(type);
+
+    private static bool IsQueryHandler(Type handler, List<string> messageNames)
+    {
+        if (EndsWithAny(messageNames, "Query")) return true;
+        if (handler.Name.StartsWith("Get", StringComparison.Ordinal)) return true;
+        if (handler.Name.StartsWith("List", StringComparison.Ordinal)) return true;
+        if (handler.Name.StartsWith("Search", StringComparison.Ordinal)) return true;
+        return false;
+    }
+
+    private static bool EndsWithAny(List<string> names, string suffix)
+    {
+        foreach (var name in names)
+        {
+            if (name.EndsWith(suffix, StringComparison.Ordinal)) return true;
+        }
+        return false;
+    }
+
+    // Every type a class's fields, constructors and methods mention.
+    private static List<Type> TypesUsedBy(Type type)
+    {
+        var used = new List<Type>();
+        foreach (var field in type.GetFields(Everything))
+            used.Add(field.FieldType);
+
+        foreach (var constructor in type.GetConstructors(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+        {
+            foreach (var parameter in constructor.GetParameters())
+                used.Add(parameter.ParameterType);
+        }
+
+        foreach (var method in type.GetMethods(Everything | BindingFlags.DeclaredOnly))
+        {
+            foreach (var parameter in method.GetParameters())
+                used.Add(parameter.ParameterType);
+            used.Add(method.ReturnType);
+        }
+        return used;
+    }
+
+    // The event types that some class in the module handles through the given open handler interface.
+    private static HashSet<Type> HandledBy(Assembly module, Type openHandler)
+    {
+        var handled = new HashSet<Type>();
+        foreach (var type in module.GetTypes())
+        {
+            foreach (var implemented in type.GetInterfaces())
+            {
+                if (implemented.IsGenericType && implemented.GetGenericTypeDefinition() == openHandler)
+                    handled.Add(implemented.GetGenericArguments()[0]);
+            }
+        }
+        return handled;
     }
 }

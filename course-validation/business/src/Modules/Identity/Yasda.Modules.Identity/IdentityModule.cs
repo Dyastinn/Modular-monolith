@@ -107,10 +107,13 @@ public static class IdentityModule
         app.MapGroup("/auth")
             .MapIdentityApi<AppUser>()
             .AddEndpointFilter(async (ctx, next) =>
+            {
                 // Staff accounts are created by an administrator, never by self sign-up.
-                ctx.HttpContext.Request.Path.Value?.EndsWith("/auth/register", StringComparison.OrdinalIgnoreCase) == true
-                    ? TypedResults.NotFound()
-                    : await next(ctx))
+                var path = ctx.HttpContext.Request.Path.Value ?? "";
+                if (path.EndsWith("/auth/register", StringComparison.OrdinalIgnoreCase))
+                    return TypedResults.NotFound();
+                return await next(ctx);
+            })
             .RequireRateLimiting(RateLimitPolicies.Auth);
 
         var identity = app.MapGroup("").WithTags("Identity");

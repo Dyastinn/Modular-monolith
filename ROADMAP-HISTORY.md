@@ -408,6 +408,14 @@ App; errors gain stable, documented codes.
   `TimeAgo`, `PriorityText`; Detail facts line; errors page searches on submit. Lesson 01 shell updated. Unit 35,
   architecture 14 pass; integration and the browser tests not run (no container engine, and the local
   PostgreSQL rejected the configured password). See ROADMAP.md Y2.
+- **2026-11-20** — "Plain, boring code" rule written into CLAUDE.md §5 (user). Allowed: `switch` expressions,
+  `is X or Y`, a single ternary, a single `?.`/`??`, LINQ while it's easy to follow (`foreach` once it isn't), parallel calls
+  only when they matter. Banned: nested ternaries, `?.` chains, `do … while`. Rewritten to it: `SortHeader`, `ApiClient`,
+  `CookieAuthenticationStateProvider`, `Errors.razor`, the `/auth/register` filter, `ErrorCatalog.From`, the error
+  catalog endpoints, `RequestValidation`, `OutboxInterceptor`, `OutboxDispatcher` (plain `while` loops),
+  `TicketsDbContext.GetVisibleTicketAsync`; tests `ModuleBoundaryTests`, `ErrorCatalogTests`, `WiringTests`,
+  `DatabaseTests`, `ErrorCodeTests` (same checks, loops). Build 0 warnings; unit 35 and architecture 14 pass;
+  integration not run (no container engine). Y3–Y7 planned in ROADMAP.md.
 
 ---
 

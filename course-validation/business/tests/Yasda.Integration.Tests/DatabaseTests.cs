@@ -17,7 +17,8 @@ public class DatabaseTests(CustomWebAppFactory factory)
         get
         {
             using var scope = factory.Services.CreateScope();
-            return scope.ServiceProvider.GetServices<IModuleDatabase>().Select(m => m.Module.ToLowerInvariant()).ToArray();
+            var modules = scope.ServiceProvider.GetServices<IModuleDatabase>();
+            return modules.Select(m => m.Module.ToLowerInvariant()).ToArray();
         }
     }
 
@@ -87,11 +88,16 @@ public class DatabaseTests(CustomWebAppFactory factory)
     {
         await using var conn = factory.OpenDatabase();
         // Every row in every module's tables, except the outbox's: what the seed could possibly have added to.
-        var counts = "SELECT 0" + string.Concat((await conn.QueryAsync<string>(
+        var tables = await conn.QueryAsync<string>(
             """
             SELECT quote_ident(table_schema) || '.' || quote_ident(table_name) FROM information_schema.tables
             WHERE table_schema = ANY(@Schemas) AND table_type = 'BASE TABLE' AND table_name <> 'outbox_message'
-            """, new { Schemas })).Select(t => $" + (SELECT COUNT(*) FROM {t})"));
+            """, new { Schemas });
+
+        // One query adding up every table's row count: SELECT 0 + (SELECT COUNT(*) FROM a) + (SELECT COUNT(*) FROM b) ...
+        var counts = "SELECT 0";
+        foreach (var table in tables)
+            counts += $" + (SELECT COUNT(*) FROM {table})";
         var before = await conn.ExecuteScalarAsync<long>(counts);
 
         await using (var scope = factory.Services.CreateAsyncScope())

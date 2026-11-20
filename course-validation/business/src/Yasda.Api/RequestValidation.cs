@@ -12,12 +12,17 @@ internal static class RequestValidation
         group.AddEndpointFilterFactory((context, next) =>
         {
             // Worked out once per endpoint at startup: which arguments have a validator at all.
+            // An argument's type is known only at startup, so its validator type is built by reflection.
             var isService = context.ApplicationServices.GetRequiredService<IServiceProviderIsService>();
-            var validated = context.MethodInfo.GetParameters()
-                .Select((p, index) => (Index: index, Validator: typeof(IValidator<>).MakeGenericType(p.ParameterType)))
-                .Where(p => isService.IsService(p.Validator))
-                .ToArray();
-            if (validated.Length == 0) return next;
+            var validated = new List<(int Index, Type Validator)>();
+            var parameters = context.MethodInfo.GetParameters();
+            for (var index = 0; index < parameters.Length; index++)
+            {
+                var validatorType = typeof(IValidator<>).MakeGenericType(parameters[index].ParameterType);
+                if (isService.IsService(validatorType))
+                    validated.Add((index, validatorType));
+            }
+            if (validated.Count == 0) return next;
 
             return async invocation =>
             {
@@ -31,9 +36,21 @@ internal static class RequestValidation
                 }
 
                 if (failures.Count == 0) return await next(invocation);
-                return TypedResults.ValidationProblem(
-                    failures.GroupBy(f => f.PropertyName).ToDictionary(g => g.Key, g => g.Select(f => f.ErrorMessage).ToArray()),
-                    detail: string.Join(" ", failures.Select(f => f.ErrorMessage)));
+
+                // Field name → its messages, the shape a validation problem body expects.
+                var messagesByField = new Dictionary<string, List<string>>();
+                foreach (var failure in failures)
+                {
+                    if (!messagesByField.ContainsKey(failure.PropertyName))
+                        messagesByField[failure.PropertyName] = new List<string>();
+                    messagesByField[failure.PropertyName].Add(failure.ErrorMessage);
+                }
+
+                var errors = new Dictionary<string, string[]>();
+                foreach (var field in messagesByField)
+                    errors[field.Key] = field.Value.ToArray();
+
+                return TypedResults.ValidationProblem(errors, detail: string.Join(" ", failures.Select(f => f.ErrorMessage)));
             };
         });
 }

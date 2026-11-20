@@ -370,8 +370,28 @@ A lesson may mention these only in a *"when you'd add this later, and why not no
 
 ### Code
 
-- **Keep code simple.** This is a course; a beginner reads every line. Plain `if`/`else`, sequential `await`s,
-  plain null checks. No clever LINQ chains or pattern-matching tricks where a simple version reads as well.
+- **Write plain, "boring" code. Never be clever.** This is a course and a product someone must maintain for years; a
+  beginner reads every line. The goal is code a tired maintainer understands on the first read. When a clever
+  version and a plain version both work, write the plain one, even if it is longer. (User, 2026-11-20.)
+  - Plain `if`/`else`, `foreach`, `for` and `while` loops (never `do … while`), sequential `await`s and plain null
+    checks. Parallel calls (`Task.WhenAll`) only when they really matter (a measured slow page, independent slow
+    calls); otherwise one `await` after another.
+  - One thing per line; name intermediate values instead of nesting calls.
+  - **Balance LINQ and `foreach` by how easy it is to follow** (user, 2026-11-20). LINQ that reads like a sentence
+    stays LINQ (`tickets.Where(t => t.IsOpen).Select(t => t.Id).ToList()`). When it starts to look complex or takes a
+    second read, switch to a `foreach` that fills a named list. That's the whole rule: judge by readability, not by
+    counting calls.
+  - No `??=`, `?.` chains, nested ternaries, expression-bodied members that hide logic, or one-liners that need a
+    second read.
+  - **Allowed** (user, 2026-11-20): `switch` expressions, `is X or Y` / `and` patterns
+    (`Status is TicketStatus.Closed or TicketStatus.Cancelled`), a single ternary (`a ? b : c`, never one inside
+    another), a single `?.` or `??` (`reason?.Trim() ?? ""`), and LINQ that is easy to follow.
+  - Reflection only where a type is known only at run time (the outbox dispatcher, the validation filter), with a
+    one-line comment saying so.
+  - No abstraction until it is needed twice: no generic helpers, base classes, extension-method layers or
+    reflection "for flexibility". Copying three plain lines beats a shared helper nobody can follow.
+  - No premature optimization. Make it readable first; optimize only for a measured problem, with a comment why.
+  - Before finishing any code, reread it as a beginner would. If a line needs explaining, rewrite the line.
 - **Every dependency is free and permissively licensed** (§3), and listed in the third-party notices file.
 - **Comments are minimal.** None on self-explanatory code. Where one is needed: one short line with the
   non-obvious *why* (a trap, a constraint). The lessons carry the explanations.
