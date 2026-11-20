@@ -1,25 +1,26 @@
 @implements IDisposable
 @inject Notices Notices
 
-@* The status line. An error carries its code, linked to the page that explains it and its fix. *@
-@if (Notices.Current is not null)
-{
-    var notice = Notices.Current;
-    @if (notice.IsError)
+@* The status line, beside the page's title. The status element is always there, so a screen reader is already
+   listening when a message lands in it. An error carries its code, linked to the page that explains it and its fix. *@
+<div>
+    @if (Notices.Current is not null && Notices.Current.IsError)
     {
-        <p class="notice error" role="alert">
-            <strong>Error:</strong> @notice.Text
-            @if (notice.Code is not null)
+        <p class="status-line error" role="alert">
+            Error: @Notices.Current.Text
+            @if (Notices.Current.Code is not null)
             {
-                <text> </text><a href="@($"errors/{notice.Code}")">What does @notice.Code mean?</a>
+                <text> </text><a href="@($"errors/{Notices.Current.Code}")">What does @Notices.Current.Code mean?</a>
             }
         </p>
     }
-    else
-    {
-        <p class="notice" role="status">@notice.Text</p>
-    }
-}
+    <p class="status-line" role="status">
+        @if (Notices.Current is not null && !Notices.Current.IsError)
+        {
+            @Notices.Current.Text
+        }
+    </p>
+</div>
 
 @code {
     protected override void OnInitialized() => Notices.Changed += Refresh;

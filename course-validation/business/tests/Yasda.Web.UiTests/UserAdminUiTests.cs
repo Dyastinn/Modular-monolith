@@ -23,14 +23,15 @@ public sealed class UserAdminUiTests : UiTest
         await page.GetByRole(AriaRole.Button, new() { Name = "Create user" }).ClickAsync();
 
         await Expect(StatusSaying(page, "User created.")).ToBeVisibleAsync();
-        await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Nina Lopez · Temporary password" })).ToBeVisibleAsync();
+        await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Nina Lopez" })).ToBeVisibleAsync();
+        await Expect(page.GetByText("Status: Temporary password")).ToBeVisibleAsync();
         await Shot(page, "user-created");
 
         await page.GetByRole(AriaRole.Button, new() { Name = "Disable" }).ClickAsync();
         await Expect(page.GetByRole(AriaRole.Alert)).ToContainTextAsync("Disable Nina Lopez?");
         await page.GetByRole(AriaRole.Button, new() { Name = "Disable" }).ClickAsync();
 
-        await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Nina Lopez · Disabled" })).ToBeVisibleAsync();
+        await Expect(page.GetByText("Status: Disabled")).ToBeVisibleAsync();
         await Expect(StatusSaying(page, "Disabled.")).ToBeVisibleAsync();
     }
 

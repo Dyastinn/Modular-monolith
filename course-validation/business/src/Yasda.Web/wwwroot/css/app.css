@@ -2,22 +2,37 @@
    Everything is plain HTML, so the page still reads in order with this file switched off. */
 
 :root {
+    color-scheme: light;
+
     --bg: #FEF1CD;
+    --surface-input: #FFFFFF;
     --text: #000000;
     --text-muted: #333333;
     --link: #0069C2;
+    --visited: #551A8B;
+    --error: #B00020;
+    --risk: #7A4A00;
     --line: #000000;
-    --error: #A00000;
+    --row-hover: #FAEBC2;
 
     --font: Georgia, "Times New Roman", serif;
-    --size-body: 1.0625rem;
-    --size-title: 2rem;
+    --font-mono: ui-monospace, Menlo, Consolas, monospace;
+    --size-body: 1rem;
+    --size-h1: 2rem;
+    --size-h2: 1.5rem;
+    --size-h3: 1.17rem;
     --line-height: 1.5;
 
     --max-width: 900px;
+    --max-width-wide: 1200px;
+    --measure: 70ch;
     --gap-s: 0.5rem;
     --gap-m: 1rem;
     --gap-l: 2rem;
+    --target: 2.75rem;
+    --marker: 4px solid;
+    --radius: 0;
+    --shadow: none;
     --border: 1px solid var(--line);
 }
 
@@ -32,17 +47,39 @@ body {
     font-family: var(--font);
     font-size: var(--size-body);
     line-height: var(--line-height);
+    overflow-wrap: break-word;
+}
+
+img {
+    max-width: 100%;
+}
+
+code, pre {
+    font-family: var(--font-mono);
+}
+
+pre {
+    overflow-x: auto;
 }
 
 .page {
     max-width: var(--max-width);
-    margin: 2.5rem auto var(--gap-l);
+    margin: var(--gap-l) auto;
     padding: 0 var(--gap-m);
+}
+
+/* A List page (DESIGN.md §4.3) is the only one that uses the wide column. */
+.page:has(.page-head.list) {
+    max-width: var(--max-width-wide);
 }
 
 a {
     color: var(--link);
     text-decoration: underline;
+}
+
+a:visited {
+    color: var(--visited);
 }
 
 /* Keyboard users always see where they are: the only "effect" DESIGN.md allows. */
@@ -57,50 +94,59 @@ hr {
     margin: var(--gap-m) 0;
 }
 
-hr.short {
-    width: 50%;
-    margin-inline: auto;
+/* The header: logo and name on the left, the navigation on the right, wrapping below it on a narrow screen. */
+.site-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--gap-s) var(--gap-m);
 }
 
-/* The triangle's top: logo, name, tagline and navigation, centered and narrow. */
-.masthead {
-    text-align: center;
-}
-
-.masthead img {
-    display: block;
-    margin: 0 auto var(--gap-s);
-}
-
-.site-name {
-    font-size: var(--size-title);
-    font-weight: bold;
+.brand {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-s);
     margin: 0;
-}
-
-.tagline {
-    color: var(--text-muted);
-    margin: 0 0 var(--gap-m);
+    font-weight: bold;
 }
 
 .links {
     display: flex;
     flex-wrap: wrap;
-    justify-content: center;
-    gap: var(--gap-s) var(--gap-m);
+    gap: 0 var(--gap-m);
     list-style: none;
     margin: 0;
     padding: 0;
 }
 
+.links a, .links strong, .links button {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--target);
+}
+
+h1, h2, h3 {
+    font-weight: bold;
+}
+
 h1 {
-    font-size: 1.5rem;
-    margin: 0 0 var(--gap-s);
+    font-size: var(--size-h1);
+    margin: 0;
 }
 
 h2 {
-    font-size: 1.25rem;
+    font-size: var(--size-h2);
     margin: var(--gap-l) 0 var(--gap-s);
+}
+
+h3 {
+    font-size: var(--size-h3);
+    margin: var(--gap-m) 0 var(--gap-s);
+}
+
+main p, main ul, main ol {
+    max-width: var(--measure);
 }
 
 .muted {
@@ -111,8 +157,27 @@ h2 {
     margin: 0 0 var(--gap-s);
 }
 
-/* Tables: collapsed 1px black borders, bold header, small padding. A wide table scrolls inside its own box on a phone,
-   never the page. */
+/* The page's title with the status line beside it; below it on a narrow screen. */
+.page-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--gap-s) var(--gap-m);
+    margin-bottom: var(--gap-s);
+}
+
+/* The status line: what just happened, in bold, or what went wrong, in the error color. Success has no color. */
+.status-line {
+    margin: 0;
+    font-weight: bold;
+}
+
+.status-line.error {
+    color: var(--error);
+}
+
+/* Tables: collapsed 1px black borders, bold header, no stripes. A wide table scrolls inside its own box, never the page. */
 .table-box {
     overflow-x: auto;
     margin-bottom: var(--gap-m);
@@ -125,7 +190,7 @@ table {
 
 th, td {
     border: var(--border);
-    padding: 0.25rem 0.5rem;
+    padding: var(--gap-s);
     text-align: left;
     vertical-align: top;
 }
@@ -134,9 +199,34 @@ th {
     font-weight: bold;
 }
 
-/* Forms: label above the field, 1px black border, nothing else. */
+th.num, td.num {
+    text-align: right;
+}
+
+tbody tr:hover {
+    background: var(--row-hover);
+}
+
+/* The subject takes the room that's left and ends in "…"; the link still holds the whole text. */
+td.truncate {
+    max-width: 0;
+    width: 100%;
+    min-width: 20ch;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+/* Priority (DESIGN.md §5.2): the word always says it; color only for the most urgent. */
+.critical {
+    color: var(--error);
+    font-weight: bold;
+}
+
+/* Forms: label above the field, 1px black border, white inside, nothing else. */
 .field {
     margin-bottom: var(--gap-m);
+    max-width: var(--measure);
 }
 
 .field label {
@@ -147,24 +237,31 @@ th {
 input, select, textarea {
     font: inherit;
     color: inherit;
-    background: transparent;
+    background: var(--surface-input);
     border: var(--border);
-    border-radius: 0;
-    padding: 0.25rem 0.5rem;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    min-height: var(--target);
+    padding: 0 var(--gap-s);
     box-sizing: border-box;
     width: 100%;
-    max-width: 28rem;
 }
 
-input[type="checkbox"] {
+textarea {
+    padding: var(--gap-s);
+}
+
+/* A checkbox's label sits beside it, and the pair is a full-height target. */
+.check {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-s);
+    min-height: var(--target);
+}
+
+.check input {
     width: auto;
-}
-
-/* A checkbox's label sits beside it, not above it like a text field's. */
-input[type="checkbox"] + label {
-    display: inline;
-    font-weight: normal;
-    margin-left: var(--gap-s);
+    min-height: 0;
 }
 
 .hint {
@@ -182,8 +279,10 @@ button {
     color: var(--text);
     background: transparent;
     border: var(--border);
-    border-radius: 0;
-    padding: 0.25rem 0.75rem;
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    min-height: var(--target);
+    padding: 0 var(--gap-m);
     cursor: pointer;
 }
 
@@ -193,12 +292,23 @@ button:disabled {
     cursor: not-allowed;
 }
 
-/* A button that reads as a link (sign out, a row action), so a row of actions stays a row of words. */
+/* A button that reads as a link (sign out), so a row of links stays a row of words. */
 button.link {
     border: 0;
     padding: 0;
     color: var(--link);
     text-decoration: underline;
+}
+
+/* A link that starts a main task, drawn like a button: same border and size, no underline. */
+a.button, a.button:visited {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--target);
+    padding: 0 var(--gap-m);
+    border: var(--border);
+    color: var(--text);
+    text-decoration: none;
 }
 
 .actions {
@@ -209,11 +319,17 @@ button.link {
     margin: var(--gap-s) 0 var(--gap-m);
 }
 
+.actions > a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--target);
+}
+
 .search {
     display: flex;
     flex-wrap: wrap;
     align-items: end;
-    gap: var(--gap-s);
+    gap: var(--gap-s) var(--gap-m);
     margin-bottom: var(--gap-m);
 }
 
@@ -222,23 +338,38 @@ button.link {
     flex: 0 1 20rem;
 }
 
-/* The status line: what just happened, or what went wrong. Color only where it carries meaning. */
-.notice {
-    border: var(--border);
-    padding: var(--gap-s) var(--gap-m);
+.search > a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--target);
+}
+
+input:disabled, select:disabled, textarea:disabled {
+    color: var(--text-muted);
+    border-style: dashed;
+}
+
+/* A ticket's conversation: each message under its heading, separated by a rule, its text kept as typed. */
+.thread {
+    max-width: var(--measure);
+}
+
+.message {
+    border-top: var(--border);
+    padding-top: var(--gap-s);
     margin-bottom: var(--gap-m);
 }
 
-.notice.error {
-    border-color: var(--error);
-    color: var(--error);
+.message h3 {
+    margin: 0;
 }
 
-.narrow {
-    max-width: 28rem;
-    margin-inline: auto;
+.message-body {
+    white-space: pre-wrap;
+    margin: var(--gap-s) 0 0;
 }
 
+/* Blazor's own crash bar. It stays pinned so a crash can't go unseen: usability over "no floating chrome". */
 #blazor-error-ui {
     display: none;
     position: fixed;
@@ -248,28 +379,4 @@ button.link {
     padding: var(--gap-s) var(--gap-m);
     background: var(--bg);
     border-top: var(--border);
-}
-
-/* A field that can't be changed says so the same way a disabled button does. */
-input:disabled, select:disabled, textarea:disabled {
-    color: var(--text-muted);
-    border-style: dashed;
-}
-
-/* A ticket's conversation: each message under a small heading, separated by a rule, its text kept as typed. */
-.message {
-    border-top: var(--border);
-    padding-top: var(--gap-s);
-    margin-bottom: var(--gap-m);
-}
-
-.message h3 {
-    font-size: var(--size-body);
-    font-weight: normal;
-    margin: 0;
-}
-
-.message-body {
-    white-space: pre-wrap;
-    margin: var(--gap-s) 0 0;
 }

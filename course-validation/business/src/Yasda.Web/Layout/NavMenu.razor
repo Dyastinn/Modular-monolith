@@ -1,14 +1,27 @@
-@* Each person sees the parts of the system their role uses. The API enforces the same rules; hiding a link is
-   only a convenience. *@
+@inject CookieAuthenticationStateProvider Auth
+@inject NavigationManager Nav
+
+@* Each person sees the parts of the system their role uses, in the same order on every page. The API enforces the
+   same rules; hiding a link is only a convenience. *@
 <nav aria-label="Main">
     <ul class="links">
-        <li><NavLink href="" Match="NavLinkMatch.All">Home</NavLink></li>
-        <li><NavLink href="tickets" Match="NavLinkMatch.All">Tickets</NavLink></li>
-        <li><NavLink href="tickets/new">New ticket</NavLink></li>
+        <li><NavItem Href="">Home</NavItem></li>
+        <li><NavItem Href="tickets">@(TicketChoices.IsStaff(Auth.User?.Role) ? "Tickets" : "My tickets")</NavItem></li>
+        <li><NavItem Href="tickets/new">New ticket</NavItem></li>
         <AuthorizeView Roles="@Roles.Admin">
-            <li><NavLink href="users">Users</NavLink></li>
-            <li><NavLink href="sign-in-log">Sign-in log</NavLink></li>
+            <li><NavItem Href="users">Users</NavItem></li>
+            <li><NavItem Href="sign-in-log">Sign-in log</NavItem></li>
         </AuthorizeView>
-        <li><NavLink href="errors">Error codes</NavLink></li>
+        <li><NavItem Href="errors">Error codes</NavItem></li>
+        <li><NavItem Href="change-password">Change password</NavItem></li>
+        <li><button type="button" class="link" @onclick="SignOut">Sign out</button></li>
     </ul>
 </nav>
+
+@code {
+    private async Task SignOut()
+    {
+        await Auth.SignOutAsync(false);
+        Nav.NavigateTo("login");
+    }
+}

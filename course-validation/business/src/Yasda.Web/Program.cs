@@ -11,6 +11,7 @@ builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(builder.H
 builder.Services.AddScoped<Notices>();
 builder.Services.AddScoped<ApiClient>();
 builder.Services.AddScoped<ListMemory>();
+builder.Services.AddSingleton(TimeProvider.System);
 
 builder.Services.AddAuthorizationCore();
 builder.Services.AddCascadingAuthenticationState();

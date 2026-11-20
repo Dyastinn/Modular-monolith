@@ -1,0 +1,10 @@
+@* The box a table sits in: it scrolls sideways on a phone so the page never does, and a keyboard can scroll it too,
+   so it's a named, focusable region. *@
+<div class="table-box" role="region" aria-label="@Label" tabindex="0">
+    @ChildContent
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

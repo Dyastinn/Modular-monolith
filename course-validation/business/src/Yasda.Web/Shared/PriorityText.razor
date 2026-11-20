@@ -1,0 +1,21 @@
+@* A ticket's priority, styled as DESIGN.md §5.2 says. The word always carries the meaning; "Urgent" is DESIGN.md's
+   "Critical", the only one in color. *@
+@switch (Value)
+{
+    case "Urgent":
+        <strong class="critical">@Value</strong>
+        break;
+    case "High":
+        <strong>@Value</strong>
+        break;
+    case "Low":
+        <span class="muted">@Value</span>
+        break;
+    default:
+        @Value
+        break;
+}
+
+@code {
+    [Parameter, EditorRequired] public string Value { get; set; } = "";
+}

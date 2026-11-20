@@ -19,25 +19,32 @@ Decided 2026-11-19 (user): **no component library**. MudBlazor was removed with 
   `'unsafe-inline'`), no CSS framework, no icon font, no dark mode.
 - **If HTML has an element for it, use that element:** `<h1>`, `<nav>`, `<table>`, `<hr>`, `<label>`, `<button>`,
   `<a>`. A `<div>` only to group fields or actions (`.field`, `.actions`, `.search`, `.table-box`).
-- **Every page reads correctly with CSS switched off** (DESIGN.md §6): order the markup the way it should read.
+- **Every page reads correctly with CSS switched off**: order the markup the way it should read.
 - Emphasis is `<strong>`. A status is a word, bold when it needs attention, never a colored badge.
 - **Packages:** none for the UI. Microsoft's own Blazor packages only. QuickGrid is allowed (user, 2026-11-19)
   but not used: lists are plain tables with link-based sort and paging (below).
 
 ## Layout
 
-- `MainLayout` draws DESIGN.md's triangle: `Masthead` (logo, name, tagline), the `Main` nav row, a short rule, the
-  `Account` nav row, a full rule, then `<main>` with the `NoticeArea` and the page.
-- Navigation is rows of links (`NavMenu`). No app bar, drawer, tabs, hamburger or tooltip.
-- Every page starts with `PageHeader`: the trail (a page under a list), the `<h1>` title with its status, a
-  description, and the page's actions as links or buttons.
+- `MainLayout` draws DESIGN.md §3's shell: one header line (32px logo and name on the left, the `Main` nav on the
+  right, ending with Change password and Sign out), a rule, then `<main>` with the page.
+- Navigation is one row of `NavItem`s (`NavMenu`): a link, or bold text with `aria-current="page"` for the page
+  you're on. No app bar, drawer, tabs, hamburger or tooltip.
+- Every page starts with `PageHeader`: the trail (a page under a list), the `<h1>` (with its count on a List page,
+  `List="true"` for the wide column) and the status line (`NoticeArea`) beside it, then a description (a Detail
+  page's facts line, a Form page's one sentence on what happens after submit), then the page's actions.
+- Shared pieces: `TableBox` (the named, scrollable region round every table), `TimeAgo` (relative times in
+  `<time>`), `PriorityText` (DESIGN.md §5.2; `Urgent` gets the Critical style).
+- Keep the code plain: a beginner reads it. Sequential `await`s, `if`/`else`, plain null checks. No clever LINQ,
+  pattern-matching tricks or parallel calls where a simple version reads as well (user, 2026-11-20).
 - A detail page's trail goes back to its list as it was left: `ListMemory.Last("users")`; the list calls
   `Memory.Remember(...)` when it loads.
 
 ## Forms
 
 - `EditForm` + Blazor's own inputs (`InputText`, `InputSelect`, `InputCheckbox`), each in a `.field` with its
-  `<label for>` **above** it. A hint is a `.hint` span linked by `aria-describedby`.
+  `<label for>` **above** it. A hint is a `.hint` span linked by `aria-describedby`. A checkbox and its label sit side
+  by side in a `.check`.
 - Passwords use `PasswordField` (a Show/Hide button whose accessible name names the field).
 - Submit buttons are `type="submit"` and `disabled="@Api.Busy"` while a change is on its way.
 - A form with unsaved changes asks before it's left: `NavigationLock` + `UnsavedChanges.ConfirmLeave` (the
@@ -45,8 +52,11 @@ Decided 2026-11-19 (user): **no component library**. MudBlazor was removed with 
 
 ## Lists
 
-- A list is a `<table>` inside `.table-box` (it scrolls sideways on a phone; the page never does), with `<th
-  scope="col">`. Empty: a sentence ("No users match."), not an empty table.
+- A list is a `<table>` inside `TableBox` (it scrolls sideways on a phone; the page never does), with `<th
+  scope="col">`, the subject or name cell as the link. Empty: a sentence saying what to do next ("No users match.
+  Clear filters or add a new user."), not an empty table.
+- Filters: native fields, "Apply" (a pure search says "Search") and a "Clear" link; active filters are summed up
+  as text above the table ("Showing: Open, High. Clear filters").
 - **The list's state lives in the address**: search, filters, `sort`, `desc`, `page`, read with
   `[SupplyParameterFromQuery]` and loaded in `OnParametersSetAsync`. A search is a form whose submit navigates to
   the new address with `page` cleared.

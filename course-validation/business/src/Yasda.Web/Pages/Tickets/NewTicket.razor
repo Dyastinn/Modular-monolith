@@ -8,18 +8,19 @@
 <NavigationLock OnBeforeInternalNavigation="ctx => UnsavedChanges.ConfirmLeave(Js, ctx, Unsaved)" />
 
 <PageHeader Title="New ticket">
-    <Description>Say what's wrong in one line, then the details: what you tried, and since when.</Description>
+    <Description>Your ticket goes to the service desk, and every answer appears on the ticket's own page.</Description>
 </PageHeader>
 
 <EditForm Model="this" OnSubmit="Send">
     <div class="field">
         <label for="subject">Subject</label>
         <InputText id="subject" @bind-Value="_subject" maxlength="200" required aria-describedby="subject-hint" />
-        <span class="hint" id="subject-hint">For example: Printer on the 3rd floor won't print.</span>
+        <span class="hint" id="subject-hint">What's wrong, in one line. For example: Printer on the 3rd floor won't print.</span>
     </div>
     <div class="field">
         <label for="message">Details</label>
-        <InputTextArea id="message" @bind-Value="_message" rows="8" maxlength="10000" required />
+        <InputTextArea id="message" @bind-Value="_message" rows="8" maxlength="10000" required aria-describedby="message-hint" />
+        <span class="hint" id="message-hint">What you tried, and since when.</span>
     </div>
     <div class="field">
         <label for="priority">Priority</label>

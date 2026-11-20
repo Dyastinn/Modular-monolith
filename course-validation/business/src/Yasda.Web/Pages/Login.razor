@@ -2,42 +2,43 @@
 @attribute [AllowAnonymous]
 @inject CookieAuthenticationStateProvider Auth
 @inject NavigationManager Nav
+@inject Notices Notices
 
 <PageTitle>Sign in · YASDA</PageTitle>
 
-<div class="narrow">
-    <h1>Sign in</h1>
-    <p class="muted">Use the email and password your administrator gave you.</p>
-    <EditForm Model="this" OnSubmit="SignIn">
-        <div class="field">
-            <label for="email">Email</label>
-            <InputText id="email" type="email" @bind-Value="_email" required autocomplete="username" autofocus />
-        </div>
-        <PasswordField @bind-Value="_password" Label="Password" Required="true" />
-        @if (_error is not null)
-        {
-            <p class="notice error" role="alert">@_error</p>
-        }
-        <div class="actions">
-            <button type="submit" disabled="@_busy">Sign in</button>
-            <a href="forgot-password">Forgot your password?</a>
-        </div>
-    </EditForm>
-</div>
+<PageHeader Title="Sign in">
+    <Description>Use the email and password your administrator gave you.</Description>
+</PageHeader>
+
+<EditForm Model="this" OnSubmit="SignIn">
+    <div class="field">
+        <label for="email">Email</label>
+        <InputText id="email" type="email" @bind-Value="_email" required autocomplete="username" autofocus />
+    </div>
+    <PasswordField @bind-Value="_password" Label="Password" Required="true" />
+    <div class="actions">
+        <button type="submit" disabled="@_busy">Sign in</button>
+        <a href="forgot-password">Forgot your password?</a>
+    </div>
+</EditForm>
 
 @code {
     [SupplyParameterFromQuery] public string? ReturnUrl { get; set; }
 
     private string _email = "", _password = "";
-    private string? _error;
     private bool _busy;
 
     private async Task SignIn()
     {
         _busy = true;
-        _error = await Auth.SignInAsync(_email.Trim(), _password ?? "");
+        Notices.Clear();
+        var error = await Auth.SignInAsync(_email.Trim(), _password ?? "");
         _busy = false;
-        if (_error is not null) return;
+        if (error is not null)
+        {
+            Notices.Error(error);
+            return;
+        }
 
         // Only ever go back inside this app: an outside returnUrl would make this page an open redirect.
         var stayInsideTheApp = ReturnUrl is not null && !ReturnUrl.Contains("//") && !ReturnUrl.Contains(':');

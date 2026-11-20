@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Microsoft.Playwright;
 using static Microsoft.Playwright.Assertions;
 
@@ -12,8 +13,32 @@ public sealed class SignInUiTests : UiTest
         await Shot(page, "signed-in");
 
         await Expect(page).ToHaveURLAsync(BaseUrl + "/");
-        await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Good day, Alan Reyes" })).ToBeVisibleAsync();
-        await Expect(page.GetByRole(AriaRole.Navigation, new() { Name = "Account" })).ToContainTextAsync("Alan Reyes (Agent)");
+        await Expect(page.GetByRole(AriaRole.Heading, new() { NameRegex = new Regex("^Good (morning|afternoon|evening), Alan Reyes$") }))
+            .ToBeVisibleAsync();
+        await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Needs you now" })).ToBeVisibleAsync();
+    }
+
+    // DESIGN.md §4.1: a requester's Home asks how it can help, with the two main tasks as the first things on it.
+    [UiFact]
+    public async Task A_requester_lands_on_how_can_we_help()
+    {
+        var page = await SignIn("requester@yasda.local");
+
+        await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "How can we help?" })).ToBeVisibleAsync();
+        await Expect(page.GetByRole(AriaRole.Link, new() { Name = "Submit a ticket" })).ToBeVisibleAsync();
+        await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Needs you now" })).ToHaveCountAsync(0);
+    }
+
+    // DESIGN.md §3: the page you're on is bold text in the navigation, not a link to itself.
+    [UiFact]
+    public async Task The_current_page_is_marked_and_not_a_link()
+    {
+        var page = await SignIn("agent@yasda.local");
+        await MainNav(page).GetByRole(AriaRole.Link, new() { Name = "Tickets" }).ClickAsync();
+
+        await Expect(MainNav(page).Locator("[aria-current=page]")).ToHaveTextAsync("Tickets");
+        await Expect(MainNav(page).GetByRole(AriaRole.Link, new() { Name = "Tickets", Exact = true })).ToHaveCountAsync(0);
+        await Expect(MainNav(page).GetByRole(AriaRole.Link, new() { Name = "Home" })).ToBeVisibleAsync();
     }
 
     [UiFact]
@@ -23,7 +48,7 @@ public sealed class SignInUiTests : UiTest
         await page.GotoAsync("/login");
         await FillSignIn(page, "agent@yasda.local", "not-the-password");
 
-        await Expect(page.GetByRole(AriaRole.Alert)).ToHaveTextAsync("Wrong email or password.");
+        await Expect(page.GetByRole(AriaRole.Alert)).ToHaveTextAsync("Error: Wrong email or password.");
         await Expect(page).ToHaveURLAsync(BaseUrl + "/login");
     }
 
@@ -65,17 +90,29 @@ public sealed class SignInUiTests : UiTest
         await Expect(page).ToHaveURLAsync(BaseUrl + "/login");
     }
 
-    // DESIGN.md: one column at any width. A phone shows the same page with nothing pushed off the side.
+    // DESIGN.md §3: works at 320px with no sideways page scroll. A phone shows the same page with nothing pushed off the side.
     [UiFact]
     public async Task The_page_fits_a_phone_without_sideways_scrolling()
     {
-        var page = await NewPage(width: 390);
+        var page = await NewPage(width: 320);
         await page.GotoAsync("/login");
         await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Sign in" })).ToBeVisibleAsync();
 
-        var overflow = await page.EvaluateAsync<bool>("document.documentElement.scrollWidth > document.documentElement.clientWidth");
-
-        Assert.False(overflow, "the page is wider than the phone");
+        Assert.False(await WiderThanTheScreen(page), "the page is wider than the phone");
     }
+
+    // The hard case: the full navigation wrapping under the logo, and a wide table, which scrolls in its own box.
+    [UiFact]
+    public async Task A_list_fits_a_phone_without_sideways_scrolling()
+    {
+        var page = await SignIn("admin@yasda.local", width: 320);
+        await page.GotoAsync("/tickets");
+        await Expect(page.GetByRole(AriaRole.Region, new() { Name = "Tickets" })).ToBeVisibleAsync();
+
+        Assert.False(await WiderThanTheScreen(page), "the page is wider than the phone");
+    }
+
+    private static Task<bool> WiderThanTheScreen(IPage page) =>
+        page.EvaluateAsync<bool>("document.documentElement.scrollWidth > document.documentElement.clientWidth");
 }
 

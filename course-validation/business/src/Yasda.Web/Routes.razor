@@ -6,7 +6,8 @@
             <NotAuthorized>
                 @if (context.User.Identity?.IsAuthenticated == true)
                 {
-                    <p role="alert">You don't have access to this page. <a href="">Go home</a></p>
+                    <h1>No access</h1>
+                    <p class="status-line error" role="alert">Error: You don't have access to this page. <a href="">Go home</a></p>
                 }
                 else
                 {

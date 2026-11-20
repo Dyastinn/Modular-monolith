@@ -5,7 +5,7 @@
 
 <PageTitle>Sign-in log · YASDA</PageTitle>
 
-<PageHeader Title="Sign-in log" />
+<PageHeader Title="@(_result is null ? "Sign-in log" : $"Sign-in log ({_result.TotalCount})")" List="true" />
 
 @* Newest first, always: a log reads in time order, so it has no sort headers. *@
 <EditForm Model="this" OnSubmit="Find" class="search" role="search">
@@ -13,12 +13,18 @@
         <label for="email">Email</label>
         <InputText id="email" type="search" @bind-Value="_email" />
     </div>
-    <div>
+    <div class="check">
         <InputCheckbox id="failed-only" @bind-Value="_failedOnly" />
         <label for="failed-only">Failed only</label>
     </div>
-    <button type="submit">Search</button>
+    <button type="submit">Apply</button>
+    <a href="sign-in-log">Clear</a>
 </EditForm>
+
+@if (Showing.Count > 0)
+{
+    <p>Showing: @string.Join(", ", Showing). <a href="sign-in-log">Clear filters</a></p>
+}
 
 @if (_result is null)
 {
@@ -26,11 +32,11 @@
 }
 else if (_result.Items.Count == 0)
 {
-    <p>No sign-in attempts match.</p>
+    <p>No sign-in attempts match. <a href="sign-in-log">Clear filters</a> to see them all.</p>
 }
 else
 {
-    <div class="table-box">
+    <TableBox Label="Sign-in attempts">
         <table>
             <thead>
                 <tr><th scope="col">When</th><th scope="col">Email</th><th scope="col">Outcome</th><th scope="col">From</th></tr>
@@ -39,7 +45,7 @@ else
                 @foreach (var a in _result.Items)
                 {
                     <tr>
-                        <td>@Format.Date(a.OccurredUtc)</td>
+                        <td><TimeAgo Utc="a.OccurredUtc" /></td>
                         <td>@a.Email</td>
                         <td>@if (a.Outcome == "Succeeded") { @Format.Words(a.Outcome) } else { <strong>@Format.Words(a.Outcome)</strong> }</td>
                         <td>@a.IpAddress</td>
@@ -47,7 +53,7 @@ else
                 }
             </tbody>
         </table>
-    </div>
+    </TableBox>
     <Pager Page="_result.Page" PageSize="_result.PageSize" Total="_result.TotalCount" Noun="attempts" />
 }
 
@@ -61,6 +67,17 @@ else
     private PagedResult<SignInAttempt>? _result;
     private string? _email;
     private bool _failedOnly;
+
+    private List<string> Showing
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (FailedOnly) parts.Add("failed only");
+            if (!string.IsNullOrWhiteSpace(Email)) parts.Add($"email matching \"{Email}\"");
+            return parts;
+        }
+    }
 
     protected override async Task OnParametersSetAsync()
     {

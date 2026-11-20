@@ -114,7 +114,7 @@ screen. Then you spend months bending them away from their designer's taste, and
 something you had bent.
 
 YASDA's look is written down in the repo's [DESIGN.md](../DESIGN.md): warm paper, black serif text, blue
-underlined links, thin black lines, one centered column. Its rule is *if plain HTML has an element for it,
+underlined links, thin black lines, one column. Its rule is *if plain HTML has an element for it,
 use that element*: a heading, a link, a table, a horizontal rule. So we use **no component library at all**.
 Our screens are HTML, Blazor's own form components, and one small CSS file holding the design's values.
 
@@ -528,9 +528,10 @@ onto a page. We never write either, so that lesson costs us nothing.
 
 ### The look, in one file
 
-DESIGN.md gives the whole look as a short list of values: five colors, one font, three gaps. CSS lets us
-name each value once, as a **custom property** (`--link: #0069C2`), and use the name everywhere else
-(`color: var(--link)`). Change the value in one place, and the whole app follows.
+DESIGN.md gives the whole look as a short list of values, its **tokens**: a few colors, one font, three gaps.
+CSS lets us name each value once, as a **custom property** (`--link: #0069C2`), and use the name everywhere
+else (`color: var(--link)`). Change the value in one place, and the whole app follows. Today we add only the
+tokens this lesson uses; the rest arrive with the first screen that needs them.
 
 ```css
 /* src/Yasda.Web/wwwroot/css/app.css */
@@ -538,21 +539,25 @@ name each value once, as a **custom property** (`--link: #0069C2`), and use the 
    Everything is plain HTML, so the page still reads in order with this file switched off. */
 
 :root {
+    color-scheme: light;
+
     --bg: #FEF1CD;
     --text: #000000;
     --text-muted: #333333;
     --link: #0069C2;
+    --visited: #551A8B;
     --line: #000000;
 
     --font: Georgia, "Times New Roman", serif;
-    --size-body: 1.0625rem;
-    --size-title: 2rem;
+    --size-body: 1rem;
+    --size-h1: 2rem;
     --line-height: 1.5;
 
     --max-width: 900px;
     --gap-s: 0.5rem;
     --gap-m: 1rem;
     --gap-l: 2rem;
+    --target: 2.75rem;
     --border: 1px solid var(--line);
 }
 
@@ -567,17 +572,26 @@ body {
     font-family: var(--font);
     font-size: var(--size-body);
     line-height: var(--line-height);
+    overflow-wrap: break-word;
+}
+
+img {
+    max-width: 100%;
 }
 
 .page {
     max-width: var(--max-width);
-    margin: 2.5rem auto var(--gap-l);
+    margin: var(--gap-l) auto;
     padding: 0 var(--gap-m);
 }
 
 a {
     color: var(--link);
     text-decoration: underline;
+}
+
+a:visited {
+    color: var(--visited);
 }
 
 /* Keyboard users always see where they are: the only "effect" DESIGN.md allows. */
@@ -592,40 +606,41 @@ hr {
     margin: var(--gap-m) 0;
 }
 
-/* The triangle's top: logo, name, tagline and navigation, centered and narrow. */
-.masthead {
-    text-align: center;
+/* The header: logo and name on the left, the navigation on the right, wrapping below it on a narrow screen. */
+.site-head {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--gap-s) var(--gap-m);
 }
 
-.masthead img {
-    display: block;
-    margin: 0 auto var(--gap-s);
-}
-
-.site-name {
-    font-size: var(--size-title);
-    font-weight: bold;
+.brand {
+    display: flex;
+    align-items: center;
+    gap: var(--gap-s);
     margin: 0;
-}
-
-.tagline {
-    color: var(--text-muted);
-    margin: 0 0 var(--gap-m);
+    font-weight: bold;
 }
 
 .links {
     display: flex;
     flex-wrap: wrap;
-    justify-content: center;
-    gap: var(--gap-s) var(--gap-m);
+    gap: 0 var(--gap-m);
     list-style: none;
     margin: 0;
     padding: 0;
 }
 
+.links a, .links strong {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--target);
+}
+
 h1 {
-    font-size: 1.5rem;
-    margin: 0 0 var(--gap-s);
+    font-size: var(--size-h1);
+    margin: 0;
 }
 
 .muted {
@@ -646,6 +661,8 @@ h1 {
 
 Everything after `:root` uses only those names, never a raw color or size. That's the rule for every line we
 add to this file later: tables, forms and messages each get a few lines in the lesson that first shows one.
+`--target` is 44 pixels, the least height for anything clickable, so a thumb can hit it. `color-scheme: light`
+stops a dark-mode browser from darkening our fields.
 
 The logo is a small drawing in black lines, a speech bubble with a tick. **SVG** is a picture written as
 text, so it stays sharp at any size and weighs almost nothing:
@@ -707,42 +724,70 @@ The **router** looks at the address and picks the page whose `@page` line matche
 frame around every page. If you came from WebForms, it's the master page. `FocusOnNavigate` moves the
 keyboard focus to each new page's `<h1>`, so a screen reader announces where you arrived.
 
-DESIGN.md calls its layout **the triangle**: the narrowest thing at the top (the logo and name), then a row
-of links, then a rule, then the page, widest at the bottom. Importance flows down, and so does width. Three
-small pieces build it. First the identity, which the sign-in pages will reuse later:
+DESIGN.md gives every page the same **shell**: one header line, with a small logo and the name on the left and
+the navigation on the right, then a rule across the page, then the page itself. Let's start with the
+navigation. Each entry is a link, except the page you're already on: DESIGN.md wants that one in bold, as
+plain text, because a link to where you already are does nothing. So we write one small component for an
+entry:
 
 ```razor
-@* src/Yasda.Web/Shared/Masthead.razor *@
-@* The product's mark, name and one line about it: the narrow top of every page. *@
-<img src="logo.svg" alt="" width="70" height="70" />
-<p class="site-name">YASDA</p>
-<p class="tagline">Yet another service desk application</p>
+@* src/Yasda.Web/Layout/NavItem.razor *@
+@implements IDisposable
+@inject NavigationManager Nav
+
+@* One navigation entry. The page you're on is bold text, not a link: a link to where you already are does nothing. *@
+@if (IsCurrent)
+{
+    <strong aria-current="page">@ChildContent</strong>
+}
+else
+{
+    <a href="@Href">@ChildContent</a>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Href { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    // The path without its query: tickets?assigned=me is the Tickets page; users/5 is not the Users page.
+    private bool IsCurrent => Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0] == Href;
+
+    protected override void OnInitialized() => Nav.LocationChanged += Refresh;
+
+    private void Refresh(object? sender, LocationChangedEventArgs e) => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Nav.LocationChanged -= Refresh;
+}
 ```
 
-The logo's `alt=""` is deliberate: the name is written right under it, so a screen reader would only say
-"YASDA" twice. Then the navigation, a row of links:
+- **`NavigationManager`** is the address bar. We compare its path, without the `?…` part, to the entry's.
+- **`[Parameter]`** is what the user of the component passes in; `ChildContent` is the text between the tags.
+- **`LocationChanged`** fires when the address changes, so the bold moves as you click around. We unsubscribe in
+  `Dispose`, or the event would keep the component alive forever.
+- **`aria-current="page"`** tells a screen reader "you are here".
+
+Then the navigation itself, a row of those entries:
 
 ```razor
 @* src/Yasda.Web/Layout/NavMenu.razor *@
 <nav aria-label="Main">
     <ul class="links">
-        <li><NavLink href="" Match="NavLinkMatch.All">Home</NavLink></li>
+        <li><NavItem Href="">Home</NavItem></li>
     </ul>
 </nav>
 ```
 
-`NavLink` is Blazor's own link: an ordinary `<a>` that also knows when its page is the one showing.
 `aria-label="Main"` names this `<nav>`, so a screen reader can say "Main navigation", and a browser test can
-find it by that name. One link for now; every feature lesson adds its own. And the frame itself:
+find it by that name. One entry for now; every feature lesson adds its own. And the frame itself:
 
 ```razor
 @* src/Yasda.Web/Layout/MainLayout.razor *@
 @inherits LayoutComponentBase
 
-@* DESIGN.md's triangle: the narrow identity on top, then navigation, then the page, widest at the bottom. *@
+@* DESIGN.md's shell: one header line (logo and name, then the navigation), a rule, then the page. *@
 <div class="page">
-    <header class="masthead">
-        <Masthead />
+    <header class="site-head">
+        <p class="brand"><img src="logo.svg" alt="" width="32" height="32" /> YASDA</p>
         <NavMenu />
     </header>
     <hr />
@@ -752,7 +797,8 @@ find it by that name. One link for now; every feature lesson adds its own. And t
 </div>
 ```
 
-`@Body` is where each page goes. The `<header>` and `<main>` elements are **landmarks**: a screen reader can
+The logo's `alt=""` is deliberate: the name is written right beside it, so a screen reader would only say
+"YASDA" twice. `@Body` is where each page goes. The `<header>` and `<main>` elements are **landmarks**: a screen reader can
 jump straight to the main content, past the navigation, and the browser tests in lesson 06 find things the
 same way. That's DESIGN.md's rule paying off: the right HTML element gives you meaning for free.
 
@@ -920,8 +966,9 @@ The build should show **0 warnings and 0 errors**. If you see `NU1008`, a `.cspr
 package reference.
 
 `dotnet run` prints the address it listens on, something like `http://localhost:5264`. Open it in your
-browser. After a moment, you see warm paper, the speech-bubble logo, **YASDA** with its tagline, a Home link,
-a line across the page, and "Good day!". Type `/no-such-page` after the address: the app says there's nothing
+browser. After a moment, you see warm paper and one header line: the small speech-bubble logo and **YASDA** on
+the left, and **Home** in bold on the right (bold, not a link, because you're on it). Then a line across the
+page, and "Good day!". Type `/no-such-page` after the address: the app says there's nothing
 there.
 
 Now check that the API and the pages each answer their own way, in a second terminal (use your port):
@@ -934,8 +981,8 @@ curl -i http://localhost:5264/no-such-page    # 404, with the app's "not found" 
 
 One more check, from DESIGN.md: would the page read fine with no CSS at all? In Firefox, choose **View, Page
 Style, No Style**; in Chrome or Edge, open the developer tools (F12), and in the **Network** tab right-click
-`app.css` and choose **Block request URL**, then reload. You see a plain list: the name, the tagline, the
-Home link, a line, the greeting. Same order, same meaning. Unblock it when you're done.
+`app.css` and choose **Block request URL**, then reload. You see a plain list: the logo, the name, Home, a
+line, the greeting. Same order, same meaning. Unblock it when you're done.
 
 Last, save your work in Git. Stop the app with Ctrl+C, then:
 

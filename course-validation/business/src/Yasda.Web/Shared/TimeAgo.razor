@@ -1,0 +1,16 @@
+@inject TimeProvider Time
+
+@* A time as people say it ("12m", "3h", "Yesterday"), with the exact time on hover and in the markup. *@
+@if (Utc is null)
+{
+    @Empty
+}
+else
+{
+    <time datetime="@Format.Iso(Utc.Value)" title="@Format.Date(Utc)">@Format.Ago(Utc.Value, Time.GetUtcNow().UtcDateTime)</time>
+}
+
+@code {
+    [Parameter, EditorRequired] public DateTime? Utc { get; set; }
+    [Parameter] public string Empty { get; set; } = "Never";
+}

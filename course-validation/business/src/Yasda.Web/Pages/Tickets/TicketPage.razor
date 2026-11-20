@@ -2,6 +2,7 @@
 @inject ApiClient Api
 @inject ListMemory Memory
 @inject CookieAuthenticationStateProvider Auth
+@inject Notices Notices
 
 <PageTitle>@(_ticket is null ? "Ticket" : $"#{_ticket.Id} {_ticket.Subject}") · YASDA</PageTitle>
 
@@ -13,24 +14,17 @@
 else
 {
     <PageHeader Title="@($"#{_ticket.Id} {_ticket.Subject}")" Trail="@([("Tickets", Memory.Last("tickets"))])">
-        <Status><strong>@_ticket.Status</strong></Status>
+        <Description>
+            Status: @_ticket.Status · Priority: <PriorityText Value="@_ticket.Priority" /> ·
+            Assigned: @(_ticket.AssigneeName ?? "Nobody yet") · Requester: @_ticket.RequesterName ·
+            Filed <TimeAgo Utc="_ticket.CreatedUtc" /> · Updated <TimeAgo Utc="_ticket.UpdatedUtc" />
+        </Description>
     </PageHeader>
 
-    <div class="table-box">
-        <table>
-            <tbody>
-                <tr><th scope="row">Requester</th><td>@_ticket.RequesterName</td></tr>
-                <tr><th scope="row">Assigned to</th><td>@(_ticket.AssigneeName ?? "Nobody yet")</td></tr>
-                <tr><th scope="row">Priority</th><td>@_ticket.Priority</td></tr>
-                <tr><th scope="row">Filed</th><td>@Format.Date(_ticket.CreatedUtc)</td></tr>
-                <tr><th scope="row">Last change</th><td>@Format.Date(_ticket.UpdatedUtc)</td></tr>
-                @if (_ticket.CancelReason is not null)
-                {
-                    <tr><th scope="row">Cancelled because</th><td>@_ticket.CancelReason</td></tr>
-                }
-            </tbody>
-        </table>
-    </div>
+    @if (_ticket.CancelReason is not null)
+    {
+        <p>Cancelled because: @_ticket.CancelReason</p>
+    }
 
     @* What this person can do now. The API checks every one of these again; hiding a button is only a convenience. *@
     <div class="actions">
@@ -88,7 +82,7 @@ else
                     }
                 </InputSelect>
             </div>
-            <button type="submit" disabled="@(_priority == _ticket.Priority || Api.Busy)">Change priority</button>
+            <button type="submit" disabled="@Api.Busy">Change priority</button>
         </EditForm>
     }
 
@@ -104,21 +98,20 @@ else
                     }
                 </InputSelect>
             </div>
-            <button type="submit" disabled="@(_assigneeId == _ticket.AssigneeId || Api.Busy)">Assign</button>
+            <button type="submit" disabled="@Api.Busy">Assign</button>
         </EditForm>
     }
 
-    <h2>Conversation</h2>
+    <section class="thread" aria-labelledby="conversation">
+    <h2 id="conversation">Conversation</h2>
     @foreach (var m in _ticket.Messages)
     {
         <article class="message">
-            <h3>
-                @if (m.IsInternal)
-                {
-                    <strong>Internal note</strong><text> · </text>
-                }
-                @m.AuthorName · @Format.Date(m.CreatedUtc)
-            </h3>
+            <h3>@m.AuthorName, <TimeAgo Utc="m.CreatedUtc" /></h3>
+            @if (m.IsInternal)
+            {
+                <p><strong>Internal note:</strong> only staff see this.</p>
+            }
             <p class="message-body">@m.Body</p>
         </article>
     }
@@ -132,7 +125,7 @@ else
             </div>
             @if (IsStaff)
             {
-                <div class="field">
+                <div class="check">
                     <InputCheckbox id="internal" @bind-Value="_internal" />
                     <label for="internal">Internal note: only staff will see it</label>
                 </div>
@@ -144,6 +137,7 @@ else
             </div>
         </EditForm>
     }
+    </section>
 }
 
 @code {
@@ -206,14 +200,25 @@ else
         await Load();
     }
 
+    // DESIGN.md: an enabled button that says what's missing beats a disabled one that says nothing.
     private async Task ChangePriority()
     {
+        if (_priority == _ticket!.Priority)
+        {
+            Notices.Success($"Priority is already {_priority}. Choose another one first.");
+            return;
+        }
         await Api.Put($"api/tickets/{Id}/priority", new { priority = _priority }, "Priority changed.");
         await Load();
     }
 
     private async Task Assign()
     {
+        if (_assigneeId == _ticket!.AssigneeId)
+        {
+            Notices.Success($"It's already assigned to {_ticket.AssigneeName}. Choose someone else first.");
+            return;
+        }
         await Api.Post($"api/tickets/{Id}/assign", new { assigneeId = _assigneeId }, "Assigned.");
         await Load();
     }

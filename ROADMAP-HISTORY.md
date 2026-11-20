@@ -400,6 +400,14 @@ App; errors gain stable, documented codes.
   every domain that needs BIR registration or permits. Tag `erp-final`; ERP modules, money types and MudBlazor
   removed; `Erp` → `Yasda`; helpdesk roles; plain-Blazor screens to DESIGN.md; MIT license. Unit 4, architecture
   14, integration 69, browser 12, all green. See ROADMAP.md Y1.
+- **2026-11-20** — Screens aligned with the rewritten DESIGN.md: full token set (`--error` #B00020, 16px body, 44px
+  targets, white inputs, row hover); one-line header (32px logo, one Main nav ending in Change password / Sign out;
+  tagline, Account nav and `Masthead` gone; Sign out everywhere moved to Change password); current page bold
+  (`NavItem`); status line beside the `h1` in `PageHeader`; Home per §4.1 (agent: Needs you now, queues; requester:
+  How can we help?, Waiting on you, recent tickets); lists with counts, Apply/Clear, "Showing:", `TableBox`,
+  `TimeAgo`, `PriorityText`; Detail facts line; errors page searches on submit. Lesson 01 shell updated. Unit 35,
+  architecture 14 pass; integration and the browser tests not run (no container engine, and the local
+  PostgreSQL rejected the configured password). See ROADMAP.md Y2.
 
 ---
 

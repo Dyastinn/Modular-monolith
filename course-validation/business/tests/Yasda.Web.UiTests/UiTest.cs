@@ -83,12 +83,14 @@ public abstract class UiTest : IAsyncLifetime
         await page.GetByRole(AriaRole.Button, new() { Name = "Sign in" }).ClickAsync();
     }
 
-    protected async Task<IPage> SignIn(string email)
+    // Signed in once Home shows with its own entry in the navigation marked as the current page. Each role's Home has
+    // its own heading, so the navigation is what every role shares.
+    protected async Task<IPage> SignIn(string email, int width = 1366)
     {
-        var page = await NewPage();
+        var page = await NewPage(width);
         await page.GotoAsync("/login");
         await FillSignIn(page, email, Password);
-        await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "Good day," })).ToBeVisibleAsync();
+        await Expect(MainNav(page).Locator("[aria-current=page]")).ToHaveTextAsync("Home");
         return page;
     }
 

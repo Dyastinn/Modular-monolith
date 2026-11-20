@@ -6,7 +6,7 @@
 
 <PageTitle>Users · YASDA</PageTitle>
 
-<PageHeader Title="Users">
+<PageHeader Title="@(_result is null ? "Users" : $"Users ({_result.TotalCount})")" List="true">
     <Actions><a href="users/new">New user</a></Actions>
 </PageHeader>
 
@@ -17,7 +17,13 @@
         <InputText id="search" type="search" @bind-Value="_search" />
     </div>
     <button type="submit">Search</button>
+    <a href="users">Clear</a>
 </EditForm>
+
+@if (!string.IsNullOrWhiteSpace(Search))
+{
+    <p>Showing: matching "@Search". <a href="users">Clear filters</a></p>
+}
 
 @if (_result is null)
 {
@@ -25,11 +31,11 @@
 }
 else if (_result.Items.Count == 0)
 {
-    <p>No users match.</p>
+    <p>No users match. <a href="users">Clear filters</a> or <a href="users/new">add a new user</a>.</p>
 }
 else
 {
-    <div class="table-box">
+    <TableBox Label="Users">
         <table>
             <thead>
                 <tr>
@@ -47,13 +53,13 @@ else
                         <td><a href="@($"users/{u.Id}")">@u.FullName</a></td>
                         <td>@u.Email</td>
                         <td>@Format.Words(u.Role)</td>
-                        <td>@(u.Status == "Active" ? u.Status : null)<strong>@(u.Status == "Active" ? null : u.Status)</strong></td>
-                        <td>@Format.Date(u.LastSignIn)</td>
+                        <td>@if (u.Status == "Active") { @u.Status } else { <strong>@u.Status</strong> }</td>
+                        <td><TimeAgo Utc="u.LastSignIn" /></td>
                     </tr>
                 }
             </tbody>
         </table>
-    </div>
+    </TableBox>
     <Pager Page="_result.Page" PageSize="_result.PageSize" Total="_result.TotalCount" Noun="users" />
 }
 

@@ -11,7 +11,16 @@
 <NavigationLock OnBeforeInternalNavigation="ctx => UnsavedChanges.ConfirmLeave(Js, ctx, Unsaved)" />
 
 <PageHeader Title="@Title" Trail="@([("Users", Memory.Last("users"))])">
-    <Status>@if (_user is not null) { <strong>@_user.Status</strong> }</Status>
+    <Description>
+        @if (_user is not null)
+        {
+            <text>Status: </text><strong>@_user.Status</strong><text> · Last sign-in: </text><TimeAgo Utc="_user.LastSignIn" />
+        }
+        else if (Id is null)
+        {
+            <text>Creates the account. Give them the temporary password in person; they choose their own when they first sign in.</text>
+        }
+    </Description>
 </PageHeader>
 
 @if (Id is not null && _user is null)
@@ -43,11 +52,11 @@ else
         @if (_user is null)
         {
             <PasswordField @bind-Value="_password" Label="Temporary password" Required="true" Autocomplete="new-password"
-                           Hint="At least 12 characters. Give it to them in person; they must change it when they first sign in." />
+                           Hint="At least 12 characters." />
         }
         <div class="actions">
             <button type="submit" disabled="@Api.Busy">
-                @(_user is null ? "Create user" : "Save")
+                @(_user is null ? "Create user" : "Save changes")
             </button>
         </div>
     </EditForm>

@@ -4,9 +4,9 @@
 @inject ListMemory Memory
 @inject CookieAuthenticationStateProvider Auth
 
-<PageTitle>Tickets · YASDA</PageTitle>
+<PageTitle>@Name · YASDA</PageTitle>
 
-<PageHeader Title="@(IsStaff ? "Tickets" : "My tickets")">
+<PageHeader Title="@(_result is null ? Name : $"{Name} ({_result.TotalCount})")" List="true">
     <Actions><a href="tickets/new">New ticket</a></Actions>
 </PageHeader>
 
@@ -47,8 +47,14 @@
             }
         </InputSelect>
     </div>
-    <button type="submit">Search</button>
+    <button type="submit">Apply</button>
+    <a href="tickets">Clear</a>
 </EditForm>
+
+@if (Showing.Count > 0)
+{
+    <p>Showing: @string.Join(", ", Showing). <a href="tickets">Clear filters</a></p>
+}
 
 @if (_result is null)
 {
@@ -56,15 +62,15 @@
 }
 else if (_result.Items.Count == 0)
 {
-    <p>No tickets match.</p>
+    <p>No tickets match. <a href="tickets">Clear filters</a> or <a href="tickets/new">file a new ticket</a>.</p>
 }
 else
 {
-    <div class="table-box">
+    <TableBox Label="Tickets">
         <table>
             <thead>
                 <tr>
-                    <SortHeader Column="id" Title="#" Sort="@Sort" Desc="Desc" />
+                    <SortHeader Column="id" Title="#" Sort="@Sort" Desc="Desc" Class="num" />
                     <SortHeader Column="subject" Title="Subject" Sort="@Sort" Desc="Desc" />
                     <SortHeader Column="status" Title="Status" Sort="@Sort" Desc="Desc" />
                     <SortHeader Column="priority" Title="Priority" Sort="@Sort" Desc="Desc" />
@@ -80,30 +86,21 @@ else
                 @foreach (var t in _result.Items)
                 {
                     <tr>
-                        <td>@t.Id</td>
-                        <td><a href="@($"tickets/{t.Id}")">@t.Subject</a></td>
+                        <td class="num">@t.Id</td>
+                        <td class="truncate"><a href="@($"tickets/{t.Id}")">@t.Subject</a></td>
                         <td>@t.Status</td>
-                        <td>
-                            @if (t.Priority is "High" or "Urgent")
-                            {
-                                <strong>@t.Priority</strong>
-                            }
-                            else
-                            {
-                                @t.Priority
-                            }
-                        </td>
+                        <td><PriorityText Value="@t.Priority" /></td>
                         @if (IsStaff)
                         {
                             <td>@t.RequesterName</td>
                         }
                         <td>@(t.AssigneeName ?? "Nobody yet")</td>
-                        <td>@Format.Date(t.UpdatedUtc)</td>
+                        <td><TimeAgo Utc="t.UpdatedUtc" /></td>
                     </tr>
                 }
             </tbody>
         </table>
-    </div>
+    </TableBox>
     <Pager Page="_result.Page" PageSize="_result.PageSize" Total="_result.TotalCount" Noun="tickets" />
 }
 
@@ -122,6 +119,22 @@ else
     private string? _search, _assigned, _status, _priority;
 
     private bool IsStaff => TicketChoices.IsStaff(Auth.User?.Role);
+    private string Name => IsStaff ? "Tickets" : "My tickets";
+
+    // The filters in force, in words: "Showing: Open, High, assigned to me."
+    private List<string> Showing
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (!string.IsNullOrEmpty(Status)) parts.Add(Status);
+            if (!string.IsNullOrEmpty(Priority)) parts.Add(Priority);
+            if (Assigned == "me") parts.Add("assigned to me");
+            if (Assigned == "unassigned") parts.Add("assigned to nobody yet");
+            if (!string.IsNullOrWhiteSpace(Search)) parts.Add($"matching \"{Search}\"");
+            return parts;
+        }
+    }
 
     protected override async Task OnParametersSetAsync()
     {

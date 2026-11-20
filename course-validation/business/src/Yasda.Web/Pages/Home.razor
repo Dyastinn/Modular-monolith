@@ -1,31 +1,105 @@
 @page "/"
+@inject ApiClient Api
+@inject CookieAuthenticationStateProvider Auth
+@inject TimeProvider Time
 
 <PageTitle>Home · YASDA</PageTitle>
 
-<AuthorizeView Context="auth">
-    <PageHeader Title="@($"Good day, {auth.User.Identity?.Name}")">
-        <Description>Here's where your work starts.</Description>
+@* DESIGN.md §4.1: what needs this person right now, most urgent first, then the fastest way to act on it. Empty
+   sections are hidden, except the first. *@
+@if (IsStaff)
+{
+    <PageHeader Title="@Greeting" />
+
+    @if (_needsYou is null)
+    {
+        <p role="status">Loading…</p>
+    }
+    else
+    {
+        <h2>Needs you now (@_needsYou.TotalCount)</h2>
+        @if (_needsYou.Items.Count == 0)
+        {
+            <p>Nothing needs you right now.</p>
+        }
+        else
+        {
+            <TicketTable Label="Needs you now" Items="_needsYou.Items" ShowPriority="true" />
+        }
+        <p><a href="tickets?assigned=me">Show all in My queue</a></p>
+
+        <h2>Queues</h2>
+        <p>
+            <a href="tickets?assigned=me">My queue</a> ·
+            <a href="tickets?assigned=unassigned&status=New">Unassigned (@_unassigned?.TotalCount)</a> ·
+            <a href="tickets?assigned=me&status=Pending">Waiting on requester (@_waitingOnRequester?.TotalCount)</a> ·
+            <a href="tickets">All tickets</a>
+        </p>
+    }
+}
+else
+{
+    <PageHeader Title="How can we help?">
+        <Actions>
+            <a class="button" href="tickets/new">Submit a ticket</a>
+            <a class="button" href="tickets">Check my tickets</a>
+        </Actions>
     </PageHeader>
 
-    <ul>
-        <AuthorizeView Roles="@StaffRoles" Context="staff">
-            <li><a href="tickets?assigned=me">My queue</a>: the tickets you're working on.</li>
-            <li><a href="tickets?assigned=unassigned">Unassigned</a>: tickets nobody has taken yet.</li>
-        </AuthorizeView>
-        <li><a href="tickets/new">New ticket</a>: ask for help.</li>
-        <li><a href="tickets">Tickets</a>: @(IsStaff(auth) ? "every ticket, with filters." : "the tickets you filed, and their answers.")</li>
-        <AuthorizeView Roles="@Roles.Admin" Context="admin">
-            <li><a href="users">Users</a>: add staff and requesters, set their roles, reset passwords.</li>
-            <li><a href="sign-in-log">Sign-in log</a>: who signed in, and every failed attempt.</li>
-        </AuthorizeView>
-        <li><a href="change-password">Change password</a>: choose a new one any time.</li>
-        <li><a href="errors">Error codes</a>: what each message means and how to fix it.</li>
-    </ul>
-</AuthorizeView>
+    @if (_waitingOnYou is null)
+    {
+        <p role="status">Loading…</p>
+    }
+    else
+    {
+        <h2>Waiting on you (@_waitingOnYou.TotalCount)</h2>
+        @if (_waitingOnYou.Items.Count == 0)
+        {
+            <p>Nothing needs you right now.</p>
+        }
+        else
+        {
+            <TicketTable Label="Waiting on you" Items="_waitingOnYou.Items" />
+        }
+
+        @if (_recent is not null && _recent.Items.Count > 0)
+        {
+            <h2>Your recent tickets</h2>
+            <TicketTable Label="Your recent tickets" Items="_recent.Items" />
+        }
+    }
+}
 
 @code {
-    private static readonly string StaffRoles = $"{Roles.Agent},{Roles.TeamLead},{Roles.Admin}";
+    private PagedResult<TicketSummary>? _needsYou, _unassigned, _waitingOnRequester, _waitingOnYou, _recent;
 
-    private static bool IsStaff(AuthenticationState auth) =>
-        TicketChoices.IsStaff(auth.User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value);
+    private bool IsStaff => TicketChoices.IsStaff(Auth.User?.Role);
+
+    private string Greeting
+    {
+        get
+        {
+            var hour = Time.GetLocalNow().Hour;
+            var part = hour < 12 ? "morning" : hour < 18 ? "afternoon" : "evening";
+            return $"Good {part}, {Auth.User?.FullName}";
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Auth.GetAuthenticationStateAsync();
+        if (IsStaff)
+        {
+            // Until SLA clocks exist, "needs you" means your open tickets, most urgent first.
+            _needsYou = await Api.Get<PagedResult<TicketSummary>>("api/tickets?assigned=me&status=Open&sort=priority&desc=true&pageSize=10");
+            _unassigned = await Api.Get<PagedResult<TicketSummary>>("api/tickets?assigned=unassigned&status=New&pageSize=1");
+            _waitingOnRequester = await Api.Get<PagedResult<TicketSummary>>("api/tickets?assigned=me&status=Pending&pageSize=1");
+        }
+        else
+        {
+            // A requester only ever gets their own tickets: the API sees to that.
+            _waitingOnYou = await Api.Get<PagedResult<TicketSummary>>("api/tickets?status=Pending&sort=updatedUtc&desc=true&pageSize=10");
+            _recent = await Api.Get<PagedResult<TicketSummary>>("api/tickets?sort=updatedUtc&desc=true&pageSize=10");
+        }
+    }
 }

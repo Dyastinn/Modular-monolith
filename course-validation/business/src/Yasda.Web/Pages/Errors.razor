@@ -2,6 +2,7 @@
 @page "/errors/{Code}"
 @attribute [AllowAnonymous]
 @inject HttpClient Http
+@inject NavigationManager Nav
 
 @* Every error the app shows carries a code, like a compiler's CS0122. This page says what each one means and what to
    do about it. Open to anyone: the link in an error message must work even after the session has ended. *@
@@ -28,16 +29,18 @@ else
     }
     else if (Code is not null)
     {
-        <p class="notice" role="status">There is no error code @Code.</p>
+        <p>There is no error code @Code. Find the one you saw in the list below.</p>
     }
 
-    <div class="search">
+    <EditForm Model="this" OnSubmit="Find" class="search" role="search">
         <div class="field">
-            <label for="search">Search</label>
-            <input id="search" type="search" @bind="_search" @bind:event="oninput" />
+            <label for="search">Code or meaning</label>
+            <InputText id="search" type="search" @bind-Value="_search" />
         </div>
-    </div>
-    <div class="table-box">
+        <button type="submit">Search</button>
+        <a href="errors">Clear</a>
+    </EditForm>
+    <TableBox Label="Error codes">
         <table>
             <thead>
                 <tr><th scope="col">Code</th><th scope="col">Meaning</th></tr>
@@ -52,25 +55,32 @@ else
                 }
             </tbody>
         </table>
-    </div>
+    </TableBox>
     @if (!Filtered.Any())
     {
-        <p>No code matches.</p>
+        <p>No code matches. <a href="errors">Clear the search</a> to see them all.</p>
     }
 }
 
 @code {
     [Parameter] public string? Code { get; set; }
+    [SupplyParameterFromQuery] public string? Search { get; set; }
 
     private sealed record ErrorCode(string Code, string Title, string Fix);
 
     private List<ErrorCode>? _codes;
-    private string _search = "";
+    private string? _search;
 
     private ErrorCode? Selected => _codes?.FirstOrDefault(c => string.Equals(c.Code, Code, StringComparison.OrdinalIgnoreCase));
 
-    private IEnumerable<ErrorCode> Filtered => (_codes ?? []).Where(c =>
-        c.Code.Contains(_search, StringComparison.OrdinalIgnoreCase) || c.Title.Contains(_search, StringComparison.OrdinalIgnoreCase));
+    private IEnumerable<ErrorCode> Filtered => (_codes ?? []).Where(c => string.IsNullOrWhiteSpace(Search)
+        || c.Code.Contains(Search.Trim(), StringComparison.OrdinalIgnoreCase)
+        || c.Title.Contains(Search.Trim(), StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnInitializedAsync() => _codes = await Http.GetFromJsonAsync<List<ErrorCode>>("api/errors");
+
+    protected override void OnParametersSet() => _search = Search;
+
+    // DESIGN.md §6.1: search runs on submit, and lives in the address.
+    private void Find() => Nav.NavigateTo(Nav.GetUriWithQueryParameter("search", string.IsNullOrWhiteSpace(_search) ? null : _search.Trim()));
 }

@@ -17,7 +17,8 @@ public sealed class TicketUiTests : UiTest
         await Field(page, "Details").FillAsync("It shows paper jam, but there's no paper stuck.");
         await Field(page, "Priority").SelectOptionAsync("High");
         await page.GetByRole(AriaRole.Button, new() { Name = "Send ticket" }).ClickAsync();
-        await Expect(page.GetByRole(AriaRole.Heading, new() { Name = subject + " · New" })).ToBeVisibleAsync();
+        await Expect(page.GetByRole(AriaRole.Heading, new() { Name = subject })).ToBeVisibleAsync();
+        await Expect(page.GetByText("Status: New")).ToBeVisibleAsync();
         return (page, new Uri(page.Url).PathAndQuery);
     }
 
@@ -40,7 +41,7 @@ public sealed class TicketUiTests : UiTest
         await agent.GotoAsync(address);
 
         await agent.GetByRole(AriaRole.Button, new() { Name = "Take it" }).ClickAsync();
-        await Expect(agent.GetByRole(AriaRole.Row, new() { Name = "Assigned to Alan Reyes" })).ToBeVisibleAsync();
+        await Expect(agent.GetByText("Assigned: Alan Reyes")).ToBeVisibleAsync();
 
         await Field(agent, "Your reply").FillAsync("Please try again now.");
         await agent.GetByRole(AriaRole.Button, new() { Name = "Send reply" }).ClickAsync();
@@ -64,9 +65,10 @@ public sealed class TicketUiTests : UiTest
         await page.GotoAsync("/tickets");
 
         await Field(page, "Assigned to").SelectOptionAsync("Nobody yet");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Search" }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Apply" }).ClickAsync();
 
         await Expect(page).ToHaveURLAsync(new Regex("assigned=unassigned"));
+        await Expect(page.GetByText("Showing: assigned to nobody yet.")).ToBeVisibleAsync();
         var assigneeCells = page.GetByRole(AriaRole.Row).Locator("td:nth-child(6)");
         await Expect(assigneeCells.First).ToHaveTextAsync("Nobody yet");
     }
@@ -85,7 +87,7 @@ public sealed class TicketUiTests : UiTest
         await Field(page, "Why?").FillAsync("Fixed itself");
         await page.GetByRole(AriaRole.Button, new() { Name = "Cancel ticket" }).ClickAsync();
 
-        await Expect(page.GetByRole(AriaRole.Heading, new() { Name = "· Cancelled" })).ToBeVisibleAsync();
-        await Expect(page.GetByRole(AriaRole.Row, new() { Name = "Cancelled because Fixed itself" })).ToBeVisibleAsync();
+        await Expect(page.GetByText("Status: Cancelled")).ToBeVisibleAsync();
+        await Expect(page.GetByText("Cancelled because: Fixed itself")).ToBeVisibleAsync();
     }
 }

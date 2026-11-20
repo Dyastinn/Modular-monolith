@@ -1,0 +1,26 @@
+@implements IDisposable
+@inject NavigationManager Nav
+
+@* One navigation entry. The page you're on is bold text, not a link: a link to where you already are does nothing. *@
+@if (IsCurrent)
+{
+    <strong aria-current="page">@ChildContent</strong>
+}
+else
+{
+    <a href="@Href">@ChildContent</a>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Href { get; set; } = "";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    // The path without its query: tickets?assigned=me is the Tickets page; users/5 is not the Users page.
+    private bool IsCurrent => Nav.ToBaseRelativePath(Nav.Uri).Split('?')[0] == Href;
+
+    protected override void OnInitialized() => Nav.LocationChanged += Refresh;
+
+    private void Refresh(object? sender, LocationChangedEventArgs e) => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Nav.LocationChanged -= Refresh;
+}

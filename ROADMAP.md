@@ -94,6 +94,13 @@ to date by `DeadlinesChanged`.
 - [x] Readability pass over all code (user: "no fancy way of doing things", start to finish): property patterns,
       `??=`, one-line LINQ loops and condition-disabled submit buttons replaced by plain code; forms rely on
       `required` fields instead of buttons disabled until typed (that had broken in a real browser)
+- [x] Screens aligned with the rewritten DESIGN.md (2026-11-20; see the history log). Browser tests updated (19)
+      but **not yet run** against a live app since the change.
+- [ ] DESIGN.md gaps that wait on data or a decision: priority **Urgent vs DESIGN's "Critical"** (renaming touches
+      the domain, `priority_rank` and the squashed migrations; for now Urgent gets the Critical style); SLA
+      breached/at-risk states and row markers (no SLA yet); KB search and popular articles on the requester Home;
+      queue counts in the nav; bulk actions; "3 new tickets" live updates; the form error summary with focus
+      (§5.4, forms still use the browser's `required`); a unit test project for `Yasda.Web` (`Format.Ago`)
 
 ### Y1 — Reset to YASDA ✅ code (2026-11-19)
 
