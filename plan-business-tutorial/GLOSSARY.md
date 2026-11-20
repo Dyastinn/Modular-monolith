@@ -548,3 +548,19 @@ A ticket with no team ("Not sure", or a category with no team), left for a team 
 **Array parameter** (18)
 A list passed to a SQL function as one PostgreSQL `bigint[]`, not as separate values.
 
+---
+
+## Email
+
+**Mail queue** (19)
+A table of mail waiting to be sent, written by a handler in the post office and read by a separate background service.
+
+**Mail sender** (19)
+The background service that sends queued mail, retries failures, and gives up on a mail after ten tries.
+
+**Mail key** (19)
+The unique name of one mail (`kind:eventId:userId`). Queueing the same key twice does nothing.
+
+**SMTP** (19)
+The protocol mail servers speak. `SmtpMailer` is the one class that uses it.
+

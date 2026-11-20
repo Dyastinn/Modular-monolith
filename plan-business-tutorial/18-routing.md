@@ -2682,4 +2682,4 @@ And that's where this lesson ends. A ticket now finds its team through its categ
 
 ---
 
-← [Lesson 17 — Teams](17-teams.md) · Next: Lesson 19 — Email (coming with milestone Y3) →
+← [Lesson 17 — Teams](17-teams.md) · Next: [Lesson 19 — Email](19-email.md) →

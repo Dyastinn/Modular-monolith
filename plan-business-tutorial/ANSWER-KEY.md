@@ -635,3 +635,31 @@ It only updates rows whose copy differs from the current name, so a repeat finds
 **8. Why does `BigintArrayParameter` exist?**
 Dapper turns a list parameter into `(@a1, @a2)`, which suits an `IN` clause but breaks a function argument. The class passes the list as one real PostgreSQL `bigint[]`.
 
+---
+
+## Lesson 19 — Email
+
+**1. Why must a handler in the post office only queue mail, and not send it?**
+The dispatcher retries all of a message's handlers if one fails. A mail server that is down would make the whole delivery fail, so unrelated handlers, such as Sla's clock, would never run, and the message would end up parked.
+
+**2. What makes queueing the same mail twice harmless?**
+Each mail has a unique key, `"kind:eventId:userId"`. Queueing an existing key does nothing, and a race between two deliveries is settled by the unique key: the loser counts as success.
+
+**3. Why does Tickets never see an email address?**
+It calls `IMailQueue.QueueAsync` with a user number. Identity looks up the address and skips a disabled or unknown account, so the address stays in the module that owns it.
+
+**4. What is `EventId` for?**
+It names one happening. It becomes part of each mail's key, so a redelivered event queues each mail once.
+
+**5. Who gets mail when a requester replies to a ticket nobody has?**
+The team's notify list (the leads, plus whoever the notify mode adds), or every active team lead when the ticket has no team.
+
+**6. Why does an assignment to yourself send nothing?**
+It isn't news to you. `Take` passes the agent as both the assignee and the assigner, and the handler skips that case.
+
+**7. What is the one gap the mail queue can't close, and why?**
+A crash between the mail server accepting a mail and the row being marked sent sends it twice after the restart. There is no transaction across the mail server and our database.
+
+**8. Why is `IMailer` a singleton?**
+The transient `IEmailSender` depends on it, and a transient service can't depend on a scoped one. The mailer holds no state, so a singleton is fine.
+
