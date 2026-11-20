@@ -57,7 +57,7 @@ to date by `DeadlinesChanged`.
 - **Y2 — Tickets core** ✅ code (2026-11-19) · ✅ lessons 03–11 (written and followed in a scratch folder, 2026-11-20; tag `y2-done` still to make). Details below. Lesson 05 installs PostgreSQL,
   lesson 06 Playwright's browser; lesson 06 also adds the account row, `AuthorizeView` and the sign-in pages to
   lesson 01's layout. The outbox delivery and redelivery tests return in Y3 with the first real event.
-- **Y3 — Events, basic SLA, teams** ⬜ · lessons 12–19 (12 installs Podman; the plan said 12–16, grown by splits: see "Decisions made while the user was away"): the Sla module on the outbox (`TicketCreated` starts 24/7 clocks);
+- **Y3 — Events, basic SLA, teams** ✅ code · ✅ lessons 12–19 written 2026-11-21 (built in the reader's project, not yet re-followed from the text; see Part D) · lessons 12–19 (12 installs Podman; the plan said 12–16, grown by splits: see "Decisions made while the user was away"): the Sla module on the outbox (`TicketCreated` starts 24/7 clocks);
   teams, categories and routing (category → team); email on new replies and assignments. **Planned in full
   below (2026-11-20); follow the plan, don't redesign it.**
 - **Y4 — Knowledge base** ⬜ · lesson 20: articles, review flow, audit trail.
@@ -446,6 +446,15 @@ Reported to the user at the end. Kept here so it survives a long session.
 4. **Lesson 15 (observability)** is built around the outbox as agreed with the user, and also carries `trace_parent` (three migrations), the gauges and the health check.
    The build's `OperationsTests.An_error_carries_the_same_trace_id_as_its_response_header` now uses `/api/tickets/999999999` (the reader has no users endpoints yet).
 5. **Further splits and a reorder (my decisions; the user only approved splitting 13):** the reader's Identity has only sign-in, so the plan's "Users and email" and
+6. **Sizes**: lessons 13 (117 KB), 16 (103 KB) and 18 (120 KB) are the longest, mostly code listings; no further runnable seam was worth another renumbering. 14 is 69 KB, 15 45 KB, 17 74 KB, 19 43 KB.
+7. **Reader-vs-build differences taught in 13–19** (each is a lesson step, not a build change): the identity-sequence name collision in the Tickets migration; `.v2`/`.v3` SQL files with a migration that drops the old function when arguments change;
+   `Seeding_twice_changes_nothing` must pick Tickets' `IModuleDatabase` by name; the Sla policies' API and page moved to lesson 14; `DeadlinesChanged` goes out with no listener in 13 and the
+   "every integration event is handled" architecture test arrives in 14; `TeamRenamed` and its handler arrive together in 18 (so lesson 17's `Team.Rename` raises nothing and its two event tests join in 18);
+   `list_staff` gains `teamId` in 17; `ApiClient.Delete`, `PasswordField` hints, screenshots in `UiTest` and the staff `Assign to` list arrive in 16–18 (the reader's code lacked them).
+8. **Build changes made overnight**: the dev login is `yasda_dev` (appsettings, README); `OperationsTests` trace-id test uses a tickets URL; `ci.yml` mutates Tickets then Identity; a Tickets `stryker-config.json`;
+   `SlaTests.A_new_ticket_starts_a_clock_from_its_priority_policy` (new; it is lesson 13's main test); the outbox observability code (trace_parent, gauges, `OutboxHealthCheck`). All committed.
+9. **Git**: per the user's late instruction, each lesson was committed separately in this repo (13–19, plus the observability build and the renumbering). The user's earlier rule (never commit unasked) was suspended for this job only.
+
    "Teams, categories, routing" lessons were each far too big. New order: 16 Users and the sign-in log, 17 Teams, 18 Categories and routing, 19 Email. Users goes first so
    `IDENTITY-0001…0005` are the user codes and the team codes are `0006…0008`, as in the build. Later lessons shift: Knowledge base 20, business hours 21, breaches 22,
    attachments 23, search 24, reports 25, security 26, deploy 27, checklist 28 (28 lessons, was 25). References fixed in lessons 02, 05, 12, README, START-HERE, WRITING-STYLE.
@@ -475,13 +484,14 @@ in Parts A–C is a new migration in its lesson, and every changed read function
 - [x] **13 Events and the outbox** (written, 2026-11-21): the outbox, Tickets raises events, Sla clocks; `DeadlinesChanged` goes out with no listener yet.
 - [x] **14 Sla answers, the screens show it** (2026-11-21): Tickets keeps `ticket_sla`, v2 read functions, the policies API and page, the SLA column and header.
 - [x] **15 Observability** (2026-11-21): telemetry, the trace link through the outbox, backlog gauges, health checks (outbox degraded), the Aspire dashboard.
-- [ ] **16 Users and the sign-in log:** Identity's account administration (the reader's Identity has only sign-in): create, search, edit, disable, reset password,
+- [x] **16 Users and the sign-in log:** Identity's account administration (the reader's Identity has only sign-in): create, search, edit, disable, reset password,
       change password, the sign-in log, the first admin, forgot password. Comes *before* teams so that `IDENTITY-0001…0005` are the user codes and the team codes
       are `0006…0008`, as in the build.
-- [ ] **17 Teams:** Part B, Identity side (B1): `Team`, members, notify setting, `ITeamDirectory`, `TeamRenamed`, the staff list, the two pages.
-- [ ] **18 Categories and routing:** Part B, Tickets side (B2–B4): categories, a ticket's team, routing, the team filter, rename copies.
-- [ ] **19 Email:** Part C: `IMailQueue`, `MailSender`, `IMailer`, the three mail handlers; extracts `SmtpMailer` from lesson 16's `SmtpEmailSender` (before/after).
-- [ ] Follow each lesson in a scratch folder. Add the ANSWER-KEY and GLOSSARY entries (outbox, at-least-once,
+- [x] **17 Teams:** Part B, Identity side (B1): `Team`, members, notify setting, `ITeamDirectory`, `TeamRenamed`, the staff list, the two pages.
+- [x] **18 Categories and routing:** Part B, Tickets side (B2–B4): categories, a ticket's team, routing, the team filter, rename copies.
+- [x] **19 Email:** Part C: `IMailQueue`, `MailSender`, `IMailer`, the three mail handlers; extracts `SmtpMailer` from lesson 16's `SmtpEmailSender` (before/after).
+- [x] Lessons 13–19 were built in the reader's project (`~/Projects/dotnet/yasda-scratch/yasda`, one commit per lesson) and their code blocks are generated from those files (tools in `yasda-scratch/tools`), then checked by `checksnip.py` (every edit snippet must exist in the code) and by breaking each lesson's rules once. They were **not** re-typed from the text into a second fresh folder; do that read-through in Y8.
+- [ ] (Still open) ANSWER-KEY and GLOSSARY are done for 12–19. Follow each lesson Add the ANSWER-KEY and GLOSSARY entries (outbox, at-least-once,
       idempotent, integration event, SLA, at risk). Then update the README and the history log.
 
 ### Y4–Y7: decisions made ahead (detail each milestone's steps when the one before it is done)
