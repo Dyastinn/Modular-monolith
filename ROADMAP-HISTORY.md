@@ -414,8 +414,8 @@ App; errors gain stable, documented codes.
   `CookieAuthenticationStateProvider`, `Errors.razor`, the `/auth/register` filter, `ErrorCatalog.From`, the error
   catalog endpoints, `RequestValidation`, `OutboxInterceptor`, `OutboxDispatcher` (plain `while` loops),
   `TicketsDbContext.GetVisibleTicketAsync`; tests `ModuleBoundaryTests`, `ErrorCatalogTests`, `WiringTests`,
-  `DatabaseTests`, `ErrorCodeTests` (same checks, loops). Build 0 warnings; unit 35 and architecture 14 pass;
-  integration not run (no container engine). Y3–Y7 planned in ROADMAP.md.
+  `DatabaseTests`, `ErrorCodeTests` (same checks, loops). Build 0 warnings; unit 35, architecture 14, integration
+  91 (Podman machine) and browser 19 (app on WSL PostgreSQL) all green. Y3–Y7 planned in ROADMAP.md.
 
 ---
 

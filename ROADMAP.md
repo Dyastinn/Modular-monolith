@@ -82,7 +82,7 @@ ends with the named test project green; run the whole suite once at the end of e
 
 #### Before you start
 
-- [ ] **Step 0. Finish Y2 first.** Run the 19 browser tests against a live app. Then make the D1 rename (below) in
+- [ ] **Step 0. Finish Y2 first.** (The 19 browser tests ran green on 2026-11-20; rerun them after the rename.) Make the D1 rename (below) in
       the Y2 code, regenerating the Tickets migration pair, so lessons 04–05 teach `Critical` from the start. Then
       write lessons 03–11 from Y2's code. Y3 rewrites `Ticket.Create`, the squashed Tickets migrations and `search_tickets.v1.sql`. Lessons
       written later would describe code that no longer exists. Then tag the commit: `git tag y2-done`.
@@ -453,8 +453,8 @@ Confirmed by the user, 2026-11-20:
 - [x] Readability pass over all code (user: "no fancy way of doing things", start to finish): property patterns,
       `??=`, one-line LINQ loops and condition-disabled submit buttons replaced by plain code; forms rely on
       `required` fields instead of buttons disabled until typed (that had broken in a real browser)
-- [x] Screens aligned with the rewritten DESIGN.md (2026-11-20; see the history log). Browser tests updated (19)
-      but **not yet run** against a live app since the change.
+- [x] Screens aligned with the rewritten DESIGN.md (2026-11-20; see the history log). Browser tests updated (19),
+      run against a live app on 2026-11-20: all green.
 - [ ] DESIGN.md gaps that wait on data or a decision: priority **Urgent vs DESIGN's "Critical"** (renaming touches
       the domain, `priority_rank` and the squashed migrations; for now Urgent gets the Critical style); SLA
       breached/at-risk states and row markers (no SLA yet); KB search and popular articles on the requester Home;
