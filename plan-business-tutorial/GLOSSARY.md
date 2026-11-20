@@ -532,3 +532,19 @@ Rows that belong to an aggregate and can only be changed through it, like a team
 **Service window** (17)
 The one public interface a module offers others in its Contracts project. For teams, `ITeamDirectory`.
 
+---
+
+## Routing
+
+**Category** (18)
+A kind of request ("Hardware", "Access") that knows which team answers. A ticket filed with a category copies its routing.
+
+**Routing** (18)
+Setting a ticket's category and team. A team lead can change it; an owner outside the new team loses the ticket.
+
+**Unrouted ticket** (18)
+A ticket with no team ("Not sure", or a category with no team), left for a team lead to sort. Its new-work mail goes to every team lead.
+
+**Array parameter** (18)
+A list passed to a SQL function as one PostgreSQL `bigint[]`, not as separate values.
+

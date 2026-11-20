@@ -1775,4 +1775,4 @@ And that's where this lesson ends. The service desk has teams, with people who m
 
 ---
 
-← [Lesson 16 — Users and the sign-in log](16-users.md) · Next: Lesson 18 — Categories and routing (coming with milestone Y3) →
+← [Lesson 16 — Users and the sign-in log](16-users.md) · Next: [Lesson 18 — Categories and routing](18-routing.md) →

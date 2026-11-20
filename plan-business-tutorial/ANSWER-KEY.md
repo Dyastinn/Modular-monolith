@@ -607,3 +607,31 @@ Two copies drift apart. Identity owns the data, so Identity answers, and everyon
 **8. Why does changing `list_staff`'s arguments need a `.v2` file and a migration that drops the old function?**
 A released script is never edited, and a function with different arguments is a different function: the old one would stay beside the new one unless the migration drops it.
 
+---
+
+## Lesson 18 — Categories and routing
+
+**1. Why does a ticket carry a copy of its team's name, and not ask Identity each time?**
+One call per row of the queue would be slow, and the queue could not filter by team in one SQL query. Tickets keeps the team's number and a copy of its name, and an event keeps the copy up to date.
+
+**2. Why is "is this person in the team?" asked in the handler and passed to the ticket?**
+The domain must stay free of calls to other modules. The handler asks Identity and passes `isMember`; the ticket decides what the rule says, so it can be unit tested with no database.
+
+**3. Why does `Reply` need the same membership guard as `Take`?**
+An agent's public reply to an unowned ticket takes it. Without the guard, an agent outside the team could take a team's ticket by replying, a back door round `Take`.
+
+**4. What happens to a ticket's owner when a team lead routes it to a team they are not in? To its status?**
+The ticket loses its owner. An Open or Pending ticket goes back to New, because a ticket in progress always has an owner.
+
+**5. Why do `Take` and `Assign` default their `isMember` flag to `false`?**
+The safe side: forgetting to pass it can only refuse someone, never let the wrong person in.
+
+**6. Why does `RenameTeamCopies` ask Identity for the current name?**
+Two quick renames can be delivered in either order, so the name in the event may already be old. The current name is the truth.
+
+**7. What makes `RenameTeamCopies` safe to run twice?**
+It only updates rows whose copy differs from the current name, so a repeat finds nothing to change.
+
+**8. Why does `BigintArrayParameter` exist?**
+Dapper turns a list parameter into `(@a1, @a2)`, which suits an `IN` clause but breaks a function argument. The class passes the list as one real PostgreSQL `bigint[]`.
+
