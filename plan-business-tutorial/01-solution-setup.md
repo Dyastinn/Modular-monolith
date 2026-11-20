@@ -167,10 +167,12 @@ Homebrew first, with the command from its own site, [brew.sh](https://brew.sh):
 Follow what it prints at the end (it may ask you to run two lines that add `brew` to your path). Then:
 
 ```bash
-brew install --cask dotnet-sdk
+brew install --cask dotnet-sdk@10
 brew install git
 brew install --cask visual-studio-code
 ```
+
+The `@10` matters: plain `dotnet-sdk` always means the newest .NET, which is a newer version than this course uses.
 
 ### On Fedora Linux
 
@@ -188,11 +190,11 @@ sudo dnf install code
 
 ### On Ubuntu
 
-On Ubuntu 24.04, .NET 10 comes from Canonical's backports archive, so add it first; newer Ubuntu releases
-have it already and can skip that line:
+On Ubuntu 22.04, .NET 10 comes from Canonical's backports archive, so add it first. Ubuntu 24.04 and newer have it in their
+own archive already and can skip that line:
 
 ```bash
-sudo add-apt-repository ppa:dotnet/backports     # Ubuntu 24.04 only
+sudo add-apt-repository ppa:dotnet/backports     # Ubuntu 22.04 only
 sudo apt-get update
 sudo apt-get install -y dotnet-sdk-10.0 git
 sudo snap install code --classic

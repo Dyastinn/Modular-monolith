@@ -753,9 +753,11 @@ and run the tests:
 
 ```
 failed Yasda.Modules.Tickets.UnitTests.TicketPropertyTests.No_sequence_of_actions_breaks_the_tickets_rules
-  Falsifiable, after 2 tests (0 shrinks)
+  Falsifiable, after 7 tests (0 shrinks)
   Expected ticket.AssigneeId.HasValue to be True because an Open ticket after 'reply' needs an owner, but found False.
 ```
+
+Your number of tests will differ: FsCheck picks different sequences every run, and finds this one after a few tries.
 
 This is a real bug: the first draft of `Reply` let an agent answer a New ticket, which opened it and left it with
 nobody responsible. FsCheck found it in two tries. That's why `An_agent_answering_an_unassigned_ticket_takes_it`
@@ -889,10 +891,10 @@ dotnet build
 dotnet test
 ```
 
-The build shows **0 warnings and 0 errors**, and the tests report 56 passed: lesson 03's 23, plus 31 domain
-tests (counting each `[InlineData]` row of a theory) and two architecture tests. Run
-`dotnet test tests/Yasda.Modules.Tickets.UnitTests` alone and you see 35: those 31 and lesson 03's four Ping
-tests.
+The build shows **0 warnings and 0 errors**. With every test from the table above written (the reference build has them
+all), the tests report 56 passed: lesson 03's 23, plus 31 domain tests (counting each `[InlineData]` row of a theory) and
+two architecture tests. Run `dotnet test tests/Yasda.Modules.Tickets.UnitTests` alone and you see 35: those 31 and lesson
+03's four Ping tests. If you wrote only the three tests shown in full, the counts are lower: 29 in all, and 8 for that project.
 
 There's nothing to see in the browser today: no screen shows a ticket yet. That's the point. Every rule is
 already proved, and not one needed a server. Save the moment in Git:
