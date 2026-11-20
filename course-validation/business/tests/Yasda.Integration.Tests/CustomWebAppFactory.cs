@@ -4,7 +4,9 @@ using Yasda.Modules.Identity.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 using Testcontainers.PostgreSql;
 
@@ -52,6 +54,13 @@ public sealed class CustomWebAppFactory : WebApplicationFactory<Program>, IAsync
         builder.UseSetting("RateLimiting:RequestsPerMinute", "100000");
         builder.UseSetting("RateLimiting:AuthRequestsPerMinute", "100000");
         builder.UseSetting("Outbox:PollIntervalMs", "200");
+        builder.UseSetting("Mail:PollIntervalMs", "200");
+        builder.UseSetting("Mail:MaxAttempts", "3");
+        builder.ConfigureTestServices(services =>
+        {
+            services.RemoveAll<IMailer>();
+            services.AddSingleton<IMailer, TestMailer>();
+        });
     }
 
     public sealed record Tokens(string AccessToken, string RefreshToken);
@@ -89,6 +98,18 @@ public sealed class CustomWebAppFactory : WebApplicationFactory<Program>, IAsync
     {
         _ = Server;
         return new(ConnectionString);
+    }
+}
+
+// Stands in for the SMTP server: sends nothing, and refuses any mail whose subject says "[fail-test]", so a test can watch what the
+// mail sender does with a mail that can't be delivered.
+internal sealed class TestMailer : IMailer
+{
+    public Task SendAsync(string to, string subject, string body, CancellationToken ct)
+    {
+        if (subject.Contains("[fail-test]"))
+            throw new InvalidOperationException("The test mail server refused this mail.");
+        return Task.CompletedTask;
     }
 }
 

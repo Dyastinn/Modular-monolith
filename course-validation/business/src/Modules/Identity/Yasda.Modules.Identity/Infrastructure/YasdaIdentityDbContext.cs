@@ -21,6 +21,7 @@ internal sealed class YasdaIdentityDbContext(DbContextOptions<YasdaIdentityDbCon
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
     public DbSet<SignInAttempt> SignInAttempts => Set<SignInAttempt>();
     public DbSet<Team> Teams => Set<Team>();
+    public DbSet<OutgoingMail> OutgoingMails => Set<OutgoingMail>();
 
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder o, DbConnection connection) =>
         o.UseNpgsql(connection, npg => npg.MigrationsHistoryTable("__EFMigrationsHistory", Schema))
@@ -64,6 +65,16 @@ internal sealed class YasdaIdentityDbContext(DbContextOptions<YasdaIdentityDbCon
             e.Property(x => x.IpAddress).HasMaxLength(45);
             e.HasIndex(x => x.OccurredUtc);
             e.HasIndex(x => x.Email);
+        });
+
+        b.Entity<OutgoingMail>(e =>
+        {
+            e.ToTable("outgoing_mail");
+            e.HasKey(x => x.Key);
+            e.Property(x => x.Key).HasMaxLength(200);
+            e.Property(x => x.ToAddress).HasMaxLength(256);
+            e.Property(x => x.Subject).HasMaxLength(300);
+            e.HasIndex(x => x.QueuedUtc).HasFilter("sent_utc IS NULL");
         });
 
         b.Entity<Team>(e =>

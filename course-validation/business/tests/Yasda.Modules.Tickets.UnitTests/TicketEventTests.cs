@@ -29,6 +29,18 @@ public class TicketEventTests
         return ticket.DomainEvents.ToList();
     }
 
+    // The events Sla listens for. The assignment and reply events are for email and have their own tests below.
+    private static List<IDomainEvent> SlaEventsOf(Ticket ticket)
+    {
+        var events = new List<IDomainEvent>();
+        foreach (var domainEvent in ticket.DomainEvents)
+        {
+            if (domainEvent is TicketAssignedEvent or ReplyAddedEvent) continue;
+            events.Add(domainEvent);
+        }
+        return events;
+    }
+
     [Fact]
     public void Creating_a_ticket_raises_one_event_with_its_number_priority_and_time()
     {
@@ -36,7 +48,14 @@ public class TicketEventTests
 
         var raised = EventsOf(ticket);
 
-        raised.Should().ContainSingle().Which.Should().Be(new TicketCreatedEvent(Id, TicketPriority.High, Now));
+        var created = raised.Should().ContainSingle().Which.Should().BeOfType<TicketCreatedEvent>().Which;
+        created.TicketId.Should().Be(Id);
+        created.Subject.Should().Be("Printer won't print");
+        created.Priority.Should().Be(TicketPriority.High);
+        created.CreatedUtc.Should().Be(Now);
+        created.RequesterId.Should().Be(Requester);
+        created.TeamId.Should().BeNull();
+        created.EventId.Should().NotBe(Guid.Empty);
     }
 
     [Fact]
@@ -47,7 +66,7 @@ public class TicketEventTests
         ticket.Reply(Agent, "Alan Reyes", "Looking now.", isInternal: false, authorIsStaff: true, Now.AddMinutes(5));
         ticket.Reply(Agent, "Alan Reyes", "Still looking.", isInternal: false, authorIsStaff: true, Now.AddMinutes(9));
 
-        EventsOf(ticket).Should().ContainSingle().Which.Should().Be(new FirstAgentReplyEvent(Id, Now.AddMinutes(5)));
+        SlaEventsOf(ticket).Should().ContainSingle().Which.Should().Be(new FirstAgentReplyEvent(Id, Now.AddMinutes(5)));
     }
 
     [Fact]
@@ -57,7 +76,7 @@ public class TicketEventTests
 
         ticket.Reply(Agent, "Alan Reyes", "Fuser again, I bet.", isInternal: true, authorIsStaff: true, Now.AddMinutes(5));
 
-        EventsOf(ticket).Should().BeEmpty();
+        SlaEventsOf(ticket).Should().BeEmpty();
     }
 
     [Fact]
@@ -67,7 +86,7 @@ public class TicketEventTests
 
         ticket.Reply(Requester, "Rita Cruz", "Any news?", isInternal: false, authorIsStaff: false, Now.AddMinutes(5));
 
-        EventsOf(ticket).Should().BeEmpty();
+        SlaEventsOf(ticket).Should().BeEmpty();
     }
 
     [Fact]
@@ -77,7 +96,7 @@ public class TicketEventTests
 
         ticket.Resolve(Now.AddHours(2));
 
-        EventsOf(ticket).Should().ContainSingle().Which.Should().Be(new TicketResolvedEvent(Id, Now.AddHours(2)));
+        SlaEventsOf(ticket).Should().ContainSingle().Which.Should().Be(new TicketResolvedEvent(Id, Now.AddHours(2)));
     }
 
     [Fact]
@@ -89,7 +108,7 @@ public class TicketEventTests
 
         ticket.Reopen(Now.AddHours(3));
 
-        EventsOf(ticket).Should().ContainSingle().Which.Should().Be(new TicketReopenedEvent(Id, Now.AddHours(3)));
+        SlaEventsOf(ticket).Should().ContainSingle().Which.Should().Be(new TicketReopenedEvent(Id, Now.AddHours(3)));
     }
 
     [Fact]
@@ -101,7 +120,7 @@ public class TicketEventTests
 
         ticket.Reply(Requester, "Rita Cruz", "It broke again.", isInternal: false, authorIsStaff: false, Now.AddHours(3));
 
-        EventsOf(ticket).Should().ContainSingle().Which.Should().Be(new TicketReopenedEvent(Id, Now.AddHours(3)));
+        SlaEventsOf(ticket).Should().ContainSingle().Which.Should().Be(new TicketReopenedEvent(Id, Now.AddHours(3)));
     }
 
     [Fact]
@@ -111,7 +130,7 @@ public class TicketEventTests
 
         ticket.Cancel("Fixed itself", Now.AddHours(1));
 
-        EventsOf(ticket).Should().ContainSingle().Which.Should().Be(new TicketCancelledEvent(Id, Now.AddHours(1)));
+        SlaEventsOf(ticket).Should().ContainSingle().Which.Should().Be(new TicketCancelledEvent(Id, Now.AddHours(1)));
     }
 
     [Fact]
@@ -121,7 +140,7 @@ public class TicketEventTests
 
         ticket.ChangePriority(TicketPriority.Critical, Now.AddHours(1));
 
-        EventsOf(ticket).Should().ContainSingle().Which.Should().Be(new TicketPriorityChangedEvent(Id, TicketPriority.Critical, Now.AddHours(1)));
+        SlaEventsOf(ticket).Should().ContainSingle().Which.Should().Be(new TicketPriorityChangedEvent(Id, TicketPriority.Critical, Now.AddHours(1)));
     }
 
     [Fact]
@@ -131,7 +150,7 @@ public class TicketEventTests
 
         ticket.ChangePriority(TicketPriority.High, Now.AddHours(1));
 
-        EventsOf(ticket).Should().BeEmpty();
+        SlaEventsOf(ticket).Should().BeEmpty();
     }
 
     [Fact]
@@ -145,6 +164,85 @@ public class TicketEventTests
         ticket.Resolve(Now.AddMinutes(3));
         ticket.Close(Now.AddMinutes(4));
 
-        EventsOf(ticket).Should().ContainSingle().Which.Should().BeOfType<TicketResolvedEvent>();
+        SlaEventsOf(ticket).Should().ContainSingle().Which.Should().BeOfType<TicketResolvedEvent>();
+    }
+
+    [Fact]
+    public void Assigning_a_ticket_raises_the_assigned_event_with_who_did_it()
+    {
+        var ticket = OpenTicket();
+        var other = new UserId(9);
+
+        ticket.Assign(other, "Bea Lim", assignedBy: Agent, Now.AddMinutes(1));
+
+        var assigned = ticket.DomainEvents.Should().ContainSingle().Which.Should().BeOfType<TicketAssignedEvent>().Which;
+        assigned.AssigneeId.Should().Be(other);
+        assigned.AssignedById.Should().Be(Agent);
+        assigned.Subject.Should().Be("Printer won't print");
+        assigned.EventId.Should().NotBe(Guid.Empty);
+    }
+
+    [Fact]
+    public void Taking_a_ticket_raises_the_assigned_event_with_the_agent_as_both_sides()
+    {
+        var ticket = NewTicket();
+        ticket.ClearEvents();
+
+        ticket.Take(Agent, "Alan Reyes", Now.AddMinutes(1));
+
+        var assigned = ticket.DomainEvents.Should().ContainSingle().Which.Should().BeOfType<TicketAssignedEvent>().Which;
+        assigned.AssigneeId.Should().Be(Agent);
+        assigned.AssignedById.Should().Be(Agent);
+    }
+
+    [Fact]
+    public void Taking_your_own_ticket_again_raises_no_assigned_event()
+    {
+        var ticket = OpenTicket();
+
+        ticket.Take(Agent, "Alan Reyes", Now.AddMinutes(1));
+
+        ticket.DomainEvents.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_reply_raises_the_reply_added_event_with_who_wrote_it_and_who_has_the_ticket()
+    {
+        var ticket = OpenTicket();
+
+        ticket.Reply(Agent, "Alan Reyes", "Looking now.", isInternal: false, authorIsStaff: true, Now.AddMinutes(5));
+
+        var added = ticket.DomainEvents.OfType<ReplyAddedEvent>().Should().ContainSingle().Which;
+        added.AuthorId.Should().Be(Agent);
+        added.AuthorIsStaff.Should().BeTrue();
+        added.IsInternal.Should().BeFalse();
+        added.Body.Should().Be("Looking now.");
+        added.RequesterId.Should().Be(Requester);
+        added.AssigneeId.Should().Be(Agent);
+        added.EventId.Should().NotBe(Guid.Empty);
+    }
+
+    [Fact]
+    public void An_internal_note_raises_the_reply_added_event_marked_internal()
+    {
+        var ticket = OpenTicket();
+
+        ticket.Reply(Agent, "Alan Reyes", "Fuser again, I bet.", isInternal: true, authorIsStaff: true, Now.AddMinutes(5));
+
+        ticket.DomainEvents.OfType<ReplyAddedEvent>().Should().ContainSingle().Which.IsInternal.Should().BeTrue();
+    }
+
+    [Fact]
+    public void An_agents_reply_to_an_unowned_ticket_takes_it_and_raises_a_self_assignment()
+    {
+        var ticket = NewTicket();
+        ticket.ClearEvents();
+
+        ticket.Reply(Agent, "Alan Reyes", "On it.", isInternal: false, authorIsStaff: true, Now.AddMinutes(5));
+
+        var assigned = ticket.DomainEvents.OfType<TicketAssignedEvent>().Should().ContainSingle().Which;
+        assigned.AssigneeId.Should().Be(Agent);
+        assigned.AssignedById.Should().Be(Agent);
+        ticket.DomainEvents.OfType<ReplyAddedEvent>().Should().ContainSingle().Which.AssigneeId.Should().Be(Agent);
     }
 }

@@ -12,7 +12,7 @@ using Yasda.Modules.Identity.Infrastructure;
 namespace Yasda.Modules.Identity.Infrastructure.Migrations
 {
     [DbContext(typeof(YasdaIdentityDbContext))]
-    [Migration("20261120145806_AddReadFunctions")]
+    [Migration("20261120163417_AddReadFunctions")]
     partial class AddReadFunctions
     {
         /// <inheritdoc />
@@ -393,6 +393,56 @@ namespace Yasda.Modules.Identity.Infrastructure.Migrations
                         .HasDatabaseName("UserNameIndex");
 
                     b.ToTable("users", "identity");
+                });
+
+            modelBuilder.Entity("Yasda.Modules.Identity.Infrastructure.OutgoingMail", b =>
+                {
+                    b.Property<string>("Key")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("key");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("body");
+
+                    b.Property<string>("LastError")
+                        .HasColumnType("text")
+                        .HasColumnName("last_error");
+
+                    b.Property<DateTime>("QueuedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("queued_utc");
+
+                    b.Property<DateTime?>("SentUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sent_utc");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("subject");
+
+                    b.Property<string>("ToAddress")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)")
+                        .HasColumnName("to_address");
+
+                    b.HasKey("Key")
+                        .HasName("pk_outgoing_mail");
+
+                    b.HasIndex("QueuedUtc")
+                        .HasDatabaseName("ix_outgoing_mail_queued_utc")
+                        .HasFilter("sent_utc IS NULL");
+
+                    b.ToTable("outgoing_mail", "identity");
                 });
 
             modelBuilder.Entity("Yasda.Modules.Identity.Infrastructure.SignInAttempt", b =>

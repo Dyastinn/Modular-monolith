@@ -135,12 +135,12 @@ public class TicketRoutingTests
     {
         var ticket = ServiceDeskTicket();
 
-        Action assign = () => ticket.Assign(Outsider, "Bea Lim", Now, assigneeIsMember: false);
+        Action assign = () => ticket.Assign(Outsider, "Bea Lim", Admin, Now, assigneeIsMember: false);
         CodeOf(assign).Should().Be(TicketsErrors.NotInTeam);
 
-        ticket.Assign(Admin, "Ada Mendoza", Now, assigneeIsMember: false, assigneeIsAdmin: true);
+        ticket.Assign(Admin, "Ada Mendoza", Admin, Now, assigneeIsMember: false, assigneeIsAdmin: true);
         ticket.AssigneeId.Should().Be(Admin);
-        ticket.Assign(Member, "Alan Reyes", Now, assigneeIsMember: true);
+        ticket.Assign(Member, "Alan Reyes", Admin, Now, assigneeIsMember: true);
         ticket.AssigneeId.Should().Be(Member);
     }
 

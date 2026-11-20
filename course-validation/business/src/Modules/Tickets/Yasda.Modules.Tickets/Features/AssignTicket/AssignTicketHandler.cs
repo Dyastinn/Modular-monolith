@@ -22,7 +22,7 @@ internal sealed class AssignTicketHandler(TicketsDbContext db, ICurrentUser curr
 
         var isMember = await TeamFacts.IsMemberAsync(teams, ticket, assignee.Id, ct);
         var isAdmin = assignee.Role == Roles.Admin;
-        ticket.Assign(new UserId(assignee.Id), assignee.FullName, time.GetUtcNow().UtcDateTime, isMember, isAdmin);
+        ticket.Assign(new UserId(assignee.Id), assignee.FullName, me, time.GetUtcNow().UtcDateTime, isMember, isAdmin);
 
         await db.SaveChangesAsync(ct);
         return true;

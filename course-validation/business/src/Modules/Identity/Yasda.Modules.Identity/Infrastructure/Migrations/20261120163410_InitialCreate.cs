@@ -51,6 +51,25 @@ namespace Yasda.Modules.Identity.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "outgoing_mail",
+                schema: "identity",
+                columns: table => new
+                {
+                    key = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    to_address = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
+                    subject = table.Column<string>(type: "character varying(300)", maxLength: 300, nullable: false),
+                    body = table.Column<string>(type: "text", nullable: false),
+                    queued_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    sent_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    attempts = table.Column<int>(type: "integer", nullable: false),
+                    last_error = table.Column<string>(type: "text", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_outgoing_mail", x => x.key);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "roles",
                 schema: "identity",
                 columns: table => new
@@ -292,6 +311,13 @@ namespace Yasda.Modules.Identity.Infrastructure.Migrations
                 filter: "processed_utc IS NULL");
 
             migrationBuilder.CreateIndex(
+                name: "ix_outgoing_mail_queued_utc",
+                schema: "identity",
+                table: "outgoing_mail",
+                column: "queued_utc",
+                filter: "sent_utc IS NULL");
+
+            migrationBuilder.CreateIndex(
                 name: "ix_role_claims_role_id",
                 schema: "identity",
                 table: "role_claims",
@@ -370,6 +396,10 @@ namespace Yasda.Modules.Identity.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "outbox_message",
+                schema: "identity");
+
+            migrationBuilder.DropTable(
+                name: "outgoing_mail",
                 schema: "identity");
 
             migrationBuilder.DropTable(

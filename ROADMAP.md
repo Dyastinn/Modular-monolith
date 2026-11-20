@@ -396,13 +396,13 @@ is refused (`TICKETS-0014`, unless the ticket keeps the team it has). What diffe
 
 #### Part C: email on replies and assignments (lesson 16)
 
-- [ ] C1. Identity: `outgoing_mail`, `IMailQueue` + `MailQueue`, `SmtpMailer` (extracted), and the `MailSender`
+- [x] C1. Identity: `outgoing_mail`, `IMailQueue` + `MailQueue`, `SmtpMailer` (extracted), and the `MailSender`
       background service with a metric, `yasda.mail.sent`/`yasda.mail.failed`. With no `Smtp:Host`, it logs the
       mail and marks it sent (today's development behavior).
-- [ ] C2. Tickets: the domain events `TicketAssignedEvent` and `ReplyAddedEvent`, each with an `EventId = Guid.NewGuid()`
+- [x] C2. Tickets: the domain events `TicketAssignedEvent` and `ReplyAddedEvent`, each with an `EventId = Guid.NewGuid()`
       set in the domain, and the handlers `EmailOnAssignment` and `EmailOnReply` (recipient rules above).
       `App:PublicUrl` goes in `appsettings.json` and the deploy `.env` example.
-- [ ] C3. Tests:
+- [x] C3. Tests:
       - `An_agent_reply_queues_one_mail_to_the_requester`
       - `An_internal_note_queues_no_mail`
       - `A_new_ticket_mails_the_teams_leads`
@@ -414,6 +414,23 @@ is refused (`TICKETS-0014`, unless the ticket keeps the team it has). What diffe
       - `A_disabled_assignee_gets_no_mail`
       - `Smtp_failure_retries_then_parks_the_mail_without_blocking_the_outbox` (a fake `SmtpMailer` that throws)
       - Green: all.
+
+**Done 2026-11-21 (C1–C3), build only: no lesson yet.** Whole solution green: 435 tests, 34 skipped (browser). Make-it-fail-once
+confirmed for the three mail rules that guard against a wrong mail: internal notes, self-assignment, and the unique key. What
+differs from the plan above, and why:
+
+- `ReplyAddedEvent` also carries `TeamId?`. The handler needs it to find the notify list when nobody has the ticket, and asking Tickets' own
+  table from a handler would be a second read for the same fact.
+- `TicketAssignedEvent` is raised only when the owner actually changes, so taking your own ticket again says nothing.
+- `SmtpMailer` implements a small `IMailer` interface (a singleton, because the transient `IEmailSender` needs it), so tests can swap in a mailer
+  that fails. Password reset still sends straight through it, not through the queue.
+- Mail settings: `Mail:PollIntervalMs`, `Mail:BatchSize`, `Mail:MaxAttempts`; `App:PublicUrl` is required in the Compose `.env`
+  (`APP_PUBLIC_URL`). Without it the link in a mail is just `/tickets/{id}`.
+- `MailSender` creates its own `Meter("Yasda")` for `yasda.mail.sent`/`failed`: Identity can't reference `Shared.Infrastructure`, and the host
+  listens to that name.
+- Integration tests run the app with a `TestMailer` (sends nothing; fails on a subject containing `[fail-test]`), `Mail:MaxAttempts` 3, 200 ms polling.
+- Identity's migration pair was regenerated again (`outgoing_mail`): the dev database must be dropped and recreated.
+- Lesson 16 must also say: an internal note's text is in the outbox row (the event carries the body), though it is never mailed.
 
 #### Part D: lessons (after A–C are green)
 

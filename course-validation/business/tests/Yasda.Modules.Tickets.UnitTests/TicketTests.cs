@@ -105,7 +105,7 @@ public class TicketTests
     {
         var ticket = OpenTicket();
 
-        ticket.Assign(OtherAgent, "Bea Lim", Now);
+        ticket.Assign(OtherAgent, "Bea Lim", assignedBy: Agent, Now);
 
         ticket.AssigneeId.Should().Be(OtherAgent);
     }

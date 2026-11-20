@@ -24,7 +24,15 @@ public class OutboxTests(CustomWebAppFactory factory)
         var ticketsId = new TicketsDomain.TicketId(7);
         IDomainEvent[] events =
         [
-            new TicketsDomain.TicketCreatedEvent(ticketsId, TicketsDomain.TicketPriority.High, at),
+            new TicketsDomain.TicketCreatedEvent(Guid.NewGuid(), ticketsId, "Printer won't print", new TicketsDomain.TeamId(2), new TicketsDomain.UserId(5),
+                TicketsDomain.TicketPriority.High, at),
+            new TicketsDomain.TicketCreatedEvent(Guid.NewGuid(), ticketsId, "No team yet", null, new TicketsDomain.UserId(5),
+                TicketsDomain.TicketPriority.Low, at),
+            new TicketsDomain.TicketAssignedEvent(Guid.NewGuid(), ticketsId, "Printer won't print", new TicketsDomain.UserId(3), new TicketsDomain.UserId(4)),
+            new TicketsDomain.ReplyAddedEvent(Guid.NewGuid(), ticketsId, "Printer won't print", new TicketsDomain.UserId(3), true, false, "Try again.",
+                new TicketsDomain.UserId(5), new TicketsDomain.UserId(3), new TicketsDomain.TeamId(2)),
+            new TicketsDomain.ReplyAddedEvent(Guid.NewGuid(), ticketsId, "No team yet", new TicketsDomain.UserId(5), false, false, "Still broken.",
+                new TicketsDomain.UserId(5), null, null),
             new TicketsDomain.FirstAgentReplyEvent(ticketsId, at),
             new TicketsDomain.TicketResolvedEvent(ticketsId, at),
             new TicketsDomain.TicketReopenedEvent(ticketsId, at),
@@ -48,7 +56,8 @@ public class OutboxTests(CustomWebAppFactory factory)
     {
         var tested = new HashSet<Type>
         {
-            typeof(TicketsDomain.TicketCreatedEvent), typeof(TicketsDomain.FirstAgentReplyEvent), typeof(TicketsDomain.TicketResolvedEvent),
+            typeof(TicketsDomain.TicketCreatedEvent), typeof(TicketsDomain.TicketAssignedEvent), typeof(TicketsDomain.ReplyAddedEvent),
+            typeof(TicketsDomain.FirstAgentReplyEvent), typeof(TicketsDomain.TicketResolvedEvent),
             typeof(TicketsDomain.TicketReopenedEvent), typeof(TicketsDomain.TicketCancelledEvent), typeof(TicketsDomain.TicketPriorityChangedEvent),
             typeof(SlaDomain.DeadlinesChangedEvent),
         };
@@ -119,8 +128,8 @@ public class OutboxTests(CustomWebAppFactory factory)
     public async Task An_event_saved_before_a_crash_is_still_delivered()
     {
         var ticketId = 2_000_000_000L + Random.Shared.NextInt64(1, 1_000_000_000L);
-        var left = OutboxMessage.From(new TicketsDomain.TicketCreatedEvent(new TicketsDomain.TicketId(ticketId), TicketsDomain.TicketPriority.Normal,
-            DateTime.UtcNow.AddHours(-3)), DateTime.UtcNow.AddHours(-3));
+        var left = OutboxMessage.From(new TicketsDomain.TicketCreatedEvent(Guid.NewGuid(), new TicketsDomain.TicketId(ticketId), "Left behind", null,
+            new TicketsDomain.UserId(5), TicketsDomain.TicketPriority.Normal, DateTime.UtcNow.AddHours(-3)), DateTime.UtcNow.AddHours(-3));
         await using var conn = factory.OpenDatabase();
         await conn.ExecuteAsync(
             """

@@ -37,6 +37,15 @@ public interface ITeamDirectory
     Task<IReadOnlyList<long>> NotifyListAsync(long? teamId, CancellationToken ct);
 }
 
+// Email that other modules want sent. The mail is only queued here; a background service sends it, so a down mail
+// server never slows or fails the caller. Tickets never sees an email address.
+public interface IMailQueue
+{
+    // Queues one mail to a person. The key names this mail ("kind:eventId:userId"): queueing the same key again does
+    // nothing, so a redelivered event sends one mail. A disabled or unknown account gets nothing.
+    Task QueueAsync(string key, long toUserId, string subject, string body, CancellationToken ct);
+}
+
 public sealed record TeamInfo(long Id, string Name, bool IsActive);
 
 // A team was renamed. Tickets keeps a copy of each team's name, so it hears about this. The name is a convenience: a

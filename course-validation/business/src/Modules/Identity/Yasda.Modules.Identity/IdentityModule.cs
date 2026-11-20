@@ -49,6 +49,9 @@ public static class IdentityModule
             .AddSignInManager<YasdaSignInManager>();
 
         services.AddTransient<IEmailSender<AppUser>, SmtpEmailSender>();
+        services.AddSingleton<IMailer, SmtpMailer>();
+        services.AddScoped<IMailQueue, MailQueue>();
+        services.AddHostedService<MailSender>();
         // How soon a disabled account or a changed role ends a browser session (each check is one query).
         services.Configure<SecurityStampValidatorOptions>(o => o.ValidationInterval = TimeSpan.FromMinutes(1));
 

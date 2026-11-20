@@ -64,7 +64,7 @@ internal sealed class Ticket : AggregateRoot<TicketId>
             ticket.TeamId = category.TeamId;
             ticket.TeamName = category.TeamName;
         }
-        ticket.Raise(new TicketCreatedEvent(id, priority, nowUtc));
+        ticket.Raise(new TicketCreatedEvent(Guid.NewGuid(), id, ticket.Subject, ticket.TeamId, requester, priority, nowUtc));
         return ticket;
     }
 
@@ -75,15 +75,15 @@ internal sealed class Ticket : AggregateRoot<TicketId>
         EnsureCanOwn(agentIsMember, agentIsAdmin);
         if (AssigneeId is not null && AssigneeId != agent)
             throw new DomainException(TicketsErrors.TakenBySomeoneElse, $"{AssigneeName} already has ticket #{Id.Value}.");
-        AssignTo(agent, agentName, nowUtc);
+        AssignTo(agent, agentName, assignedBy: agent, nowUtc);
     }
 
     // A team lead hands a ticket to someone, whoever had it before.
-    public void Assign(UserId agent, string agentName, DateTime nowUtc, bool assigneeIsMember = false, bool assigneeIsAdmin = false)
+    public void Assign(UserId assignee, string assigneeName, UserId assignedBy, DateTime nowUtc, bool assigneeIsMember = false, bool assigneeIsAdmin = false)
     {
         EnsureIn("assign", TicketStatus.New, TicketStatus.Open, TicketStatus.Pending);
         EnsureCanOwn(assigneeIsMember, assigneeIsAdmin);
-        AssignTo(agent, agentName, nowUtc);
+        AssignTo(assignee, assigneeName, assignedBy, nowUtc);
     }
 
     // A team lead changes where a ticket belongs. The assignee stays only if they are in the new team (or are an admin, who
@@ -137,12 +137,13 @@ internal sealed class Ticket : AggregateRoot<TicketId>
                 FirstResponseUtc = nowUtc;
                 Raise(new FirstAgentReplyEvent(Id, nowUtc));
             }
-            if (AssigneeId is null) AssignTo(author, authorName, nowUtc);
+            if (AssigneeId is null) AssignTo(author, authorName, assignedBy: author, nowUtc);
             if (Status == TicketStatus.New) Status = TicketStatus.Open;
         }
 
         _messages.Add(new TicketMessage(author, authorName, text, isInternal, nowUtc));
         UpdatedUtc = nowUtc;
+        Raise(new ReplyAddedEvent(Guid.NewGuid(), Id, Subject, author, authorIsStaff, isInternal, text, RequesterId, AssigneeId, TeamId));
     }
 
     // Waiting on the requester: an agent asked something and can't go on without the answer.
@@ -219,12 +220,15 @@ internal sealed class Ticket : AggregateRoot<TicketId>
         throw new DomainException(TicketsErrors.CategoryNotAvailable);
     }
 
-    private void AssignTo(UserId agent, string agentName, DateTime nowUtc)
+    private void AssignTo(UserId agent, string agentName, UserId assignedBy, DateTime nowUtc)
     {
+        // Taking your own ticket again changes nothing, so it tells nobody.
+        var changed = AssigneeId != agent;
         AssigneeId = agent;
         AssigneeName = agentName;
         if (Status == TicketStatus.New) Status = TicketStatus.Open;
         UpdatedUtc = nowUtc;
+        if (changed) Raise(new TicketAssignedEvent(Guid.NewGuid(), Id, Subject, agent, assignedBy));
     }
 
     private void Move(TicketStatus to, DateTime nowUtc)
