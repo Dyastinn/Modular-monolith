@@ -110,19 +110,22 @@ course is written alongside the product, so the lessons without a link are still
 | 10 | [The ticket's life](10-the-tickets-life.md) | Pending, resolved, reopened, closed, cancelled |
 | 11 | [Replies and notes](11-replies-and-notes.md) | The conversation, internal notes, lost updates stopped |
 | 12 | [Containers and CI](12-containers-ci.md) | Podman installed, the database in a container, coverage and mutation testing, every test on every push |
-| 13 | Events and the outbox | The Sla module starts each ticket's clock, reliably |
-| 14 | Observability | Traces, metrics, logs, health checks, the Aspire dashboard |
-| 15 | Teams and routing | Teams, categories, and tickets routed to the right team |
-| 16 | Users and email | Accounts, the sign-in log, emails for replies and password resets |
-| 17 | Knowledge base | Articles with review and an audit trail |
-| 18 | Business hours | Deadlines in business hours, holidays, pausing the clock |
-| 19 | Breaches | A scheduler that warns and escalates, and survives a restart |
-| 20 | Attachments | Files on tickets, stored and served safely |
-| 21 | Search | Full-text search over tickets and articles; suggested answers |
-| 22 | Reports | SLA compliance, response and resolve times, CSV export |
-| 23 | Security hardening | Rate limits, HTTPS, a Content-Security-Policy, encrypted sign-in keys, least privilege |
-| 24 | Deploying with Podman | All of YASDA on one server: Compose, Caddy, migrations, backups |
-| 25 | Production checklist | What "done" means, a new install's first day, and what's not built yet |
+| 13 | [Events and the outbox](13-events-outbox.md) | Tickets tells, Sla listens: every ticket gets a clock, reliably |
+| 14 | [Sla answers](14-sla-answers.md) | Tickets keeps the deadlines; the queue, the ticket and the policies page show them |
+| 15 | [Observability](15-observability.md) | Traces, metrics, logs, health checks, the Aspire dashboard |
+| 16 | Users and the sign-in log | Accounts an admin creates, disables and resets; the sign-in log; first run |
+| 17 | Teams | Teams, their members, and who is told about new work |
+| 18 | Categories and routing | Categories, and tickets routed to the right team |
+| 19 | Email | Mail for new tickets, assignments and replies, queued and sent without blocking |
+| 20 | Knowledge base | Articles with review and an audit trail |
+| 21 | Business hours | Deadlines in business hours, holidays, pausing the clock |
+| 22 | Breaches | A scheduler that warns and escalates, and survives a restart |
+| 23 | Attachments | Files on tickets, stored and served safely |
+| 24 | Search | Full-text search over tickets and articles; suggested answers |
+| 25 | Reports | SLA compliance, response and resolve times, CSV export |
+| 26 | Security hardening | Rate limits, HTTPS, a Content-Security-Policy, encrypted sign-in keys, least privilege |
+| 27 | Deploying with Podman | All of YASDA on one server: Compose, Caddy, migrations, backups |
+| 28 | Production checklist | What "done" means, a new install's first day, and what's not built yet |
 
 Every lesson from 02 on ends by proving itself: tests for what it built, the edge cases included, and a
 table of which edges they cover and why.

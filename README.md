@@ -124,4 +124,4 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the build and eve
 
 To install it on a server: copy [deploy/compose/](course-validation/business/deploy/compose/) to a Linux server
 with Podman, fill in `.env` from [.env.example](course-validation/business/deploy/compose/.env.example), and run
-`podman compose up -d`. The step-by-step install guide arrives with lesson 24.
+`podman compose up -d`. The step-by-step install guide arrives with lesson 27.

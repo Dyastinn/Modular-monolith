@@ -573,7 +573,7 @@ your machine needs:
 ASP.NET Core reads `appsettings.json`, then lays `appsettings.Development.json` over it when the environment is
 Development (which `dotnet run` sets from `launchSettings.json`). In production, both flags stay off and the
 connection string comes from the server's settings: a migration should be a deliberate step there, never a
-side effect of restarting. Lesson 24 shows how.
+side effect of restarting. Lesson 27 shows how.
 
 Last, the two lines in `Program.cs`. Before:
 

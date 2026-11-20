@@ -118,8 +118,8 @@ are, once:
   strange place"). Exploring the app freely to find surprises is called **exploratory testing**.
 - **Functional vs. non-functional.** Functional tests check *what* the app does: the right total, the right
   answer. Non-functional tests check *how well*: fast enough, secure, still standing with 500 users at once.
-  Most of our tests are functional; lesson 23 adds security checks. Load testing (many users at once) is
-  something this course leaves out, and lesson 25 says when you'd add it.
+  Most of our tests are functional; lesson 26 adds security checks. Load testing (many users at once) is
+  something this course leaves out, and lesson 28 says when you'd add it.
 - **Regression test.** Any test you run again after a change, to prove nothing that used to work broke. In
   practice that's the whole suite, every time. The word is also used for a test written right after fixing
   a bug, so that bug can't come back.

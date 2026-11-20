@@ -57,18 +57,18 @@ to date by `DeadlinesChanged`.
 - **Y2 — Tickets core** ✅ code (2026-11-19) · ✅ lessons 03–11 (written and followed in a scratch folder, 2026-11-20; tag `y2-done` still to make). Details below. Lesson 05 installs PostgreSQL,
   lesson 06 Playwright's browser; lesson 06 also adds the account row, `AuthorizeView` and the sign-in pages to
   lesson 01's layout. The outbox delivery and redelivery tests return in Y3 with the first real event.
-- **Y3 — Events, basic SLA, teams** ⬜ · lessons 12–16 (12 installs Podman): the Sla module on the outbox (`TicketCreated` starts 24/7 clocks);
+- **Y3 — Events, basic SLA, teams** ⬜ · lessons 12–19 (12 installs Podman; the plan said 12–16, grown by splits: see "Decisions made while the user was away"): the Sla module on the outbox (`TicketCreated` starts 24/7 clocks);
   teams, categories and routing (category → team); email on new replies and assignments. **Planned in full
   below (2026-11-20); follow the plan, don't redesign it.**
-- **Y4 — Knowledge base** ⬜ · lesson 17: articles, review flow, audit trail.
-- **Y5 — Real SLA** ⬜ · lessons 18–19: business hours, Philippine holidays as editable data, pause/resume, FsCheck
+- **Y4 — Knowledge base** ⬜ · lesson 20: articles, review flow, audit trail.
+- **Y5 — Real SLA** ⬜ · lessons 21–22: business hours, Philippine holidays as editable data, pause/resume, FsCheck
   properties; the breach scheduler with warnings, breaches and escalation.
-- **Y6 — Attachments and search** ⬜ · lessons 20–21: storage on a volume, limits, safe downloads; PostgreSQL full-text search
+- **Y6 — Attachments and search** ⬜ · lessons 23–24: storage on a volume, limits, safe downloads; PostgreSQL full-text search
   over tickets and articles; suggested articles.
-- **Y7 — Reports, security, deployment** ⬜ · lessons 22–25: SLA compliance, response and resolve times, CSV export;
+- **Y7 — Reports, security, deployment** ⬜ · lessons 25–28: SLA compliance, response and resolve times, CSV export;
   requesters see only their own tickets (API tests); attachments in backups; `podman compose up` end to end.
 - **Y8 — Course polish** ⬜: a C# foundations page for readers new to C#, learning resources, screenshots of
-  the finished screens, and one full read-through of all 25 lessons in order on a fresh machine.
+  the finished screens, and one full read-through of all 28 lessons in order on a fresh machine.
 - **Later, after the course:** inbound email (MailKit), Assets, automation rules, satisfaction survey, live
   queue updates.
 
@@ -440,6 +440,16 @@ Reported to the user at the end. Kept here so it survives a long session.
    **14 "Sla answers, the screens show it"** (`DeadlinesChanged`, `TicketSla`, v2 read functions, SLA column and header). Cut chosen so each lesson builds, runs and
    passes its own tests: nothing in 13 raises an event nobody handles. Later lessons shift by one.
 2. Tools for writing and following lessons live in `~/Projects/dotnet/yasda-scratch/tools` (generators, `follow.py`, `port.sh`, browser-test runner).
+3. **Lesson 13's cut:** it keeps everything up to Sla *publishing* `DeadlinesChanged` with no listener (honestly said in the lesson). Lesson 14 adds Tickets listening, the
+   policies API and page, the screens, and the architecture test that wants every integration event handled. This needed the least surgery and keeps every test runnable.
+   Lesson 13 is still the longest (~117 KB with code listings): no further runnable seam was found.
+4. **Lesson 15 (observability)** is built around the outbox as agreed with the user, and also carries `trace_parent` (three migrations), the gauges and the health check.
+   The build's `OperationsTests.An_error_carries_the_same_trace_id_as_its_response_header` now uses `/api/tickets/999999999` (the reader has no users endpoints yet).
+5. **Further splits and a reorder (my decisions; the user only approved splitting 13):** the reader's Identity has only sign-in, so the plan's "Users and email" and
+   "Teams, categories, routing" lessons were each far too big. New order: 16 Users and the sign-in log, 17 Teams, 18 Categories and routing, 19 Email. Users goes first so
+   `IDENTITY-0001…0005` are the user codes and the team codes are `0006…0008`, as in the build. Later lessons shift: Knowledge base 20, business hours 21, breaches 22,
+   attachments 23, search 24, reports 25, security 26, deploy 27, checklist 28 (28 lessons, was 25). References fixed in lessons 02, 05, 12, README, START-HERE, WRITING-STYLE.
+
 
 #### Part D: lessons (after A–C are green)
 
@@ -462,22 +472,15 @@ in Parts A–C is a new migration in its lesson, and every changed read function
         mutation job runs Tickets, then Identity (Identity's unit tests arrive in lesson 15/16, which adds that step).
       - Ryuk works on rootless Podman here without `TESTCONTAINERS_RYUK_DISABLED`; the lesson mentions the variable as the fix
         if it doesn't. Tickets' mutation score on the reader's domain is 75.79 % (the build's: 81 %).
-- [ ] **13 Events and the outbox:** Part A. **Draft written 2026-11-21** ([13-events-outbox.md](plan-business-tutorial/13-events-outbox.md), generated from the working code in
-      `~/Projects/dotnet/yasda-scratch/yasda`, commit "Lesson 13"; 122 integration, 19 browser and all unit tests pass there). It is **168 KB, about twice the
-      longest lesson**, because the reader's project has no outbox, events or Sla module yet. Open decision for the user: split it (outbox + Tickets events + the
-      clock; then hearing the answer + the screens) or keep one. Not done yet: the full follow from the lesson-12 commit, ANSWER-KEY and GLOSSARY entries.
-      Reader-vs-build differences it teaches: per-module connection string (no `ISharedConnection`), `Schema` on `IModuleDatabase`, `.v2.sql` plus a migration for changed
-      functions, the identity-sequence name collision in Tickets' migration, `Seeding_twice_changes_nothing` picking the Tickets `IModuleDatabase` by name,
-      `Outbox:PollIntervalMs` 200 in the factory, Dapper in the integration tests, and EF Core Relational pinned in Sla.
-- [ ] **14 Observability:** built 2026-11-21 (user decision: teach why each lesson matters). The lesson is about finding out that an
-      event was lost, and why. Besides the telemetry already in the build, it covers three things added to the outbox:
-      the request's `traceparent` is saved in `outbox_message.trace_parent` and the "outbox deliver" span joins that trace; the gauges
-      `yasda.outbox.pending` and `yasda.outbox.parked` (per schema, refreshed each dispatcher tick); and `OutboxHealthCheck`,
-      which reports **Degraded** (still HTTP 200) when messages were given up on. Tests: `OutboxObservabilityTests` (3). The mail
-      metrics (`yasda.mail.*`) come with `MailSender` in lesson 16. Lesson 13 must show the outbox table *without* `trace_parent`;
-      lesson 14 adds the column in its own migration (and the squashed build has it from the start).
-- [ ] **15 Teams, categories, routing:** Part B.
-- [ ] **16 Users and email:** Part C.
+- [x] **13 Events and the outbox** (written, 2026-11-21): the outbox, Tickets raises events, Sla clocks; `DeadlinesChanged` goes out with no listener yet.
+- [x] **14 Sla answers, the screens show it** (2026-11-21): Tickets keeps `ticket_sla`, v2 read functions, the policies API and page, the SLA column and header.
+- [x] **15 Observability** (2026-11-21): telemetry, the trace link through the outbox, backlog gauges, health checks (outbox degraded), the Aspire dashboard.
+- [ ] **16 Users and the sign-in log:** Identity's account administration (the reader's Identity has only sign-in): create, search, edit, disable, reset password,
+      change password, the sign-in log, the first admin, forgot password. Comes *before* teams so that `IDENTITY-0001…0005` are the user codes and the team codes
+      are `0006…0008`, as in the build.
+- [ ] **17 Teams:** Part B, Identity side (B1): `Team`, members, notify setting, `ITeamDirectory`, `TeamRenamed`, the staff list, the two pages.
+- [ ] **18 Categories and routing:** Part B, Tickets side (B2–B4): categories, a ticket's team, routing, the team filter, rename copies.
+- [ ] **19 Email:** Part C: `IMailQueue`, `MailSender`, `IMailer`, the three mail handlers; extracts `SmtpMailer` from lesson 16's `SmtpEmailSender` (before/after).
 - [ ] Follow each lesson in a scratch folder. Add the ANSWER-KEY and GLOSSARY entries (outbox, at-least-once,
       idempotent, integration event, SLA, at risk). Then update the README and the history log.
 
@@ -605,19 +608,22 @@ Confirmed by the user, 2026-11-20:
 | 10 | Approve/reject/cancel | Pending, resolve, reopen, cancel |
 | 11 | Update order | Replies, internal notes, edits, optimistic concurrency |
 | 12 | Containers and CI | Same |
-| 13 | Events and outbox | Sla module: `TicketCreated` starts the clocks |
-| 14 | Observability | Same |
-| 15 | Customers | Teams, categories, routing |
-| 16 | Users and email | Same, plus reply and assignment emails |
-| 17 | Item catalog (audited) | Knowledge base with review and audit |
-| 18 | Shipping | Business hours, holidays, pause/resume; FsCheck |
-| 19 | Purchasing | Breach scheduler and escalation |
-| 20 | Invoicing | Attachments |
-| 21 | Payments | Full-text search, suggested articles |
-| 22 | Special discounts | Reports and CSV export |
-| 23 | Security hardening | Same, plus row-level access and attachment hardening |
-| 24 | Deploy | Same, plus attachments in backups |
-| 25 | Production checklist | Same, without the BIR items |
+| 13 | Events and outbox | Tickets tells, Sla listens: every ticket gets a clock |
+| 14 | (new, split from 13) | Sla answers: Tickets keeps the deadlines; queue, ticket and policies page show them |
+| 15 | Observability | Same, built around the outbox: traces through it, backlog gauges, an outbox health check |
+| 16 | Users and email | Users and the sign-in log (email moves to 19) |
+| 17 | Customers | Teams |
+| 18 | (new, split from 17) | Categories and routing |
+| 19 | (new, split from 16) | Email on new tickets, assignments and replies |
+| 20 | Item catalog (audited) | Knowledge base with review and audit |
+| 21 | Shipping | Business hours, holidays, pause/resume; FsCheck |
+| 22 | Purchasing | Breach scheduler and escalation |
+| 23 | Invoicing | Attachments |
+| 24 | Payments | Full-text search, suggested articles |
+| 25 | Special discounts | Reports and CSV export |
+| 26 | Security hardening | Same, plus row-level access and attachment hardening |
+| 27 | Deploy | Same, plus attachments in backups |
+| 28 | Production checklist | Same, without the BIR items |
 
 ---
 
