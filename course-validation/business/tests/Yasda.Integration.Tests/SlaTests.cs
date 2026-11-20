@@ -99,6 +99,25 @@ public class SlaTests(CustomWebAppFactory factory)
         reopened.Sla.ResolveDueUtc.Should().Be(resolved.Sla.ResolveDueUtc);
     }
 
+    // Decision of 2026-11-20: resolving does not count as a response. A ticket fixed with no public reply keeps showing its
+    // unanswered response target; only an agent's reply stops it.
+    [Fact]
+    public async Task A_ticket_resolved_without_a_reply_keeps_its_response_target_running()
+    {
+        var requester = await factory.ClientFor(Requester);
+        var agent = await factory.ClientFor(Agent);
+        var id = await File(requester, "Normal");
+        await ReadUntil(agent, id, HasDeadlines);
+        (await agent.PostAsync($"/api/tickets/{id}/take", null)).EnsureSuccessStatusCode();
+
+        (await agent.PostAsync($"/api/tickets/{id}/resolve", null)).EnsureSuccessStatusCode();
+        var ticket = await ReadUntil(agent, id, t => t.Sla?.ResolutionMet is not null);
+
+        ticket.Sla!.ResolutionMet.Should().BeTrue();
+        ticket.Sla.ResponseMet.Should().BeNull();
+        ticket.Sla.NextDueUtc.Should().Be(ticket.Sla.ResponseDueUtc);
+    }
+
     [Fact]
     public async Task A_cancelled_ticket_has_no_running_deadline()
     {

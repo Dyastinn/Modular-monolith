@@ -284,9 +284,11 @@ on the same day: 27 of 27). What differs from the plan above, and why:
   integration with chosen ticks) fail without it.
 - `ticket_sla` has an `xmin` row version (not in the plan): two deliveries at once could let an older answer overwrite a newer one.
 - The new `OutboxTests.No_event_type_is_left_out_of_the_round_trip_test` makes every future event join the round-trip test.
-- **Open question for the user:** a ticket resolved with no public reply keeps its response target running, so a resolved ticket can show
-  "Breached" forever. The plan doesn't say whether resolving counts as the response. Not decided here.
-- The dev database container `yasda-postgres` holds the old migration ids (the squash regenerated Tickets' pair): drop and recreate it.
+- **Decided (user, 2026-11-20): resolving does not count as a response.** Only an agent's public reply stops the response target, as
+  planned. A ticket resolved with no public reply keeps showing its unanswered target (and "Breached" once it is late). Pinned by
+  `Resolving_a_ticket_nobody_replied_to_leaves_the_response_target_running` and
+  `A_ticket_resolved_without_a_reply_keeps_its_response_target_running`. Lesson 13 says so, honestly, as a cost.
+- The dev database container `yasda-postgres` held the old migration ids (the squash regenerated Tickets' pair). Done 2026-11-20 (user said to): its `yasda` database was dropped and the app recreated it; all three schemas migrate and seed cleanly. Anyone with an older dev database does the same.
 
 - [x] A1. Create the projects `Yasda.Modules.Tickets.Contracts` (empty for now) and `Yasda.Modules.Sla.Contracts`,
       then `Yasda.Modules.Sla`: `SlaModule` with `AddSlaModule()`/`MapSlaEndpoints()`, `SlaDbContext` (schema `sla`,

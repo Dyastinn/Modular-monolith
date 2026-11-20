@@ -98,7 +98,9 @@ internal sealed class SlaClock : AggregateRoot<TicketId>
         Changed();
     }
 
-    // The ticket was resolved. A resolution that happened before the last reopen is old news, and one already known is a repeat.
+    // The ticket was resolved. Resolving does not count as a response: only an agent's public reply stops the response target
+    // (decision of 2026-11-20), so a ticket fixed with no reply keeps showing its unanswered target.
+    // A resolution that happened before the last reopen is old news, and one already known is a repeat.
     public void RecordResolution(DateTime atUtc)
     {
         atUtc = WholeMicroseconds(atUtc);

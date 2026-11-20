@@ -279,6 +279,19 @@ public class SlaClockTests
     }
 
     [Fact]
+    public void Resolving_a_ticket_nobody_replied_to_leaves_the_response_target_running()
+    {
+        var clock = NewClock();
+
+        clock.RecordResolution(Now.AddHours(1));
+
+        clock.ResolutionMet.Should().BeTrue();
+        clock.ResponseMet.Should().BeNull();
+        clock.RespondedUtc.Should().BeNull();
+        clock.NextDueUtc.Should().Be(Now.AddHours(4), "only a public reply from an agent stops the response target");
+    }
+
+    [Fact]
     public void The_at_risk_point_is_a_quarter_of_the_target_before_the_response_is_due()
     {
         var clock = NewClock();
