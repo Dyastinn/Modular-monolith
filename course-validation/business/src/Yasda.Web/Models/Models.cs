@@ -17,13 +17,15 @@ public sealed record User(long Id, string Email, string FullName, string Role, b
 public sealed record SignInAttempt(long Id, string Email, long? UserId, string Outcome, string? IpAddress, DateTime OccurredUtc);
 
 public sealed record TicketSummary(long Id, string Subject, string Status, string Priority, long RequesterId, string RequesterName,
-    long? AssigneeId, string? AssigneeName, DateTime CreatedUtc, DateTime UpdatedUtc, DateTime? NextDueUtc, DateTime? AtRiskFromUtc);
+    long? AssigneeId, string? AssigneeName, DateTime CreatedUtc, DateTime UpdatedUtc, DateTime? NextDueUtc, DateTime? AtRiskFromUtc,
+    string? TeamName, string? CategoryName);
 
 public sealed record TicketMessage(long Id, long AuthorId, string AuthorName, string Body, bool IsInternal, DateTime CreatedUtc);
 
 public sealed record TicketDetail(long Id, string Subject, string Status, string Priority, long RequesterId, string RequesterName,
     long? AssigneeId, string? AssigneeName, DateTime CreatedUtc, DateTime UpdatedUtc, DateTime? FirstResponseUtc,
-    DateTime? ResolvedUtc, DateTime? ClosedUtc, string? CancelReason, TicketSlaFacts? Sla, List<TicketMessage> Messages)
+    DateTime? ResolvedUtc, DateTime? ClosedUtc, string? CancelReason, long? CategoryId, string? CategoryName, long? TeamId, string? TeamName,
+    TicketSlaFacts? Sla, List<TicketMessage> Messages)
 {
     public bool IsBeingWorkedOn => Status is "New" or "Open" or "Pending";
     public bool IsFinished => Status is "Closed" or "Cancelled";
@@ -35,6 +37,14 @@ public sealed record TicketSlaFacts(DateTime ResponseDueUtc, bool? ResponseMet, 
 
 public sealed record SlaPolicy(string Priority, int RespondMinutes, int ResolveMinutes, DateTime UpdatedUtc, long UpdatedById, string UpdatedByName);
 
+public sealed record TeamSummary(long Id, string Name, bool IsActive, string NotifyMode, long MemberCount);
+
+public sealed record TeamMember(long UserId, string FullName, string Role, bool Notify, bool IsDisabled);
+
+public sealed record TeamDetail(long Id, string Name, bool IsActive, string NotifyMode, List<TeamMember> Members);
+
+public sealed record Category(long Id, string Name, long? TeamId, string? TeamName, bool IsActive);
+
 public sealed record StaffMember(long Id, string FullName, string Role);
 
 // The choices the API accepts, in the order people think of them.
@@ -45,5 +55,18 @@ public static class TicketChoices
 
     // Who works on tickets. The API decides; the screens only hide what someone can't do anyway.
     public static bool IsStaff(string? role) => role is Roles.Agent or Roles.TeamLead or Roles.Admin;
+    public static readonly string[] NotifyModes = ["LeadsOnly", "LeadsAndSelected", "Everyone"];
+
+    // How a team's notify mode reads on a screen.
+    public static string NotifyText(string mode)
+    {
+        switch (mode)
+        {
+            case "LeadsAndSelected": return "Team leads and selected members";
+            case "Everyone": return "Everyone in the team";
+            default: return "Team leads only";
+        }
+    }
+
     public static bool IsLead(string? role) => role is Roles.TeamLead or Roles.Admin;
 }

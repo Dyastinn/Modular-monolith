@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Routing;
 
 namespace Yasda.Modules.Tickets.Features;
 
-internal sealed record CreateTicketRequest(string Subject, string Message, TicketPriority Priority = TicketPriority.Normal);
+internal sealed record CreateTicketRequest(string Subject, string Message, TicketPriority Priority = TicketPriority.Normal, long? CategoryId = null);
 
 internal sealed class CreateTicketRequestValidator : AbstractValidator<CreateTicketRequest>
 {
@@ -17,6 +17,7 @@ internal sealed class CreateTicketRequestValidator : AbstractValidator<CreateTic
         RuleFor(x => x.Subject).NotEmpty().MaximumLength(Ticket.SubjectMaxLength);
         RuleFor(x => x.Message).NotEmpty().MaximumLength(Ticket.MessageMaxLength);
         RuleFor(x => x.Priority).IsInEnum();
+        RuleFor(x => x.CategoryId).GreaterThan(0).When(x => x.CategoryId is not null);
     }
 }
 
@@ -26,7 +27,7 @@ internal static class CreateTicketEndpoint
     public static void Map(IEndpointRouteBuilder app) =>
         app.MapPost("/tickets", async Task<Created<CreatedId>> (CreateTicketRequest body, CreateTicketHandler handler, CancellationToken ct) =>
             {
-                var id = await handler.HandleAsync(new CreateTicketCommand(body.Subject, body.Message, body.Priority), ct);
+                var id = await handler.HandleAsync(new CreateTicketCommand(body.Subject, body.Message, body.Priority, body.CategoryId), ct);
                 return TypedResults.Created($"/api/tickets/{id}", new CreatedId(id));
             })
             .RequireAuthorization();

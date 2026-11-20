@@ -29,6 +29,8 @@ public static class IdentityModule
                 .AddInterceptors(sp.GetServices<IInterceptor>()));
         services.AddScoped<IModuleDatabase, IdentityDatabase>();
         services.AddScoped<IUserDirectory, UserDirectory>();
+        services.AddScoped<IDomainEventHandler<TeamRenamedEvent>, PublishTeamRenamed>();
+        services.AddScoped<ITeamDirectory, TeamDirectory>();
 
         services.AddIdentityApiEndpoints<AppUser>(o =>
             {
@@ -97,6 +99,14 @@ public static class IdentityModule
         services.AddScoped<SetUserDisabledHandler>();
         services.AddScoped<ResetUserPasswordHandler>();
         services.AddScoped<SearchSignInAttemptsHandler>();
+        services.AddScoped<SearchTeamsHandler>();
+        services.AddScoped<GetTeamHandler>();
+        services.AddScoped<CreateTeamHandler>();
+        services.AddScoped<RenameTeamHandler>();
+        services.AddScoped<SetTeamActiveHandler>();
+        services.AddScoped<SetTeamNotifyHandler>();
+        services.AddScoped<AddTeamMemberHandler>();
+        services.AddScoped<RemoveTeamMemberHandler>();
 
         return services;
     }
@@ -126,6 +136,11 @@ public static class IdentityModule
         ListStaffEndpoint.Map(identity);
         UpdateUserEndpoint.Map(identity);
         SearchSignInAttemptsEndpoint.Map(identity);
+        SearchTeamsEndpoint.Map(identity);
+        GetTeamEndpoint.Map(identity);
+        CreateTeamEndpoint.Map(identity);
+        UpdateTeamEndpoint.Map(identity);
+        TeamMembersEndpoint.Map(identity);
         return app;
     }
 }

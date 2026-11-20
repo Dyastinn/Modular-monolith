@@ -12,7 +12,7 @@ using Yasda.Modules.Tickets.Infrastructure;
 namespace Yasda.Modules.Tickets.Infrastructure.Migrations
 {
     [DbContext(typeof(TicketsDbContext))]
-    [Migration("20261120133509_InitialCreate")]
+    [Migration("20261120151442_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -27,6 +27,57 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.HasSequence("ticket_id_seq");
+
+            modelBuilder.Entity("Yasda.Modules.Tickets.Domain.Category", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<long?>("TeamId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("team_id");
+
+                    b.Property<string>("TeamName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("team_name");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_utc");
+
+                    b.HasKey("Id")
+                        .HasName("pk_category");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_category_name");
+
+                    b.HasIndex("TeamId")
+                        .HasDatabaseName("ix_category_team_id");
+
+                    b.ToTable("category", "tickets");
+                });
 
             modelBuilder.Entity("Yasda.Modules.Tickets.Domain.Ticket", b =>
                 {
@@ -47,6 +98,15 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)")
                         .HasColumnName("cancel_reason");
+
+                    b.Property<long?>("CategoryId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("category_id");
+
+                    b.Property<string>("CategoryName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("category_name");
 
                     b.Property<DateTime?>("ClosedUtc")
                         .HasColumnType("timestamp with time zone")
@@ -98,6 +158,15 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("subject");
 
+                    b.Property<long?>("TeamId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("team_id");
+
+                    b.Property<string>("TeamName")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("team_name");
+
                     b.Property<DateTime>("UpdatedUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_utc");
@@ -110,6 +179,9 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
 
                     b.HasIndex("RequesterId")
                         .HasDatabaseName("ix_ticket_requester_id");
+
+                    b.HasIndex("TeamId")
+                        .HasDatabaseName("ix_ticket_team_id");
 
                     b.HasIndex("Status", "UpdatedUtc")
                         .HasDatabaseName("ix_ticket_status_updated_utc");

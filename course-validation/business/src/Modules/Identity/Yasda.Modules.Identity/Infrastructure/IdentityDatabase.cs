@@ -1,11 +1,12 @@
 using System.Data.Common;
+using Yasda.Modules.Identity.Domain;
 using Yasda.Shared.BuildingBlocks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
 namespace Yasda.Modules.Identity.Infrastructure;
 
-internal sealed class IdentityDatabase(UserManager<AppUser> users) : IModuleDatabase
+internal sealed class IdentityDatabase(UserManager<AppUser> users, TimeProvider time) : IModuleDatabase
 {
     public const string DevPassword = "Password123!";
 
@@ -39,6 +40,31 @@ internal sealed class IdentityDatabase(UserManager<AppUser> users) : IModuleData
             ThrowIfFailed(await users.CreateAsync(user, DevPassword));
             ThrowIfFailed(await users.AddToRoleAsync(user, role));
         }
+
+        await SeedTeamsAsync(ownerConnection, ct);
+    }
+
+    // Two teams to route tickets to: the service desk (an agent and a team lead) and Network (a team lead).
+    private async Task SeedTeamsAsync(DbConnection ownerConnection, CancellationToken ct)
+    {
+        var options = new DbContextOptionsBuilder<YasdaIdentityDbContext>();
+        YasdaIdentityDbContext.Configure(options, ownerConnection);
+        await using var db = new YasdaIdentityDbContext(options.Options);
+        if (await db.Teams.AnyAsync(ct)) return;
+
+        var agent = await users.FindByEmailAsync("agent@yasda.local");
+        var lead = await users.FindByEmailAsync("lead@yasda.local");
+        if (agent is null || lead is null) return;
+        var now = time.GetUtcNow().UtcDateTime;
+
+        var serviceDesk = Team.Create("Service desk", nameTaken: false, now);
+        serviceDesk.AddMember(new UserId(agent.Id), userIsStaff: true, now);
+        serviceDesk.AddMember(new UserId(lead.Id), userIsStaff: true, now);
+        var network = Team.Create("Network", nameTaken: false, now);
+        network.AddMember(new UserId(lead.Id), userIsStaff: true, now);
+
+        db.Teams.AddRange(serviceDesk, network);
+        await db.SaveChangesAsync(ct);
     }
 
     private static void ThrowIfFailed(IdentityResult result)

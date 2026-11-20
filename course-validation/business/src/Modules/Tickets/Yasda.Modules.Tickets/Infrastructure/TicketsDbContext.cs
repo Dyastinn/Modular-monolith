@@ -13,6 +13,7 @@ internal sealed class TicketsDbContext(DbContextOptions<TicketsDbContext> option
 
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<TicketSla> TicketSlas => Set<TicketSla>();
+    public DbSet<Category> Categories => Set<Category>();
 
     // Shared by the app and `dotnet ef`, so the two can't drift apart.
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder o, DbConnection connection) =>
@@ -42,6 +43,8 @@ internal sealed class TicketsDbContext(DbContextOptions<TicketsDbContext> option
     {
         c.Properties<TicketId>().HaveConversion<TicketIdConverter>();
         c.Properties<UserId>().HaveConversion<UserIdConverter>();
+        c.Properties<CategoryId>().HaveConversion<CategoryIdConverter>();
+        c.Properties<TeamId>().HaveConversion<TeamIdConverter>();
         // Statuses and priorities are stored by name: readable in SQL, and safe if the enum is ever reordered.
         c.Properties<TicketStatus>().HaveConversion<string>().HaveMaxLength(20);
         c.Properties<TicketPriority>().HaveConversion<string>().HaveMaxLength(20);
@@ -71,6 +74,19 @@ internal sealed class TicketsDbContext(DbContextOptions<TicketsDbContext> option
             e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");
         });
 
+        b.Entity<Category>(e =>
+        {
+            e.ToTable("category");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.Name).HasMaxLength(Category.NameMaxLength);
+            e.Property(x => x.TeamName).HasMaxLength(100);
+            e.HasIndex(x => x.Name).IsUnique();
+            e.HasIndex(x => x.TeamId);
+            e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");
+            e.Ignore(x => x.DomainEvents);
+        });
+
         b.Entity<Ticket>(e =>
         {
             e.ToTable("ticket", t =>
@@ -84,10 +100,13 @@ internal sealed class TicketsDbContext(DbContextOptions<TicketsDbContext> option
             e.Property(x => x.Subject).HasMaxLength(Ticket.SubjectMaxLength);
             e.Property(x => x.RequesterName).HasMaxLength(100);
             e.Property(x => x.AssigneeName).HasMaxLength(100);
+            e.Property(x => x.CategoryName).HasMaxLength(100);
+            e.Property(x => x.TeamName).HasMaxLength(100);
             e.Property(x => x.CancelReason).HasMaxLength(Ticket.ReasonMaxLength);
             e.HasIndex(x => new { x.Status, x.UpdatedUtc });
             e.HasIndex(x => x.RequesterId);
             e.HasIndex(x => x.AssigneeId);
+            e.HasIndex(x => x.TeamId);
             e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");
             e.Ignore(x => x.IsFinished);
             e.Ignore(x => x.DomainEvents);
@@ -108,6 +127,8 @@ internal sealed class TicketsDbContext(DbContextOptions<TicketsDbContext> option
 
 internal sealed class TicketIdConverter() : ValueConverter<TicketId, long>(v => v.Value, v => new TicketId(v));
 internal sealed class UserIdConverter() : ValueConverter<UserId, long>(v => v.Value, v => new UserId(v));
+internal sealed class CategoryIdConverter() : ValueConverter<CategoryId, long>(v => v.Value, v => new CategoryId(v));
+internal sealed class TeamIdConverter() : ValueConverter<TeamId, long>(v => v.Value, v => new TeamId(v));
 
 // For `dotnet ef migrations add`; never connects.
 internal sealed class TicketsDbContextFactory : IDesignTimeDbContextFactory<TicketsDbContext>

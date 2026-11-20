@@ -20,6 +20,25 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
                 schema: "tickets");
 
             migrationBuilder.CreateTable(
+                name: "category",
+                schema: "tickets",
+                columns: table => new
+                {
+                    id = table.Column<long>(type: "bigint", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    team_id = table.Column<long>(type: "bigint", nullable: true),
+                    team_name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    is_active = table.Column<bool>(type: "boolean", nullable: false),
+                    updated_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_category", x => x.id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "outbox_message",
                 schema: "tickets",
                 columns: table => new
@@ -56,6 +75,10 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
                     resolved_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     closed_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     cancel_reason = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    category_id = table.Column<long>(type: "bigint", nullable: true),
+                    category_name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    team_id = table.Column<long>(type: "bigint", nullable: true),
+                    team_name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
                     xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
                 },
                 constraints: table =>
@@ -112,6 +135,19 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateIndex(
+                name: "ix_category_name",
+                schema: "tickets",
+                table: "category",
+                column: "name",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "ix_category_team_id",
+                schema: "tickets",
+                table: "category",
+                column: "team_id");
+
+            migrationBuilder.CreateIndex(
                 name: "ix_outbox_message_occurred_utc",
                 schema: "tickets",
                 table: "outbox_message",
@@ -137,6 +173,12 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
                 columns: new[] { "status", "updated_utc" });
 
             migrationBuilder.CreateIndex(
+                name: "ix_ticket_team_id",
+                schema: "tickets",
+                table: "ticket",
+                column: "team_id");
+
+            migrationBuilder.CreateIndex(
                 name: "ix_ticket_message_ticket_id",
                 schema: "tickets",
                 table: "ticket_message",
@@ -146,6 +188,10 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropTable(
+                name: "category",
+                schema: "tickets");
+
             migrationBuilder.DropTable(
                 name: "outbox_message",
                 schema: "tickets");

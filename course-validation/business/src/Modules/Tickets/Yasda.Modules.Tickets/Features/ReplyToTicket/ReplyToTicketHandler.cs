@@ -7,7 +7,7 @@ namespace Yasda.Modules.Tickets.Features;
 
 internal sealed record ReplyToTicketCommand(long TicketId, string Body, bool IsInternal);
 
-internal sealed class ReplyToTicketHandler(TicketsDbContext db, ICurrentUser currentUser, IUserDirectory users, TimeProvider time)
+internal sealed class ReplyToTicketHandler(TicketsDbContext db, ICurrentUser currentUser, IUserDirectory users, ITeamDirectory teams, TimeProvider time)
 {
     public async Task<bool> HandleAsync(ReplyToTicketCommand cmd, CancellationToken ct)
     {
@@ -17,7 +17,11 @@ internal sealed class ReplyToTicketHandler(TicketsDbContext db, ICurrentUser cur
         if (ticket is null) return false;
 
         var myName = await users.NameOfAsync(currentUser.UserId, ct) ?? currentUser.Username;
-        ticket.Reply(me, myName, cmd.Body, cmd.IsInternal, isStaff, time.GetUtcNow().UtcDateTime);
+        // An agent's answer to an unowned ticket takes it, so the same team rule as Take applies.
+        var isMember = false;
+        if (isStaff) isMember = await TeamFacts.IsMemberAsync(teams, ticket, currentUser.UserId, ct);
+        var isAdmin = currentUser.Role == Roles.Admin;
+        ticket.Reply(me, myName, cmd.Body, cmd.IsInternal, isStaff, time.GetUtcNow().UtcDateTime, isMember, isAdmin);
 
         await db.SaveChangesAsync(ct);
         return true;

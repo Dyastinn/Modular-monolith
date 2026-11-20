@@ -30,6 +30,21 @@
             </InputSelect>
         </div>
     }
+    @if (IsStaff)
+    {
+        <div class="field">
+            <label for="team">Team</label>
+            <InputSelect id="team" @bind-Value="_team">
+                <option value="">Any team</option>
+                <option value="mine">My teams</option>
+                <option value="none">No team yet</option>
+                @foreach (var t in _teams)
+                {
+                    <option value="@t.Id">@t.Name</option>
+                }
+            </InputSelect>
+        </div>
+    }
     <div class="field">
         <label for="status">Status</label>
         <InputSelect id="status" @bind-Value="_status">
@@ -79,6 +94,10 @@ else
                     <SortHeader Column="priority" Title="Priority" Sort="@Sort" Desc="Desc" />
                     @if (IsStaff)
                     {
+                        <th scope="col">Team</th>
+                    }
+                    @if (IsStaff)
+                    {
                         <SortHeader Column="requesterName" Title="Requester" Sort="@Sort" Desc="Desc" />
                     }
                     <SortHeader Column="assigneeName" Title="Assigned to" Sort="@Sort" Desc="Desc" />
@@ -98,6 +117,10 @@ else
                         <td class="truncate"><a href="@($"tickets/{t.Id}")">@t.Subject</a></td>
                         <td>@t.Status</td>
                         <td><PriorityText Value="@t.Priority" /></td>
+                        @if (IsStaff)
+                        {
+                            <td>@(t.TeamName ?? "No team yet")</td>
+                        }
                         @if (IsStaff)
                         {
                             <td>@t.RequesterName</td>
@@ -122,13 +145,15 @@ else
     [SupplyParameterFromQuery] public string? Search { get; set; }
     [SupplyParameterFromQuery] public string? Assigned { get; set; }
     [SupplyParameterFromQuery] public string? Status { get; set; }
+    [SupplyParameterFromQuery] public string? Team { get; set; }
     [SupplyParameterFromQuery] public string? Priority { get; set; }
     [SupplyParameterFromQuery] public string? Sort { get; set; }
     [SupplyParameterFromQuery] public bool Desc { get; set; }
     [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
 
     private PagedResult<TicketSummary>? _result;
-    private string? _search, _assigned, _status, _priority;
+    private string? _search, _assigned, _status, _priority, _team;
+    private List<TeamSummary> _teams = [];
 
     private bool IsStaff => TicketChoices.IsStaff(Auth.User?.Role);
     private string Name => IsStaff ? "Tickets" : "My tickets";
@@ -143,9 +168,27 @@ else
             if (!string.IsNullOrEmpty(Priority)) parts.Add(Priority);
             if (Assigned == "me") parts.Add("assigned to me");
             if (Assigned == "unassigned") parts.Add("assigned to nobody yet");
+            if (Team == "mine") parts.Add("my teams");
+            if (Team == "none") parts.Add("no team yet");
+            if (long.TryParse(Team, out var teamNumber)) parts.Add(TeamNameOf(teamNumber));
             if (!string.IsNullOrWhiteSpace(Search)) parts.Add($"matching \"{Search}\"");
             return parts;
         }
+    }
+
+    private async Task LoadTeams()
+    {
+        var page = await Api.Get<PagedResult<TeamSummary>>("api/teams?pageSize=100");
+        if (page is not null) _teams = page.Items;
+    }
+
+    private string TeamNameOf(long teamNumber)
+    {
+        foreach (var t in _teams)
+        {
+            if (t.Id == teamNumber) return t.Name;
+        }
+        return $"team {teamNumber}";
     }
 
     // A breached or at-risk ticket gets a colored edge on its row (DESIGN.md 5.2); the words in the SLA column say the same.
@@ -179,9 +222,11 @@ else
         _assigned = Assigned ?? "";
         _status = Status ?? "";
         _priority = Priority ?? "";
+        _team = Team ?? "";
+        if (IsStaff && _teams.Count == 0) await LoadTeams();
         Memory.Remember(Nav.ToBaseRelativePath(Nav.Uri));
         _result = await Api.Get<PagedResult<TicketSummary>>(Url.With("api/tickets", ("search", Search), ("assigned", Assigned),
-            ("status", Status), ("priority", Priority), ("sort", Sort), ("desc", Desc ? true : null), ("page", PageNumber),
+            ("status", Status), ("priority", Priority), ("team", Team), ("sort", Sort), ("desc", Desc ? true : null), ("page", PageNumber),
             ("pageSize", PageSize)));
     }
 
@@ -192,6 +237,7 @@ else
         ["assigned"] = string.IsNullOrEmpty(_assigned) ? null : _assigned,
         ["status"] = string.IsNullOrEmpty(_status) ? null : _status,
         ["priority"] = string.IsNullOrEmpty(_priority) ? null : _priority,
+        ["team"] = string.IsNullOrEmpty(_team) ? null : _team,
         ["page"] = null,
     }));
 }

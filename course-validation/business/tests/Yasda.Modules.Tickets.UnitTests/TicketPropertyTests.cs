@@ -11,6 +11,7 @@ namespace Yasda.Modules.Tickets.UnitTests;
 public class TicketPropertyTests
 {
     private static readonly DateTime Now = new(2026, 11, 19, 9, 0, 0, DateTimeKind.Utc);
+    private static readonly TeamRef ServiceDesk = new(new TeamId(1), "Service desk", IsActive: true);
 
     // Whatever an agent does, in whatever order, a ticket never ends up in a state the rules forbid: an Open or
     // Pending ticket always has someone assigned, only a resolved or closed one has a resolved date, and nothing
@@ -18,7 +19,8 @@ public class TicketPropertyTests
     [Property(MaxTest = 300)]
     public Property No_sequence_of_actions_breaks_the_tickets_rules()
     {
-        var actions = Gen.Elements("take", "reply", "note", "requester-reply", "pending", "resolve", "close", "reopen", "cancel")
+        var actions = Gen.Elements("take", "reply", "note", "requester-reply", "pending", "resolve", "close", "reopen", "cancel",
+            "route", "route-keeping-owner", "unroute", "take-as-member", "reply-as-member")
             .ListOf()
             .ToArbitrary();
 
@@ -63,6 +65,13 @@ public class TicketPropertyTests
             case "close": ticket.Close(Now); break;
             case "reopen": ticket.Reopen(Now); break;
             case "cancel": ticket.Cancel("No longer needed", Now); break;
+            // Routing to a team the assignee isn't in drops the owner (and an open ticket goes back to New); to no team, it keeps them.
+            case "route": ticket.Route(null, ServiceDesk, Now, assigneeIsMember: false); break;
+            case "route-keeping-owner": ticket.Route(null, ServiceDesk, Now, assigneeIsMember: true); break;
+            case "unroute": ticket.Route(null, null, Now); break;
+            // Once a ticket has a team, only its members can take it or answer it first.
+            case "take-as-member": ticket.Take(agent, "Alan Reyes", Now, agentIsMember: true); break;
+            case "reply-as-member": ticket.Reply(agent, "Alan Reyes", "Hi", isInternal: false, authorIsStaff: true, Now, authorIsMember: true); break;
         }
     }
 }

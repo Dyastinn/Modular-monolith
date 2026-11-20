@@ -43,9 +43,9 @@ src/
     Yasda.Shared.BuildingBlocks/      what every module may use: base classes, roles, error codes, small interfaces
     Yasda.Shared.Infrastructure/      implementations: connections, outbox, telemetry. Only the host sees it
   Modules/
-    Identity/Yasda.Modules.Identity/  sign-in (ASP.NET Core Identity), accounts, sign-in log, email
-    Identity/Yasda.Modules.Identity.Contracts/  the only part other modules may reference (IUserDirectory)
-    Tickets/Yasda.Modules.Tickets/    tickets, their conversation, queues
+    Identity/Yasda.Modules.Identity/  sign-in (ASP.NET Core Identity), accounts, teams, sign-in log, email
+    Identity/Yasda.Modules.Identity.Contracts/  the only part other modules may reference (IUserDirectory, ITeamDirectory)
+    Tickets/Yasda.Modules.Tickets/    tickets, their conversation, queues, categories and routing
     Tickets/Yasda.Modules.Tickets.Contracts/  what Tickets tells other modules: its events and priorities
     Sla/Yasda.Modules.Sla/            SLA clocks and policies: how long a ticket has to be answered and resolved
     Sla/Yasda.Modules.Sla.Contracts/  what Sla tells other modules: a ticket's deadlines

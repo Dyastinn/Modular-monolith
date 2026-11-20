@@ -7,7 +7,7 @@ namespace Yasda.Modules.Tickets.Features;
 
 internal sealed record TakeTicketCommand(long TicketId);
 
-internal sealed class TakeTicketHandler(TicketsDbContext db, ICurrentUser currentUser, IUserDirectory users, TimeProvider time)
+internal sealed class TakeTicketHandler(TicketsDbContext db, ICurrentUser currentUser, IUserDirectory users, ITeamDirectory teams, TimeProvider time)
 {
     // Two agents clicking "Take" at the same moment both load an unassigned ticket. The first save wins; the
     // second fails on the ticket's row version (xmin) and gets a 409, so a ticket never has two owners.
@@ -18,7 +18,10 @@ internal sealed class TakeTicketHandler(TicketsDbContext db, ICurrentUser curren
         if (ticket is null) return false;
 
         var myName = await users.NameOfAsync(currentUser.UserId, ct) ?? currentUser.Username;
-        ticket.Take(me, myName, time.GetUtcNow().UtcDateTime);
+        // On a ticket with a team, only its members (and admins) may take it: the ticket decides, we tell it who this is.
+        var isMember = await TeamFacts.IsMemberAsync(teams, ticket, currentUser.UserId, ct);
+        var isAdmin = currentUser.Role == Roles.Admin;
+        ticket.Take(me, myName, time.GetUtcNow().UtcDateTime, isMember, isAdmin);
 
         await db.SaveChangesAsync(ct);
         return true;

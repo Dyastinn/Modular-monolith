@@ -1,3 +1,4 @@
+using Yasda.Modules.Identity.Contracts;
 using Yasda.Modules.Sla.Contracts;
 using Yasda.Modules.Tickets.Domain;
 using Yasda.Modules.Tickets.Features;
@@ -31,6 +32,11 @@ public static class TicketsModule
         services.AddScoped<ReplyToTicketHandler>();
         services.AddScoped<ChangeTicketStatusHandler>();
         services.AddScoped<ChangePriorityHandler>();
+        services.AddScoped<RouteTicketHandler>();
+        services.AddScoped<SearchCategoriesHandler>();
+        services.AddScoped<GetCategoryHandler>();
+        services.AddScoped<CreateCategoryHandler>();
+        services.AddScoped<UpdateCategoryHandler>();
 
         // Event handlers are registered by the interface they answer to (the outbox looks them up that way).
         services.AddScoped<IDomainEventHandler<TicketCreatedEvent>, PublishTicketCreated>();
@@ -40,6 +46,7 @@ public static class TicketsModule
         services.AddScoped<IDomainEventHandler<TicketCancelledEvent>, PublishTicketCancelled>();
         services.AddScoped<IDomainEventHandler<TicketPriorityChangedEvent>, PublishTicketPriorityChanged>();
         services.AddScoped<IIntegrationEventHandler<DeadlinesChanged>, StoreDeadlines>();
+        services.AddScoped<IIntegrationEventHandler<TeamRenamed>, RenameTeamCopies>();
 
         // Without includeInternalTypes no validator is found, and validation silently stops.
         services.AddValidatorsFromAssembly(typeof(TicketsModule).Assembly, includeInternalTypes: true);
@@ -58,6 +65,11 @@ public static class TicketsModule
         ReplyToTicketEndpoint.Map(tickets);
         ChangeTicketStatusEndpoint.Map(tickets);
         ChangePriorityEndpoint.Map(tickets);
+        RouteTicketEndpoint.Map(tickets);
+        SearchCategoriesEndpoint.Map(tickets);
+        GetCategoryEndpoint.Map(tickets);
+        CreateCategoryEndpoint.Map(tickets);
+        UpdateCategoryEndpoint.Map(tickets);
         return api;
     }
 }

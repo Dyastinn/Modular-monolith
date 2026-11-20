@@ -19,6 +19,14 @@ else
     <PageHeader Title="@($"#{_ticket.Id} {_ticket.Subject}")" Trail="@([("Tickets", Memory.Last("tickets"))])">
         <Description>
             Status: @_ticket.Status · Priority: <PriorityText Value="@_ticket.Priority" /> ·
+            @if (_ticket.CategoryName is not null)
+            {
+                <text>Category: @_ticket.CategoryName · </text>
+            }
+            @if (IsStaff)
+            {
+                <text>Team: @(_ticket.TeamName ?? "None yet") · </text>
+            }
             Assigned: @(_ticket.AssigneeName ?? "Nobody yet") · Requester: @_ticket.RequesterName ·
             Filed <TimeAgo Utc="_ticket.CreatedUtc" /> · Updated <TimeAgo Utc="_ticket.UpdatedUtc" />
             @if (IsStaff && _ticket.Sla is not null && _ticket.Sla.NextDueUtc is not null)
@@ -93,6 +101,34 @@ else
         </EditForm>
     }
 
+    @if (IsLead && _ticket.IsBeingWorkedOn)
+    {
+        <EditForm Model="this" OnSubmit="RouteTicket" class="search">
+            <div class="field">
+                <label for="route-category">Category</label>
+                <InputSelect id="route-category" @bind-Value="_routeCategory" @bind-Value:after="CategoryChosen">
+                    <option value="">Not sure</option>
+                    @foreach (var c in _categories)
+                    {
+                        <option value="@c.Id">@c.Name</option>
+                    }
+                </InputSelect>
+            </div>
+            <div class="field">
+                <label for="route-team">Team</label>
+                <InputSelect id="route-team" @bind-Value="_routeTeam">
+                    <option value="">No team yet</option>
+                    @foreach (var t in _teams)
+                    {
+                        <option value="@t.Id">@t.Name</option>
+                    }
+                </InputSelect>
+            </div>
+            <button type="submit" disabled="@Api.Busy">Route</button>
+        </EditForm>
+        <p class="hint">If the owner isn't in the new team, the ticket loses its owner and goes back to New.</p>
+    }
+
     @if (IsLead && _ticket.IsBeingWorkedOn && _staff is not null)
     {
         <EditForm Model="this" OnSubmit="Assign" class="search">
@@ -151,6 +187,9 @@ else
     [Parameter] public long Id { get; set; }
     private TicketDetail? _ticket;
     private List<StaffMember>? _staff;
+    private List<Category> _categories = [];
+    private List<TeamSummary> _teams = [];
+    private string _routeCategory = "", _routeTeam = "";
     private string _reply = "", _reason = "", _priority = "";
     private long? _assigneeId;
     private bool _internal, _cancelling;
@@ -185,15 +224,67 @@ else
     {
         await Auth.GetAuthenticationStateAsync();
         await Load();
-        if (IsLead) _staff = await Api.Get<List<StaffMember>>("api/staff");
     }
 
     private async Task Load()
     {
         _ticket = await Api.Get<TicketDetail>($"api/tickets/{Id}");
         _priority = _ticket?.Priority ?? "";
+        if (_ticket is not null && IsLead) await LoadLeadChoices();
         _assigneeId = _ticket?.AssigneeId;
         _cancelling = false;
+    }
+
+    // What a team lead chooses from: the people who can own this ticket (its team's members, once it has a team), and the categories
+    // and teams it can be routed to.
+    private async Task LoadLeadChoices()
+    {
+        var staffAddress = "api/staff";
+        if (_ticket!.TeamId is not null) staffAddress = $"api/staff?teamId={_ticket.TeamId}";
+        _staff = await Api.Get<List<StaffMember>>(staffAddress);
+
+        var categories = await Api.Get<PagedResult<Category>>("api/categories?pageSize=100");
+        _categories = [];
+        if (categories is not null)
+        {
+            foreach (var c in categories.Items)
+            {
+                if (c.IsActive || c.Id == _ticket.CategoryId) _categories.Add(c);
+            }
+        }
+
+        var teams = await Api.Get<PagedResult<TeamSummary>>("api/teams?pageSize=100");
+        _teams = [];
+        if (teams is not null)
+        {
+            foreach (var t in teams.Items)
+            {
+                if (t.IsActive || t.Id == _ticket.TeamId) _teams.Add(t);
+            }
+        }
+
+        _routeCategory = _ticket.CategoryId?.ToString() ?? "";
+        _routeTeam = _ticket.TeamId?.ToString() ?? "";
+    }
+
+    // Choosing a category suggests its team.
+    private void CategoryChosen()
+    {
+        foreach (var c in _categories)
+        {
+            if (c.Id.ToString() == _routeCategory && c.TeamId is not null) _routeTeam = c.TeamId.ToString()!;
+        }
+    }
+
+    private async Task RouteTicket()
+    {
+        long? categoryId = null;
+        if (long.TryParse(_routeCategory, out var category)) categoryId = category;
+        long? teamId = null;
+        if (long.TryParse(_routeTeam, out var team)) teamId = team;
+
+        await Api.Post($"api/tickets/{Id}/route", new { categoryId, teamId }, "Routed.");
+        await Load();
     }
 
     private async Task Take()

@@ -1,4 +1,5 @@
 using System.Data.Common;
+using Yasda.Modules.Identity.Domain;
 using Yasda.Shared.BuildingBlocks;
 using AppRoles = Yasda.Shared.BuildingBlocks.Roles;   // "Roles" alone is IdentityDbContext.Roles, the table
 using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
@@ -6,6 +7,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace Yasda.Modules.Identity.Infrastructure;
 
@@ -18,10 +20,19 @@ internal sealed class YasdaIdentityDbContext(DbContextOptions<YasdaIdentityDbCon
     // by every instance of the app.
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
     public DbSet<SignInAttempt> SignInAttempts => Set<SignInAttempt>();
+    public DbSet<Team> Teams => Set<Team>();
 
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder o, DbConnection connection) =>
         o.UseNpgsql(connection, npg => npg.MigrationsHistoryTable("__EFMigrationsHistory", Schema))
          .UseSnakeCaseNamingConvention();
+
+    protected override void ConfigureConventions(ModelConfigurationBuilder c)
+    {
+        c.Properties<TeamId>().HaveConversion<TeamIdConverter>();
+        c.Properties<Domain.UserId>().HaveConversion<UserIdConverter>();
+        // Stored by name: readable in SQL, and safe if the enum is ever reordered.
+        c.Properties<NotifyMode>().HaveConversion<string>().HaveMaxLength(20);
+    }
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -55,6 +66,29 @@ internal sealed class YasdaIdentityDbContext(DbContextOptions<YasdaIdentityDbCon
             e.HasIndex(x => x.Email);
         });
 
+        b.Entity<Team>(e =>
+        {
+            e.ToTable("team", t =>
+            {
+                t.HasCheckConstraint("ck_team_notify_mode", "notify_mode IN ('LeadsOnly', 'LeadsAndSelected', 'Everyone')");
+            });
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).UseIdentityColumn();
+            e.Property(x => x.Name).HasMaxLength(Team.NameMaxLength);
+            e.HasIndex(x => x.Name).IsUnique();
+            e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");
+            e.Ignore(x => x.DomainEvents);
+
+            e.OwnsMany(x => x.Members, m =>
+            {
+                m.ToTable("team_member");
+                m.WithOwner().HasForeignKey("TeamId");
+                m.HasKey("TeamId", nameof(TeamMember.UserId));
+                m.HasIndex(x => x.UserId);
+            });
+            e.Navigation(x => x.Members).HasField("_members").UsePropertyAccessMode(PropertyAccessMode.Field);
+        });
+
         b.Entity<OutboxMessage>(e =>
         {
             e.ToTable("outbox_message");
@@ -71,6 +105,9 @@ internal sealed class YasdaIdentityDbContext(DbContextOptions<YasdaIdentityDbCon
         Id = id, Name = name, NormalizedName = name.ToUpperInvariant(), ConcurrencyStamp = $"role-{id}"
     };
 }
+
+internal sealed class TeamIdConverter() : ValueConverter<TeamId, long>(v => v.Value, v => new TeamId(v));
+internal sealed class UserIdConverter() : ValueConverter<Domain.UserId, long>(v => v.Value, v => new Domain.UserId(v));
 
 // For `dotnet ef migrations add`; never connects.
 internal sealed class YasdaIdentityDbContextFactory : IDesignTimeDbContextFactory<YasdaIdentityDbContext>

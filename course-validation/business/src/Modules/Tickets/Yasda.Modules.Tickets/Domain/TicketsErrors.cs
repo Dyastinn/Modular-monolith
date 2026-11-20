@@ -27,4 +27,17 @@ internal static class TicketsErrors
         "Say in a few words why the ticket is cancelled, such as \"duplicate of #1042\" (up to 500 characters).");
     public static readonly ErrorCode AssigneeNotStaff = new("TICKETS-0011", "That person can't be assigned tickets",
         "Choose an active agent, team lead or admin from the list.");
+    public static readonly ErrorCode NotInTeam = new("TICKETS-0012", "That person isn't in this ticket's team",
+        "Choose someone from the ticket's team, or ask an admin to add them to it. Admins can take any team's ticket.");
+    public static readonly ErrorCode UnknownTeam = new("TICKETS-0013", "That team doesn't exist",
+        "Choose a team from the list.");
+    public static readonly ErrorCode TeamInactive = new("TICKETS-0014", "Tickets can't be routed to an inactive team",
+        "Choose an active team, or ask an admin to activate this one. Tickets the team already has stay with it.");
+    public static readonly ErrorCode CategoryNameRequired = new("TICKETS-0015", "A category needs a name",
+        "Give the category a name of 1 to 100 characters, such as \"Hardware\".");
+    public static readonly ErrorCode CategoryNameTaken = new("TICKETS-0016", "A category with that name already exists",
+        "Choose another name, or change the existing category.");
+    public static readonly ErrorCode CategoryNotAvailable = new("TICKETS-0017", "That category isn't available",
+        "Choose a category from the list, or \"Not sure\" and a team lead will sort it.");
 }
+

@@ -1,0 +1,93 @@
+@page "/teams"
+@attribute [Authorize(Roles = Roles.Admin)]
+@inject ApiClient Api
+@inject NavigationManager Nav
+@inject ListMemory Memory
+
+<PageTitle>Teams · YASDA</PageTitle>
+
+<PageHeader Title="@(_result is null ? "Teams" : $"Teams ({_result.TotalCount})")" List="true">
+    <Actions><a href="teams/new">New team</a></Actions>
+</PageHeader>
+
+@* The list's search, sort and page live in the address, so Back, a bookmark or a pasted link shows the same list. *@
+<EditForm Model="this" OnSubmit="Find" class="search" role="search">
+    <div class="field">
+        <label for="search">Team name</label>
+        <InputText id="search" type="search" @bind-Value="_search" />
+    </div>
+    <button type="submit">Search</button>
+    <a href="teams">Clear</a>
+</EditForm>
+
+@if (!string.IsNullOrWhiteSpace(Search))
+{
+    <p>Showing: matching "@Search". <a href="teams">Clear filters</a></p>
+}
+
+@if (_result is null)
+{
+    <p role="status">Loading…</p>
+}
+else if (_result.Items.Count == 0)
+{
+    <p>No teams match. <a href="teams">Clear filters</a> or <a href="teams/new">add a new team</a>.</p>
+}
+else
+{
+    <TableBox Label="Teams">
+        <table>
+            <thead>
+                <tr>
+                    <SortHeader Column="name" Title="Name" Sort="@Sort" Desc="Desc" />
+                    <SortHeader Column="members" Title="Members" Sort="@Sort" Desc="Desc" Class="num" />
+                    <th scope="col">Told about new tickets</th>
+                    <th scope="col">Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var team in _result.Items)
+                {
+                    <tr>
+                        <td><a href="@($"teams/{team.Id}")">@team.Name</a></td>
+                        <td class="num">@team.MemberCount</td>
+                        <td>@TicketChoices.NotifyText(team.NotifyMode)</td>
+                        <td>@if (team.IsActive) { <text>Active</text> } else { <strong>Inactive</strong> }</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </TableBox>
+    <Pager Page="_result.Page" PageSize="_result.PageSize" Total="_result.TotalCount" Noun="teams" />
+}
+
+@code {
+    private const int PageSize = 20;
+
+    [SupplyParameterFromQuery] public string? Search { get; set; }
+    [SupplyParameterFromQuery] public string? Sort { get; set; }
+    [SupplyParameterFromQuery] public bool Desc { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+
+    private PagedResult<TeamSummary>? _result;
+    private string? _search;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _search = Search;
+        Memory.Remember(Nav.ToBaseRelativePath(Nav.Uri));
+        _result = await Api.Get<PagedResult<TeamSummary>>(Url.With("api/teams", ("search", Search), ("sort", Sort),
+            ("desc", Desc ? true : null), ("page", PageNumber), ("pageSize", PageSize)));
+    }
+
+    // A new search starts again from page 1: page 3 of the old results may not exist.
+    private void Find()
+    {
+        var name = string.IsNullOrWhiteSpace(_search) ? null : _search.Trim();
+        Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+        {
+            ["search"] = name,
+            ["page"] = null,
+        }));
+    }
+}

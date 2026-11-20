@@ -27,14 +27,24 @@ internal sealed class Ticket : AggregateRoot<TicketId>
     public DateTime? ResolvedUtc { get; private set; }
     public DateTime? ClosedUtc { get; private set; }
     public string? CancelReason { get; private set; }
+
+    // Where the ticket belongs. Both are optional: "Not sure" leaves it unrouted for a team lead to sort (decision D4). The names
+    // are copies, so a queue can show them without asking Identity.
+    public CategoryId? CategoryId { get; private set; }
+    public string? CategoryName { get; private set; }
+    public TeamId? TeamId { get; private set; }
+    public string? TeamName { get; private set; }
     public IReadOnlyList<TicketMessage> Messages => _messages;
 
     public bool IsFinished => Status is TicketStatus.Closed or TicketStatus.Cancelled;
 
     // The id comes from the database sequence before the ticket exists, so the events it raises already carry it.
     // The request itself is the conversation's first message, written by the requester.
-    public static Ticket Create(TicketId id, string subject, string message, TicketPriority priority, UserId requester, string requesterName, DateTime nowUtc)
+    public static Ticket Create(TicketId id, string subject, string message, TicketPriority priority, UserId requester, string requesterName,
+        DateTime nowUtc, Category? category = null, bool categoryChosen = false)
     {
+        EnsureCategoryAvailable(category, categoryChosen);
+
         var ticket = new Ticket
         {
             Id = id,
@@ -47,27 +57,64 @@ internal sealed class Ticket : AggregateRoot<TicketId>
             UpdatedUtc = nowUtc,
         };
         ticket._messages.Add(new TicketMessage(requester, requesterName, CheckedMessage(message), isInternal: false, nowUtc));
+        if (category is not null)
+        {
+            ticket.CategoryId = category.Id;
+            ticket.CategoryName = category.Name;
+            ticket.TeamId = category.TeamId;
+            ticket.TeamName = category.TeamName;
+        }
         ticket.Raise(new TicketCreatedEvent(id, priority, nowUtc));
         return ticket;
     }
 
     // An agent picks up a ticket nobody has. Taking your own ticket again changes nothing.
-    public void Take(UserId agent, string agentName, DateTime nowUtc)
+    public void Take(UserId agent, string agentName, DateTime nowUtc, bool agentIsMember = false, bool agentIsAdmin = false)
     {
         EnsureIn("take", TicketStatus.New, TicketStatus.Open, TicketStatus.Pending);
+        EnsureCanOwn(agentIsMember, agentIsAdmin);
         if (AssigneeId is not null && AssigneeId != agent)
             throw new DomainException(TicketsErrors.TakenBySomeoneElse, $"{AssigneeName} already has ticket #{Id.Value}.");
         AssignTo(agent, agentName, nowUtc);
     }
 
     // A team lead hands a ticket to someone, whoever had it before.
-    public void Assign(UserId agent, string agentName, DateTime nowUtc)
+    public void Assign(UserId agent, string agentName, DateTime nowUtc, bool assigneeIsMember = false, bool assigneeIsAdmin = false)
     {
         EnsureIn("assign", TicketStatus.New, TicketStatus.Open, TicketStatus.Pending);
+        EnsureCanOwn(assigneeIsMember, assigneeIsAdmin);
         AssignTo(agent, agentName, nowUtc);
     }
 
-    public void Reply(UserId author, string authorName, string body, bool isInternal, bool authorIsStaff, DateTime nowUtc)
+    // A team lead changes where a ticket belongs. The assignee stays only if they are in the new team (or are an admin, who
+    // may work any team's tickets). Otherwise the ticket loses its owner, and an open or pending one goes back to New:
+    // a ticket in progress always has an owner.
+    public void Route(Category? category, TeamRef? team, DateTime nowUtc, bool assigneeIsMember = false, bool assigneeIsAdmin = false)
+    {
+        EnsureIn("route", TicketStatus.New, TicketStatus.Open, TicketStatus.Pending);
+        // Keeping the category the ticket already has is always allowed, even if the category has been switched off since.
+        var categoryChanged = category is not null && CategoryId != category.Id;
+        EnsureCategoryAvailable(category, categoryChosen: categoryChanged);
+        if (team is not null && !team.Value.IsActive && TeamId != team.Value.Id)
+            throw new DomainException(TicketsErrors.TeamInactive);
+
+        CategoryId = category?.Id;
+        CategoryName = category?.Name;
+        TeamId = team?.Id;
+        TeamName = team?.Name;
+
+        var staysWithAssignee = AssigneeId is null || team is null || assigneeIsMember || assigneeIsAdmin;
+        if (!staysWithAssignee)
+        {
+            AssigneeId = null;
+            AssigneeName = null;
+            if (Status is TicketStatus.Open or TicketStatus.Pending) Status = TicketStatus.New;
+        }
+        UpdatedUtc = nowUtc;
+    }
+
+    public void Reply(UserId author, string authorName, string body, bool isInternal, bool authorIsStaff, DateTime nowUtc,
+        bool authorIsMember = false, bool authorIsAdmin = false)
     {
         EnsureNotFinished();
         var text = CheckedMessage(body);
@@ -82,7 +129,9 @@ internal sealed class Ticket : AggregateRoot<TicketId>
         }
         else if (!isInternal)
         {
-            // An agent answering a ticket nobody has takes it: an open ticket always has an owner.
+            // An agent answering a ticket nobody has takes it: an open ticket always has an owner. So the same rule as Take
+            // applies, and an agent outside the ticket's team can't get hold of it by replying.
+            if (AssigneeId is null) EnsureCanOwn(authorIsMember, authorIsAdmin);
             if (FirstResponseUtc is null)
             {
                 FirstResponseUtc = nowUtc;
@@ -152,6 +201,23 @@ internal sealed class Ticket : AggregateRoot<TicketId>
 
     // Requesters see their own tickets; staff who handle tickets see them all.
     public bool IsVisibleTo(UserId user, bool userIsStaff) => userIsStaff || RequesterId == user;
+
+    // On a ticket with a team, only its members (and admins) can own it (decision D7).
+    private void EnsureCanOwn(bool isMember, bool isAdmin)
+    {
+        if (TeamId is null) return;
+        if (isMember || isAdmin) return;
+
+        throw new DomainException(TicketsErrors.NotInTeam);
+    }
+
+    private static void EnsureCategoryAvailable(Category? category, bool categoryChosen)
+    {
+        if (!categoryChosen) return;
+        if (category is not null && category.IsActive) return;
+
+        throw new DomainException(TicketsErrors.CategoryNotAvailable);
+    }
 
     private void AssignTo(UserId agent, string agentName, DateTime nowUtc)
     {

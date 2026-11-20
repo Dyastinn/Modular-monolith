@@ -7,7 +7,8 @@ internal sealed record GetTicketQuery(long TicketId);
 
 internal sealed record TicketDetailDto(long Id, string Subject, string Status, string Priority, long RequesterId, string RequesterName,
     long? AssigneeId, string? AssigneeName, DateTime CreatedUtc, DateTime UpdatedUtc, DateTime? FirstResponseUtc,
-    DateTime? ResolvedUtc, DateTime? ClosedUtc, string? CancelReason, TicketSlaDto? Sla, IReadOnlyList<TicketMessageDto> Messages);
+    DateTime? ResolvedUtc, DateTime? ClosedUtc, string? CancelReason, long? CategoryId, string? CategoryName, long? TeamId, string? TeamName,
+    TicketSlaDto? Sla, IReadOnlyList<TicketMessageDto> Messages);
 
 // The deadlines Sla worked out, for staff. A requester never gets this (it is null for them).
 internal sealed record TicketSlaDto(DateTime ResponseDueUtc, bool? ResponseMet, DateTime ResolveDueUtc, bool? ResolutionMet,
@@ -19,7 +20,8 @@ internal sealed record TicketMessageDto(long Id, long AuthorId, string AuthorNam
 internal sealed record TicketRow(long Id, string Subject, string Status, string Priority, long RequesterId, string RequesterName,
     long? AssigneeId, string? AssigneeName, DateTime CreatedUtc, DateTime UpdatedUtc, DateTime? FirstResponseUtc,
     DateTime? ResolvedUtc, DateTime? ClosedUtc, string? CancelReason,
-    DateTime? ResponseDueUtc, bool? ResponseMet, DateTime? ResolveDueUtc, bool? ResolutionMet, DateTime? NextDueUtc, DateTime? AtRiskFromUtc);
+    DateTime? ResponseDueUtc, bool? ResponseMet, DateTime? ResolveDueUtc, bool? ResolutionMet, DateTime? NextDueUtc, DateTime? AtRiskFromUtc,
+    long? CategoryId, string? CategoryName, long? TeamId, string? TeamName);
 
 internal sealed class GetTicketHandler(IDbConnectionFactory connections, ICurrentUser currentUser)
 {
@@ -51,6 +53,6 @@ internal sealed class GetTicketHandler(IDbConnectionFactory connections, ICurren
 
         return new TicketDetailDto(row.Id, row.Subject, row.Status, row.Priority, row.RequesterId, row.RequesterName,
             row.AssigneeId, row.AssigneeName, row.CreatedUtc, row.UpdatedUtc, row.FirstResponseUtc, row.ResolvedUtc,
-            row.ClosedUtc, row.CancelReason, sla, messages);
+            row.ClosedUtc, row.CancelReason, row.CategoryId, row.CategoryName, row.TeamId, row.TeamName, sla, messages);
     }
 }

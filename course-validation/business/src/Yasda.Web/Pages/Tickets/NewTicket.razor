@@ -23,6 +23,17 @@
         <span class="hint" id="message-hint">What you tried, and since when.</span>
     </div>
     <div class="field">
+        <label for="category">Category</label>
+        <InputSelect id="category" @bind-Value="_category" aria-describedby="category-hint">
+            <option value="">Not sure</option>
+            @foreach (var c in _categories)
+            {
+                <option value="@c.Id">@c.Name</option>
+            }
+        </InputSelect>
+        <span class="hint" id="category-hint">It decides which team answers. If you're not sure, a team lead will sort it.</span>
+    </div>
+    <div class="field">
         <label for="priority">Priority</label>
         <InputSelect id="priority" @bind-Value="_priority">
             @foreach (var p in TicketChoices.Priorities)
@@ -37,13 +48,24 @@
 </EditForm>
 
 @code {
-    private string _subject = "", _message = "", _priority = "Normal";
+    private string _subject = "", _message = "", _priority = "Normal", _category = "";
+    private List<Category> _categories = [];
 
     private bool Unsaved => _subject.Length > 0 || _message.Length > 0;
 
+    protected override async Task OnInitializedAsync()
+    {
+        var page = await Api.Get<PagedResult<Category>>("api/categories?pageSize=100");
+        if (page is not null) _categories = page.Items;
+    }
+
     private async Task Send()
     {
-        var id = await Api.Create("api/tickets", new { subject = _subject.Trim(), message = _message.Trim(), priority = _priority },
+        long? categoryId = null;
+        if (long.TryParse(_category, out var chosen)) categoryId = chosen;
+
+        var id = await Api.Create("api/tickets",
+            new { subject = _subject.Trim(), message = _message.Trim(), priority = _priority, categoryId },
             "Ticket sent. We'll answer here.");
         if (id is null) return;
         _subject = "";   // sent: nothing left to lose on the way to the ticket's page

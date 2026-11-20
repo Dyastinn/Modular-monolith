@@ -1,0 +1,282 @@
+@page "/teams/new"
+@page "/teams/{Id:long}"
+@attribute [Authorize(Roles = Roles.Admin)]
+@inject ApiClient Api
+@inject NavigationManager Nav
+@inject ListMemory Memory
+@inject IJSRuntime Js
+
+<PageTitle>@Title · YASDA</PageTitle>
+
+<NavigationLock OnBeforeInternalNavigation="ctx => UnsavedChanges.ConfirmLeave(Js, ctx, Unsaved)" />
+
+<PageHeader Title="@Title" Trail="@([("Teams", Memory.Last("teams"))])">
+    <Description>
+        @if (_team is not null)
+        {
+            <text>Status: </text><strong>@(_team.IsActive ? "Active" : "Inactive")</strong><text> · Members: @_team.Members.Count</text>
+        }
+        else if (Id is null)
+        {
+            <text>Creates the team. Add its people afterwards, from the team's page.</text>
+        }
+    </Description>
+</PageHeader>
+
+@if (Id is not null && _team is null)
+{
+    <p role="status">Loading…</p>
+}
+else
+{
+    <EditForm Model="this" OnSubmit="SaveName">
+        <div class="field">
+            <label for="name">Team name</label>
+            <InputText id="name" @bind-Value="_name" maxlength="100" required />
+        </div>
+        <div class="actions">
+            <button type="submit" disabled="@Api.Busy">@(_team is null ? "Create team" : "Save name")</button>
+        </div>
+    </EditForm>
+
+    @if (_team is not null)
+    {
+        <h2>People</h2>
+        @if (_team.Members.Count == 0)
+        {
+            <p>Nobody is in this team yet.</p>
+        }
+        else
+        {
+            <TableBox Label="Members">
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Name</th>
+                            <th scope="col">Role</th>
+                            <th scope="col">Account</th>
+                            <th scope="col">Remove</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var member in _team.Members)
+                        {
+                            <tr>
+                                <td>@member.FullName</td>
+                                <td>@Format.Words(member.Role)</td>
+                                <td>@if (member.IsDisabled) { <strong>Disabled</strong> } else { <text>Active</text> }</td>
+                                <td><button type="button" @onclick="() => RemoveMember(member)" disabled="@Api.Busy">Remove @member.FullName</button></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </TableBox>
+        }
+
+        @if (Candidates.Count > 0)
+        {
+            <EditForm Model="this" OnSubmit="AddMember" class="search">
+                <div class="field">
+                    <label for="new-member">Add a person</label>
+                    <InputSelect id="new-member" @bind-Value="_newMemberId">
+                        @foreach (var person in Candidates)
+                        {
+                            <option value="@person.Id">@person.FullName (@Format.Words(person.Role))</option>
+                        }
+                    </InputSelect>
+                </div>
+                <button type="submit" disabled="@Api.Busy">Add to team</button>
+            </EditForm>
+        }
+
+        <h2>Who is told about new tickets</h2>
+        <p>
+            When a ticket for this team has no owner yet, its team leads are told, and the people this setting adds. Only active
+            accounts are told.
+        </p>
+        <EditForm Model="this" OnSubmit="SaveNotify">
+            <div class="field">
+                <label for="notify-mode">Tell</label>
+                <InputSelect id="notify-mode" @bind-Value="_mode">
+                    @foreach (var mode in TicketChoices.NotifyModes)
+                    {
+                        <option value="@mode">@TicketChoices.NotifyText(mode)</option>
+                    }
+                </InputSelect>
+            </div>
+            @if (_mode == "LeadsAndSelected")
+            {
+                @foreach (var member in _team.Members)
+                {
+                    <div class="check">
+                        <input type="checkbox" id="@($"notify-{member.UserId}")" checked="@_selected.Contains(member.UserId)"
+                               @onchange="e => Select(member.UserId, (bool)e.Value!)" />
+                        <label for="@($"notify-{member.UserId}")">Tell @member.FullName</label>
+                    </div>
+                }
+            }
+            <div class="actions">
+                <button type="submit" disabled="@Api.Busy">Save who is told</button>
+            </div>
+        </EditForm>
+
+        <h2>Status</h2>
+        @if (!_confirmingActive)
+        {
+            <p>@(_team.IsActive ? "This team is active: tickets can be routed to it." : "This team is inactive: no new tickets can be routed to it. Tickets it already has stay.")</p>
+            <div class="actions">
+                <button type="button" @onclick="StartConfirming">@(_team.IsActive ? "Deactivate" : "Activate")</button>
+            </div>
+        }
+        else
+        {
+            <p role="alert">
+                @(_team.IsActive
+                    ? $"Deactivate {_team.Name}? No new tickets can be routed to it. Tickets it already has stay."
+                    : $"Activate {_team.Name}? Tickets can be routed to it again.")
+            </p>
+            <div class="actions">
+                <button type="button" @onclick="ToggleActive" disabled="@Api.Busy">@(_team.IsActive ? "Deactivate" : "Activate")</button>
+                <button type="button" @onclick="StopConfirming">Not yet</button>
+            </div>
+        }
+    }
+}
+
+@code {
+    [Parameter] public long? Id { get; set; }
+
+    private TeamDetail? _team;
+    private List<StaffMember> _staff = [];
+    private string _name = "", _mode = "LeadsOnly";
+    private long _newMemberId;
+    private bool _confirmingActive;
+    private readonly HashSet<long> _selected = [];
+
+    private string Title => _team?.Name ?? (Id is null ? "New team" : "Team");
+
+    // People who could be added: active staff who are not in the team yet.
+    private List<StaffMember> Candidates
+    {
+        get
+        {
+            var inTeam = new HashSet<long>();
+            if (_team is not null)
+            {
+                foreach (var member in _team.Members)
+                    inTeam.Add(member.UserId);
+            }
+
+            var candidates = new List<StaffMember>();
+            foreach (var person in _staff)
+            {
+                if (!inTeam.Contains(person.Id)) candidates.Add(person);
+            }
+            return candidates;
+        }
+    }
+
+    // Leaving with a typed-in name asks first.
+    private bool Unsaved
+    {
+        get
+        {
+            if (_team is null) return _name.Length > 0;
+            return _name != _team.Name;
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _confirmingActive = false;
+        if (Id is null) return;
+        await Load(Id.Value);
+    }
+
+    private async Task Load(long id)
+    {
+        _team = await Api.Get<TeamDetail>($"api/teams/{id}");
+        if (_team is null) return;
+
+        _name = _team.Name;
+        _mode = _team.NotifyMode;
+        _selected.Clear();
+        foreach (var member in _team.Members)
+        {
+            if (member.Notify) _selected.Add(member.UserId);
+        }
+
+        var staff = await Api.Get<List<StaffMember>>("api/staff");
+        _staff = staff ?? [];
+        var candidates = Candidates;
+        if (candidates.Count > 0) _newMemberId = candidates[0].Id;
+    }
+
+    private async Task SaveName()
+    {
+        if (_team is null)
+        {
+            var id = await Api.Create("api/teams", new { name = _name.Trim() }, "Team created.");
+            if (id is null) return;
+            _name = "";   // saved: nothing left to lose on the way to the team's page
+            Nav.NavigateTo($"teams/{id}");
+            return;
+        }
+
+        var saved = await Api.Put($"api/teams/{_team.Id}", new { name = _name.Trim() }, "Team saved.");
+        if (saved) await Load(_team.Id);
+    }
+
+    private async Task AddMember()
+    {
+        var added = await Api.Post($"api/teams/{_team!.Id}/members", new { userId = _newMemberId }, "Person added.");
+        if (added) await Load(_team.Id);
+    }
+
+    private async Task RemoveMember(TeamMember member)
+    {
+        var removed = await Api.Delete($"api/teams/{_team!.Id}/members/{member.UserId}", $"{member.FullName} removed.");
+        if (removed) await Load(_team.Id);
+    }
+
+    private void Select(long userId, bool selected)
+    {
+        if (selected) _selected.Add(userId);
+        else _selected.Remove(userId);
+    }
+
+    private async Task SaveNotify()
+    {
+        var chosen = new List<long>();
+        if (_mode == "LeadsAndSelected") chosen.AddRange(_selected);
+
+        var saved = await Api.Put($"api/teams/{_team!.Id}/notify", new { mode = _mode, selectedUserIds = chosen }, "Saved.");
+        if (saved) await Load(_team.Id);
+    }
+
+    private void StartConfirming()
+    {
+        _confirmingActive = true;
+    }
+
+    private void StopConfirming()
+    {
+        _confirmingActive = false;
+    }
+
+    private async Task ToggleActive()
+    {
+        var team = _team!;
+        var action = "deactivate";
+        var message = "Deactivated.";
+        if (!team.IsActive)
+        {
+            action = "activate";
+            message = "Activated.";
+        }
+
+        var done = await Api.Post($"api/teams/{team.Id}/{action}", success: message);
+        if (done) await Load(team.Id);
+        _confirmingActive = false;
+    }
+}

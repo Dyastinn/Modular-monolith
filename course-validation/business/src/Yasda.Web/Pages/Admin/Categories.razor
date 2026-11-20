@@ -1,0 +1,91 @@
+@page "/categories"
+@attribute [Authorize(Roles = Roles.TeamLead + "," + Roles.Admin)]
+@inject ApiClient Api
+@inject NavigationManager Nav
+@inject ListMemory Memory
+
+<PageTitle>Categories · YASDA</PageTitle>
+
+<PageHeader Title="@(_result is null ? "Categories" : $"Categories ({_result.TotalCount})")" List="true">
+    <Actions><a href="categories/new">New category</a></Actions>
+</PageHeader>
+
+@* The list's search, sort and page live in the address, so Back, a bookmark or a pasted link shows the same list. *@
+<EditForm Model="this" OnSubmit="Find" class="search" role="search">
+    <div class="field">
+        <label for="search">Category name</label>
+        <InputText id="search" type="search" @bind-Value="_search" />
+    </div>
+    <button type="submit">Search</button>
+    <a href="categories">Clear</a>
+</EditForm>
+
+@if (!string.IsNullOrWhiteSpace(Search))
+{
+    <p>Showing: matching "@Search". <a href="categories">Clear filters</a></p>
+}
+
+@if (_result is null)
+{
+    <p role="status">Loading…</p>
+}
+else if (_result.Items.Count == 0)
+{
+    <p>No categories match. <a href="categories">Clear filters</a> or <a href="categories/new">add a new category</a>.</p>
+}
+else
+{
+    <TableBox Label="Categories">
+        <table>
+            <thead>
+                <tr>
+                    <SortHeader Column="name" Title="Name" Sort="@Sort" Desc="Desc" />
+                    <SortHeader Column="team" Title="Goes to team" Sort="@Sort" Desc="Desc" />
+                    <SortHeader Column="status" Title="Status" Sort="@Sort" Desc="Desc" />
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var category in _result.Items)
+                {
+                    <tr>
+                        <td><a href="@($"categories/{category.Id}")">@category.Name</a></td>
+                        <td>@(category.TeamName ?? "No team")</td>
+                        <td>@if (category.IsActive) { <text>In use</text> } else { <strong>Switched off</strong> }</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </TableBox>
+    <Pager Page="_result.Page" PageSize="_result.PageSize" Total="_result.TotalCount" Noun="categories" />
+}
+
+@code {
+    private const int PageSize = 20;
+
+    [SupplyParameterFromQuery] public string? Search { get; set; }
+    [SupplyParameterFromQuery] public string? Sort { get; set; }
+    [SupplyParameterFromQuery] public bool Desc { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+
+    private PagedResult<Category>? _result;
+    private string? _search;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _search = Search;
+        Memory.Remember(Nav.ToBaseRelativePath(Nav.Uri));
+        _result = await Api.Get<PagedResult<Category>>(Url.With("api/categories", ("search", Search), ("sort", Sort),
+            ("desc", Desc ? true : null), ("page", PageNumber), ("pageSize", PageSize)));
+    }
+
+    // A new search starts again from page 1: page 3 of the old results may not exist.
+    private void Find()
+    {
+        var name = string.IsNullOrWhiteSpace(_search) ? null : _search.Trim();
+        Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+        {
+            ["search"] = name,
+            ["page"] = null,
+        }));
+    }
+}

@@ -59,6 +59,8 @@ public class ListSortingTests(CustomWebAppFactory factory)
     [InlineData("/api/tickets?sort=assigneeName")]
     [InlineData("/api/tickets?sort=requesterName&desc=true")]
     [InlineData("/api/tickets?sort=updatedUtc&status=Open&assigned=unassigned")]
+    [InlineData("/api/teams?sort=name")]
+    [InlineData("/api/teams?sort=members&desc=true")]
     [InlineData("/api/tickets?sort=nextDue")]
     [InlineData("/api/tickets?sort=nextDue&desc=true")]
     public async Task Every_offered_sort_runs(string url)

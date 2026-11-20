@@ -24,6 +24,6 @@ internal sealed class UserDirectory(IDbConnectionFactory connections) : IUserDir
     {
         await using var conn = connections.Create();
         return await conn.QuerySingleOrDefaultAsync<StaffMember>(new CommandDefinition(
-            "SELECT * FROM identity.list_staff(@userId)", new { userId }, cancellationToken: ct));
+            "SELECT * FROM identity.list_staff(@userId, NULL)", new { userId }, cancellationToken: ct));
     }
 }

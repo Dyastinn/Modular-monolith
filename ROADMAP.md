@@ -356,19 +356,19 @@ on the same day: 27 of 27). What differs from the plan above, and why:
 
 #### Part B: teams, categories, routing (lesson 15)
 
-- [ ] B1. Identity: `Team` aggregate, `team_member`, `IdentityErrors` for a duplicate name or a non-staff member.
+- [x] B1. Identity: `Team` aggregate, `team_member`, `IdentityErrors` for a duplicate name or a non-staff member.
       Slices: `SearchTeams`, `GetTeam`, `CreateTeam`, `RenameTeam`, `SetTeamActive`, `AddTeamMember`,
       `RemoveTeamMember`, `SetTeamNotify` (mode plus each member's flag) (all Admin). `ITeamDirectory` with Dapper reads (`identity.get_team`, `identity.teams_of_user`).
       `TeamRenamedEvent` → `TeamRenamed`. Pages `/teams` and `/teams/{id}`. Regenerate Identity's migration pair.
       Seed: "Service desk" (agent, team lead) and "Network" (team lead).
-- [ ] B2. Tickets: the `Category` aggregate with slices `SearchCategories`, `CreateCategory`, `UpdateCategory` (name,
+- [x] B2. Tickets: the `Category` aggregate with slices `SearchCategories`, `CreateCategory`, `UpdateCategory` (name,
       team, active; Admin and TeamLead) and the page `/categories`. Seed: Hardware, Software, Access → Service desk; Network →
       Network. Tickets' handler for `TeamRenamed` updates `category.team_name` and `ticket.team_name`.
-- [ ] B3. `Ticket` gains its category and team (D4: optional). The New ticket form gets a "Category" `<select>` with
+- [x] B3. `Ticket` gains its category and team (D4: optional). The New ticket form gets a "Category" `<select>` with
       "Not sure". The `RouteTicket` slice is for TeamLead and Admin. `TICKETS-0012 NotInTeam` applies to Take and
       Assign. Assign's staff list shows only team members when the ticket has a team. The queue gets a Team filter
       in the address.
-- [ ] B4. Tests:
+- [x] B4. Tests:
       - Unit: `Route` keeps or drops the assignee; Take and Assign outside the team are refused;
         `An_admin_may_take_any_teams_ticket`.
       - Integration: `NotifyListAsync` for each `NotifyMode`, and for `null` (every TeamLead).
@@ -376,6 +376,23 @@ on the same day: 27 of 27). What differs from the plan above, and why:
         join a team.
       - Browser: filing with a category lands in the team's queue.
       - Green: all.
+
+**Done 2026-11-20 (B1–B4), build only: no lesson yet.** Whole solution green: 417 tests, 34 skipped (browser; they ran against a
+live app: 34 of 34). The migrate image applies Identity, Tickets and Sla on an empty database, and a second run applies nothing.
+Decisions confirmed with the user: re-routing sends an Open or Pending ticket whose owner is not in the new team back to New
+(`Route`); an agent's public reply that would auto-take an unowned ticket of another team is refused (`TICKETS-0012`); the
+rename handler asks `ITeamDirectory.FindTeamAsync` for the current name instead of trusting the event; routing to an inactive team
+is refused (`TICKETS-0014`, unless the ticket keeps the team it has). What differs from the plan above, and why:
+
+- Agents may read `GET /api/teams` (readers: Agent, TeamLead, Admin) so the queue's Team filter works for them; writes stay Admin.
+- The queue also has a "No team yet" filter (`team=none`), next to "mine" and a team number.
+- `Team` has `UpdatedUtc` (touch-the-root rule). No foreign key from `team_member.user_id` to the users table: cross-schema, and the types differ.
+- `TeamRenamedEvent` and Tickets' `RenameTeamCopies` landed together (an event with no handler is not allowed).
+- A team with no leads and mode "leads only" has an empty notify list. The plan does not say what then; left empty.
+- Codes appended: `IDENTITY-0006`–`0008`, `TICKETS-0012`–`0017`.
+- `RenameTeamCopies` uses `ExecuteUpdate`, which bumps `xmin` on the ticket rows. Say so in lesson 15.
+- Dapper cannot pass a list to a function argument, so `BigintArrayParameter` sends the team ids as a `bigint[]`.
+- The dev database must be dropped and recreated: Identity's and Tickets' migrations were regenerated.
 
 #### Part C: email on replies and assignments (lesson 16)
 

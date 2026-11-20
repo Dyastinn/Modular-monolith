@@ -12,7 +12,7 @@ using Yasda.Modules.Identity.Infrastructure;
 namespace Yasda.Modules.Identity.Infrastructure.Migrations
 {
     [DbContext(typeof(YasdaIdentityDbContext))]
-    [Migration("20261119142640_AddReadFunctions")]
+    [Migration("20261120145806_AddReadFunctions")]
     partial class AddReadFunctions
     {
         /// <inheritdoc />
@@ -248,6 +248,54 @@ namespace Yasda.Modules.Identity.Infrastructure.Migrations
                         .HasName("pk_user_tokens");
 
                     b.ToTable("user_tokens", "identity");
+                });
+
+            modelBuilder.Entity("Yasda.Modules.Identity.Domain.Team", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasColumnName("id");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.Property<string>("NotifyMode")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("notify_mode");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_utc");
+
+                    b.HasKey("Id")
+                        .HasName("pk_team");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_team_name");
+
+                    b.ToTable("team", "identity", t =>
+                        {
+                            t.HasCheckConstraint("ck_team_notify_mode", "notify_mode IN ('LeadsOnly', 'LeadsAndSelected', 'Everyone')");
+                        });
                 });
 
             modelBuilder.Entity("Yasda.Modules.Identity.Infrastructure.AppUser", b =>
@@ -492,6 +540,38 @@ namespace Yasda.Modules.Identity.Infrastructure.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_user_tokens_users_user_id");
+                });
+
+            modelBuilder.Entity("Yasda.Modules.Identity.Domain.Team", b =>
+                {
+                    b.OwnsMany("Yasda.Modules.Identity.Domain.TeamMember", "Members", b1 =>
+                        {
+                            b1.Property<long>("TeamId")
+                                .HasColumnType("bigint")
+                                .HasColumnName("team_id");
+
+                            b1.Property<long>("UserId")
+                                .HasColumnType("bigint")
+                                .HasColumnName("user_id");
+
+                            b1.Property<bool>("Notify")
+                                .HasColumnType("boolean")
+                                .HasColumnName("notify");
+
+                            b1.HasKey("TeamId", "UserId")
+                                .HasName("pk_team_member");
+
+                            b1.HasIndex("UserId")
+                                .HasDatabaseName("ix_team_member_user_id");
+
+                            b1.ToTable("team_member", "identity");
+
+                            b1.WithOwner()
+                                .HasForeignKey("TeamId")
+                                .HasConstraintName("fk_team_member_team_team_id");
+                        });
+
+                    b.Navigation("Members");
                 });
 #pragma warning restore 612, 618
         }

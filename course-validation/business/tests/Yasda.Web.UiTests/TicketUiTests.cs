@@ -151,7 +151,8 @@ public sealed class TicketUiTests : UiTest
 
         await Expect(page).ToHaveURLAsync(new Regex("assigned=unassigned"));
         await Expect(page.GetByText("Showing: assigned to nobody yet.")).ToBeVisibleAsync();
-        var assigneeCells = page.GetByRole(AriaRole.Row).Locator("td:nth-child(6)");
+        // Staff columns: #, subject, status, priority, team, requester, assigned to (the 7th), SLA, updated.
+        var assigneeCells = page.GetByRole(AriaRole.Row).Locator("td:nth-child(7)");
         await Expect(assigneeCells.First).ToHaveTextAsync("Nobody yet");
     }
 

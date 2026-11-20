@@ -1,0 +1,127 @@
+@page "/categories/new"
+@page "/categories/{Id:long}"
+@attribute [Authorize(Roles = Roles.TeamLead + "," + Roles.Admin)]
+@inject ApiClient Api
+@inject NavigationManager Nav
+@inject ListMemory Memory
+@inject IJSRuntime Js
+
+<PageTitle>@Title · YASDA</PageTitle>
+
+<NavigationLock OnBeforeInternalNavigation="ctx => UnsavedChanges.ConfirmLeave(Js, ctx, Unsaved)" />
+
+<PageHeader Title="@Title" Trail="@([("Categories", Memory.Last("categories"))])">
+    <Description>
+        @if (_category is not null)
+        {
+            <text>Status: </text><strong>@(_category.IsActive ? "In use" : "Switched off")</strong>
+        }
+        else if (Id is null)
+        {
+            <text>Creates the category. New tickets filed under it go to its team.</text>
+        }
+    </Description>
+</PageHeader>
+
+@if (Id is not null && _category is null)
+{
+    <p role="status">Loading…</p>
+}
+else
+{
+    <EditForm Model="this" OnSubmit="Save">
+        <div class="field">
+            <label for="name">Category name</label>
+            <InputText id="name" @bind-Value="_name" maxlength="100" required />
+        </div>
+        <div class="field">
+            <label for="team">Goes to team</label>
+            <InputSelect id="team" @bind-Value="_team" aria-describedby="team-hint">
+                <option value="">No team</option>
+                @foreach (var t in _teams)
+                {
+                    <option value="@t.Id">@t.Name</option>
+                }
+            </InputSelect>
+            <span class="hint" id="team-hint">Tickets with no team wait for a team lead to sort them. Only active teams can be chosen.</span>
+        </div>
+        @if (_category is not null)
+        {
+            <div class="check">
+                <InputCheckbox id="active" @bind-Value="_isActive" />
+                <label for="active">In use: people can choose it when they file a ticket</label>
+            </div>
+        }
+        <div class="actions">
+            <button type="submit" disabled="@Api.Busy">@(_category is null ? "Create category" : "Save changes")</button>
+        </div>
+    </EditForm>
+}
+
+@code {
+    [Parameter] public long? Id { get; set; }
+
+    private Category? _category;
+    private List<TeamSummary> _teams = [];
+    private string _name = "", _team = "";
+    private bool _isActive = true;
+
+    private string Title => _category?.Name ?? (Id is null ? "New category" : "Category");
+
+    private bool Unsaved
+    {
+        get
+        {
+            if (_category is null) return _name.Length > 0;
+            return _name != _category.Name || _team != (_category.TeamId?.ToString() ?? "") || _isActive != _category.IsActive;
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await LoadTeams();
+        if (Id is null) return;
+        await Load(Id.Value);
+    }
+
+    // Only active teams can be chosen, and the one the category already points at (even if it has since been switched off).
+    private async Task LoadTeams()
+    {
+        var page = await Api.Get<PagedResult<TeamSummary>>("api/teams?pageSize=100");
+        _teams = [];
+        if (page is null) return;
+        foreach (var t in page.Items)
+        {
+            if (t.IsActive || t.Id == _category?.TeamId) _teams.Add(t);
+        }
+    }
+
+    private async Task Load(long id)
+    {
+        _category = await Api.Get<Category>($"api/categories/{id}");
+        if (_category is null) return;
+
+        _name = _category.Name;
+        _team = _category.TeamId?.ToString() ?? "";
+        _isActive = _category.IsActive;
+        await LoadTeams();
+    }
+
+    private async Task Save()
+    {
+        long? teamId = null;
+        if (long.TryParse(_team, out var team)) teamId = team;
+
+        if (_category is null)
+        {
+            var id = await Api.Create("api/categories", new { name = _name.Trim(), teamId }, "Category created.");
+            if (id is null) return;
+            _name = "";   // saved: nothing left to lose on the way to the category's page
+            Nav.NavigateTo($"categories/{id}");
+            return;
+        }
+
+        var saved = await Api.Put($"api/categories/{_category.Id}", new { name = _name.Trim(), teamId, isActive = _isActive }, "Category saved.");
+        if (saved) await Load(_category.Id);
+    }
+}

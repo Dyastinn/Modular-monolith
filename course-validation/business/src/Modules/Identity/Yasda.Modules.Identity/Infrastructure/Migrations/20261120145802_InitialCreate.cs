@@ -85,6 +85,25 @@ namespace Yasda.Modules.Identity.Infrastructure.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "team",
+                schema: "identity",
+                columns: table => new
+                {
+                    id = table.Column<long>(type: "bigint", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    is_active = table.Column<bool>(type: "boolean", nullable: false),
+                    notify_mode = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    updated_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_team", x => x.id);
+                    table.CheckConstraint("ck_team_notify_mode", "notify_mode IN ('LeadsOnly', 'LeadsAndSelected', 'Everyone')");
+                });
+
+            migrationBuilder.CreateTable(
                 name: "users",
                 schema: "identity",
                 columns: table => new
@@ -133,6 +152,27 @@ namespace Yasda.Modules.Identity.Infrastructure.Migrations
                         column: x => x.role_id,
                         principalSchema: "identity",
                         principalTable: "roles",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "team_member",
+                schema: "identity",
+                columns: table => new
+                {
+                    user_id = table.Column<long>(type: "bigint", nullable: false),
+                    team_id = table.Column<long>(type: "bigint", nullable: false),
+                    notify = table.Column<bool>(type: "boolean", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_team_member", x => new { x.team_id, x.user_id });
+                    table.ForeignKey(
+                        name: "fk_team_member_team_team_id",
+                        column: x => x.team_id,
+                        principalSchema: "identity",
+                        principalTable: "team",
                         principalColumn: "id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -277,6 +317,19 @@ namespace Yasda.Modules.Identity.Infrastructure.Migrations
                 column: "occurred_utc");
 
             migrationBuilder.CreateIndex(
+                name: "ix_team_name",
+                schema: "identity",
+                table: "team",
+                column: "name",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "ix_team_member_user_id",
+                schema: "identity",
+                table: "team_member",
+                column: "user_id");
+
+            migrationBuilder.CreateIndex(
                 name: "ix_user_claims_user_id",
                 schema: "identity",
                 table: "user_claims",
@@ -328,6 +381,10 @@ namespace Yasda.Modules.Identity.Infrastructure.Migrations
                 schema: "identity");
 
             migrationBuilder.DropTable(
+                name: "team_member",
+                schema: "identity");
+
+            migrationBuilder.DropTable(
                 name: "user_claims",
                 schema: "identity");
 
@@ -341,6 +398,10 @@ namespace Yasda.Modules.Identity.Infrastructure.Migrations
 
             migrationBuilder.DropTable(
                 name: "user_tokens",
+                schema: "identity");
+
+            migrationBuilder.DropTable(
+                name: "team",
                 schema: "identity");
 
             migrationBuilder.DropTable(

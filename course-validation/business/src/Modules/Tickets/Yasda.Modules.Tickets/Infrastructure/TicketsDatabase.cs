@@ -7,7 +7,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace Yasda.Modules.Tickets.Infrastructure;
 
-internal sealed class TicketsDatabase(IUserDirectory users, TimeProvider time, IEnumerable<IInterceptor> interceptors) : IModuleDatabase
+internal sealed class TicketsDatabase(IUserDirectory users, ITeamDirectory teams, TimeProvider time, IEnumerable<IInterceptor> interceptors) : IModuleDatabase
 {
     public string Module => "Tickets";
     public string Schema => TicketsDbContext.Schema;
@@ -23,6 +23,7 @@ internal sealed class TicketsDatabase(IUserDirectory users, TimeProvider time, I
     public async Task SeedDevelopmentDataAsync(DbConnection ownerConnection, CancellationToken ct)
     {
         await using var db = Open(ownerConnection);
+        await SeedCategoriesAsync(db, ct);
         if (await db.Tickets.AnyAsync(ct)) return;
 
         var requester = await users.IdOfAsync("requester@yasda.local", ct);
@@ -49,6 +50,34 @@ internal sealed class TicketsDatabase(IUserDirectory users, TimeProvider time, I
 
         db.Tickets.AddRange(printer, vpn, mouse);
         await db.SaveChangesAsync(ct);
+    }
+
+    // The kinds of request, each routed to the team that handles it. Identity seeds first, so its teams exist; their numbers come
+    // through its contract. The seeded tickets stay uncategorized, to show what "Not sure" looks like.
+    private async Task SeedCategoriesAsync(TicketsDbContext db, CancellationToken ct)
+    {
+        if (await db.Categories.AnyAsync(ct)) return;
+
+        var serviceDesk = await TeamAsync("Service desk", ct);
+        var network = await TeamAsync("Network", ct);
+        if (serviceDesk is null || network is null) return;
+        var now = time.GetUtcNow().UtcDateTime;
+
+        db.Categories.AddRange(
+            Category.Create("Hardware", nameTaken: false, serviceDesk, now),
+            Category.Create("Software", nameTaken: false, serviceDesk, now),
+            Category.Create("Access", nameTaken: false, serviceDesk, now),
+            Category.Create("Network", nameTaken: false, network, now));
+        await db.SaveChangesAsync(ct);
+    }
+
+    private async Task<TeamRef?> TeamAsync(string name, CancellationToken ct)
+    {
+        var id = await teams.TeamIdOfAsync(name, ct);
+        if (id is null) return null;
+        var info = await teams.FindTeamAsync(id.Value, ct);
+        if (info is null) return null;
+        return new TeamRef(new TeamId(info.Id), info.Name, info.IsActive);
     }
 
     // The seed saves through the same interceptors as the app, so seeded tickets write outbox rows and get clocks too.
