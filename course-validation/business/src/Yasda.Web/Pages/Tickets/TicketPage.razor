@@ -3,6 +3,9 @@
 @inject ListMemory Memory
 @inject CookieAuthenticationStateProvider Auth
 @inject Notices Notices
+@inject MinuteClock Clock
+@inject TimeProvider Time
+@implements IDisposable
 
 <PageTitle>@(_ticket is null ? "Ticket" : $"#{_ticket.Id} {_ticket.Subject}") · YASDA</PageTitle>
 
@@ -18,6 +21,10 @@ else
             Status: @_ticket.Status · Priority: <PriorityText Value="@_ticket.Priority" /> ·
             Assigned: @(_ticket.AssigneeName ?? "Nobody yet") · Requester: @_ticket.RequesterName ·
             Filed <TimeAgo Utc="_ticket.CreatedUtc" /> · Updated <TimeAgo Utc="_ticket.UpdatedUtc" />
+            @if (IsStaff && _ticket.Sla is not null && _ticket.Sla.NextDueUtc is not null)
+            {
+                <text> · SLA: </text><SlaText View="CurrentSla()" />
+            }
         </Description>
     </PageHeader>
 
@@ -151,6 +158,28 @@ else
     private long? MyId => Auth.User?.Id;
     private bool IsStaff => TicketChoices.IsStaff(Auth.User?.Role);
     private bool IsLead => TicketChoices.IsLead(Auth.User?.Role);
+
+    // Worked out again at every draw, so "1h 10m left" stays true as the minutes pass (see MinuteClock).
+    private SlaView CurrentSla()
+    {
+        if (_ticket?.Sla is null) return new SlaView("", "none");
+        return Format.Sla(_ticket.Sla.NextDueUtc, _ticket.Sla.AtRiskFromUtc, Time.GetUtcNow().UtcDateTime);
+    }
+
+    protected override void OnInitialized()
+    {
+        Clock.Tick += Redraw;
+    }
+
+    private void Redraw()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Clock.Tick -= Redraw;
+    }
 
     protected override async Task OnParametersSetAsync()
     {

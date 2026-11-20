@@ -3,10 +3,11 @@ using Yasda.Modules.Identity.Contracts;
 using Yasda.Modules.Tickets.Domain;
 using Yasda.Shared.BuildingBlocks;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 
 namespace Yasda.Modules.Tickets.Infrastructure;
 
-internal sealed class TicketsDatabase(IUserDirectory users, TimeProvider time) : IModuleDatabase
+internal sealed class TicketsDatabase(IUserDirectory users, TimeProvider time, IEnumerable<IInterceptor> interceptors) : IModuleDatabase
 {
     public string Module => "Tickets";
     public string Schema => TicketsDbContext.Schema;
@@ -33,15 +34,15 @@ internal sealed class TicketsDatabase(IUserDirectory users, TimeProvider time) :
         var a = new UserId(agent.Value);
         var now = time.GetUtcNow().UtcDateTime;
 
-        var printer = Ticket.Create("Printer on the 3rd floor won't print",
+        var printer = Ticket.Create(await db.NextTicketIdAsync(ct), "Printer on the 3rd floor won't print",
             "It shows \"paper jam\" but there's no paper stuck. Twenty people share it.", TicketPriority.High, r, requesterName, now.AddHours(-30));
-        var vpn = Ticket.Create("Can't connect to the VPN from home",
+        var vpn = Ticket.Create(await db.NextTicketIdAsync(ct), "Can't connect to the VPN from home",
             "It says my certificate expired. I need it for Monday's report.", TicketPriority.Normal, r, requesterName, now.AddHours(-6));
         vpn.Take(a, agentName, now.AddHours(-5));
         vpn.Reply(a, agentName, "Which computer are you using: the company laptop or your own?", isInternal: false, authorIsStaff: true, now.AddHours(-5));
         vpn.Reply(a, agentName, "Certificates were renewed last week; this may be the first of many.", isInternal: true, authorIsStaff: true, now.AddHours(-5));
         vpn.MarkPending(now.AddHours(-5));
-        var mouse = Ticket.Create("New mouse, please", "Mine's scroll wheel stopped working.", TicketPriority.Low, r, requesterName, now.AddDays(-3));
+        var mouse = Ticket.Create(await db.NextTicketIdAsync(ct), "New mouse, please", "Mine's scroll wheel stopped working.", TicketPriority.Low, r, requesterName, now.AddDays(-3));
         mouse.Take(a, agentName, now.AddDays(-3));
         mouse.Reply(a, agentName, "Left one on your desk. Shout if it doesn't work.", isInternal: false, authorIsStaff: true, now.AddDays(-2));
         mouse.Resolve(now.AddDays(-2));
@@ -50,10 +51,12 @@ internal sealed class TicketsDatabase(IUserDirectory users, TimeProvider time) :
         await db.SaveChangesAsync(ct);
     }
 
-    private static TicketsDbContext Open(DbConnection connection)
+    // The seed saves through the same interceptors as the app, so seeded tickets write outbox rows and get clocks too.
+    private TicketsDbContext Open(DbConnection connection)
     {
         var options = new DbContextOptionsBuilder<TicketsDbContext>();
         TicketsDbContext.Configure(options, connection);
+        options.AddInterceptors(interceptors);
         return new TicketsDbContext(options.Options);
     }
 }

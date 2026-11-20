@@ -8,6 +8,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\Shared\Yasda.Shared.BuildingBlocks\Yasda.Shared.BuildingBlocks.csproj" />
     <ProjectReference Include="..\..\Identity\Yasda.Modules.Identity.Contracts\Yasda.Modules.Identity.Contracts.csproj" />
+    <ProjectReference Include="..\Yasda.Modules.Tickets.Contracts\Yasda.Modules.Tickets.Contracts.csproj" />
+    <ProjectReference Include="..\..\Sla\Yasda.Modules.Sla.Contracts\Yasda.Modules.Sla.Contracts.csproj" />
   </ItemGroup>
 
   <ItemGroup>

@@ -15,7 +15,7 @@ every kind of test. The helpdesk modules are being built now, milestone by miles
 | | |
 |---|---|
 | Architecture | Modular monolith; each module is `internal` behind one public Contracts project; vertical slices inside |
-| Modules | Identity and Tickets today; Sla and Knowledge next ([ROADMAP.md](ROADMAP.md)) |
+| Modules | Identity, Tickets and Sla today; Knowledge next ([ROADMAP.md](ROADMAP.md)) |
 | Stack | .NET 10 minimal APIs (`TypedResults`, no mediator: endpoints call their handler), FluentValidation, EF Core (writes), Dapper + SQL functions (reads), PostgreSQL |
 | Screens | Blazor WebAssembly with **no component library**: plain HTML in the look of [DESIGN.md](DESIGN.md) (warm paper, one serif, blue links), served by the API itself under the same address; the API lives under `/api` |
 | Errors | Every error carries a stable code (`IDENTITY-0003`) and a trace id; the app's **Error codes** page explains each code and its fix |
@@ -46,6 +46,9 @@ src/
     Identity/Yasda.Modules.Identity/  sign-in (ASP.NET Core Identity), accounts, sign-in log, email
     Identity/Yasda.Modules.Identity.Contracts/  the only part other modules may reference (IUserDirectory)
     Tickets/Yasda.Modules.Tickets/    tickets, their conversation, queues
+    Tickets/Yasda.Modules.Tickets.Contracts/  what Tickets tells other modules: its events and priorities
+    Sla/Yasda.Modules.Sla/            SLA clocks and policies: how long a ticket has to be answered and resolved
+    Sla/Yasda.Modules.Sla.Contracts/  what Sla tells other modules: a ticket's deadlines
       Domain/                         the rules, no database
       Features/                       one folder per feature: XxxHandler.cs + XxxEndpoint.cs
       Infrastructure/                 DbContext, migrations, SQL functions
@@ -55,6 +58,7 @@ tests/
   Yasda.Integration.Tests/            the whole API against a throwaway PostgreSQL in a container
   Yasda.Architecture.Tests/           fail the build when a module breaks a boundary
   Yasda.Web.UiTests/                  Playwright, against a running app
+  Yasda.Web.UnitTests/                the browser app's own helpers (times as words)
 deploy/postgres/create-roles.sql      the two production database accounts
 deploy/compose/                       compose.yaml, .env.example, Caddyfile, migrate and backup scripts
 ```

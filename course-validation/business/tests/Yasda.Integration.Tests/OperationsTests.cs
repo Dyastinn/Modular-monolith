@@ -17,17 +17,6 @@ public class OperationsTests(CustomWebAppFactory factory)
 {
     private sealed record Problem(string TraceId);
 
-    private static async Task<T> Eventually<T>(Func<Task<T>> read, Func<T, bool> done)
-    {
-        var value = await read();
-        for (var i = 0; i < 75 && !done(value); i++)
-        {
-            await Task.Delay(200);
-            value = await read();
-        }
-        return value;
-    }
-
     // ---- Lesson 13: events and the outbox ----
 
     // A message that can never be delivered must not block the others, and must not be retried forever.
@@ -42,7 +31,7 @@ public class OperationsTests(CustomWebAppFactory factory)
             VALUES (@id, 'Yasda.NoSuchEvent, Yasda.NoSuchAssembly', '{}', now(), 0)
             """, new { id });
 
-        var attempts = await Eventually(
+        var attempts = await Waiting.Eventually(
             () => conn.ExecuteScalarAsync<int>("SELECT attempts FROM identity.outbox_message WHERE id = @id", new { id }),
             a => a >= 10);
         await Task.Delay(1000);   // a few more dispatcher ticks

@@ -1,0 +1,21 @@
+@* An SLA deadline as words (DESIGN.md 5.2). Breached is bold in the error color and at risk is bold in the risk color; the
+   words say it too, so color is never the only signal. A ticket with nothing running says nothing. *@
+@if (View.State != "none")
+{
+    @if (View.State == "breached")
+    {
+        <strong class="sla-breached">@View.Text</strong>
+    }
+    else if (View.State == "risk")
+    {
+        <strong class="sla-risk">@View.Text</strong>
+    }
+    else
+    {
+        <span>@View.Text</span>
+    }
+}
+
+@code {
+    [Parameter, EditorRequired] public SlaView View { get; set; } = new("", "none");
+}

@@ -10,7 +10,7 @@ internal sealed record SearchTicketsQuery(string? Status = null, string? Priorit
     string? Sort = null, bool Desc = false, int Page = 1, int PageSize = 20);
 
 internal sealed record TicketSummaryDto(long Id, string Subject, string Status, string Priority, long RequesterId, string RequesterName,
-    long? AssigneeId, string? AssigneeName, DateTime CreatedUtc, DateTime UpdatedUtc);
+    long? AssigneeId, string? AssigneeName, DateTime CreatedUtc, DateTime UpdatedUtc, DateTime? NextDueUtc, DateTime? AtRiskFromUtc);
 
 internal sealed class SearchTicketsValidator : AbstractValidator<SearchTicketsQuery>
 {
@@ -18,7 +18,7 @@ internal sealed class SearchTicketsValidator : AbstractValidator<SearchTicketsQu
     {
         RuleFor(x => x.Page).ValidPage();
         RuleFor(x => x.PageSize).ValidPageSize();
-        RuleFor(x => x.Sort).ValidSort("id", "subject", "status", "priority", "requesterName", "assigneeName", "createdUtc", "updatedUtc");
+        RuleFor(x => x.Sort).ValidSort("id", "subject", "status", "priority", "requesterName", "assigneeName", "createdUtc", "updatedUtc", "nextDue");
         RuleFor(x => x.Status).IsEnumName(typeof(TicketStatus), caseSensitive: true).When(x => x.Status is not null);
         RuleFor(x => x.Priority).IsEnumName(typeof(TicketPriority), caseSensitive: true).When(x => x.Priority is not null);
         RuleFor(x => x.Assigned).Must(a => a is null or "me" or "unassigned").WithMessage("Assigned is \"me\", \"unassigned\" or empty.");
@@ -29,9 +29,10 @@ internal sealed class SearchTicketsHandler(IDbConnectionFactory connections, ICu
 {
     public async Task<PagedResult<TicketSummaryDto>> HandleAsync(SearchTicketsQuery q, CancellationToken ct)
     {
-        // A requester only ever sees their own tickets, whatever the query asks for.
+        // A requester only ever sees their own tickets, whatever the query asks for, and never the SLA (DESIGN.md 5.2).
+        var isStaff = TicketRoles.IsHandler(currentUser.Role);
         long? requesterId = null;
-        if (!TicketRoles.IsHandler(currentUser.Role)) requesterId = currentUser.UserId;
+        if (!isStaff) requesterId = currentUser.UserId;
 
         long? assigneeId = null;
         if (q.Assigned == "me") assigneeId = currentUser.UserId;
@@ -52,6 +53,11 @@ internal sealed class SearchTicketsHandler(IDbConnectionFactory connections, ICu
 
         var items = (await multi.ReadAsync<TicketSummaryDto>()).ToList();
         var total = (int)await multi.ReadSingleAsync<long>();
+        if (!isStaff)
+        {
+            for (var i = 0; i < items.Count; i++)
+                items[i] = items[i] with { NextDueUtc = null, AtRiskFromUtc = null };
+        }
         return new PagedResult<TicketSummaryDto>(items, q.Page, q.PageSize, total);
     }
 }

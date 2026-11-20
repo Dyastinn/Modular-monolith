@@ -1,3 +1,4 @@
+using Yasda.Modules.Sla.Contracts;
 using Yasda.Modules.Tickets.Domain;
 using Yasda.Modules.Tickets.Features;
 using Yasda.Modules.Tickets.Infrastructure;
@@ -30,6 +31,15 @@ public static class TicketsModule
         services.AddScoped<ReplyToTicketHandler>();
         services.AddScoped<ChangeTicketStatusHandler>();
         services.AddScoped<ChangePriorityHandler>();
+
+        // Event handlers are registered by the interface they answer to (the outbox looks them up that way).
+        services.AddScoped<IDomainEventHandler<TicketCreatedEvent>, PublishTicketCreated>();
+        services.AddScoped<IDomainEventHandler<FirstAgentReplyEvent>, PublishFirstAgentReply>();
+        services.AddScoped<IDomainEventHandler<TicketResolvedEvent>, PublishTicketResolved>();
+        services.AddScoped<IDomainEventHandler<TicketReopenedEvent>, PublishTicketReopened>();
+        services.AddScoped<IDomainEventHandler<TicketCancelledEvent>, PublishTicketCancelled>();
+        services.AddScoped<IDomainEventHandler<TicketPriorityChangedEvent>, PublishTicketPriorityChanged>();
+        services.AddScoped<IIntegrationEventHandler<DeadlinesChanged>, StoreDeadlines>();
 
         // Without includeInternalTypes no validator is found, and validation silently stops.
         services.AddValidatorsFromAssembly(typeof(TicketsModule).Assembly, includeInternalTypes: true);

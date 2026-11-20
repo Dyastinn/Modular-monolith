@@ -3,6 +3,9 @@
 @inject NavigationManager Nav
 @inject ListMemory Memory
 @inject CookieAuthenticationStateProvider Auth
+@inject MinuteClock Clock
+@inject TimeProvider Time
+@implements IDisposable
 
 <PageTitle>@Name · YASDA</PageTitle>
 
@@ -79,13 +82,18 @@ else
                         <SortHeader Column="requesterName" Title="Requester" Sort="@Sort" Desc="Desc" />
                     }
                     <SortHeader Column="assigneeName" Title="Assigned to" Sort="@Sort" Desc="Desc" />
+                    @if (IsStaff)
+                    {
+                        <SortHeader Column="nextDue" Title="SLA" Sort="@Sort" Desc="Desc" />
+                    }
                     <SortHeader Column="updatedUtc" Title="Updated" Sort="@Sort" Desc="Desc" />
                 </tr>
             </thead>
             <tbody>
                 @foreach (var t in _result.Items)
                 {
-                    <tr>
+                    var sla = Format.Sla(t.NextDueUtc, t.AtRiskFromUtc, Time.GetUtcNow().UtcDateTime);
+                    <tr class="@RowClass(sla)">
                         <td class="num">@t.Id</td>
                         <td class="truncate"><a href="@($"tickets/{t.Id}")">@t.Subject</a></td>
                         <td>@t.Status</td>
@@ -95,6 +103,10 @@ else
                             <td>@t.RequesterName</td>
                         }
                         <td>@(t.AssigneeName ?? "Nobody yet")</td>
+                        @if (IsStaff)
+                        {
+                            <td><SlaText View="sla" /></td>
+                        }
                         <td><TimeAgo Utc="t.UpdatedUtc" /></td>
                     </tr>
                 }
@@ -134,6 +146,30 @@ else
             if (!string.IsNullOrWhiteSpace(Search)) parts.Add($"matching \"{Search}\"");
             return parts;
         }
+    }
+
+    // A breached or at-risk ticket gets a colored edge on its row (DESIGN.md 5.2); the words in the SLA column say the same.
+    private string RowClass(SlaView sla)
+    {
+        if (!IsStaff) return "";
+        if (sla.State == "breached") return "row-breached";
+        if (sla.State == "risk") return "row-risk";
+        return "";
+    }
+
+    protected override void OnInitialized()
+    {
+        Clock.Tick += Redraw;
+    }
+
+    private void Redraw()
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        Clock.Tick -= Redraw;
     }
 
     protected override async Task OnParametersSetAsync()

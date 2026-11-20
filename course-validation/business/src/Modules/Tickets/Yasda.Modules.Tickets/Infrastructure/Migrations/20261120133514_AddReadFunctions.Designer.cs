@@ -12,7 +12,7 @@ using Yasda.Modules.Tickets.Infrastructure;
 namespace Yasda.Modules.Tickets.Infrastructure.Migrations
 {
     [DbContext(typeof(TicketsDbContext))]
-    [Migration("20261120060148_AddReadFunctions")]
+    [Migration("20261120133514_AddReadFunctions")]
     partial class AddReadFunctions
     {
         /// <inheritdoc />
@@ -26,14 +26,13 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.HasSequence("ticket_id_seq");
+
             modelBuilder.Entity("Yasda.Modules.Tickets.Domain.Ticket", b =>
                 {
                     b.Property<long>("Id")
-                        .ValueGeneratedOnAdd()
                         .HasColumnType("bigint")
                         .HasColumnName("id");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<long>("Id"));
 
                     b.Property<long?>("AssigneeId")
                         .HasColumnType("bigint")
@@ -121,6 +120,52 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
 
                             t.HasCheckConstraint("ck_ticket_status", "status IN ('New', 'Open', 'Pending', 'Resolved', 'Closed', 'Cancelled')");
                         });
+                });
+
+            modelBuilder.Entity("Yasda.Modules.Tickets.Domain.TicketSla", b =>
+                {
+                    b.Property<long>("TicketId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("ticket_id");
+
+                    b.Property<DateTime?>("AtRiskFromUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("at_risk_from_utc");
+
+                    b.Property<DateTime?>("NextDueUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_due_utc");
+
+                    b.Property<bool?>("ResolutionMet")
+                        .HasColumnType("boolean")
+                        .HasColumnName("resolution_met");
+
+                    b.Property<DateTime>("ResolveDueUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolve_due_utc");
+
+                    b.Property<DateTime>("ResponseDueUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("response_due_utc");
+
+                    b.Property<bool?>("ResponseMet")
+                        .HasColumnType("boolean")
+                        .HasColumnName("response_met");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("TicketId")
+                        .HasName("pk_ticket_sla");
+
+                    b.ToTable("ticket_sla", "tickets");
                 });
 
             modelBuilder.Entity("Yasda.Shared.BuildingBlocks.OutboxMessage", b =>

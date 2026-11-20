@@ -1,0 +1,89 @@
+@page "/sla-policies"
+@attribute [Authorize(Roles = Roles.TeamLead + "," + Roles.Admin)]
+@inject ApiClient Api
+
+<PageTitle>SLA policies · YASDA</PageTitle>
+
+<PageHeader Title="SLA policies">
+    <Description>
+        How long a team has to answer a new ticket and to resolve it, for each priority. A change applies to tickets filed after
+        it; a ticket whose priority changes is worked out again with the policy as it is then.
+    </Description>
+</PageHeader>
+
+@if (_edits is null)
+{
+    <p role="status">Loading…</p>
+}
+else
+{
+    @foreach (var edit in _edits)
+    {
+        <EditForm Model="edit" OnSubmit="@(() => Save(edit))">
+            <fieldset>
+                <legend>@edit.Priority</legend>
+                <div class="field">
+                    <label for="@($"respond-{edit.Priority}")">Respond within, in minutes</label>
+                    <InputNumber id="@($"respond-{edit.Priority}")" @bind-Value="edit.RespondMinutes" min="1" required />
+                    <span class="hint">That is @Format.Span(TimeSpan.FromMinutes(edit.RespondMinutes)).</span>
+                </div>
+                <div class="field">
+                    <label for="@($"resolve-{edit.Priority}")">Resolve within, in minutes</label>
+                    <InputNumber id="@($"resolve-{edit.Priority}")" @bind-Value="edit.ResolveMinutes" min="1" required />
+                    <span class="hint">That is @Format.Span(TimeSpan.FromMinutes(edit.ResolveMinutes)).</span>
+                </div>
+                <p class="muted">Last changed by @edit.UpdatedByName, <TimeAgo Utc="edit.UpdatedUtc" />.</p>
+                <div class="actions">
+                    <button type="submit" disabled="@Api.Busy">Save @edit.Priority</button>
+                </div>
+            </fieldset>
+        </EditForm>
+    }
+}
+
+@code {
+    // One per priority: the numbers as typed, until Save sends them.
+    private sealed class PolicyEdit
+    {
+        public string Priority { get; init; } = "";
+        public int RespondMinutes { get; set; }
+        public int ResolveMinutes { get; set; }
+        public string UpdatedByName { get; init; } = "";
+        public DateTime UpdatedUtc { get; init; }
+    }
+
+    private List<PolicyEdit>? _edits;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        var policies = await Api.Get<List<SlaPolicy>>("api/sla/policies");
+        if (policies is null) return;
+
+        var edits = new List<PolicyEdit>();
+        foreach (var policy in policies)
+        {
+            edits.Add(new PolicyEdit
+            {
+                Priority = policy.Priority,
+                RespondMinutes = policy.RespondMinutes,
+                ResolveMinutes = policy.ResolveMinutes,
+                UpdatedByName = policy.UpdatedByName,
+                UpdatedUtc = policy.UpdatedUtc,
+            });
+        }
+        _edits = edits;
+    }
+
+    // Whether or not it worked, show the policies as they are now: a refused change should not look saved.
+    private async Task Save(PolicyEdit edit)
+    {
+        await Api.Put($"api/sla/policies/{edit.Priority}", new { respondMinutes = edit.RespondMinutes, resolveMinutes = edit.ResolveMinutes },
+            $"{edit.Priority} saved.");
+        await Load();
+    }
+}

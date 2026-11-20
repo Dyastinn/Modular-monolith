@@ -15,6 +15,10 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
             migrationBuilder.EnsureSchema(
                 name: "tickets");
 
+            migrationBuilder.CreateSequence(
+                name: "ticket_id_seq",
+                schema: "tickets");
+
             migrationBuilder.CreateTable(
                 name: "outbox_message",
                 schema: "tickets",
@@ -38,8 +42,7 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
                 schema: "tickets",
                 columns: table => new
                 {
-                    id = table.Column<long>(type: "bigint", nullable: false)
-                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    id = table.Column<long>(type: "bigint", nullable: false),
                     subject = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
                     priority = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
                     status = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
@@ -60,6 +63,26 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
                     table.PrimaryKey("pk_ticket", x => x.id);
                     table.CheckConstraint("ck_ticket_priority", "priority IN ('Low', 'Normal', 'High', 'Critical')");
                     table.CheckConstraint("ck_ticket_status", "status IN ('New', 'Open', 'Pending', 'Resolved', 'Closed', 'Cancelled')");
+                });
+
+            migrationBuilder.CreateTable(
+                name: "ticket_sla",
+                schema: "tickets",
+                columns: table => new
+                {
+                    ticket_id = table.Column<long>(type: "bigint", nullable: false),
+                    version = table.Column<int>(type: "integer", nullable: false),
+                    response_due_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    response_met = table.Column<bool>(type: "boolean", nullable: true),
+                    resolve_due_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    resolution_met = table.Column<bool>(type: "boolean", nullable: true),
+                    next_due_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    at_risk_from_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_ticket_sla", x => x.ticket_id);
                 });
 
             migrationBuilder.CreateTable(
@@ -132,7 +155,15 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
                 schema: "tickets");
 
             migrationBuilder.DropTable(
+                name: "ticket_sla",
+                schema: "tickets");
+
+            migrationBuilder.DropTable(
                 name: "ticket",
+                schema: "tickets");
+
+            migrationBuilder.DropSequence(
+                name: "ticket_id_seq",
                 schema: "tickets");
         }
     }

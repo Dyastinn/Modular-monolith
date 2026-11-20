@@ -31,11 +31,13 @@ internal sealed class Ticket : AggregateRoot<TicketId>
 
     public bool IsFinished => Status is TicketStatus.Closed or TicketStatus.Cancelled;
 
+    // The id comes from the database sequence before the ticket exists, so the events it raises already carry it.
     // The request itself is the conversation's first message, written by the requester.
-    public static Ticket Create(string subject, string message, TicketPriority priority, UserId requester, string requesterName, DateTime nowUtc)
+    public static Ticket Create(TicketId id, string subject, string message, TicketPriority priority, UserId requester, string requesterName, DateTime nowUtc)
     {
         var ticket = new Ticket
         {
+            Id = id,
             Subject = CheckedSubject(subject),
             Priority = priority,
             Status = TicketStatus.New,
@@ -45,6 +47,7 @@ internal sealed class Ticket : AggregateRoot<TicketId>
             UpdatedUtc = nowUtc,
         };
         ticket._messages.Add(new TicketMessage(requester, requesterName, CheckedMessage(message), isInternal: false, nowUtc));
+        ticket.Raise(new TicketCreatedEvent(id, priority, nowUtc));
         return ticket;
     }
 
@@ -80,7 +83,11 @@ internal sealed class Ticket : AggregateRoot<TicketId>
         else if (!isInternal)
         {
             // An agent answering a ticket nobody has takes it: an open ticket always has an owner.
-            if (FirstResponseUtc is null) FirstResponseUtc = nowUtc;
+            if (FirstResponseUtc is null)
+            {
+                FirstResponseUtc = nowUtc;
+                Raise(new FirstAgentReplyEvent(Id, nowUtc));
+            }
             if (AssigneeId is null) AssignTo(author, authorName, nowUtc);
             if (Status == TicketStatus.New) Status = TicketStatus.Open;
         }
@@ -101,6 +108,7 @@ internal sealed class Ticket : AggregateRoot<TicketId>
         EnsureIn("resolve", TicketStatus.Open, TicketStatus.Pending);
         Move(TicketStatus.Resolved, nowUtc);
         ResolvedUtc = nowUtc;
+        Raise(new TicketResolvedEvent(Id, nowUtc));
     }
 
     public void Close(DateTime nowUtc)
@@ -119,6 +127,7 @@ internal sealed class Ticket : AggregateRoot<TicketId>
                 $"Ticket #{Id.Value} was resolved on {ResolvedUtc:yyyy-MM-dd}; it can be reopened for 7 days.");
         Move(TicketStatus.Open, nowUtc);
         ResolvedUtc = null;
+        Raise(new TicketReopenedEvent(Id, nowUtc));
     }
 
     public void Cancel(string reason, DateTime nowUtc)
@@ -129,13 +138,16 @@ internal sealed class Ticket : AggregateRoot<TicketId>
             throw new DomainException(TicketsErrors.CancelReasonRequired);
         CancelReason = text;
         Move(TicketStatus.Cancelled, nowUtc);
+        Raise(new TicketCancelledEvent(Id, nowUtc));
     }
 
     public void ChangePriority(TicketPriority priority, DateTime nowUtc)
     {
         EnsureNotFinished();
+        var changed = Priority != priority;
         Priority = priority;
         UpdatedUtc = nowUtc;
+        if (changed) Raise(new TicketPriorityChangedEvent(Id, priority, nowUtc));
     }
 
     // Requesters see their own tickets; staff who handle tickets see them all.

@@ -92,8 +92,8 @@ public class DatabaseTests(CustomWebAppFactory factory)
 
         var insert = () => conn.ExecuteAsync(
             """
-            INSERT INTO tickets.ticket (subject, priority, status, requester_id, requester_name, created_utc, updated_utc)
-            VALUES ('x', 'Normal', 'Banana', 1, 'Rita', now(), now())
+            INSERT INTO tickets.ticket (id, subject, priority, status, requester_id, requester_name, created_utc, updated_utc)
+            VALUES (nextval('tickets.ticket_id_seq'), 'x', 'Normal', 'Banana', 1, 'Rita', now(), now())
             """);
 
         var failure = await insert.Should().ThrowAsync<PostgresException>();
@@ -110,7 +110,8 @@ public class DatabaseTests(CustomWebAppFactory factory)
         await using (var writeScope = factory.Services.CreateAsyncScope())
         {
             var db = writeScope.ServiceProvider.GetRequiredService<TicketsDbContext>();
-            var ticket = Ticket.Create("Round trip", "First words", TicketPriority.High, new UserId(5), "Rita Cruz", now);
+            var ticketId = await db.NextTicketIdAsync(CancellationToken.None);
+            var ticket = Ticket.Create(ticketId, "Round trip", "First words", TicketPriority.High, new UserId(5), "Rita Cruz", now);
             ticket.Take(new UserId(3), "Alan Reyes", now);
             ticket.Reply(new UserId(3), "Alan Reyes", "A note for us", isInternal: true, authorIsStaff: true, now);
             db.Tickets.Add(ticket);
@@ -136,6 +137,8 @@ public class DatabaseTests(CustomWebAppFactory factory)
     public async Task Seeding_twice_changes_nothing()
     {
         await using var conn = factory.OpenDatabase();
+        // Seeded tickets start clocks through the outbox, and the clocks arrive a moment later: count when that is done.
+        await Waiting.OutboxesAreDrainedAsync(conn);
         // Every row in every module's tables, except the outbox's: what the seed could possibly have added to.
         var tables = await conn.QueryAsync<string>(
             """

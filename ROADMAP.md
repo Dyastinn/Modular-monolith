@@ -271,7 +271,24 @@ and TeamLead (D6).
 
 #### Part A: the Sla module on the outbox (lesson 13)
 
-- [ ] A1. Create the projects `Yasda.Modules.Tickets.Contracts` (empty for now) and `Yasda.Modules.Sla.Contracts`,
+**Done 2026-11-20 (A1–A9), build only: no lesson yet.** Whole solution green: 303 tests, 27 skipped (browser; they ran against a live app
+on the same day: 27 of 27). What differs from the plan above, and why:
+- The Tickets handler is **`StoreDeadlines`**, not `DeadlinesChangedHandler` (an event handler never ends in `Handler`).
+- **A3 raised six events, not eight.** `TicketAssignedEvent` and `ReplyAddedEvent` arrive in Part C with their first handlers, with the
+  actor changes to `Take`, `Assign` and `Reply`. `TicketCreatedEvent` gets `EventId`, `Subject` and `TeamId?` then too.
+- `Sla.Contracts` joined the architecture arrays when it first held an event (A5); `Tickets.Contracts` holds `TicketPriority` from A1.
+- `SlaPolicy` has a `Create` factory (the migration seeds the real rows; the tests and the domain need a way to make one).
+- A priority change to the priority a ticket already has raises no event.
+- **A real bug found by running it:** PostgreSQL keeps whole microseconds, events carry 100 ns ticks, so a reply made exactly at the due
+  time was called late once the clock was reloaded. `SlaClock` now cuts every incoming time to whole microseconds. Two tests (one unit, one
+  integration with chosen ticks) fail without it.
+- `ticket_sla` has an `xmin` row version (not in the plan): two deliveries at once could let an older answer overwrite a newer one.
+- The new `OutboxTests.No_event_type_is_left_out_of_the_round_trip_test` makes every future event join the round-trip test.
+- **Open question for the user:** a ticket resolved with no public reply keeps its response target running, so a resolved ticket can show
+  "Breached" forever. The plan doesn't say whether resolving counts as the response. Not decided here.
+- The dev database container `yasda-postgres` holds the old migration ids (the squash regenerated Tickets' pair): drop and recreate it.
+
+- [x] A1. Create the projects `Yasda.Modules.Tickets.Contracts` (empty for now) and `Yasda.Modules.Sla.Contracts`,
       then `Yasda.Modules.Sla`: `SlaModule` with `AddSlaModule()`/`MapSlaEndpoints()`, `SlaDbContext` (schema `sla`,
       its own `outbox_message`, `Configure`, design-time factory), `SlaDatabase : IModuleDatabase`, and `SlaErrors`
       (`SLA-0001…`).
@@ -280,14 +297,14 @@ and TeamLead (D6).
       - Add the new assemblies to the `Modules` and `ContractsAssemblies` arrays in `ModuleBoundaryTests` and
         `WiringTests`.
       - Green: architecture tests.
-- [ ] A2. Ticket ids from the sequence (the id trap above). D1 was already done in Step 0.
+- [x] A2. Ticket ids from the sequence (the id trap above). D1 was already done in Step 0.
       - The seed context gets the registered interceptors: inject `IEnumerable<IInterceptor>` into
         `TicketsDatabase` and add them in `Open()`. Otherwise seeded tickets write no outbox rows and get no clocks.
       - Green: Tickets unit tests.
-- [ ] A3. Add the domain events in the table to `Ticket`, then the unit tests: each method raises exactly its event,
+- [x] A3. Add the domain events in the table to `Ticket`, then the unit tests: each method raises exactly its event,
       a second `Reply` by an agent raises no second `FirstAgentReplyEvent`, and the FsCheck property still holds.
       Green: Tickets unit tests.
-- [ ] A4. Sla domain: `SlaPolicy` and `SlaClock`.
+- [x] A4. Sla domain: `SlaPolicy` and `SlaClock`.
       - `SlaClock` holds `TicketId`, `Priority`, `StartedUtc`, `RespondWithin`, `ResolveWithin`, `ResponseDueUtc`,
         `RespondedUtc?`, `ResolveDueUtc`, `ResolvedUtc?`, `Cancelled`, `Version` and `xmin`.
       - Methods: `Start`, `RecordResponse`, `RecordResolution`, `Reopen`, `Cancel`, `ChangeTargets`. Each change
@@ -298,25 +315,25 @@ and TeamLead (D6).
       - Tests cover every method, met/missed exactly at the due minute (met), the at-risk point at 25%, and
         repeated calls as no-ops.
       - Green: Sla unit tests.
-- [ ] A5. Wire the flow.
+- [x] A5. Wire the flow.
       - Tickets' publishing handlers.
       - Sla's `IIntegrationEventHandler<T>` for each Tickets event.
       - Sla's `PublishDeadlinesChanged`.
       - Tickets' `DeadlinesChangedHandler` → `TicketSla`.
       - Register each by hand.
       - Green: architecture tests (`Every_domain_event_has_a_handler…`, `Every_integration_event_is_handled_by_another_module`).
-- [ ] A6. Migrations: regenerate the `InitialCreate` and `AddReadFunctions` pair for Tickets, and create Sla's
+- [x] A6. Migrations: regenerate the `InitialCreate` and `AddReadFunctions` pair for Tickets, and create Sla's
       (squash rule). Sla gets `sla.get_policies.v1.sql`. Tickets' `search_tickets`/`get_ticket` gain the SLA
       columns from `ticket_sla` and the sort key `nextDue` (allow-list).
-- [ ] A7. Sla endpoints: `GET /api/sla/policies` (staff) and `PUT /api/sla/policies/{priority}` (Admin and
+- [x] A7. Sla endpoints: `GET /api/sla/policies` (staff) and `PUT /api/sla/policies/{priority}` (Admin and
       TeamLead), plus the `/sla-policies` page.
-- [ ] A8. Screens to DESIGN §5.2:
+- [x] A8. Screens to DESIGN §5.2:
       - The queue's SLA column, with row markers for breached and at risk.
       - The SLA fact in the ticket header (staff only).
       - `Format.Sla`.
       - Add `Yasda.Web.UnitTests` (a Y2 gap) for `Format.Ago` and `Format.Sla`, and record it in this file.
       - The Y2 "SLA states and row markers" gap closes here.
-- [ ] A9. Integration tests. Move `Eventually(...)` from `OperationsTests` into a shared helper. Then add:
+- [x] A9. Integration tests. Move `Eventually(...)` from `OperationsTests` into a shared helper. Then add:
       - `A_new_ticket_gets_deadlines_from_its_priority_policy`
       - `The_first_agent_reply_meets_the_response_target`
       - `Resolving_stops_and_reopening_restarts_the_resolve_target`
@@ -471,10 +488,9 @@ Confirmed by the user, 2026-11-20:
       `required` fields instead of buttons disabled until typed (that had broken in a real browser)
 - [x] Screens aligned with the rewritten DESIGN.md (2026-11-20; see the history log). Browser tests updated (19),
       run against a live app on 2026-11-20: all green.
-- [ ] DESIGN.md gaps that wait on data or a decision: SLA
-      breached/at-risk states and row markers (no SLA yet); KB search and popular articles on the requester Home;
+- [ ] DESIGN.md gaps that wait on data or a decision: KB search and popular articles on the requester Home;
       queue counts in the nav; bulk actions; "3 new tickets" live updates; the form error summary with focus
-      (§5.4, forms still use the browser's `required`); a unit test project for `Yasda.Web` (`Format.Ago`)
+      (§5.4, forms still use the browser's `required`)
 
 ### Y1 — Reset to YASDA ✅ code (2026-11-19)
 

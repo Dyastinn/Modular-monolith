@@ -5,12 +5,14 @@ CREATE OR REPLACE FUNCTION tickets.search_tickets(
     p_requester_id bigint, p_status text, p_priority text, p_assignee_id bigint, p_unassigned boolean, p_search text,
     p_sort text, p_desc boolean, p_page integer, p_page_size integer)
 RETURNS TABLE (id bigint, subject text, status text, priority text, requester_id bigint, requester_name text,
-               assignee_id bigint, assignee_name text, created_utc timestamptz, updated_utc timestamptz)
+               assignee_id bigint, assignee_name text, created_utc timestamptz, updated_utc timestamptz,
+               next_due_utc timestamptz, at_risk_from_utc timestamptz)
 LANGUAGE sql STABLE
 AS $$
     SELECT t.id, t.subject::text, t.status::text, t.priority::text, t.requester_id, t.requester_name::text,
-           t.assignee_id, t.assignee_name::text, t.created_utc, t.updated_utc
+           t.assignee_id, t.assignee_name::text, t.created_utc, t.updated_utc, s.next_due_utc, s.at_risk_from_utc
     FROM tickets.ticket t
+    LEFT JOIN tickets.ticket_sla s ON s.ticket_id = t.id
     WHERE (p_requester_id IS NULL OR t.requester_id = p_requester_id)
       AND (p_status IS NULL OR t.status = p_status)
       AND (p_priority IS NULL OR t.priority = p_priority)
@@ -34,6 +36,9 @@ AS $$
         CASE WHEN p_sort = 'createdUtc' AND NOT p_desc THEN t.created_utc END ASC,
         CASE WHEN p_sort = 'createdUtc' AND p_desc     THEN t.created_utc END DESC,
         CASE WHEN p_sort = 'updatedUtc' AND NOT p_desc THEN t.updated_utc END ASC,
+        -- The soonest deadline first, or last when descending; a ticket with no running deadline is always at the end.
+        CASE WHEN p_sort = 'nextDue' AND NOT p_desc THEN s.next_due_utc END ASC NULLS LAST,
+        CASE WHEN p_sort = 'nextDue' AND p_desc     THEN s.next_due_utc END DESC NULLS LAST,
         t.updated_utc DESC, t.id DESC
     OFFSET (p_page - 1) * p_page_size
     LIMIT p_page_size;

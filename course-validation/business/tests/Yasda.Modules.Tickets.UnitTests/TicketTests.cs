@@ -11,7 +11,7 @@ public class TicketTests
     private static readonly UserId Requester = new(5), Agent = new(3), OtherAgent = new(8);
 
     private static Ticket NewTicket() =>
-        Ticket.Create("Printer won't print", "It says paper jam.", TicketPriority.Normal, Requester, "Rita Cruz", Now);
+        Ticket.Create(new TicketId(1), "Printer won't print", "It says paper jam.", TicketPriority.Normal, Requester, "Rita Cruz", Now);
 
     private static Ticket OpenTicket()
     {
@@ -49,29 +49,29 @@ public class TicketTests
 
     [Fact]
     public void The_subject_is_trimmed() =>
-        Ticket.Create("  Printer  ", "Help", TicketPriority.Low, Requester, "Rita Cruz", Now).Subject.Should().Be("Printer");
+        Ticket.Create(new TicketId(1), "  Printer  ", "Help", TicketPriority.Low, Requester, "Rita Cruz", Now).Subject.Should().Be("Printer");
 
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
     public void A_ticket_needs_a_subject(string subject) =>
-        CodeOf(() => Ticket.Create(subject, "Help", TicketPriority.Low, Requester, "Rita Cruz", Now)).Should().Be(TicketsErrors.SubjectRequired);
+        CodeOf(() => Ticket.Create(new TicketId(1), subject, "Help", TicketPriority.Low, Requester, "Rita Cruz", Now)).Should().Be(TicketsErrors.SubjectRequired);
 
     [Fact]
     public void A_subject_of_exactly_200_characters_is_fine_and_201_is_too_long()
     {
-        Ticket.Create(new string('a', 200), "Help", TicketPriority.Low, Requester, "Rita Cruz", Now).Subject.Should().HaveLength(200);
-        CodeOf(() => Ticket.Create(new string('a', 201), "Help", TicketPriority.Low, Requester, "Rita Cruz", Now))
+        Ticket.Create(new TicketId(1), new string('a', 200), "Help", TicketPriority.Low, Requester, "Rita Cruz", Now).Subject.Should().HaveLength(200);
+        CodeOf(() => Ticket.Create(new TicketId(1), new string('a', 201), "Help", TicketPriority.Low, Requester, "Rita Cruz", Now))
             .Should().Be(TicketsErrors.SubjectTooLong);
     }
 
     [Fact]
     public void A_ticket_needs_a_message() =>
-        CodeOf(() => Ticket.Create("Printer", " ", TicketPriority.Low, Requester, "Rita Cruz", Now)).Should().Be(TicketsErrors.MessageRequired);
+        CodeOf(() => Ticket.Create(new TicketId(1), "Printer", " ", TicketPriority.Low, Requester, "Rita Cruz", Now)).Should().Be(TicketsErrors.MessageRequired);
 
     [Fact]
     public void A_message_over_10000_characters_is_refused() =>
-        CodeOf(() => Ticket.Create("Printer", new string('a', 10_001), TicketPriority.Low, Requester, "Rita Cruz", Now))
+        CodeOf(() => Ticket.Create(new TicketId(1), "Printer", new string('a', 10_001), TicketPriority.Low, Requester, "Rita Cruz", Now))
             .Should().Be(TicketsErrors.MessageTooLong);
 
     // ---- Taking and assigning ----

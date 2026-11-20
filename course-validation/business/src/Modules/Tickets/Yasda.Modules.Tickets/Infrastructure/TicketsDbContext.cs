@@ -12,6 +12,7 @@ internal sealed class TicketsDbContext(DbContextOptions<TicketsDbContext> option
     public const string Schema = "tickets";
 
     public DbSet<Ticket> Tickets => Set<Ticket>();
+    public DbSet<TicketSla> TicketSlas => Set<TicketSla>();
 
     // Shared by the app and `dotnet ef`, so the two can't drift apart.
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder o, DbConnection connection) =>
@@ -29,6 +30,14 @@ internal sealed class TicketsDbContext(DbContextOptions<TicketsDbContext> option
         return ticket;
     }
 
+    // The events a ticket raises are written to the outbox before PostgreSQL would hand out an identity value, so the
+    // number is taken first and given to Ticket.Create.
+    public async Task<TicketId> NextTicketIdAsync(CancellationToken ct)
+    {
+        var next = await Database.SqlQuery<long>($"SELECT nextval('tickets.ticket_id_seq') AS \"Value\"").SingleAsync(ct);
+        return new TicketId(next);
+    }
+
     protected override void ConfigureConventions(ModelConfigurationBuilder c)
     {
         c.Properties<TicketId>().HaveConversion<TicketIdConverter>();
@@ -41,6 +50,7 @@ internal sealed class TicketsDbContext(DbContextOptions<TicketsDbContext> option
     protected override void OnModelCreating(ModelBuilder b)
     {
         b.HasDefaultSchema(Schema);
+        b.HasSequence<long>("ticket_id_seq");
 
         b.Entity<OutboxMessage>(e =>
         {
@@ -51,6 +61,16 @@ internal sealed class TicketsDbContext(DbContextOptions<TicketsDbContext> option
             e.HasIndex(x => x.OccurredUtc).HasFilter("processed_utc IS NULL");
         });
 
+        b.Entity<TicketSla>(e =>
+        {
+            e.ToTable("ticket_sla");
+            // No foreign key to ticket: the row arrives later, from Sla, and may even arrive first.
+            e.HasKey(x => x.TicketId);
+            e.Property(x => x.TicketId).ValueGeneratedNever();
+            // Two deliveries at once must not let an older answer overwrite a newer one.
+            e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");
+        });
+
         b.Entity<Ticket>(e =>
         {
             e.ToTable("ticket", t =>
@@ -59,7 +79,8 @@ internal sealed class TicketsDbContext(DbContextOptions<TicketsDbContext> option
                 t.HasCheckConstraint("ck_ticket_priority", "priority IN ('Low', 'Normal', 'High', 'Critical')");
             });
             e.HasKey(x => x.Id);
-            e.Property(x => x.Id).UseIdentityColumn();
+            // Not an identity column: the id is taken from the sequence before the ticket is saved (see NextTicketIdAsync).
+            e.Property(x => x.Id).ValueGeneratedNever();
             e.Property(x => x.Subject).HasMaxLength(Ticket.SubjectMaxLength);
             e.Property(x => x.RequesterName).HasMaxLength(100);
             e.Property(x => x.AssigneeName).HasMaxLength(100);

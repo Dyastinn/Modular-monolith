@@ -39,6 +39,7 @@ the same change.
 | AwesomeAssertions | Apache-2.0 |
 | FsCheck, FsCheck.Xunit.v3 (property-based tests) | BSD-3-Clause |
 | Microsoft.AspNetCore.Mvc.Testing | MIT |
+| Microsoft.Extensions.TimeProvider.Testing (FakeTimeProvider) | MIT |
 | Microsoft.Playwright (browser tests; drives the browser already installed) | MIT |
 | Testcontainers, Testcontainers.PostgreSql (a throwaway PostgreSQL per test run) | MIT |
 | coverlet.MTP (code coverage) | MIT |

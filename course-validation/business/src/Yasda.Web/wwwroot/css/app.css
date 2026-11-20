@@ -380,3 +380,31 @@ input:disabled, select:disabled, textarea:disabled {
     background: var(--bg);
     border-top: var(--border);
 }
+
+/* SLA state (DESIGN.md 5.2): the words carry it; a breached or at-risk ticket also gets a colored edge on its row. */
+.sla-breached {
+    color: var(--error);
+    font-weight: bold;
+}
+
+.sla-risk {
+    color: var(--risk);
+    font-weight: bold;
+}
+
+tr.row-breached > :first-child {
+    border-left: var(--marker) var(--error);
+}
+
+tr.row-risk > :first-child {
+    border-left: var(--marker) var(--risk);
+}
+
+fieldset {
+    margin: 0 0 var(--gap-m);
+    padding: var(--gap-s) var(--gap-m);
+    border: var(--border);
+    border-radius: var(--radius);
+    max-width: var(--measure);
+}
+

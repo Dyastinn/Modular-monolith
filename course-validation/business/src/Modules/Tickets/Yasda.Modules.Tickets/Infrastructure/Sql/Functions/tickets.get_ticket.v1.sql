@@ -3,13 +3,17 @@
 CREATE OR REPLACE FUNCTION tickets.get_ticket(p_id bigint, p_requester_id bigint)
 RETURNS TABLE (id bigint, subject text, status text, priority text, requester_id bigint, requester_name text,
                assignee_id bigint, assignee_name text, created_utc timestamptz, updated_utc timestamptz,
-               first_response_utc timestamptz, resolved_utc timestamptz, closed_utc timestamptz, cancel_reason text)
+               first_response_utc timestamptz, resolved_utc timestamptz, closed_utc timestamptz, cancel_reason text,
+               response_due_utc timestamptz, response_met boolean, resolve_due_utc timestamptz, resolution_met boolean,
+               next_due_utc timestamptz, at_risk_from_utc timestamptz)
 LANGUAGE sql STABLE
 AS $$
     SELECT t.id, t.subject::text, t.status::text, t.priority::text, t.requester_id, t.requester_name::text,
            t.assignee_id, t.assignee_name::text, t.created_utc, t.updated_utc, t.first_response_utc, t.resolved_utc,
-           t.closed_utc, t.cancel_reason::text
+           t.closed_utc, t.cancel_reason::text,
+           s.response_due_utc, s.response_met, s.resolve_due_utc, s.resolution_met, s.next_due_utc, s.at_risk_from_utc
     FROM tickets.ticket t
+    LEFT JOIN tickets.ticket_sla s ON s.ticket_id = t.id
     WHERE t.id = p_id AND (p_requester_id IS NULL OR t.requester_id = p_requester_id);
 $$;
 

@@ -17,17 +17,23 @@ public sealed record User(long Id, string Email, string FullName, string Role, b
 public sealed record SignInAttempt(long Id, string Email, long? UserId, string Outcome, string? IpAddress, DateTime OccurredUtc);
 
 public sealed record TicketSummary(long Id, string Subject, string Status, string Priority, long RequesterId, string RequesterName,
-    long? AssigneeId, string? AssigneeName, DateTime CreatedUtc, DateTime UpdatedUtc);
+    long? AssigneeId, string? AssigneeName, DateTime CreatedUtc, DateTime UpdatedUtc, DateTime? NextDueUtc, DateTime? AtRiskFromUtc);
 
 public sealed record TicketMessage(long Id, long AuthorId, string AuthorName, string Body, bool IsInternal, DateTime CreatedUtc);
 
 public sealed record TicketDetail(long Id, string Subject, string Status, string Priority, long RequesterId, string RequesterName,
     long? AssigneeId, string? AssigneeName, DateTime CreatedUtc, DateTime UpdatedUtc, DateTime? FirstResponseUtc,
-    DateTime? ResolvedUtc, DateTime? ClosedUtc, string? CancelReason, List<TicketMessage> Messages)
+    DateTime? ResolvedUtc, DateTime? ClosedUtc, string? CancelReason, TicketSlaFacts? Sla, List<TicketMessage> Messages)
 {
     public bool IsBeingWorkedOn => Status is "New" or "Open" or "Pending";
     public bool IsFinished => Status is "Closed" or "Cancelled";
 }
+
+// The deadlines Sla worked out for a ticket. Only staff ever receive them.
+public sealed record TicketSlaFacts(DateTime ResponseDueUtc, bool? ResponseMet, DateTime ResolveDueUtc, bool? ResolutionMet,
+    DateTime? NextDueUtc, DateTime? AtRiskFromUtc);
+
+public sealed record SlaPolicy(string Priority, int RespondMinutes, int ResolveMinutes, DateTime UpdatedUtc, long UpdatedById, string UpdatedByName);
 
 public sealed record StaffMember(long Id, string FullName, string Role);
 

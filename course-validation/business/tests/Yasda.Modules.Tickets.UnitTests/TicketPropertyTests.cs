@@ -24,7 +24,7 @@ public class TicketPropertyTests
 
         return Prop.ForAll(actions, steps =>
         {
-            var ticket = Ticket.Create("Printer", "Help", TicketPriority.Normal, new UserId(5), "Rita Cruz", Now);
+            var ticket = Ticket.Create(new TicketId(1), "Printer", "Help", TicketPriority.Normal, new UserId(5), "Rita Cruz", Now);
             foreach (var step in steps)
             {
                 var finishedBefore = ticket.IsFinished;

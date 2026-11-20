@@ -2,6 +2,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using AwesomeAssertions;
 using Yasda.Modules.Identity;
+using Yasda.Modules.Sla;
 using Yasda.Modules.Tickets;
 using Yasda.Shared.BuildingBlocks;
 
@@ -16,6 +17,7 @@ public class ErrorCatalogTests
         [typeof(CommonErrors)] = "YASDA",
         [CatalogIn(typeof(IdentityModule))] = "IDENTITY",
         [CatalogIn(typeof(TicketsModule))] = "TICKETS",
+        [CatalogIn(typeof(SlaModule))] = "SLA",
     };
 
     // The module's one XxxErrors class in its Domain folder.

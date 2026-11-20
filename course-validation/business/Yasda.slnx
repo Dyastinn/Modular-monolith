@@ -6,6 +6,13 @@
   <Folder Name="/src/Modules/Tickets/">
     <Project Path="src/Modules/Tickets/Yasda.Modules.Tickets/Yasda.Modules.Tickets.csproj" />
   </Folder>
+  <Folder Name="/src/Modules/Tickets/Contracts/">
+    <Project Path="src/Modules/Tickets/Yasda.Modules.Tickets.Contracts/Yasda.Modules.Tickets.Contracts.csproj" />
+  </Folder>
+  <Folder Name="/src/Modules/Sla/">
+    <Project Path="src/Modules/Sla/Yasda.Modules.Sla.Contracts/Yasda.Modules.Sla.Contracts.csproj" />
+    <Project Path="src/Modules/Sla/Yasda.Modules.Sla/Yasda.Modules.Sla.csproj" />
+  </Folder>
   <Folder Name="/src/Shared/">
     <Project Path="src/Shared/Yasda.Shared.BuildingBlocks/Yasda.Shared.BuildingBlocks.csproj" />
     <Project Path="src/Shared/Yasda.Shared.Infrastructure/Yasda.Shared.Infrastructure.csproj" />
@@ -20,6 +27,8 @@
     <Project Path="tests/Yasda.Integration.Tests/Yasda.Integration.Tests.csproj" />
     <Project Path="tests/Yasda.Architecture.Tests/Yasda.Architecture.Tests.csproj" />
     <Project Path="tests/Yasda.Modules.Tickets.UnitTests/Yasda.Modules.Tickets.UnitTests.csproj" />
+    <Project Path="tests/Yasda.Modules.Sla.UnitTests/Yasda.Modules.Sla.UnitTests.csproj" />
     <Project Path="tests/Yasda.Web.UiTests/Yasda.Web.UiTests.csproj" />
+    <Project Path="tests/Yasda.Web.UnitTests/Yasda.Web.UnitTests.csproj" />
   </Folder>
 </Solution>

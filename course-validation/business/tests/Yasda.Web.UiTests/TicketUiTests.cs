@@ -22,6 +22,73 @@ public sealed class TicketUiTests : UiTest
         return (page, new Uri(page.Url).PathAndQuery);
     }
 
+    // The seeded printer ticket was filed 30 hours ago with 4 hours to respond, so it is long past its deadline.
+    [UiFact]
+    public async Task The_queue_shows_staff_a_breached_deadline_in_words_and_requesters_no_deadline_at_all()
+    {
+        var agent = await SignIn("agent@yasda.local");
+        await agent.GotoAsync("/tickets?search=" + Uri.EscapeDataString("Printer on the 3rd floor"));
+
+        var row = agent.GetByRole(AriaRole.Row).Filter(new() { HasText = "Printer on the 3rd floor" });
+        await Expect(row.GetByText("Breached")).ToBeVisibleAsync();
+        await Expect(agent.GetByRole(AriaRole.Columnheader, new() { Name = "SLA" })).ToBeVisibleAsync();
+
+        var requester = await SignIn("requester@yasda.local");
+        await requester.GotoAsync("/tickets");
+        await Expect(requester.GetByRole(AriaRole.Link, new() { Name = "Printer on the 3rd floor won't print" })).ToBeVisibleAsync();
+        await Expect(requester.GetByRole(AriaRole.Columnheader, new() { Name = "SLA" })).ToHaveCountAsync(0);
+        await Expect(requester.GetByText("Breached")).ToHaveCountAsync(0);
+    }
+
+    [UiFact]
+    public async Task The_ticket_header_shows_the_SLA_to_staff_and_never_to_the_requester()
+    {
+        var agent = await SignIn("agent@yasda.local");
+        await agent.GotoAsync("/tickets?search=VPN");
+        await agent.GetByRole(AriaRole.Link, new() { Name = "Can't connect to the VPN from home" }).ClickAsync();
+        await Expect(agent.GetByRole(AriaRole.Heading, new() { Name = "Can't connect to the VPN from home", Exact = false })).ToBeVisibleAsync();
+        await Expect(agent.GetByText("SLA:")).ToBeVisibleAsync();
+
+        var requester = await SignIn("requester@yasda.local");
+        await requester.GotoAsync("/tickets?search=VPN");
+        await requester.GetByRole(AriaRole.Link, new() { Name = "Can't connect to the VPN from home" }).ClickAsync();
+        await Expect(requester.GetByRole(AriaRole.Heading, new() { Name = "Can't connect to the VPN from home", Exact = false })).ToBeVisibleAsync();
+        await Expect(requester.GetByText("Status:")).ToBeVisibleAsync();
+        await Expect(requester.GetByText("SLA:")).ToHaveCountAsync(0);
+    }
+
+    [UiFact]
+    public async Task A_team_lead_changes_a_policy_on_its_page_and_an_agent_never_sees_the_page()
+    {
+        var agent = await SignIn("agent@yasda.local");
+        await Expect(MainNav(agent).GetByRole(AriaRole.Link, new() { Name = "SLA policies" })).ToHaveCountAsync(0);
+
+        var lead = await SignIn("lead@yasda.local");
+        await MainNav(lead).GetByRole(AriaRole.Link, new() { Name = "SLA policies" }).ClickAsync();
+        await Expect(lead.GetByRole(AriaRole.Heading, new() { Name = "SLA policies" })).ToBeVisibleAsync();
+
+        var low = lead.GetByRole(AriaRole.Group, new() { Name = "Low" });
+        var respond = low.GetByLabel("Respond within, in minutes");
+        var resolve = low.GetByLabel("Resolve within, in minutes");
+        var originalRespond = await respond.InputValueAsync();
+        var originalResolve = await resolve.InputValueAsync();
+        try
+        {
+            await respond.FillAsync("1500");
+            await resolve.FillAsync("7500");
+            await low.GetByRole(AriaRole.Button, new() { Name = "Save Low" }).ClickAsync();
+            await Expect(StatusSaying(lead, "Low saved.")).ToBeVisibleAsync();
+            await Expect(low.GetByText("That is 1d 1h.")).ToBeVisibleAsync();
+        }
+        finally
+        {
+            await respond.FillAsync(originalRespond);
+            await resolve.FillAsync(originalResolve);
+            await low.GetByRole(AriaRole.Button, new() { Name = "Save Low" }).ClickAsync();
+        }
+        await Expect(StatusSaying(lead, "Low saved.")).ToBeVisibleAsync();
+    }
+
     [UiFact]
     public async Task A_requester_files_a_ticket_and_lands_on_it()
     {

@@ -61,7 +61,7 @@ public class ErrorCodeTests(CustomWebAppFactory factory)
         // "TICKETS-0001" → "TICKETS": the module each code belongs to.
         var codes = all!.Select(e => e.GetProperty("code").GetString()!).ToList();
         var prefixes = codes.Select(c => c.Split('-')[0]).Distinct();
-        prefixes.Should().BeEquivalentTo(["YASDA", "IDENTITY", "TICKETS"]);
+        prefixes.Should().BeEquivalentTo(["YASDA", "IDENTITY", "TICKETS", "SLA"]);
 
         (await client.GetAsync("/api/errors/IDENTITY-9999")).StatusCode.Should().Be(HttpStatusCode.NotFound);
     }

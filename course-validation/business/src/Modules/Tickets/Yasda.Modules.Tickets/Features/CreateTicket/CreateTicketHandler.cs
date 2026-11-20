@@ -13,7 +13,8 @@ internal sealed class CreateTicketHandler(TicketsDbContext db, ICurrentUser curr
     {
         // The name is copied onto the ticket, so the queues can show it without reading Identity's tables.
         var name = await users.NameOfAsync(currentUser.UserId, ct) ?? currentUser.Username;
-        var ticket = Ticket.Create(cmd.Subject, cmd.Message, cmd.Priority, new UserId(currentUser.UserId), name,
+        var id = await db.NextTicketIdAsync(ct);
+        var ticket = Ticket.Create(id, cmd.Subject, cmd.Message, cmd.Priority, new UserId(currentUser.UserId), name,
             time.GetUtcNow().UtcDateTime);
 
         db.Tickets.Add(ticket);

@@ -29,6 +29,48 @@ public static class Format
         return then.ToString(then.Year == today.Year ? "MMM d" : "MMM d, yyyy", Ph);
     }
 
+    // An SLA deadline as DESIGN.md 5.2 says it: "Breached 40m ago", "1h 10m left" or "6h left", and which of the three it is
+    // (the screens color the first two, and mark their rows). The server decides when a ticket is at risk (Sla's rule);
+    // this only compares those two times with now. No deadline running (a finished ticket) says nothing.
+    public static SlaView Sla(DateTime? nextDueUtc, DateTime? atRiskFromUtc, DateTime nowUtc)
+    {
+        if (nextDueUtc is null) return new SlaView("", "none");
+
+        if (nowUtc > nextDueUtc)
+        {
+            var late = nowUtc - nextDueUtc.Value;
+            if (late < TimeSpan.FromMinutes(1)) return new SlaView("Breached just now", "breached");
+            return new SlaView($"Breached {Span(late)} ago", "breached");
+        }
+
+        var left = nextDueUtc.Value - nowUtc;
+        var text = "Under 1m left";
+        if (left >= TimeSpan.FromMinutes(1)) text = $"{Span(left)} left";
+
+        if (atRiskFromUtc is not null && nowUtc >= atRiskFromUtc) return new SlaView(text, "risk");
+        return new SlaView(text, "ok");
+    }
+
+    // "40m", "1h 10m", "6h", "2d 3h": the two largest units that matter, nothing smaller.
+    public static string Span(TimeSpan span)
+    {
+        var days = (int)span.TotalDays;
+        var hours = span.Hours;
+        var minutes = span.Minutes;
+
+        if (days > 0)
+        {
+            if (hours == 0) return $"{days}d";
+            return $"{days}d {hours}h";
+        }
+        if (span.TotalHours >= 1)
+        {
+            if (minutes == 0) return $"{(int)span.TotalHours}h";
+            return $"{(int)span.TotalHours}h {minutes}m";
+        }
+        return $"{(int)span.TotalMinutes}m";
+    }
+
     // "TeamLead" -> "Team lead": a space before each capital after the first, and that capital in lower case.
     public static string Words(string pascal)
     {
@@ -44,3 +86,6 @@ public static class Format
         return words.ToString();
     }
 }
+
+// An SLA deadline in words, and its state: "none", "ok", "risk" or "breached".
+public sealed record SlaView(string Text, string State);
