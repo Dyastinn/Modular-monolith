@@ -60,8 +60,8 @@ public class OperationsTests(CustomWebAppFactory factory)
     [Fact]
     public async Task An_error_carries_the_same_trace_id_as_its_response_header()
     {
-        var admin = await factory.ClientFor("admin@yasda.local");
-        var response = await admin.GetAsync("/api/users/999999");
+        var agent = await factory.ClientFor("agent@yasda.local");
+        var response = await agent.GetAsync("/api/tickets/999999999");
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         var header = response.Headers.GetValues("X-Trace-Id").Single();
