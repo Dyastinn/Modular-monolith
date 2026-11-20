@@ -25,7 +25,7 @@ public class ListSortingTests(CustomWebAppFactory factory)
         down.Select(r => r.Email).Should().BeInDescendingOrder(StringComparer.Ordinal);
     }
 
-    // Priority sorts by urgency, not by spelling: Urgent > High > Normal > Low.
+    // Priority sorts by urgency, not by spelling: Critical > High > Normal > Low.
     [Fact]
     public async Task Tickets_sort_by_urgency_not_alphabetically()
     {
@@ -33,7 +33,7 @@ public class ListSortingTests(CustomWebAppFactory factory)
 
         var rows = (await agent.GetFromJsonAsync<Page<TicketRow>>("/api/tickets?sort=priority&desc=true&pageSize=100"))!.Items;
 
-        string[] order = ["Urgent", "High", "Normal", "Low"];
+        string[] order = ["Critical", "High", "Normal", "Low"];
         rows.Select(r => Array.IndexOf(order, r.Priority)).Should().BeInAscendingOrder();
     }
 

@@ -58,7 +58,7 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_ticket", x => x.id);
-                    table.CheckConstraint("ck_ticket_priority", "priority IN ('Low', 'Normal', 'High', 'Urgent')");
+                    table.CheckConstraint("ck_ticket_priority", "priority IN ('Low', 'Normal', 'High', 'Critical')");
                     table.CheckConstraint("ck_ticket_status", "status IN ('New', 'Open', 'Pending', 'Resolved', 'Closed', 'Cancelled')");
                 });
 

@@ -86,6 +86,8 @@ ends with the named test project green; run the whole suite once at the end of e
       the Y2 code, regenerating the Tickets migration pair, so lessons 04–05 teach `Critical` from the start. Then
       write lessons 03–11 from Y2's code. Y3 rewrites `Ticket.Create`, the squashed Tickets migrations and `search_tickets.v1.sql`. Lessons
       written later would describe code that no longer exists. Then tag the commit: `git tag y2-done`.
+      - [x] **D1 rename done (2026-11-20).** `Urgent` → `Critical` everywhere; Tickets migrations regenerated;
+        all suites green (see the history log). Still open: lessons 03–11 and the tag.
 - [ ] **Restore the `erp-final` tag.** It is missing locally and on `origin`, though its commit `ab58472` exists.
       The user runs `git tag erp-final ab58472` and `git push origin erp-final`. CLAUDE.md and this file both point
       at the tag.
@@ -455,8 +457,7 @@ Confirmed by the user, 2026-11-20:
       `required` fields instead of buttons disabled until typed (that had broken in a real browser)
 - [x] Screens aligned with the rewritten DESIGN.md (2026-11-20; see the history log). Browser tests updated (19),
       run against a live app on 2026-11-20: all green.
-- [ ] DESIGN.md gaps that wait on data or a decision: priority **Urgent vs DESIGN's "Critical"** (renaming touches
-      the domain, `priority_rank` and the squashed migrations; for now Urgent gets the Critical style); SLA
+- [ ] DESIGN.md gaps that wait on data or a decision: SLA
       breached/at-risk states and row markers (no SLA yet); KB search and popular articles on the requester Home;
       queue counts in the nav; bulk actions; "3 new tickets" live updates; the form error summary with focus
       (§5.4, forms still use the browser's `required`); a unit test project for `Yasda.Web` (`Format.Ago`)

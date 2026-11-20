@@ -416,6 +416,12 @@ App; errors gain stable, documented codes.
   `TicketsDbContext.GetVisibleTicketAsync`; tests `ModuleBoundaryTests`, `ErrorCatalogTests`, `WiringTests`,
   `DatabaseTests`, `ErrorCodeTests` (same checks, loops). Build 0 warnings; unit 35, architecture 14, integration
   91 (Podman machine) and browser 19 (app on WSL PostgreSQL) all green. Y3–Y7 planned in ROADMAP.md.
+- **2026-11-20** — D1 done (Step 0): `Urgent` renamed to `Critical` in the `TicketPriority` enum, `ck_ticket_priority`,
+  `tickets.priority_rank.v1.sql`, the Web `Priorities` list, `PriorityText` and the tests (the Urgent note in
+  `.claude/rules/blazor-ui.md` too). Tickets `InitialCreate` and `AddReadFunctions` regenerated with `dotnet ef` (squash rule;
+  `AddReadFunctions` keeps its hand-written `migrationBuilder.Sql` body, which ef cannot scaffold). Dev `yasda` database dropped
+  on WSL PostgreSQL and recreated by the app. Unit 35, architecture 14, integration 91 (Podman machine) and browser 19 (app on
+  WSL PostgreSQL) all green. Lessons 03–11 and the `y2-done` tag still open.
 
 ---
 

@@ -142,7 +142,7 @@ public class TicketTests(CustomWebAppFactory factory)
 
         aliceCopy.Reply(new UserId(3), "Alan Reyes", "Looking now.", isInternal: false, authorIsStaff: true, DateTime.UtcNow);
         await aliceDb.SaveChangesAsync();
-        bobCopy.ChangePriority(TicketPriority.Urgent, DateTime.UtcNow);
+        bobCopy.ChangePriority(TicketPriority.Critical, DateTime.UtcNow);
 
         var bobSaves = () => bobDb.SaveChangesAsync();
         await bobSaves.Should().ThrowAsync<DbUpdateConcurrencyException>();

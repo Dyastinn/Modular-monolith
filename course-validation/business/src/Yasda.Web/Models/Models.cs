@@ -34,7 +34,7 @@ public sealed record StaffMember(long Id, string FullName, string Role);
 // The choices the API accepts, in the order people think of them.
 public static class TicketChoices
 {
-    public static readonly string[] Priorities = ["Low", "Normal", "High", "Urgent"];
+    public static readonly string[] Priorities = ["Low", "Normal", "High", "Critical"];
     public static readonly string[] Statuses = ["New", "Open", "Pending", "Resolved", "Closed", "Cancelled"];
 
     // Who works on tickets. The API decides; the screens only hide what someone can't do anyway.

@@ -56,7 +56,7 @@ internal sealed class TicketsDbContext(DbContextOptions<TicketsDbContext> option
             e.ToTable("ticket", t =>
             {
                 t.HasCheckConstraint("ck_ticket_status", "status IN ('New', 'Open', 'Pending', 'Resolved', 'Closed', 'Cancelled')");
-                t.HasCheckConstraint("ck_ticket_priority", "priority IN ('Low', 'Normal', 'High', 'Urgent')");
+                t.HasCheckConstraint("ck_ticket_priority", "priority IN ('Low', 'Normal', 'High', 'Critical')");
             });
             e.HasKey(x => x.Id);
             e.Property(x => x.Id).UseIdentityColumn();

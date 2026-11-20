@@ -250,7 +250,7 @@ public class TicketTests
         var ticket = NewTicket();
         ticket.Cancel("Duplicate", Now);
 
-        CodeOf(() => ticket.ChangePriority(TicketPriority.Urgent, Now)).Should().Be(TicketsErrors.TicketFinished);
+        CodeOf(() => ticket.ChangePriority(TicketPriority.Critical, Now)).Should().Be(TicketsErrors.TicketFinished);
         CodeOf(() => ticket.Take(Agent, "Alan Reyes", Now)).Should().Be(TicketsErrors.TicketFinished);
     }
 

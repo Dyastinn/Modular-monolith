@@ -114,7 +114,7 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
 
                     b.ToTable("ticket", "tickets", t =>
                         {
-                            t.HasCheckConstraint("ck_ticket_priority", "priority IN ('Low', 'Normal', 'High', 'Urgent')");
+                            t.HasCheckConstraint("ck_ticket_priority", "priority IN ('Low', 'Normal', 'High', 'Critical')");
 
                             t.HasCheckConstraint("ck_ticket_status", "status IN ('New', 'Open', 'Pending', 'Resolved', 'Closed', 'Cancelled')");
                         });
