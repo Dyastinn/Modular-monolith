@@ -523,3 +523,31 @@ The server decides what "at risk" means and sends two times. The browser compare
 **8. Why does the architecture test for integration events wait until this lesson?**
 It fails for an integration event no other module handles. Until Tickets listened to `DeadlinesChanged` it would have failed; now it can pass.
 
+---
+
+## Lesson 15 — Observability
+
+**1. What are the three things a trace, a metric and a log each tell you?**
+A log says what happened to one thing, a metric says how much of something there is over time, and a trace shows the path of one request as a tree of timed spans.
+
+**2. Why must the liveness check never look at the database?**
+A database outage would then make the platform restart a healthy app, again and again, fixing nothing. Liveness only says the process is running.
+
+**3. Why is a message that was given up on "degraded" and not "unhealthy"?**
+The app still serves requests; only something that should have happened didn't. Unhealthy would trigger a restart that fixes nothing. Degraded says a person is needed.
+
+**4. What does `traceparent` hold, and where is it written and read?**
+The trace id and span id of the running request, in a 55-character W3C string. `OutboxMessage.From` writes it into the row; the dispatcher reads it and uses it as the parent of the delivery span.
+
+**5. Why is `trace_parent` a nullable column?**
+Rows already in the table have none, and a message written when nothing was being traced has none either.
+
+**6. What is the difference between a counter and a gauge? Which does the backlog use?**
+A counter only goes up, so a tool shows its rate. A gauge goes up and down and is read when metrics are collected. The backlog (pending, parked) uses gauges.
+
+**7. Why is `/health` left out of the traces?**
+A probe every few seconds would bury the real requests.
+
+**8. Why is the dashboard its own project, and what does the app know about where telemetry goes?**
+It is development only and must never be deployed. The app knows one setting, `OTEL_EXPORTER_OTLP_ENDPOINT`, and nothing about any vendor.
+

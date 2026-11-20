@@ -469,3 +469,28 @@ A copy that catches up a moment after the original changes, like Tickets' copy o
 **Event version** (14)
 A counter on an event so a receiver can ignore an older answer that arrives after a newer one.
 
+---
+
+## Observability
+
+**Log, metric, trace** (15)
+A **log** is a line about one thing that happened. A **metric** is a number over time. A **trace** is one request's path as a tree of timed steps.
+
+**Span** (15)
+One timed step inside a trace: the request, a database command, a delivery.
+
+**OpenTelemetry (OTLP)** (15)
+The open standard for producing traces, metrics and logs, and its protocol (OTLP). The app sends to one endpoint; any tool can listen.
+
+**Counter, gauge** (15)
+A **counter** only goes up (messages delivered). A **gauge** goes up and down and is read when metrics are collected (messages waiting).
+
+**traceparent** (15)
+The W3C text that carries a trace id and span id. Saved in the outbox row, it lets a delivery join the trace of the request that caused it.
+
+**Liveness, readiness, degraded** (15)
+**Liveness**: is the process running? **Readiness**: can it do its job now? **Degraded**: working, but something needs a person.
+
+**Aspire dashboard** (15)
+A development-only page that shows traces, logs and metrics as you use the app. MIT-licensed, never deployed.
+
