@@ -766,3 +766,32 @@ A table of holidays has many Remove buttons. A screen reader user hears each one
 
 **7. Why does every action on the page reload the calendar, even when it was refused?**
 A refused change must not look saved. Reloading shows the calendar as it really is.
+
+## Lesson 24 — Deadlines in open hours, and the pause
+
+**1. Why is the at-risk point a stored column, three quarters of the way through the open time, and not "the due time minus a quarter of the target"?**
+Subtracting from the due time only works when time is continuous. In open time, the last quarter of a target can be on the other side of a weekend, so the point has to be asked of the calendar. It is stored with the due time so the scheduler and the screens read the same answer.
+
+**2. Why does `Recalculate` leave a finished target alone?**
+A met target must not move later and a missed one must not move earlier. What happened has happened; only targets still running are worked out again.
+
+**3. Why are the new calendar and the new due times saved in the same `SaveChangesAsync`?**
+So the rules and the deadlines they produce are saved together or not at all. Saved separately, a crash between the two would leave deadlines counted under rules that no longer exist.
+
+**4. What does a policy change now do to a ticket that is already running, and what did it do in lesson 14?**
+Now it works the running ticket's deadlines out again with the new numbers. In lesson 14 a policy change applied only to tickets filed after it.
+
+**5. Why does `Pause` need no calendar, while `Resume` does?**
+A pause only has to remember when it started. The open time it lasted can only be known when it ends, and counting open time is the calendar's job.
+
+**6. A ticket is paused over a weekend. How much does the pause add to the deadline, and why?**
+Only the open time inside it, so from Friday 16:00 to Monday 09:00 it adds two hours (one on Friday, one on Monday). The closed days were never counted, so they cannot be given back.
+
+**7. Why must a resolution during a pause end the pause first?**
+So the paused time is added to the deadline before the resolution is measured. Otherwise a ticket resolved after a long wait would look late, even though the time it waited never counted.
+
+**8. Why are `NextDueUtc` and `AtRiskFromUtc` `null` while paused?**
+Nothing is due while no time counts, so nothing can be breached or at risk. A deadline shown for a paused clock would be a promise the team is not under.
+
+**9. Why does the migration for the at-risk columns say what the old rows get?**
+A new `NOT NULL` column in a table with rows needs a value for the rows already there. EF Core would give them the year 1, and every old clock would claim to be at risk since then.

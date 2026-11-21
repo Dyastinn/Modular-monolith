@@ -621,3 +621,9 @@ A ready-made list of a country's holidays that an Admin loads into the calendar 
 **CSV import** (23)
 Adding many holidays from a pasted file of `date,name` lines. One unreadable line refuses the whole file.
 
+**Recalculation** (24)
+Working every running clock's due times out again from its start, because the calendar or a policy changed. A finished target keeps its due time.
+
+**Pause** (24)
+A ticket waiting on the requester stops its SLA clock. The open time it was paused is added to the deadlines when the wait ends.
+
