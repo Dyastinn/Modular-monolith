@@ -32,7 +32,7 @@ public class SlaClockTests
 
     private SlaClock NewClock()
     {
-        var clock = SlaClock.Start(Ticket, Priority.High, Now, Respond, Resolve, AllDay);
+        var clock = SlaClock.Start(Ticket, Priority.High, null, Now, Respond, Resolve, AllDay);
         clock.ClearEvents();
         return clock;
     }
@@ -46,7 +46,7 @@ public class SlaClockTests
     [Fact]
     public void Starting_sets_both_due_times_from_the_ticket_time_and_the_targets()
     {
-        var clock = SlaClock.Start(Ticket, Priority.High, Now, Respond, Resolve, AllDay);
+        var clock = SlaClock.Start(Ticket, Priority.High, null, Now, Respond, Resolve, AllDay);
 
         clock.ResponseDueUtc.Should().Be(Now.AddHours(4));
         clock.ResolveDueUtc.Should().Be(Now.AddHours(24));
@@ -57,7 +57,7 @@ public class SlaClockTests
     [Fact]
     public void Starting_raises_version_one_with_the_response_as_the_next_due_time()
     {
-        var clock = SlaClock.Start(Ticket, Priority.High, Now, Respond, Resolve, AllDay);
+        var clock = SlaClock.Start(Ticket, Priority.High, null, Now, Respond, Resolve, AllDay);
 
         var changed = OnlyEventOf(clock);
 
@@ -284,7 +284,7 @@ public class SlaClockTests
     public void A_response_at_the_due_time_is_on_time_even_when_the_event_time_has_finer_ticks_than_the_database_keeps()
     {
         var startedInDatabase = Now;
-        var clock = SlaClock.Start(Ticket, Priority.High, startedInDatabase, Respond, Resolve, AllDay);
+        var clock = SlaClock.Start(Ticket, Priority.High, null, startedInDatabase, Respond, Resolve, AllDay);
         var eventTime = startedInDatabase.AddHours(4).AddTicks(8);
 
         clock.RecordResponse(eventTime, AllDay);
@@ -349,7 +349,7 @@ public class SlaClockTests
     {
         var friday4pm = ManilaTime(11, 20, 16);
 
-        var clock = SlaClock.Start(Ticket, Priority.High, friday4pm, TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
+        var clock = SlaClock.Start(Ticket, Priority.High, null, friday4pm, TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
 
         // One hour on Friday, three on Monday morning. 24 open hours: 1 on Friday, then Monday, Tuesday (9 each), Wednesday 5.
         clock.ResponseDueUtc.Should().Be(ManilaTime(11, 23, 11));
@@ -361,7 +361,7 @@ public class SlaClockTests
     {
         var friday4pm = ManilaTime(11, 20, 16);
 
-        var clock = SlaClock.Start(Ticket, Priority.High, friday4pm, TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
+        var clock = SlaClock.Start(Ticket, Priority.High, null, friday4pm, TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
 
         // 3 open hours after Friday 16:00 is Monday 10:00: the last open hour (10:00 to 11:00) is the at-risk hour.
         clock.AtRiskFromUtc.Should().Be(ManilaTime(11, 23, 10));
@@ -372,7 +372,7 @@ public class SlaClockTests
     {
         var holidayNoon = ManilaTime(11, 30, 12);
 
-        var clock = SlaClock.Start(Ticket, Priority.High, holidayNoon, TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek(new DateOnly(2026, 11, 30)));
+        var clock = SlaClock.Start(Ticket, Priority.High, null, holidayNoon, TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek(new DateOnly(2026, 11, 30)));
 
         clock.ResponseDueUtc.Should().Be(ManilaTime(12, 1, 12));
     }
@@ -381,7 +381,7 @@ public class SlaClockTests
     public void Changing_the_calendar_moves_the_running_deadlines_and_tells_everyone_once()
     {
         var friday4pm = ManilaTime(11, 20, 16);
-        var clock = SlaClock.Start(Ticket, Priority.High, friday4pm, TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
+        var clock = SlaClock.Start(Ticket, Priority.High, null, friday4pm, TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
         clock.ClearEvents();
 
         // The 23rd becomes a holiday: the response that was due Monday 11:00 is now due Tuesday 11:00.
@@ -397,7 +397,7 @@ public class SlaClockTests
     public void Recalculating_under_the_same_rules_changes_nothing()
     {
         var friday4pm = ManilaTime(11, 20, 16);
-        var clock = SlaClock.Start(Ticket, Priority.High, friday4pm, TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
+        var clock = SlaClock.Start(Ticket, Priority.High, null, friday4pm, TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
         clock.ClearEvents();
 
         clock.Recalculate(TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
@@ -410,7 +410,7 @@ public class SlaClockTests
     public void Recalculating_leaves_a_finished_target_with_its_due_time_and_its_numbers()
     {
         var friday4pm = ManilaTime(11, 20, 16);
-        var clock = SlaClock.Start(Ticket, Priority.High, friday4pm, TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
+        var clock = SlaClock.Start(Ticket, Priority.High, null, friday4pm, TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
         clock.RecordResponse(ManilaTime(11, 23, 9), AllDay);
         var dueBefore = clock.ResponseDueUtc;
 
@@ -452,7 +452,7 @@ public class SlaClockTests
 
     private static SlaClock MondayMorningClock()
     {
-        var clock = SlaClock.Start(Ticket, Priority.High, ManilaTime(11, 23, 9), TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
+        var clock = SlaClock.Start(Ticket, Priority.High, null, ManilaTime(11, 23, 9), TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
         clock.ClearEvents();
         return clock;
     }
@@ -719,5 +719,63 @@ public class SlaClockTests
         clock.Scan(ManilaTime(11, 24, 9));
 
         clock.DomainEvents.OfType<SlaBreachImminentEvent>().Should().BeEmpty("it was warned once already");
+    }
+
+    // ---- Category policies: a category may have its own numbers.
+
+    [Fact]
+    public void A_clock_remembers_its_category_and_a_changed_category_recomputes_the_running_targets()
+    {
+        var clock = SlaClock.Start(Ticket, Priority.High, new CategoryId(9), ManilaTime(11, 23, 9), TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
+        clock.ClearEvents();
+
+        // The new category promises an answer in one hour instead of four.
+        clock.ChangeCategory(new CategoryId(10), ManilaTime(11, 23, 9, 30), TimeSpan.FromHours(1), TimeSpan.FromHours(8), OfficeWeek());
+
+        clock.CategoryId.Should().Be(new CategoryId(10));
+        clock.ResponseDueUtc.Should().Be(ManilaTime(11, 23, 10));
+        clock.ResolveDueUtc.Should().Be(ManilaTime(11, 23, 17));
+        OnlyEventOf(clock).Version.Should().Be(2);
+    }
+
+    [Fact]
+    public void A_category_change_leaves_a_finished_target_alone()
+    {
+        var clock = MondayMorningClock();
+        clock.RecordResponse(ManilaTime(11, 23, 10), OfficeWeek());
+        var dueBefore = clock.ResponseDueUtc;
+
+        clock.ChangeCategory(new CategoryId(10), ManilaTime(11, 23, 11), TimeSpan.FromHours(1), TimeSpan.FromHours(8), OfficeWeek());
+
+        clock.ResponseDueUtc.Should().Be(dueBefore);
+        clock.RespondWithin.Should().Be(TimeSpan.FromHours(4));
+        clock.ResolveWithin.Should().Be(TimeSpan.FromHours(8));
+    }
+
+    [Fact]
+    public void Two_category_changes_in_reverse_order_keep_the_newer_and_the_same_category_again_changes_nothing()
+    {
+        var clock = MondayMorningClock();
+
+        clock.ChangeCategory(new CategoryId(10), ManilaTime(11, 23, 11), TimeSpan.FromHours(1), TimeSpan.FromHours(8), OfficeWeek());
+        clock.ChangeCategory(new CategoryId(11), ManilaTime(11, 23, 10), TimeSpan.FromHours(2), TimeSpan.FromHours(9), OfficeWeek());
+        clock.ClearEvents();
+        clock.ChangeCategory(new CategoryId(10), ManilaTime(11, 23, 12), TimeSpan.FromHours(1), TimeSpan.FromHours(8), OfficeWeek());
+
+        clock.CategoryId.Should().Be(new CategoryId(10));
+        clock.DomainEvents.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void A_cancelled_clock_ignores_a_category_change()
+    {
+        var clock = MondayMorningClock();
+        clock.Cancel();
+        clock.ClearEvents();
+
+        clock.ChangeCategory(new CategoryId(10), ManilaTime(11, 23, 11), TimeSpan.FromHours(1), TimeSpan.FromHours(8), OfficeWeek());
+
+        clock.DomainEvents.Should().BeEmpty();
+        clock.CategoryId.Should().BeNull();
     }
 }

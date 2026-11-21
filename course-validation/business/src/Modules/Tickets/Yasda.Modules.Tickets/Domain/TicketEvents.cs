@@ -8,7 +8,7 @@ namespace Yasda.Modules.Tickets.Domain;
 // can't move a deadline.
 // EventId names this one happening. Mail is keyed by it, so a redelivered event queues each mail once.
 internal sealed record TicketCreatedEvent(Guid EventId, TicketId TicketId, string Subject, TeamId? TeamId, UserId RequesterId,
-    TicketPriority Priority, DateTime CreatedUtc) : IDomainEvent;
+    TicketPriority Priority, DateTime CreatedUtc, long? CategoryId = null) : IDomainEvent;
 
 internal sealed record FirstAgentReplyEvent(TicketId TicketId, DateTime RepliedUtc) : IDomainEvent;
 
@@ -19,6 +19,8 @@ internal sealed record TicketReopenedEvent(TicketId TicketId, DateTime ReopenedU
 internal sealed record TicketCancelledEvent(TicketId TicketId, DateTime CancelledUtc) : IDomainEvent;
 
 internal sealed record TicketPriorityChangedEvent(TicketId TicketId, TicketPriority Priority, DateTime ChangedUtc) : IDomainEvent;
+
+internal sealed record TicketCategoryChangedEvent(TicketId TicketId, long? CategoryId, DateTime ChangedUtc) : IDomainEvent;
 
 internal sealed record TicketPendingEvent(TicketId TicketId, DateTime PendingUtc) : IDomainEvent;
 

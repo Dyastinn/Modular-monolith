@@ -25,6 +25,9 @@ public static class SlaModule
         // Handlers: plain classes, injected straight into the endpoints that use them.
         services.AddScoped<GetPoliciesHandler>();
         services.AddScoped<ChangePolicyHandler>();
+        services.AddScoped<GetCategoryPoliciesHandler>();
+        services.AddScoped<ChangeCategoryPolicyHandler>();
+        services.AddScoped<RemoveCategoryPolicyHandler>();
         services.AddScoped<GetCalendarHandler>();
         services.AddScoped<ChangeCalendarHandler>();
         services.AddScoped<AddHolidayHandler>();
@@ -42,6 +45,7 @@ public static class SlaModule
         services.AddScoped<IIntegrationEventHandler<TicketResumed>, ResumeClockOnTicketResumed>();
         services.AddScoped<IIntegrationEventHandler<TicketCancelled>, StopClockOnTicketCancelled>();
         services.AddScoped<IIntegrationEventHandler<TicketPriorityChanged>, ChangeTargetsOnPriorityChanged>();
+        services.AddScoped<IIntegrationEventHandler<TicketCategoryChanged>, ChangeTargetsOnCategoryChanged>();
         services.AddScoped<IDomainEventHandler<DeadlinesChangedEvent>, PublishDeadlinesChanged>();
         services.AddScoped<IDomainEventHandler<SlaBreachImminentEvent>, PublishSlaBreachImminent>();
         services.AddScoped<IDomainEventHandler<SlaBreachedEvent>, PublishSlaBreached>();
@@ -61,6 +65,7 @@ public static class SlaModule
         var sla = api.MapGroup("").WithTags("Sla");
         GetPoliciesEndpoint.Map(sla);
         ChangePolicyEndpoint.Map(sla);
+        CategoryPolicyEndpoints.Map(sla);
         GetCalendarEndpoint.Map(sla);
         ChangeCalendarEndpoint.Map(sla);
         HolidayEndpoints.Map(sla);

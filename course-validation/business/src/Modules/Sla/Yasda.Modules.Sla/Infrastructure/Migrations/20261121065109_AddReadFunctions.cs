@@ -19,11 +19,13 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
             migrationBuilder.Sql(Sql("sla.get_calendar.v1.sql"));
             migrationBuilder.Sql(Sql("sla.get_calendar_days.v1.sql"));
             migrationBuilder.Sql(Sql("sla.get_calendar_holidays.v1.sql"));
+            migrationBuilder.Sql(Sql("sla.get_category_policies.v1.sql"));
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS sla.get_policies();");
+            migrationBuilder.Sql("DROP FUNCTION IF EXISTS sla.get_category_policies();");
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS sla.get_calendar();");
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS sla.get_calendar_days();");
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS sla.get_calendar_holidays();");

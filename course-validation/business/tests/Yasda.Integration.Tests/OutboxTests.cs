@@ -40,6 +40,8 @@ public class OutboxTests(CustomWebAppFactory factory)
             new TicketsDomain.TicketCancelledEvent(ticketsId, at),
             new TicketsDomain.TicketPriorityChangedEvent(ticketsId, TicketsDomain.TicketPriority.Critical, at),
             new TicketsDomain.TicketPendingEvent(ticketsId, at),
+            new TicketsDomain.TicketCategoryChangedEvent(ticketsId, 12, at),
+            new TicketsDomain.TicketCategoryChangedEvent(ticketsId, null, at),
             new TicketsDomain.TicketResumedEvent(ticketsId, at),
             new TicketsDomain.TicketCancelledForSilenceEvent(Guid.NewGuid(), ticketsId, "Printer won't print", new TicketsDomain.UserId(5), 14),
             new TicketsDomain.PendingReminderEvent(Guid.NewGuid(), ticketsId, "Printer won't print", new TicketsDomain.UserId(5)),
@@ -69,7 +71,7 @@ public class OutboxTests(CustomWebAppFactory factory)
             typeof(TicketsDomain.TicketCreatedEvent), typeof(TicketsDomain.TicketAssignedEvent), typeof(TicketsDomain.ReplyAddedEvent),
             typeof(TicketsDomain.FirstAgentReplyEvent), typeof(TicketsDomain.TicketResolvedEvent),
             typeof(TicketsDomain.TicketReopenedEvent), typeof(TicketsDomain.TicketCancelledEvent), typeof(TicketsDomain.TicketPriorityChangedEvent),
-            typeof(TicketsDomain.TicketPendingEvent), typeof(TicketsDomain.TicketResumedEvent), typeof(TicketsDomain.PendingReminderEvent), typeof(TicketsDomain.TicketCancelledForSilenceEvent),
+            typeof(TicketsDomain.TicketPendingEvent), typeof(TicketsDomain.TicketCategoryChangedEvent), typeof(TicketsDomain.TicketResumedEvent), typeof(TicketsDomain.PendingReminderEvent), typeof(TicketsDomain.TicketCancelledForSilenceEvent),
             typeof(SlaDomain.DeadlinesChangedEvent), typeof(SlaDomain.SlaBreachImminentEvent), typeof(SlaDomain.SlaBreachedEvent),
             typeof(KnowledgeDomain.ArticleSubmittedEvent), typeof(KnowledgeDomain.ArticleRejectedEvent), typeof(KnowledgeDomain.ArticlePublishedEvent),
         };

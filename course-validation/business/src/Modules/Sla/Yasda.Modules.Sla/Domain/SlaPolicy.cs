@@ -27,10 +27,7 @@ internal sealed class SlaPolicy
 
     public void Change(TimeSpan respondWithin, TimeSpan resolveWithin, UserId by, string byName, DateTime nowUtc)
     {
-        if (respondWithin <= TimeSpan.Zero)
-            throw new DomainException(SlaErrors.RespondTargetNotPositive);
-        if (resolveWithin < respondWithin)
-            throw new DomainException(SlaErrors.ResolveBeforeRespond);
+        PolicyTargets.Check(respondWithin, resolveWithin);
 
         RespondWithin = respondWithin;
         ResolveWithin = resolveWithin;

@@ -35,6 +35,7 @@ public static class TicketsModule
         services.AddScoped<RouteTicketHandler>();
         services.AddScoped<SearchCategoriesHandler>();
         services.AddScoped<GetCategoryHandler>();
+        services.AddScoped<Contracts.ICategoryDirectory, CategoryDirectory>();
         services.AddScoped<CreateCategoryHandler>();
         services.AddScoped<UpdateCategoryHandler>();
         services.AddScoped<GetAutomationSettingsHandler>();
@@ -49,6 +50,7 @@ public static class TicketsModule
         services.AddScoped<IDomainEventHandler<TicketReopenedEvent>, PublishTicketReopened>();
         services.AddScoped<IDomainEventHandler<TicketCancelledEvent>, PublishTicketCancelled>();
         services.AddScoped<IDomainEventHandler<TicketPriorityChangedEvent>, PublishTicketPriorityChanged>();
+        services.AddScoped<IDomainEventHandler<TicketCategoryChangedEvent>, PublishTicketCategoryChanged>();
         services.AddScoped<IDomainEventHandler<TicketPendingEvent>, PublishTicketPending>();
         services.AddScoped<IDomainEventHandler<PendingReminderEvent>, EmailOnPendingReminder>();
         services.AddScoped<IDomainEventHandler<TicketCancelledForSilenceEvent>, EmailOnCancelledForSilence>();

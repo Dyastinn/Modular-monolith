@@ -23,6 +23,50 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Yasda.Modules.Sla.Domain.CategoryPolicy", b =>
+                {
+                    b.Property<long>("CategoryId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("category_id");
+
+                    b.Property<string>("Priority")
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasColumnName("priority");
+
+                    b.Property<int>("ResolveWithin")
+                        .HasColumnType("integer")
+                        .HasColumnName("resolve_minutes");
+
+                    b.Property<int>("RespondWithin")
+                        .HasColumnType("integer")
+                        .HasColumnName("respond_minutes");
+
+                    b.Property<long>("UpdatedById")
+                        .HasColumnType("bigint")
+                        .HasColumnName("updated_by_id");
+
+                    b.Property<string>("UpdatedByName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("updated_by_name");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_utc");
+
+                    b.HasKey("CategoryId", "Priority")
+                        .HasName("pk_category_policy");
+
+                    b.ToTable("category_policy", "sla", t =>
+                        {
+                            t.HasCheckConstraint("ck_category_policy_priority", "priority IN ('Low', 'Normal', 'High', 'Critical')");
+
+                            t.HasCheckConstraint("ck_category_policy_targets", "respond_minutes > 0 AND resolve_minutes >= respond_minutes");
+                        });
+                });
+
             modelBuilder.Entity("Yasda.Modules.Sla.Domain.Holiday", b =>
                 {
                     b.Property<int>("CalendarId")
@@ -54,6 +98,14 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
                     b.Property<bool>("Cancelled")
                         .HasColumnType("boolean")
                         .HasColumnName("cancelled");
+
+                    b.Property<DateTime?>("CategoryChangedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("category_changed_utc");
+
+                    b.Property<long?>("CategoryId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("category_id");
 
                     b.Property<DateTime?>("LastPausedUtc")
                         .HasColumnType("timestamp with time zone")

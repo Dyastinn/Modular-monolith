@@ -68,7 +68,7 @@ internal sealed class Ticket : AggregateRoot<TicketId>
             ticket.TeamId = category.TeamId;
             ticket.TeamName = category.TeamName;
         }
-        ticket.Raise(new TicketCreatedEvent(Guid.NewGuid(), id, ticket.Subject, ticket.TeamId, requester, priority, nowUtc));
+        ticket.Raise(new TicketCreatedEvent(Guid.NewGuid(), id, ticket.Subject, ticket.TeamId, requester, priority, nowUtc, ticket.CategoryId?.Value));
         return ticket;
     }
 
@@ -102,6 +102,7 @@ internal sealed class Ticket : AggregateRoot<TicketId>
         if (team is not null && !team.Value.IsActive && TeamId != team.Value.Id)
             throw new DomainException(TicketsErrors.TeamInactive);
 
+        var categoryDiffers = CategoryId != category?.Id;
         CategoryId = category?.Id;
         CategoryName = category?.Name;
         TeamId = team?.Id;
@@ -116,6 +117,7 @@ internal sealed class Ticket : AggregateRoot<TicketId>
             if (Status is TicketStatus.Open or TicketStatus.Pending) Status = TicketStatus.New;
         }
         UpdatedUtc = nowUtc;
+        if (categoryDiffers) Raise(new TicketCategoryChangedEvent(Id, CategoryId?.Value, nowUtc));
     }
 
     public void Reply(UserId author, string authorName, string body, bool isInternal, bool authorIsStaff, DateTime nowUtc,

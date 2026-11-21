@@ -51,6 +51,8 @@ public sealed record HolidayPreset(string Code, string Country, int Holidays);
 
 public sealed record HolidaysLoaded(int Added, int AlreadyThere);
 
+public sealed record CategorySlaPolicy(long CategoryId, string Priority, int RespondMinutes, int ResolveMinutes, DateTime UpdatedUtc, long UpdatedById, string UpdatedByName);
+
 public sealed record TeamSummary(long Id, string Name, bool IsActive, string NotifyMode, long MemberCount);
 
 public sealed record TeamMember(long UserId, string FullName, string Role, bool Notify, bool IsDisabled);

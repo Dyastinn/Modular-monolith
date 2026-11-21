@@ -64,7 +64,7 @@ to date by `DeadlinesChanged`.
   re-followed from the text, see Part D of Y3). Lesson 20 is the writing side (rules, review, edit list, audit trail, staff reads, all
   behind the API); lesson 21 is the reading side and every screen. Split in two by the user's decision on 2026-11-21 (the single lesson
   was 184 KB); every later lesson moved up by one. Details below.
-- **Y5 — Real SLA** 🟡 code S0–S7 done 2026-11-21 (S3b and the lessons open; see "Y5" below) · lessons 22–23 (now 22–26, F11): business hours, Philippine holidays as editable data, pause/resume, FsCheck
+- **Y5 — Real SLA** 🟡 code S0–S7 and S3b done 2026-11-21 (the lessons open; see "Y5" below) · lessons 22–23 (now 22–26, F11): business hours, Philippine holidays as editable data, pause/resume, FsCheck
   properties; the breach scheduler with warnings, breaches and escalation.
 - **Y6 — Attachments and search** ⬜ · lessons 24–25: storage on a volume, limits, safe downloads; PostgreSQL full-text search
   over tickets and articles; suggested articles. A WYSIWYG editor for articles (user, 2026-11-21: plain text first) is planned between
@@ -663,7 +663,7 @@ rules (public-only filter, archived filter, and the list's filter). What differs
   checklist 29 (29 lessons). README, START-HERE, WRITING-STYLE and lessons 02, 05, 12 and 19 were updated; older log lines keep the numbers they
   were written with.
 
-### Y5 — Real SLA 🟡 code S0–S7 done 2026-11-21; S3b (category overrides) and lessons 22–26 still open (planned 2026-11-21; decisions confirmed by the user the same day)
+### Y5 — Real SLA 🟡 code S0–S7 and S3b done 2026-11-21; lessons 22–26 still open (planned 2026-11-21; decisions confirmed by the user the same day)
 
 Decisions:
 
@@ -686,7 +686,9 @@ Steps (build first, commit each; lessons after):
 - [x] **S3a** `SlaClock` counts open time through the calendar (due times and the at-risk point, now stored per target); a calendar
   or policy save recomputes every running clock in the same save (F10, `ClockRecalculator`). Done 2026-11-21. The policy screen's text
   changed: a policy edit now reaches running tickets (this replaces Y3's decision D5, "new tickets only").
-- [ ] **S3b (moved after S7: it is an extra, not part of "done" in CLAUDE.md §6)** Policies gain an optional per-category override (`TicketCreated` gains `CategoryId`, then a screen to edit overrides).
+- [x] **S3b** Policies gain an optional per-category override. Done 2026-11-21. `TicketCreated` gained `CategoryId`; new `TicketCategoryChanged`; Sla's `category_policy`
+  rows (category id kept without a foreign key; a `Tickets.Contracts.ICategoryDirectory.ExistsAsync` answers "is there such a category?"); `SlaDbContext.TargetsForAsync` picks the
+  category's numbers or the installation's; saving or removing an override recomputes the running clocks (F10). A screen section on the SLA policies page.
 - [x] **S4** Pause and resume: `TicketPending` pauses, new `TicketResumed` resumes (requester's answer, or routing that drops the owner);
   `DeadlinesChanged.Paused`; the queue and ticket page say "Paused". Done 2026-11-21. The clock adds up the *open* time paused (`PausedFor`, kept to
   the microsecond) and every due time is start + target + paused; resolving while paused ends the pause first; an agent's answer while paused is

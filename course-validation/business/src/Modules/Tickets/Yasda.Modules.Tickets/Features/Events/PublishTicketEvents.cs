@@ -13,7 +13,7 @@ internal sealed class PublishTicketCreated(IIntegrationEventPublisher publisher)
     public async Task HandleAsync(TicketCreatedEvent domainEvent, CancellationToken ct)
     {
         var priority = PublishedPriority.From(domainEvent.Priority);
-        await publisher.PublishAsync(new TicketCreated(domainEvent.TicketId.Value, priority, domainEvent.CreatedUtc), ct);
+        await publisher.PublishAsync(new TicketCreated(domainEvent.TicketId.Value, priority, domainEvent.CreatedUtc, domainEvent.CategoryId), ct);
     }
 }
 
@@ -55,6 +55,14 @@ internal sealed class PublishTicketPriorityChanged(IIntegrationEventPublisher pu
     {
         var priority = PublishedPriority.From(domainEvent.Priority);
         await publisher.PublishAsync(new TicketPriorityChanged(domainEvent.TicketId.Value, priority, domainEvent.ChangedUtc), ct);
+    }
+}
+
+internal sealed class PublishTicketCategoryChanged(IIntegrationEventPublisher publisher) : IDomainEventHandler<TicketCategoryChangedEvent>
+{
+    public async Task HandleAsync(TicketCategoryChangedEvent domainEvent, CancellationToken ct)
+    {
+        await publisher.PublishAsync(new TicketCategoryChanged(domainEvent.TicketId.Value, domainEvent.CategoryId, domainEvent.ChangedUtc), ct);
     }
 }
 

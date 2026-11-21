@@ -271,4 +271,30 @@ public class TicketEventTests
         assigned.AssignedById.Should().Be(Agent);
         ticket.DomainEvents.OfType<ReplyAddedEvent>().Should().ContainSingle().Which.AssigneeId.Should().Be(Agent);
     }
+
+    // Sla may have a different SLA for a category, so a change of category is news to it.
+    [Fact]
+    public void Routing_a_ticket_to_a_category_raises_a_category_changed_event_and_routing_to_the_same_one_again_raises_none()
+    {
+        var ticket = OpenTicket();
+        var category = Category.Create("Hardware", nameTaken: false, team: null, Now);
+
+        ticket.Route(category, null, Now.AddMinutes(1), assigneeIsMember: true);
+        ticket.Route(category, null, Now.AddMinutes(2), assigneeIsMember: true);
+        ticket.Route(null, null, Now.AddMinutes(3), assigneeIsMember: true);
+
+        var changes = ticket.DomainEvents.OfType<TicketCategoryChangedEvent>().ToList();
+        changes.Should().HaveCount(2);
+        changes[0].CategoryId.Should().Be(category.Id.Value);
+        changes[1].CategoryId.Should().BeNull("the category was taken off");
+    }
+
+    [Fact]
+    public void A_ticket_filed_with_a_category_says_which_in_its_created_event()
+    {
+        var category = Category.Create("Hardware", nameTaken: false, team: null, Now);
+        var ticket = Ticket.Create(Id, "Printer won't print", "It says paper jam.", TicketPriority.High, Requester, "Rita Cruz", Now, category, categoryChosen: true);
+
+        ticket.DomainEvents.OfType<TicketCreatedEvent>().Should().ContainSingle().Which.CategoryId.Should().Be(category.Id.Value);
+    }
 }

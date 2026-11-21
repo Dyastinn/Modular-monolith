@@ -17,6 +17,26 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
                 name: "sla");
 
             migrationBuilder.CreateTable(
+                name: "category_policy",
+                schema: "sla",
+                columns: table => new
+                {
+                    category_id = table.Column<long>(type: "bigint", nullable: false),
+                    priority = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    respond_minutes = table.Column<int>(type: "integer", nullable: false),
+                    resolve_minutes = table.Column<int>(type: "integer", nullable: false),
+                    updated_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    updated_by_id = table.Column<long>(type: "bigint", nullable: false),
+                    updated_by_name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_category_policy", x => new { x.category_id, x.priority });
+                    table.CheckConstraint("ck_category_policy_priority", "priority IN ('Low', 'Normal', 'High', 'Critical')");
+                    table.CheckConstraint("ck_category_policy_targets", "respond_minutes > 0 AND resolve_minutes >= respond_minutes");
+                });
+
+            migrationBuilder.CreateTable(
                 name: "outbox_message",
                 schema: "sla",
                 columns: table => new
@@ -42,6 +62,8 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
                 {
                     ticket_id = table.Column<long>(type: "bigint", nullable: false),
                     priority = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    category_id = table.Column<long>(type: "bigint", nullable: true),
+                    category_changed_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     started_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     respond_minutes = table.Column<int>(type: "integer", nullable: false),
                     resolve_minutes = table.Column<int>(type: "integer", nullable: false),
@@ -203,6 +225,10 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropTable(
+                name: "category_policy",
+                schema: "sla");
+
             migrationBuilder.DropTable(
                 name: "holiday",
                 schema: "sla");

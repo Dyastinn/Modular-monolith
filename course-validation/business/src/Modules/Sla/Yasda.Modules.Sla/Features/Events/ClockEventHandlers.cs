@@ -20,11 +20,13 @@ internal sealed class StartClockOnTicketCreated(SlaDbContext db) : IIntegrationE
         if (alreadyStarted) return;
 
         var priority = PriorityMapping.From(integrationEvent.Priority);
-        var policy = await db.Policies.SingleAsync(p => p.Priority == priority, ct);
+        CategoryId? categoryId = null;
+        if (integrationEvent.CategoryId is not null) categoryId = new CategoryId(integrationEvent.CategoryId.Value);
+        var targets = await db.TargetsForAsync(priority, categoryId, ct);
         var calendar = await db.GetBusinessCalendarAsync(ct);
 
         // The due times come from the ticket's own time, never from now: a delivery that comes hours late must not move them.
-        var clock = SlaClock.Start(ticketId, priority, integrationEvent.CreatedUtc, policy.RespondWithin, policy.ResolveWithin, calendar);
+        var clock = SlaClock.Start(ticketId, priority, categoryId, integrationEvent.CreatedUtc, targets.Respond, targets.Resolve, calendar);
         db.Clocks.Add(clock);
         try
         {
@@ -100,6 +102,21 @@ internal sealed class StopClockOnTicketCancelled(SlaDbContext db) : IIntegration
     }
 }
 
+internal sealed class ChangeTargetsOnCategoryChanged(SlaDbContext db) : IIntegrationEventHandler<TicketCategoryChanged>
+{
+    public async Task HandleAsync(TicketCategoryChanged integrationEvent, CancellationToken ct)
+    {
+        var clock = await db.GetClockAsync(integrationEvent.TicketId, ct);
+        CategoryId? categoryId = null;
+        if (integrationEvent.CategoryId is not null) categoryId = new CategoryId(integrationEvent.CategoryId.Value);
+
+        var targets = await db.TargetsForAsync(clock.Priority, categoryId, ct);
+        var calendar = await db.GetBusinessCalendarAsync(ct);
+        clock.ChangeCategory(categoryId, integrationEvent.ChangedUtc, targets.Respond, targets.Resolve, calendar);
+        await db.SaveChangesAsync(ct);
+    }
+}
+
 internal sealed class ChangeTargetsOnPriorityChanged(SlaDbContext db) : IIntegrationEventHandler<TicketPriorityChanged>
 {
     public async Task HandleAsync(TicketPriorityChanged integrationEvent, CancellationToken ct)
@@ -107,10 +124,10 @@ internal sealed class ChangeTargetsOnPriorityChanged(SlaDbContext db) : IIntegra
         var clock = await db.GetClockAsync(integrationEvent.TicketId, ct);
         var priority = PriorityMapping.From(integrationEvent.Priority);
 
-        // A priority change uses the policy as it is now (decision D5); only new tickets keep an edited policy's old numbers.
-        var policy = await db.Policies.SingleAsync(p => p.Priority == priority, ct);
+        // A priority change uses the policy as it is now: the ticket's category's own policy if it has one, or the installation's.
+        var targets = await db.TargetsForAsync(priority, clock.CategoryId, ct);
         var calendar = await db.GetBusinessCalendarAsync(ct);
-        clock.ChangeTargets(priority, integrationEvent.ChangedUtc, policy.RespondWithin, policy.ResolveWithin, calendar);
+        clock.ChangeTargets(priority, integrationEvent.ChangedUtc, targets.Respond, targets.Resolve, calendar);
         await db.SaveChangesAsync(ct);
     }
 }

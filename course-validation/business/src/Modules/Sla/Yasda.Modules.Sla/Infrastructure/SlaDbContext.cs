@@ -14,6 +14,7 @@ internal sealed class SlaDbContext(DbContextOptions<SlaDbContext> options) : DbC
     public DbSet<SlaClock> Clocks => Set<SlaClock>();
     public DbSet<SlaPolicy> Policies => Set<SlaPolicy>();
     public DbSet<WorkCalendar> Calendars => Set<WorkCalendar>();
+    public DbSet<CategoryPolicy> CategoryPolicies => Set<CategoryPolicy>();
 
     // Shared by the app and `dotnet ef`, so the two can't drift apart.
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder options, DbConnection connection)
@@ -36,6 +37,20 @@ internal sealed class SlaDbContext(DbContextOptions<SlaDbContext> options) : DbC
         return clock;
     }
 
+    // The numbers a ticket's clock uses: its category's own policy for that priority if there is one, otherwise the installation's.
+    public async Task<(TimeSpan Respond, TimeSpan Resolve)> TargetsForAsync(Priority priority, CategoryId? categoryId, CancellationToken ct)
+    {
+        if (categoryId is not null)
+        {
+            var id = categoryId.Value;
+            var own = await CategoryPolicies.SingleOrDefaultAsync(p => p.CategoryId == id && p.Priority == priority, ct);
+            if (own is not null) return (own.RespondWithin, own.ResolveWithin);
+        }
+
+        var policy = await Policies.SingleAsync(p => p.Priority == priority, ct);
+        return (policy.RespondWithin, policy.ResolveWithin);
+    }
+
     // The organization's calendar as the pure class the deadline math runs on.
     public async Task<BusinessCalendar> GetBusinessCalendarAsync(CancellationToken ct)
     {
@@ -48,6 +63,7 @@ internal sealed class SlaDbContext(DbContextOptions<SlaDbContext> options) : DbC
         c.Properties<TicketId>().HaveConversion<TicketIdConverter>();
         c.Properties<UserId>().HaveConversion<UserIdConverter>();
         c.Properties<CalendarId>().HaveConversion<CalendarIdConverter>();
+        c.Properties<CategoryId>().HaveConversion<CategoryIdConverter>();
         // Weekdays are stored by name, like priorities.
         c.Properties<DayOfWeek>().HaveConversion<string>().HaveMaxLength(10);
         // Priorities are stored by name: readable in SQL, and safe if the enum is ever reordered.
@@ -94,6 +110,20 @@ internal sealed class SlaDbContext(DbContextOptions<SlaDbContext> options) : DbC
             // Open time paused is kept to the microsecond: the minutes the targets use would lose up to a minute per pause.
             e.Property(x => x.PausedFor).HasConversion<MicrosecondsConverter>();
             e.Ignore(x => x.DomainEvents);
+        });
+
+        b.Entity<CategoryPolicy>(e =>
+        {
+            e.ToTable("category_policy", t =>
+            {
+                t.HasCheckConstraint("ck_category_policy_priority", "priority IN ('Low', 'Normal', 'High', 'Critical')");
+                t.HasCheckConstraint("ck_category_policy_targets", "respond_minutes > 0 AND resolve_minutes >= respond_minutes");
+            });
+            // No foreign key to the category: it belongs to Tickets.
+            e.HasKey(x => new { x.CategoryId, x.Priority });
+            e.Property(x => x.RespondWithin).HasColumnName("respond_minutes");
+            e.Property(x => x.ResolveWithin).HasColumnName("resolve_minutes");
+            e.Property(x => x.UpdatedByName).HasMaxLength(100);
         });
 
         b.Entity<SlaPolicy>(e =>
@@ -199,6 +229,7 @@ internal sealed class SlaDbContext(DbContextOptions<SlaDbContext> options) : DbC
 
 internal sealed class TicketIdConverter() : ValueConverter<TicketId, long>(v => v.Value, v => new TicketId(v));
 internal sealed class UserIdConverter() : ValueConverter<UserId, long>(v => v.Value, v => new UserId(v));
+internal sealed class CategoryIdConverter() : ValueConverter<CategoryId, long>(v => v.Value, v => new CategoryId(v));
 internal sealed class CalendarIdConverter() : ValueConverter<CalendarId, int>(v => v.Value, v => new CalendarId(v));
 internal sealed class MicrosecondsConverter() : ValueConverter<TimeSpan, long>(v => v.Ticks / 10, v => TimeSpan.FromTicks(v * 10));
 internal sealed class MinutesConverter() : ValueConverter<TimeSpan, int>(v => (int)v.TotalMinutes, v => TimeSpan.FromMinutes(v));

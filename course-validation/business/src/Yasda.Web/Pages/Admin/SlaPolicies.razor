@@ -39,6 +39,100 @@ else
             </fieldset>
         </EditForm>
     }
+
+    <h2>Different numbers for one category</h2>
+    <p>
+        A category can have its own numbers for a priority, for example a shorter answer time for "Outage". Tickets of that category and priority
+        use them instead of the numbers above. Remove them and the category goes back to the numbers above. A change applies to tickets
+        still running as well.
+    </p>
+    @if (_categoryPolicies.Count == 0)
+    {
+        <p>No category has its own numbers yet.</p>
+    }
+    else
+    {
+        <TableBox Label="Category policies">
+            <table>
+                <thead>
+                    <tr>
+                        <th scope="col">Category</th>
+                        <th scope="col">Priority</th>
+                        <th scope="col">Respond within</th>
+                        <th scope="col">Resolve within</th>
+                        <th scope="col">Last changed by</th>
+                        <th scope="col">Remove</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var own in _categoryPolicies)
+                    {
+                        var name = CategoryName(own.CategoryId);
+                        <tr>
+                            <td>@name</td>
+                            <td>@own.Priority</td>
+                            <td>@Format.Span(TimeSpan.FromMinutes(own.RespondMinutes))</td>
+                            <td>@Format.Span(TimeSpan.FromMinutes(own.ResolveMinutes))</td>
+                            <td>@own.UpdatedByName</td>
+                            <td>
+                                @if (_removing == (own.CategoryId, own.Priority))
+                                {
+                                    <button type="button" @onclick="() => RemoveOwn(own)" disabled="@Api.Busy" aria-label="@($"Yes, remove the {own.Priority} numbers of {name}")">Remove</button>
+                                    <button type="button" @onclick="() => _removing = null">Not yet</button>
+                                }
+                                else
+                                {
+                                    <button type="button" @onclick="() => _removing = (own.CategoryId, own.Priority)" aria-label="@($"Remove the {own.Priority} numbers of {name}")">Remove…</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </TableBox>
+        @if (_removing is not null)
+        {
+            <p role="alert">Remove these numbers? That category and priority go back to the numbers above.</p>
+        }
+    }
+
+    @if (_categories.Count > 0)
+    {
+        <EditForm Model="this" OnSubmit="SaveOwn">
+            <fieldset>
+                <legend>Set a category's own numbers</legend>
+                <div class="field">
+                    <label for="own-category">Category</label>
+                    <InputSelect id="own-category" @bind-Value="_ownCategoryId">
+                        @foreach (var category in _categories)
+                        {
+                            <option value="@category.Id">@category.Name</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="field">
+                    <label for="own-priority">Priority</label>
+                    <InputSelect id="own-priority" @bind-Value="_ownPriority">
+                        @foreach (var priority in TicketChoices.Priorities)
+                        {
+                            <option value="@priority">@priority</option>
+                        }
+                    </InputSelect>
+                </div>
+                <div class="field">
+                    <label for="own-respond">Respond within, in minutes</label>
+                    <InputNumber id="own-respond" @bind-Value="_ownRespondMinutes" min="1" required />
+                </div>
+                <div class="field">
+                    <label for="own-resolve">Resolve within, in minutes</label>
+                    <InputNumber id="own-resolve" @bind-Value="_ownResolveMinutes" min="1" required />
+                </div>
+                <div class="actions">
+                    <button type="submit" disabled="@Api.Busy">Save category numbers</button>
+                </div>
+            </fieldset>
+        </EditForm>
+    }
 }
 
 @code {
@@ -53,6 +147,13 @@ else
     }
 
     private List<PolicyEdit>? _edits;
+    private List<CategorySlaPolicy> _categoryPolicies = [];
+    private List<Category> _categories = [];
+    private long _ownCategoryId;
+    private string _ownPriority = "High";
+    private int _ownRespondMinutes = 60;
+    private int _ownResolveMinutes = 240;
+    private (long CategoryId, string Priority)? _removing;
 
     protected override async Task OnInitializedAsync()
     {
@@ -77,6 +178,39 @@ else
             });
         }
         _edits = edits;
+
+        var own = await Api.Get<List<CategorySlaPolicy>>("api/sla/category-policies");
+        if (own is not null) _categoryPolicies = own;
+        _removing = null;
+
+        var categories = await Api.Get<PagedResult<Category>>("api/categories?sort=name&pageSize=100");
+        if (categories is not null)
+        {
+            _categories = categories.Items;
+            if (_ownCategoryId == 0 && _categories.Count > 0) _ownCategoryId = _categories[0].Id;
+        }
+    }
+
+    private string CategoryName(long categoryId)
+    {
+        foreach (var category in _categories)
+        {
+            if (category.Id == categoryId) return category.Name;
+        }
+        return $"Category #{categoryId}";
+    }
+
+    private async Task SaveOwn()
+    {
+        await Api.Put($"api/sla/category-policies/{_ownCategoryId}/{_ownPriority}",
+            new { respondMinutes = _ownRespondMinutes, resolveMinutes = _ownResolveMinutes }, "Category numbers saved.");
+        await Load();
+    }
+
+    private async Task RemoveOwn(CategorySlaPolicy own)
+    {
+        await Api.Delete($"api/sla/category-policies/{own.CategoryId}/{own.Priority}", "Category numbers removed.");
+        await Load();
     }
 
     // Whether or not it worked, show the policies as they are now: a refused change should not look saved.

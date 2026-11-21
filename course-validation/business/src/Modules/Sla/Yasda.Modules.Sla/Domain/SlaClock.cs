@@ -13,6 +13,10 @@ internal sealed class SlaClock : AggregateRoot<TicketId>
     private SlaClock() { }
 
     public Priority Priority { get; private set; }
+
+    // The ticket's category, when it has one: a category may have its own policy. Kept so a changed policy can find the right clocks.
+    public CategoryId? CategoryId { get; private set; }
+    public DateTime? CategoryChangedUtc { get; private set; }
     public DateTime StartedUtc { get; private set; }
     public TimeSpan RespondWithin { get; private set; }
     public TimeSpan ResolveWithin { get; private set; }
@@ -91,14 +95,15 @@ internal sealed class SlaClock : AggregateRoot<TicketId>
     }
 
     // The ticket was created: both targets start running. The time is the ticket's own, never the handler's "now".
-    public static SlaClock Start(TicketId ticketId, Priority priority, DateTime createdUtc, TimeSpan respondWithin, TimeSpan resolveWithin,
-        BusinessCalendar calendar)
+    public static SlaClock Start(TicketId ticketId, Priority priority, CategoryId? categoryId, DateTime createdUtc, TimeSpan respondWithin,
+        TimeSpan resolveWithin, BusinessCalendar calendar)
     {
         createdUtc = WholeMicroseconds(createdUtc);
         var clock = new SlaClock
         {
             Id = ticketId,
             Priority = priority,
+            CategoryId = categoryId,
             StartedUtc = createdUtc,
         };
         clock.SetResponseTarget(respondWithin, calendar);
@@ -213,6 +218,27 @@ internal sealed class SlaClock : AggregateRoot<TicketId>
         if (ResolvedUtc is null) SetResolveTarget(resolveWithin, calendar);
 
         if (before == Snapshot()) return;
+
+        Changed();
+    }
+
+    // The ticket's category changed: the running targets use the new category's policy (or the installation's), from the start. A target
+    // that is already finished keeps its due time. An older change that arrives late is ignored.
+    public void ChangeCategory(CategoryId? categoryId, DateTime atUtc, TimeSpan respondWithin, TimeSpan resolveWithin, BusinessCalendar calendar)
+    {
+        atUtc = WholeMicroseconds(atUtc);
+        if (Cancelled) return;
+        if (CategoryChangedUtc is not null && atUtc <= CategoryChangedUtc) return;
+
+        CategoryChangedUtc = atUtc;
+        var before = Snapshot();
+        var categoryBefore = CategoryId;
+
+        CategoryId = categoryId;
+        if (RespondedUtc is null) SetResponseTarget(respondWithin, calendar);
+        if (ResolvedUtc is null) SetResolveTarget(resolveWithin, calendar);
+
+        if (before == Snapshot() && categoryBefore == categoryId) return;
 
         Changed();
     }
