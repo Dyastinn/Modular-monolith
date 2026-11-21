@@ -36,6 +36,13 @@ internal sealed class TeamDirectory(IDbConnectionFactory connections) : ITeamDir
         return ids.ToList();
     }
 
+    public async Task<bool> LeadsTeamOfAsync(long leadUserId, long memberUserId, CancellationToken ct)
+    {
+        await using var conn = connections.Create();
+        return await conn.ExecuteScalarAsync<bool>(new CommandDefinition(
+            "SELECT identity.leads_team_of(@leadUserId, @memberUserId)", new { leadUserId, memberUserId }, cancellationToken: ct));
+    }
+
     public async Task<IReadOnlyList<long>> NotifyListAsync(long? teamId, CancellationToken ct)
     {
         await using var conn = connections.Create();

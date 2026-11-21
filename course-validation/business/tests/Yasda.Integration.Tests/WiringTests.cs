@@ -1,5 +1,6 @@
 using AwesomeAssertions;
 using Yasda.Modules.Identity;
+using Yasda.Modules.Knowledge;
 using Yasda.Modules.Sla;
 using Yasda.Modules.Tickets;
 using Yasda.Shared.BuildingBlocks;
@@ -13,7 +14,7 @@ namespace Yasda.Integration.Tests;
 public class WiringTests(CustomWebAppFactory factory)
 {
     private static readonly Type[] Modules =
-        [typeof(IdentityModule), typeof(TicketsModule), typeof(SlaModule)];
+        [typeof(IdentityModule), typeof(TicketsModule), typeof(SlaModule), typeof(KnowledgeModule)];
 
     [Fact]
     public async Task Every_feature_handler_is_registered()

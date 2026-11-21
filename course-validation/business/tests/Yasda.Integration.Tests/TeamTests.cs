@@ -278,6 +278,57 @@ public class TeamTests(CustomWebAppFactory factory)
         (await teams.TeamIdsOfAsync(lead, CancellationToken.None)).Should().NotContain([first, second]);
     }
 
+    // ---- Who leads whose team (the knowledge base lets a lead edit their people's drafts) ----
+
+    private async Task<bool> LeadsTeamOf(long lead, long member)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var teams = scope.ServiceProvider.GetRequiredService<ITeamDirectory>();
+        return await teams.LeadsTeamOfAsync(lead, member, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task A_lead_leads_the_people_in_their_team_and_nobody_else()
+    {
+        var admin = await factory.ClientFor(Admin);
+        var lead = await IdOf(Lead);
+        var agent = await IdOf(Agent);
+        var otherAgent = await IdOf(await factory.CreateUserAsync(Roles.Agent));
+        var team = await CreateTeam(admin);
+        await AddMember(admin, team, lead);
+        await AddMember(admin, team, agent);
+
+        (await LeadsTeamOf(lead, agent)).Should().BeTrue();
+        (await LeadsTeamOf(lead, otherAgent)).Should().BeFalse("the other agent is in none of the lead's teams");
+    }
+
+    [Fact]
+    public async Task An_agent_in_the_same_team_is_not_its_lead()
+    {
+        var admin = await factory.ClientFor(Admin);
+        var agent = await IdOf(Agent);
+        var colleague = await IdOf(await factory.CreateUserAsync(Roles.Agent));
+        var team = await CreateTeam(admin);
+        await AddMember(admin, team, agent);
+        await AddMember(admin, team, colleague);
+
+        (await LeadsTeamOf(agent, colleague)).Should().BeFalse("only a TeamLead leads");
+    }
+
+    [Fact]
+    public async Task A_lead_of_another_team_does_not_lead_this_one()
+    {
+        var admin = await factory.ClientFor(Admin);
+        var lead = await IdOf(await factory.CreateUserAsync(Roles.TeamLead));
+        var agent = await IdOf(await factory.CreateUserAsync(Roles.Agent));
+        var leadsTeam = await CreateTeam(admin);
+        var agentsTeam = await CreateTeam(admin);
+        await AddMember(admin, leadsTeam, lead);
+        await AddMember(admin, agentsTeam, agent);
+
+        (await LeadsTeamOf(lead, agent)).Should().BeFalse();
+    }
+
     // ---- Who hears about unowned work (decision D9) ----
 
     private async Task<IReadOnlyList<long>> NotifyList(long? teamId)

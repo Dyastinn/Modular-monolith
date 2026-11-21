@@ -60,19 +60,24 @@ to date by `DeadlinesChanged`.
 - **Y3 — Events, basic SLA, teams** ✅ code · ✅ lessons 12–19 written 2026-11-21 (built in the reader's project, not yet re-followed from the text; see Part D) · lessons 12–19 (12 installs Podman; the plan said 12–16, grown by splits: see "Decisions made while the user was away"): the Sla module on the outbox (`TicketCreated` starts 24/7 clocks);
   teams, categories and routing (category → team); email on new replies and assignments. **Planned in full
   below (2026-11-20); follow the plan, don't redesign it.**
-- **Y4 — Knowledge base** ⬜ · lesson 20: articles, review flow, audit trail.
-- **Y5 — Real SLA** ⬜ · lessons 21–22: business hours, Philippine holidays as editable data, pause/resume, FsCheck
+- **Y4 — Knowledge base** ✅ code (2026-11-21) · ✅ lessons 20–21 (written 2026-11-21 and built in the scratch reader project; not yet
+  re-followed from the text, see Part D of Y3). Lesson 20 is the writing side (rules, review, edit list, audit trail, staff reads, all
+  behind the API); lesson 21 is the reading side and every screen. Split in two by the user's decision on 2026-11-21 (the single lesson
+  was 184 KB); every later lesson moved up by one. Details below.
+- **Y5 — Real SLA** ⬜ · lessons 22–23: business hours, Philippine holidays as editable data, pause/resume, FsCheck
   properties; the breach scheduler with warnings, breaches and escalation.
-- **Y6 — Attachments and search** ⬜ · lessons 23–24: storage on a volume, limits, safe downloads; PostgreSQL full-text search
-  over tickets and articles; suggested articles.
-- **Y7 — Reports, security, deployment** ⬜ · lessons 25–28: SLA compliance, response and resolve times, CSV export;
+- **Y6 — Attachments and search** ⬜ · lessons 24–25: storage on a volume, limits, safe downloads; PostgreSQL full-text search
+  over tickets and articles; suggested articles. A WYSIWYG editor for articles (user, 2026-11-21: plain text first) is planned between
+  attachments and search, as its own lesson; it shifts the lessons after it by one.
+- **Y7 — Reports, security, deployment** ⬜ · lessons 26–29: SLA compliance, response and resolve times, CSV export;
   requesters see only their own tickets (API tests); attachments in backups; `podman compose up` end to end.
 - **Y8 — Course polish** ⬜: a C# foundations page for readers new to C#, learning resources, screenshots of
-  the finished screens, and one full read-through of all 28 lessons in order on a fresh machine.
+  the finished screens, and one full read-through of all 29 lessons in order on a fresh machine.
 - **Later, after the course:** inbound email (MailKit), Assets, automation rules, satisfaction survey, live
-  queue updates.
+  queue updates, a WYSIWYG editor for articles (user, 2026-11-21: plain text first; the editor is its own lesson with a
+  JavaScript editor, a server-side HTML sanitizer, and a CSP check).
 
-### Y3 — Events, basic SLA, teams ⬜ (planned 2026-11-20)
+### Y3 — Events, basic SLA, teams ✅ (planned 2026-11-20; built and lessons 12–19 written by 2026-11-21)
 
 This plan was made in advance so that each step is mechanical. **Every design decision is already made here.** If a
 step seems to need a new one (a new event, table, role rule or package), stop and ask; don't invent it. **All
@@ -474,7 +479,7 @@ in Parts A–C is a new migration in its lesson, and every changed read function
       pointed at "lesson 11" by mistake (fixed to 12). Placement decisions:
       - The lesson's factory is the plain one (the container's own login, one connection string). **Least privilege** (the
         `yasda_owner`/`yasda_app` roles, `create-roles.sql`, `YasdaDbMigrations`, `WithResourceMapping`) and **Compose, the
-        Dockerfile and the migrate image** belong to lesson 23/24, which also swaps the build's current factory in.
+        Dockerfile and the migrate image** belong to lesson 24/25 (they were 23/24 before the knowledge base was split in two), which also swaps the build's current factory in.
       - The dev container is created with `POSTGRES_USER=yasda_dev`, so lesson 05's `appsettings.Development.json` doesn't change.
         The build's file and README were changed to match (they said `postgres`).
       - `ci.yml`: the lesson's file has no `working-directory` and no `-Yasda.AppHost` filter (lesson 14 adds it). The build's
@@ -491,8 +496,172 @@ in Parts A–C is a new migration in its lesson, and every changed read function
 - [x] **18 Categories and routing:** Part B, Tickets side (B2–B4): categories, a ticket's team, routing, the team filter, rename copies.
 - [x] **19 Email:** Part C: `IMailQueue`, `MailSender`, `IMailer`, the three mail handlers; extracts `SmtpMailer` from lesson 16's `SmtpEmailSender` (before/after).
 - [x] Lessons 13–19 were built in the reader's project (`~/Projects/dotnet/yasda-scratch/yasda`, one commit per lesson) and their code blocks are generated from those files (tools in `yasda-scratch/tools`), then checked by `checksnip.py` (every edit snippet must exist in the code) and by breaking each lesson's rules once. They were **not** re-typed from the text into a second fresh folder; do that read-through in Y8.
-- [ ] (Still open) ANSWER-KEY and GLOSSARY are done for 12–19. Follow each lesson Add the ANSWER-KEY and GLOSSARY entries (outbox, at-least-once,
-      idempotent, integration event, SLA, at risk). Then update the README and the history log.
+- [x] ANSWER-KEY and GLOSSARY entries for 12–19 are done (outbox, at-least-once, idempotent, integration event, SLA, at risk).
+- [ ] (Still open, Y8) Re-follow lessons 13–21 from the text in a second fresh folder.
+
+### Y4 — Knowledge base ✅ code (2026-11-21) · ✅ lessons 20–21 (planned 2026-11-21)
+
+Same rules as Y3's plan: **every design decision is made here; if a step needs a new one (a new event, table, role rule or
+package), stop and ask.** Plain code (CLAUDE.md §5). Each step ends with its test project green; the whole suite once at the end.
+Code first, then lesson 20 from the working code, then follow it in a scratch folder.
+
+**Decisions F1–F8: confirmed by the user on 2026-11-21, with three changes of the user's own (F3, F4, F7: marked below).** E1
+and E2 (below, in "Y4–Y7") are the user's earlier decisions.
+
+| # | Question | Proposed decision |
+|---|---|---|
+| F1 | What do readers see while a published article is being revised? | **The last published version.** An article keeps its working copy (what editors change) and a snapshot per publication; requesters read the newest snapshot, never the working copy. Revising a published article sets it back to Draft, and readers keep the old text until the new one is published |
+| F2 | Does "a KbEditor can't approve their own draft" (E1) bind an Admin? | **No.** The one who last changed the text may not publish it, unless they are an Admin, so a one-person installation isn't stuck. The audit trail shows it either way |
+| F3 | Who edits an article (user's change)? | **Its author, the team leads of any team the author belongs to, any KbEditor or Admin, and anyone on the article's own edit list.** Those four may add or remove people on that list (staff only). Everyone else may read a draft but not change it (`KNOWLEDGE-0004`). Submitting follows the same rule. Publishing does not: see F2 |
+| F4 | Article body format (user's change) | **Plain text now, paragraphs split on blank lines.** No Markdown and no HTML, so nothing needs sanitizing and the CSP stands. **A WYSIWYG editor is a later lesson of its own** (JavaScript editor with Blazor interop, a server-side HTML sanitizer, a CSP check; see "Later") |
+| F5 | Reject (back to Draft) | **Needs a reason**, shown on the article and kept in the audit trail |
+| F6 | Archive and restore | KbEditor or Admin archive from any state. Archived articles vanish for readers. **Restore returns the article to Draft**, and readers see its newest snapshot again |
+| F7 | "Popular articles" on the requester Home (DESIGN §4.1) (user's change) | **Counted in Y4: one row per article per day, no user stored.** Table `knowledge.article_view_day(article_id, day, views)`. Opening an article page adds 1 (everyone who reads counts, staff included). "Popular" = the five most viewed articles over the last 30 days, among those the reader may see, ties by newest update. No personal data, so nothing to delete under the Data Privacy Act |
+| F8 | Lesson 20 length | **One lesson first.** If its text passes about 100 KB, split it at "the readers' side" into 20 and 21 and shift the later lessons by one, as in Y3 (ask before renumbering) |
+
+**Shape.** New module `Yasda.Modules.Knowledge` (schema `knowledge`), **no `Knowledge.Contracts` yet** (nothing else needs it
+until Y6's suggested articles) and **no events** (the audit trail is written by the aggregate itself in the same `SaveChanges`,
+so there's no handler to justify one). Article ids are identity columns, because no event carries them. Knowledge references
+`Identity.Contracts` (for names, staff checks and the team-lead rule of F3).
+
+**Domain** (`Knowledge/Domain/`):
+- `Article` (aggregate): `Title` (≤ 200), `Summary` (≤ 300), `Body`, `Visibility` (`Public`/`Internal`, E2), `Status` (`Draft`,
+  `InReview`, `Published`, `Archived`), `CreatedById/Name`, `LastEditedById/Name`, `UpdatedUtc`, `CurrentVersion` (0 = never
+  published), `RejectionReason?`, `xmin`.
+- `ArticleVersion` (child): `Number`, the snapshot's `Title`, `Summary`, `Body`, `Visibility`, `PublishedUtc`, `PublishedById/Name`.
+  Written once, never changed (E1: every published version is kept).
+- `ArticleEditor` (child): the article's own edit list (F3): `UserId`, `UserName`, `AddedById/Name`, `AddedUtc`.
+- `ArticleHistory` (child, append-only): `Action` (`Created`, `Edited`, `Submitted`, `Rejected`, `Published`, `Archived`,
+  `Restored`, `EditorAdded`, `EditorRemoved`), `ActorId/Name`, `AtUtc`, `Note?` (the rejection reason, or the person added or
+  removed), `VersionNumber?`. One row per successful action.
+- Methods, each taking the actor and `nowUtc`: `Create`, `Edit(title, summary, body, visibility, actor, access)`, `Submit(actor,
+  access)`, `Reject(reason)`, `Publish(actor, actorIsAdmin)`, `Archive`, `Restore`, `AddEditor(person, actor, access)`,
+  `RemoveEditor(userId, actor, access)`. Editing `Published` → `Draft`; editing `InReview` or `Archived` is refused.
+- **`access` (F3)** is a small `ArticleAccess` record of two `bool`s the handler fills in: `IsEditor` (KbEditor or Admin) and
+  `LeadsAuthorsTeam` (answered by Identity). The domain knows the author and the edit list itself, and decides: author, someone
+  on the edit list, or either bool → allowed; otherwise `KNOWLEDGE-0004`. Only the author, `IsEditor` and `LeadsAuthorsTeam` may change the edit
+  list. Same pattern as Tickets' `assigneeIsMember`/`assigneeIsAdmin`.
+- A reader sees the newest snapshot when `Status != Archived && CurrentVersion > 0` (F1, F6). That rule is a domain property,
+  `IsVisibleToReaders`, and the handler passes its result as a SQL argument; SQL holds no rule.
+- Errors `KNOWLEDGE-0001 NotAllowedInThisStatus`, `0002 CannotPublishOwnChanges`, `0003 ArticleArchived`,
+  `0004 NotAllowedToEdit`, `0005 EditorNotStaff` (an unknown or non-staff id in the body, checked by the handler through
+  `IUserDirectory`). An empty rejection reason, title or body is a validator's job (400), not the domain's.
+- **Identity.Contracts gains one method:** `ITeamDirectory.LeadsTeamOfAsync(long leadUserId, long memberUserId)`: true when the
+  first is a TeamLead in a team the second belongs to. A Dapper read (`identity.leads_team_of`), and Identity's migration pair is
+  regenerated in the build. The lesson adds a new migration instead.
+- Roles: `KnowledgeRoles.Writers` = Agent, TeamLead, KbEditor, Admin; `KnowledgeRoles.Editors` = KbEditor, Admin.
+
+**Slices** (`Knowledge/Features/`, two files each; the status changes share one handler and five endpoints, as `ChangeTicketStatus` does):
+
+| Slice | Endpoint | Who |
+|---|---|---|
+| `CreateArticle` | `POST /api/articles` | Writers |
+| `UpdateArticle` | `PUT /api/articles/{id}` | Writers (domain applies F3) |
+| `ChangeArticleStatus` | `POST /api/articles/{id}/submit`, `/reject`, `/publish`, `/archive`, `/restore` | submit: Writers; the rest: Editors |
+| `SearchArticles` | `GET /api/articles` (working copies; filters status, visibility, mine; sort allow-list; paging) | Writers |
+| `GetArticle` | `GET /api/articles/{id}` (working copy, edit list, versions, history) | Writers |
+| `AddArticleEditor`, `RemoveArticleEditor` | `POST /api/articles/{id}/editors`, `DELETE /api/articles/{id}/editors/{userId}` | Writers (domain applies F3) |
+| `BrowsePublishedArticles` | `GET /api/kb/articles` (newest snapshots; search in the title and summary) | everyone signed in |
+| `GetPublishedArticle` | `GET /api/kb/articles/{id}` | everyone signed in |
+| `RecordArticleView` | `POST /api/kb/articles/{id}/view` (called by the article page after it loads; 404 if the reader may not see it) | everyone signed in |
+| `PopularArticles` | `GET /api/kb/popular` (five most viewed in 30 days) | everyone signed in |
+
+`RecordArticleView` is a POST because a GET that writes is surprising (a link prefetch would count). It runs one atomic upsert
+(`INSERT … ON CONFLICT DO UPDATE SET views = views + 1`) through EF Core's `ExecuteSql`, with a one-line comment: two readers at once
+must not lose a count. The day is `time.Today()`, and the row never touches `article`, so it never bumps its `xmin`.
+
+The reader endpoints pass `publicOnly = role is Requester`. A requester asking for an Internal, unpublished or archived article
+gets **404, never 403**: nothing may hint that it exists (same as another person's ticket).
+
+**Reads** (squash rule: only `.v1.sql`, Dapper): `knowledge.search_articles`/`count_articles`, `get_article`,
+`get_article_versions`, `get_article_editors`, `get_article_history`, `search_published_articles`/`count_published_articles`,
+`get_published_article`, `popular_articles` (since date, public-only flag, limit; the 30 days and the 5 are constants in the handler).
+Search is `ILIKE` on title and summary, with the same wildcard handling as `search_tickets`; full-text search is Y6.
+
+**Screens** (DESIGN §4.2, §4.3, §4.5):
+- `/kb`: everyone. Search box, then a list of links with each summary and "Last updated". Staff also see Internal articles,
+  marked "Internal".
+- `/kb/{id}`: the article page (h1, summary, "Last updated", body at `--measure`, "Didn't fix it? Submit a ticket").
+- `/kb/manage`: staff. Table of working copies with status, visibility and Updated, filters and sorting in the address.
+- `/kb/manage/new` and `/kb/manage/{id}`: the form (title, summary, body in a plain textarea, visibility), the buttons that fit
+  the status and the user's role, inline reject reason, "Who can edit" (the list, with an add-person select and Remove, shown to
+  those who may change it), then "Published versions" and "History" tables.
+- Navigation: "Knowledge base" for everyone, "Manage articles" for staff. Requester Home gains the KB search box and a
+  "Popular articles" list of links (F7), as DESIGN §4.1 already says. Close the DESIGN gap for both in the Y2 list.
+- Dev seed (through the domain; people through `IUserDirectory`): a Public published "Reset your password", an Internal
+  published "Escalating a network outage", and a Draft by an agent. `editor@yasda.local` (Kira Santos) already exists.
+
+**Steps**
+- [x] K0. Identity: `ITeamDirectory.LeadsTeamOfAsync` and `identity.leads_team_of`, regenerate Identity's migration pair, with an
+      integration test (a lead of the author's team: true; a lead of another team: false; an Agent in the same team: false).
+      Green: Identity tests.
+- [x] K1. Project `Yasda.Modules.Knowledge` with `KnowledgeModule`, `KnowledgeDbContext`, `KnowledgeDatabase`, `KnowledgeErrors`;
+      add to `Yasda.slnx`, `Program.cs` (after Sla), and the `Modules` arrays in `ModuleBoundaryTests` and `WiringTests`.
+      Green: architecture tests.
+- [x] K2. Domain: `Article`, `ArticleVersion`, `ArticleHistory`, with the new `Yasda.Modules.Knowledge.UnitTests`. Tests: every
+      method and every refused transition; publishing makes version 1, 2, 3 in order; the publish rule for editor, author and
+      Admin (F2); `Editing_a_published_article_keeps_what_readers_see` (F1); `Reject_needs_the_status_in_review`; one history row
+      per successful action and none for a refused one; `Edit` allowed for the author, a lead of the author's team, an editor and
+      someone on the edit list, and refused for any other agent (`KNOWLEDGE-0004`); only the author, a lead or an editor changes
+      the edit list; an FsCheck property over random action sequences (version numbers stay
+      consecutive, a snapshot never changes, history only grows). Green: Knowledge unit tests.
+- [x] K3. Persistence and reads: mappings, `xmin`, Knowledge's `InitialCreate` and `AddReadFunctions`, the `.v1.sql` files, the dev
+      seed. Green: build, then a migrate-on-empty check.
+- [x] K4. Slices and endpoints in the table, with validators, registered by hand. Green: architecture tests (every handler registered).
+- [x] K5. Integration tests: the whole life through the API; `A_requester_never_sees_an_internal_article`;
+      `A_requester_gets_404_for_a_draft_an_archived_and_a_never_published_article`;
+      `Readers_keep_the_old_version_until_the_new_one_is_published`; `A_requester_cannot_call_the_staff_endpoints` (403);
+      `An_editor_cannot_publish_their_own_changes` and the Admin exception; `Another_agent_cannot_edit_my_draft`;
+      `A_lead_of_the_authors_team_can_edit_the_draft` and `A_lead_of_another_team_cannot`;
+      `A_person_on_the_edit_list_can_edit_and_removing_them_stops_it`; `Only_staff_can_be_added_to_the_edit_list`; stale save
+      refused (409); the history lists who and when; search and sort;
+      `Two_readers_at_once_both_count` (parallel `POST …/view` calls add up exactly);
+      `A_view_of_an_article_the_requester_cannot_see_is_404_and_counts_nothing`;
+      `Popular_lists_the_most_viewed_and_a_requester_only_gets_public_ones`; `Seeding_twice_changes_nothing` still holds.
+      Make the three isolation tests fail once. Green: integration.
+- [x] K6. Screens to DESIGN, then browser tests: `An_agent_drafts_an_editor_publishes_and_a_requester_finds_it`,
+      `A_requester_does_not_see_internal_articles`, `Reject_sends_the_draft_back_with_the_reason`. Green: UI tests, and a run
+      against a live app.
+- [x] K7. Docs: README (module list), `THIRD-PARTY-NOTICES.md` (no new package expected), history log line.
+- [x] K8. Lessons 20 and 21 (the split of one lesson, see the paragraph below), written from the working code per Y3's rules (WRITING-STYLE first; teach step by step; the reader's migrations are
+      new files, not the squash; ANSWER-KEY and GLOSSARY entries: article version, audit trail, four-eyes rule). Follow it in a
+      scratch folder, tick it here, tag `y4-done` only if the user asks.
+
+**Done 2026-11-21 (K0–K8).** Whole solution green: 201 unit, 14 architecture, 268 integration, and 41 browser tests run against a live app.
+Make-it-fail-once confirmed for: publishing your own changes, an `AddEditor` that doesn't touch the article, and the three reader-isolation
+rules (public-only filter, archived filter, and the list's filter). What differs from the plan above, and why:
+
+- **Codes `KNOWLEDGE-0006`–`0012` were added** (`RejectReasonRequired`, and the text rules `TitleRequired` … `BodyTooLong`), beyond the five planned.
+- **`ArticleAccess` has two `bool`s**, as planned; `MayEdit` and `MayManageEditors` are **static** on `Article` so `GetArticleHandler` (a query)
+  can fill `CanEdit` and `CanManageEditors` without loading the article. `ActingUser` (a small scoped class, not a handler) answers the two access
+  facts for four handlers.
+- **Reader visibility is SQL, not a domain property** (the architecture test bars a query handler from a DbContext, and a list can't ask the article
+  per row). Every column and filter comes from the newest version, never the working copy. The same predicate sits in five statements: the reader
+  list and its count, `get_published_article`, `popular_articles`, and the view counter's upsert. A requester's check is `!IsWriter(role)`
+  (staff-or-not), never `role == Requester`.
+- **`outbox_message` exists in the `knowledge` schema though nothing writes to it**: the dispatcher, the backlog gauges and the health check look for it
+  in every module's schema.
+- **`UseQuerySplittingBehavior(SplitQuery)`** on Knowledge's DbContext: an article loads three lists, and one joined query would repeat every row.
+- **`GET /api/staff` now also admits `KbEditor`** (they manage edit lists), and `ITeamDirectory.LeadsTeamOfAsync` (new `identity.leads_team_of.v1.sql`)
+  answers "does this person lead a team the author belongs to?". The dev database must be dropped and recreated for the build: Identity's
+  `AddReadFunctions` gained a line and Knowledge's migrations are new.
+- **`ArticleViewDay` is an infrastructure class, not a domain one** (public setters). The view counter is one atomic `INSERT … SELECT … ON CONFLICT`
+  through EF's `ExecuteSql`, which also checks that the reader may see the article. The day is `time.Today()` (the company's zone). Staff reads count.
+- **The seed** writes three articles through the domain (an agent or the lead writes, Kira publishes: the seed obeys the four-eyes rule) and adds
+  view rows for the popular list.
+- `Dockerfile` and `deploy/compose/migrate.sh` build and run a Knowledge migration bundle.
+- **Mutation testing**: Knowledge has a `stryker-config.json` (string mutants ignored: EF defaults and message text) and runs in CI; its score is 100%.
+- **Reader vs build**: Home's reader sections exist only for requesters in the build; the lesson's simpler Home shows them to everyone signed in.
+- **Lessons 20 and 21.** The first draft of one lesson 20 was 184 KB, against F8's ~100 KB. The user chose the split: **20** is everything behind
+  the API on the writing side (115 KB, no screens: the lesson ends with tests and the API's own page), **21** is readers, counting, the popular list
+  and every screen (77 KB). The scratch reader project has one commit for each (`46da7bd`, `194defd`); both pass their whole test suites (229 and
+  244 integration tests; lesson 21 also runs its 7 browser tests). Reader-vs-build differences taught in 20–21: `Microsoft.EntityFrameworkCore.Relational`
+  in the csproj (no transitive pinning in the reader's props), the module's database class taking the DbContext, `TimeProviderExtensions.Today`
+  and the Dapper `DateOnlyTypeHandler` arrive in lesson 21, and the migrations are new files (`CreateKnowledgeSchema`, `AddArticleReadFunctions`,
+  `AddLeadsTeamOf`, `AddArticleViews`, `AddReaderReadFunctions`) instead of the build's squash.
+- **Every lesson from 22 on moved up by one.** Business hours is 22, breaches 23, attachments 24, search 25, reports 26, security 27, deploy 28,
+  checklist 29 (29 lessons). README, START-HERE, WRITING-STYLE and lessons 02, 05, 12 and 19 were updated; older log lines keep the numbers they
+  were written with.
 
 ### Y4–Y7: decisions made ahead (detail each milestone's steps when the one before it is done)
 
@@ -568,7 +737,7 @@ Confirmed by the user, 2026-11-20:
       `required` fields instead of buttons disabled until typed (that had broken in a real browser)
 - [x] Screens aligned with the rewritten DESIGN.md (2026-11-20; see the history log). Browser tests updated (19),
       run against a live app on 2026-11-20: all green.
-- [ ] DESIGN.md gaps that wait on data or a decision: KB search and popular articles on the requester Home;
+- [ ] DESIGN.md gaps that wait on data or a decision (the KB search and popular articles on the requester Home landed in Y4);
       queue counts in the nav; bulk actions; "3 new tickets" live updates; the form error summary with focus
       (§5.4, forms still use the browser's `required`)
 
@@ -625,15 +794,16 @@ Confirmed by the user, 2026-11-20:
 | 17 | Customers | Teams |
 | 18 | (new, split from 17) | Categories and routing |
 | 19 | (new, split from 16) | Email on new tickets, assignments and replies |
-| 20 | Item catalog (audited) | Knowledge base with review and audit |
-| 21 | Shipping | Business hours, holidays, pause/resume; FsCheck |
-| 22 | Purchasing | Breach scheduler and escalation |
-| 23 | Invoicing | Attachments |
-| 24 | Payments | Full-text search, suggested articles |
-| 25 | Special discounts | Reports and CSV export |
-| 26 | Security hardening | Same, plus row-level access and attachment hardening |
-| 27 | Deploy | Same, plus attachments in backups |
-| 28 | Production checklist | Same, without the BIR items |
+| 20 | Item catalog (audited) | Knowledge base, part one: articles, the review, who may edit, the audit trail (no screens) |
+| 21 | (new, split from 20) | Knowledge base, part two: what readers see, view counts, popular articles, every screen |
+| 22 | Shipping | Business hours, holidays, pause/resume; FsCheck |
+| 23 | Purchasing | Breach scheduler and escalation |
+| 24 | Invoicing | Attachments |
+| 25 | Payments | Full-text search, suggested articles |
+| 26 | Special discounts | Reports and CSV export |
+| 27 | Security hardening | Same, plus row-level access and attachment hardening |
+| 28 | Deploy | Same, plus attachments in backups |
+| 29 | Production checklist | Same, without the BIR items |
 
 ---
 

@@ -47,6 +47,62 @@ public sealed record Category(long Id, string Name, long? TeamId, string? TeamNa
 
 public sealed record StaffMember(long Id, string FullName, string Role);
 
+// The knowledge base's JSON shapes. An article has a working copy (what editors change) and published versions (what readers see).
+public sealed record ArticleSummary(long Id, string Title, string Summary, string Status, string Visibility, int CurrentVersion,
+    long CreatedById, string CreatedByName, string LastEditedByName, DateTime UpdatedUtc);
+
+public sealed record ArticleVersionInfo(int Number, string Title, string Visibility, long PublishedById, string PublishedByName, DateTime PublishedUtc);
+
+public sealed record ArticleEditorInfo(long UserId, string UserName, string AddedByName, DateTime AddedUtc);
+
+public sealed record ArticleHistoryLine(string Action, long ActorId, string ActorName, DateTime AtUtc, string? Note, int? VersionNumber);
+
+// CanEdit and CanManageEditors say what this person may do, so a page shows only the controls that will work.
+public sealed record ArticleDetail(long Id, string Title, string Summary, string Body, string Status, string Visibility, int CurrentVersion,
+    long CreatedById, string CreatedByName, long LastEditedById, string LastEditedByName, DateTime CreatedUtc, DateTime UpdatedUtc,
+    string? RejectionReason, bool CanEdit, bool CanManageEditors,
+    List<ArticleVersionInfo> Versions, List<ArticleEditorInfo> Editors, List<ArticleHistoryLine> History);
+
+public sealed record PublishedSummary(long Id, string Title, string Summary, string Visibility, DateTime PublishedUtc);
+
+public sealed record PublishedArticle(long Id, string Title, string Summary, string Body, string Visibility, int VersionNumber, DateTime PublishedUtc);
+
+public sealed record PopularArticle(long Id, string Title, string Summary, long Views);
+
+public static class KnowledgeChoices
+{
+    public static readonly string[] Statuses = ["Draft", "InReview", "Published", "Archived"];
+    public static readonly string[] Visibilities = ["Public", "Internal"];
+
+    // Who writes articles, and who decides on them. The API decides; the screens only hide what someone can't do anyway.
+    public static bool IsWriter(string? role) => role is Roles.Agent or Roles.TeamLead or Roles.KbEditor or Roles.Admin;
+    public static bool IsEditor(string? role) => role is Roles.KbEditor or Roles.Admin;
+
+    public static string StatusText(string status)
+    {
+        if (status == "InReview") return "In review";
+        return status;
+    }
+
+    // One line of the history, in words.
+    public static string ActionText(string action)
+    {
+        switch (action)
+        {
+            case "Created": return "Started the draft";
+            case "Edited": return "Changed the words";
+            case "Submitted": return "Asked for a review";
+            case "Rejected": return "Sent it back";
+            case "Published": return "Published";
+            case "Archived": return "Archived";
+            case "Restored": return "Restored it as a draft";
+            case "EditorAdded": return "Added to the edit list";
+            case "EditorRemoved": return "Removed from the edit list";
+            default: return action;
+        }
+    }
+}
+
 // The choices the API accepts, in the order people think of them.
 public static class TicketChoices
 {

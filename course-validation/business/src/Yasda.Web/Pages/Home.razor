@@ -39,12 +39,20 @@
 }
 else
 {
-    <PageHeader Title="How can we help?">
-        <Actions>
-            <a class="button" href="tickets/new">Submit a ticket</a>
-            <a class="button" href="tickets">Check my tickets</a>
-        </Actions>
-    </PageHeader>
+    <PageHeader Title="How can we help?" />
+
+    @* A plain GET form: it opens the knowledge base's own search page, whose address holds the search. *@
+    <form method="get" action="kb" class="search" role="search">
+        <div class="field">
+            <label for="kb-search">Search the knowledge base</label>
+            <input id="kb-search" type="search" name="search" />
+        </div>
+        <button type="submit">Search</button>
+    </form>
+    <div class="actions">
+        <a class="button" href="tickets/new">Submit a ticket</a>
+        <a class="button" href="tickets">Check my tickets</a>
+    </div>
 
     @if (_waitingOnYou is null)
     {
@@ -67,11 +75,23 @@ else
             <h2>Your recent tickets</h2>
             <TicketTable Label="Your recent tickets" Items="_recent.Items" />
         }
+
+        @if (_popular is not null && _popular.Count > 0)
+        {
+            <h2>Popular articles</h2>
+            <ul class="articles">
+                @foreach (var article in _popular)
+                {
+                    <li><a href="@($"kb/{article.Id}")">@article.Title</a><span class="hint">@article.Summary</span></li>
+                }
+            </ul>
+        }
     }
 }
 
 @code {
     private PagedResult<TicketSummary>? _needsYou, _unassigned, _waitingOnRequester, _waitingOnYou, _recent;
+    private List<PopularArticle>? _popular;
 
     private bool IsStaff => TicketChoices.IsStaff(Auth.User?.Role);
 
@@ -100,6 +120,7 @@ else
             // A requester only ever gets their own tickets: the API sees to that.
             _waitingOnYou = await Api.Get<PagedResult<TicketSummary>>("api/tickets?status=Pending&sort=updatedUtc&desc=true&pageSize=10");
             _recent = await Api.Get<PagedResult<TicketSummary>>("api/tickets?sort=updatedUtc&desc=true&pageSize=10");
+            _popular = await Api.Get<List<PopularArticle>>("api/kb/popular");
         }
     }
 }

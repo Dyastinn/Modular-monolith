@@ -1,0 +1,78 @@
+@page "/kb"
+@inject ApiClient Api
+@inject NavigationManager Nav
+@inject ListMemory Memory
+@inject CookieAuthenticationStateProvider Auth
+
+<PageTitle>Knowledge base · YASDA</PageTitle>
+
+<PageHeader Title="@(_result is null ? "Knowledge base" : $"Knowledge base ({_result.TotalCount})")" />
+
+@* The search lives in the address, so Back, a bookmark or a pasted link shows the same results. *@
+<EditForm Model="this" OnSubmit="Find" class="search" role="search">
+    <div class="field">
+        <label for="search">Search the knowledge base</label>
+        <InputText id="search" type="search" @bind-Value="_search" />
+    </div>
+    <button type="submit">Search</button>
+    <a href="kb">Clear</a>
+</EditForm>
+
+@if (!string.IsNullOrWhiteSpace(Search))
+{
+    <p>Showing: matching "@Search". <a href="kb">Clear search</a></p>
+}
+
+@if (_result is null)
+{
+    <p role="status">Loading…</p>
+}
+else if (_result.Items.Count == 0)
+{
+    <p>No articles match. <a href="kb">Clear the search</a>, or <a href="tickets/new">submit a ticket</a> and we'll answer it.</p>
+}
+else
+{
+    <ul class="articles">
+        @foreach (var article in _result.Items)
+        {
+            <li>
+                <a href="@($"kb/{article.Id}")">@article.Title</a>
+                @if (article.Visibility == "Internal")
+                {
+                    <strong> (Internal: staff only)</strong>
+                }
+                <span class="hint">@article.Summary Updated <TimeAgo Utc="article.PublishedUtc" />.</span>
+            </li>
+        }
+    </ul>
+    <Pager Page="_result.Page" PageSize="_result.PageSize" Total="_result.TotalCount" Noun="articles" />
+}
+
+@code {
+    private const int PageSize = 20;
+
+    [SupplyParameterFromQuery] public string? Search { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+
+    private PagedResult<PublishedSummary>? _result;
+    private string? _search;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _search = Search;
+        Memory.Remember(Nav.ToBaseRelativePath(Nav.Uri));
+        _result = await Api.Get<PagedResult<PublishedSummary>>(Url.With("api/kb/articles", ("search", Search), ("page", PageNumber), ("pageSize", PageSize)));
+    }
+
+    // A new search starts again from page 1: page 3 of the old results may not exist.
+    private void Find()
+    {
+        var text = string.IsNullOrWhiteSpace(_search) ? null : _search.Trim();
+        Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+        {
+            ["search"] = text,
+            ["page"] = null,
+        }));
+    }
+}

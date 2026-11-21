@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using Yasda.Api;
 using Yasda.Api.Security;
 using Yasda.Modules.Identity;
+using Yasda.Modules.Knowledge;
 using Yasda.Modules.Sla;
 using Yasda.Modules.Tickets;
 using Yasda.Shared.BuildingBlocks;
@@ -23,6 +24,7 @@ builder.Services.AddIdentityModule(builder.Configuration);
 builder.Services.AddTicketsModule();
 // Registration order is migration order: Sla goes after Tickets, which publishes the events it hears.
 builder.Services.AddSlaModule();
+builder.Services.AddKnowledgeModule();
 
 builder.Services.AddAuthorization();
 // The browser app: the server renders its page, the screens run in the browser as WebAssembly.
@@ -98,6 +100,7 @@ api.MapErrorCatalog();
 api.MapIdentityModule();
 api.MapTicketsEndpoints();
 api.MapSlaEndpoints();
+api.MapKnowledgeEndpoints();
 api.MapFallback(() => Results.NotFound());   // an unknown API address is a 404, never the app's page
 
 app.UseAntiforgery();

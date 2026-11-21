@@ -8,6 +8,10 @@
         <li><NavItem Href="">Home</NavItem></li>
         <li><NavItem Href="tickets">@(TicketChoices.IsStaff(Auth.User?.Role) ? "Tickets" : "My tickets")</NavItem></li>
         <li><NavItem Href="tickets/new">New ticket</NavItem></li>
+        <li><NavItem Href="kb">Knowledge base</NavItem></li>
+        <AuthorizeView Roles="@($"{Roles.Agent},{Roles.TeamLead},{Roles.KbEditor},{Roles.Admin}")">
+            <li><NavItem Href="kb/manage">Manage articles</NavItem></li>
+        </AuthorizeView>
         <AuthorizeView Roles="@($"{Roles.TeamLead},{Roles.Admin}")">
             <li><NavItem Href="categories">Categories</NavItem></li>
             <li><NavItem Href="sla-policies">SLA policies</NavItem></li>

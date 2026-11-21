@@ -349,6 +349,16 @@ input:disabled, select:disabled, textarea:disabled {
     border-style: dashed;
 }
 
+/* The knowledge base's list of articles: a link, then its summary beneath it. */
+.articles {
+    list-style: none;
+    padding: 0;
+}
+
+.articles li {
+    margin-bottom: var(--gap-m);
+}
+
 /* A ticket's conversation: each message under its heading, separated by a rule, its text kept as typed. */
 .thread {
     max-width: var(--measure);

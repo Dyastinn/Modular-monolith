@@ -3,6 +3,7 @@ using System.Runtime.CompilerServices;
 using AwesomeAssertions;
 using Yasda.Modules.Identity;
 using Yasda.Modules.Identity.Contracts;
+using Yasda.Modules.Knowledge;
 using Yasda.Modules.Sla;
 using Yasda.Modules.Sla.Contracts;
 using Yasda.Modules.Tickets;
@@ -14,7 +15,7 @@ namespace Yasda.Architecture.Tests;
 // CLAUDE.md §4 module rules as tests: a reviewer can miss a stray reference or `public` class; these can't.
 public class ModuleBoundaryTests
 {
-    private static readonly Assembly[] Modules = [typeof(IdentityModule).Assembly, typeof(TicketsModule).Assembly, typeof(SlaModule).Assembly];
+    private static readonly Assembly[] Modules = [typeof(IdentityModule).Assembly, typeof(TicketsModule).Assembly, typeof(SlaModule).Assembly, typeof(KnowledgeModule).Assembly];
 
     // Each module's .Contracts project joins this list when it is created.
     private static readonly Assembly[] ContractsAssemblies = [typeof(IUserDirectory).Assembly, typeof(TicketPriority).Assembly, typeof(DeadlinesChanged).Assembly];

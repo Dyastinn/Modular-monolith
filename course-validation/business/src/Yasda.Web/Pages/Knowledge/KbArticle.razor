@@ -1,0 +1,76 @@
+@page "/kb/{Id:long}"
+@inject ApiClient Api
+@inject ListMemory Memory
+
+<PageTitle>@(_article?.Title ?? "Article") · YASDA</PageTitle>
+
+@* DESIGN.md §4.2: the title, a one-line summary, when it was last updated, the body, and the way out if it didn't help. *@
+@if (_article is null)
+{
+    <PageHeader Title="Article" Trail="@([("Knowledge base", Memory.Last("kb"))])" />
+    @if (_loaded)
+    {
+        <p>There is no such article. <a href="kb">Search the knowledge base</a>.</p>
+    }
+    else
+    {
+        <p role="status">Loading…</p>
+    }
+}
+else
+{
+    <PageHeader Title="@_article.Title" Trail="@([("Knowledge base", Memory.Last("kb"))])">
+        <Description>
+            @_article.Summary
+        </Description>
+    </PageHeader>
+
+    <p class="muted">
+        Last updated <TimeAgo Utc="_article.PublishedUtc" />
+        @if (_article.Visibility == "Internal")
+        {
+            <strong> · Internal: only staff see this article</strong>
+        }
+    </p>
+
+    <section aria-label="Article">
+        @foreach (var paragraph in Paragraphs())
+        {
+            <p class="message-body">@paragraph</p>
+        }
+    </section>
+
+    <hr />
+    <p>Didn't fix it? <a href="tickets/new">Submit a ticket</a></p>
+}
+
+@code {
+    [Parameter] public long Id { get; set; }
+    private PublishedArticle? _article;
+    private bool _loaded;
+
+    // The body is plain text; a blank line starts a new paragraph.
+    private List<string> Paragraphs()
+    {
+        var paragraphs = new List<string>();
+        if (_article is null) return paragraphs;
+
+        var normal = _article.Body.Replace("\r\n", "\n");
+        foreach (var part in normal.Split("\n\n"))
+        {
+            var text = part.Trim();
+            if (text.Length > 0) paragraphs.Add(text);
+        }
+        return paragraphs;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _loaded = false;
+        _article = await Api.Get<PublishedArticle>($"api/kb/articles/{Id}");
+        _loaded = true;
+
+        // Once the article is on the screen it counts as read. It is a separate call, so only a person looking at it is counted.
+        if (_article is not null) await Api.Post($"api/kb/articles/{Id}/view");
+    }
+}

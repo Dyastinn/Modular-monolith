@@ -2,7 +2,7 @@
 # Brings every module's schema up to date, as yasda_owner, then exits. Safe to run on every deploy: each bundle
 # applies only the migrations that database hasn't had yet.
 set -e
-for module in Identity Tickets Sla; do
+for module in Identity Tickets Sla Knowledge; do
     echo "== $module"
     "/migrations/migrate-$module" --connection "$YASDA_OWNER_CONNECTION"
 done

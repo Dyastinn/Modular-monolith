@@ -1,0 +1,452 @@
+@page "/kb/manage/new"
+@page "/kb/manage/{Id:long}"
+@attribute [Authorize(Roles = Roles.Agent + "," + Roles.TeamLead + "," + Roles.KbEditor + "," + Roles.Admin)]
+@inject ApiClient Api
+@inject NavigationManager Nav
+@inject ListMemory Memory
+@inject CookieAuthenticationStateProvider Auth
+@inject IJSRuntime Js
+
+<PageTitle>@Title · YASDA</PageTitle>
+
+<NavigationLock OnBeforeInternalNavigation="ctx => UnsavedChanges.ConfirmLeave(Js, ctx, Unsaved)" />
+
+<PageHeader Title="@Title" Trail="@([("Manage articles", Memory.Last("kb/manage"))])">
+    <Description>
+        @if (_article is not null)
+        {
+            <text>Status: </text><strong>@KnowledgeChoices.StatusText(_article.Status)</strong>
+            <text> · Who can read it: @_article.Visibility · Published version: @(_article.CurrentVersion == 0 ? "none yet" : _article.CurrentVersion.ToString())
+            · Written by @_article.CreatedByName · Last changed by @_article.LastEditedByName <TimeAgo Utc="_article.UpdatedUtc" /></text>
+        }
+        else if (Id is null)
+        {
+            <text>Saves a draft. Nothing reaches readers until a KbEditor or an Admin reviews and publishes it.</text>
+        }
+    </Description>
+</PageHeader>
+
+@if (Id is not null && _article is null)
+{
+    <p role="status">Loading…</p>
+}
+else
+{
+    @if (_article is not null && _article.RejectionReason is not null && _article.Status == "Draft")
+    {
+        <p><strong>Sent back for changes:</strong> @_article.RejectionReason</p>
+    }
+
+    @* What this person can do now. The API checks every one of these again; hiding a button is only a convenience. *@
+    @if (_article is not null)
+    {
+        <div class="actions">
+            @if (_article.CanEdit && _article.Status == "Draft")
+            {
+                <button type="button" @onclick="Submit" disabled="@Api.Busy">Submit for review</button>
+            }
+            @if (IsEditor && _article.Status == "InReview")
+            {
+                <button type="button" @onclick="Publish" disabled="@Api.Busy">Publish</button>
+                @if (!_rejecting)
+                {
+                    <button type="button" @onclick="StartRejecting">Send back</button>
+                }
+            }
+            @if (IsEditor && _article.Status != "Archived" && !_archiving)
+            {
+                <button type="button" @onclick="StartArchiving">Archive</button>
+            }
+            @if (IsEditor && _article.Status == "Archived")
+            {
+                <button type="button" @onclick="Restore" disabled="@Api.Busy">Restore as a draft</button>
+            }
+            @if (_article.CurrentVersion > 0 && _article.Status != "Archived")
+            {
+                <a href="@($"kb/{_article.Id}")">Read it as readers see it</a>
+            }
+        </div>
+
+        @if (_rejecting)
+        {
+            <EditForm Model="this" OnSubmit="Reject">
+                <p role="alert">Send "@_article.Title" back to its author? It becomes a draft again.</p>
+                <div class="field">
+                    <label for="reason">What should change?</label>
+                    <InputText id="reason" @bind-Value="_reason" maxlength="500" required aria-describedby="reason-hint" />
+                    <span class="hint" id="reason-hint">The author sees this on the article. For example: add a screenshot of the sign-in page.</span>
+                </div>
+                <div class="actions">
+                    <button type="submit" disabled="@Api.Busy">Send back</button>
+                    <button type="button" @onclick="StopRejecting">Not yet</button>
+                </div>
+            </EditForm>
+        }
+
+        @if (_archiving)
+        {
+            <p role="alert">Archive "@_article.Title"? Readers will no longer find it. You can restore it later.</p>
+            <div class="actions">
+                <button type="button" @onclick="Archive" disabled="@Api.Busy">Archive</button>
+                <button type="button" @onclick="StopArchiving">Not yet</button>
+            </div>
+        }
+    }
+
+    @if (CanChangeWords)
+    {
+        @if (_article is not null && _article.Status == "Published")
+        {
+            <p>Saving starts a new draft. Readers keep seeing version @_article.CurrentVersion until the new one is published.</p>
+        }
+        <EditForm Model="this" OnSubmit="Save">
+            <div class="field">
+                <label for="title">Title</label>
+                <InputText id="title" @bind-Value="_title" maxlength="200" required />
+            </div>
+            <div class="field">
+                <label for="summary">Summary</label>
+                <InputText id="summary" @bind-Value="_summary" maxlength="300" required aria-describedby="summary-hint" />
+                <span class="hint" id="summary-hint">One line under the title that tells a reader whether this is the article they need.</span>
+            </div>
+            <div class="field">
+                <label for="body">Body</label>
+                <InputTextArea id="body" @bind-Value="_body" rows="16" maxlength="20000" required aria-describedby="body-hint" />
+                <span class="hint" id="body-hint">Plain text. A blank line starts a new paragraph.</span>
+            </div>
+            <div class="field">
+                <label for="visibility">Who can read it</label>
+                <InputSelect id="visibility" @bind-Value="_visibility" aria-describedby="visibility-hint">
+                    @foreach (var v in KnowledgeChoices.Visibilities)
+                    {
+                        <option value="@v">@v</option>
+                    }
+                </InputSelect>
+                <span class="hint" id="visibility-hint">Public: everyone who signs in. Internal: staff only.</span>
+            </div>
+            <div class="actions">
+                <button type="submit" disabled="@Api.Busy">@(_article is null ? "Save draft" : "Save changes")</button>
+            </div>
+        </EditForm>
+    }
+    else if (_article is not null)
+    {
+        @if (_article.Status == "InReview")
+        {
+            <p>This article is in review, so it can't be changed. A KbEditor or an Admin publishes it, or sends it back with a reason.</p>
+        }
+        else if (_article.Status == "Archived")
+        {
+            <p>This article is archived, so it can't be changed. A KbEditor or an Admin can restore it.</p>
+        }
+        else
+        {
+            <p>You can read this article but not change it. Ask its author, a team lead of the author's team, a KbEditor or an Admin to add you to its edit list.</p>
+        }
+
+        <h2>The article</h2>
+        <p>@_article.Summary</p>
+        @foreach (var paragraph in Paragraphs())
+        {
+            <p class="message-body">@paragraph</p>
+        }
+    }
+
+    @if (_article is not null)
+    {
+        <h2>Who can edit</h2>
+        <p>The author, the team leads of the author's team, KbEditors and Admins can always edit. These people can too.</p>
+        @if (_article.Editors.Count == 0)
+        {
+            <p>Nobody else yet.</p>
+        }
+        else
+        {
+            <TableBox Label="People on the edit list">
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col">Name</th>
+                            <th scope="col">Added by</th>
+                            <th scope="col">When</th>
+                            @if (_article.CanManageEditors)
+                            {
+                                <th scope="col">Remove</th>
+                            }
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var editor in _article.Editors)
+                        {
+                            <tr>
+                                <td>@editor.UserName</td>
+                                <td>@editor.AddedByName</td>
+                                <td><TimeAgo Utc="editor.AddedUtc" /></td>
+                                @if (_article.CanManageEditors)
+                                {
+                                    <td><button type="button" @onclick="() => RemoveEditor(editor)" disabled="@Api.Busy">Remove @editor.UserName</button></td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </TableBox>
+        }
+
+        @if (_article.CanManageEditors && Candidates.Count > 0)
+        {
+            <EditForm Model="this" OnSubmit="AddEditor" class="search">
+                <div class="field">
+                    <label for="new-editor">Add a person</label>
+                    <InputSelect id="new-editor" @bind-Value="_newEditorId">
+                        @foreach (var person in Candidates)
+                        {
+                            <option value="@person.Id">@person.FullName (@Format.Words(person.Role))</option>
+                        }
+                    </InputSelect>
+                </div>
+                <button type="submit" disabled="@Api.Busy">Add to the edit list</button>
+            </EditForm>
+        }
+
+        <h2>Published versions</h2>
+        @if (_article.Versions.Count == 0)
+        {
+            <p>Never published. Readers can't see this article yet.</p>
+        }
+        else
+        {
+            <TableBox Label="Published versions">
+                <table>
+                    <thead>
+                        <tr>
+                            <th scope="col" class="num">Version</th>
+                            <th scope="col">Title</th>
+                            <th scope="col">Who can read it</th>
+                            <th scope="col">Published by</th>
+                            <th scope="col">When</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var version in _article.Versions)
+                        {
+                            <tr>
+                                <td class="num">@version.Number</td>
+                                <td>@version.Title</td>
+                                <td>@version.Visibility</td>
+                                <td>@version.PublishedByName</td>
+                                <td><TimeAgo Utc="version.PublishedUtc" /></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </TableBox>
+        }
+
+        <h2>History</h2>
+        <TableBox Label="History">
+            <table>
+                <thead>
+                    <tr>
+                        <th scope="col">When</th>
+                        <th scope="col">Who</th>
+                        <th scope="col">What</th>
+                        <th scope="col">Note</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var line in _article.History)
+                    {
+                        <tr>
+                            <td><TimeAgo Utc="line.AtUtc" /></td>
+                            <td>@line.ActorName</td>
+                            <td>@KnowledgeChoices.ActionText(line.Action)@(line.VersionNumber is null ? "" : $" (version {line.VersionNumber})")</td>
+                            <td>@line.Note</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </TableBox>
+    }
+}
+
+@code {
+    [Parameter] public long? Id { get; set; }
+
+    private ArticleDetail? _article;
+    private List<StaffMember> _staff = [];
+    private string _title = "", _summary = "", _body = "", _visibility = "Public", _reason = "";
+    private long _newEditorId;
+    private bool _rejecting, _archiving;
+
+    private string Title => _article?.Title ?? (Id is null ? "New article" : "Article");
+    private bool IsEditor => KnowledgeChoices.IsEditor(Auth.User?.Role);
+
+    // A new article is always being written. An existing one can be changed by whoever may edit it, while it is a draft or published
+    // (a published one becomes a draft again); in review and archived it is read-only.
+    private bool CanChangeWords
+    {
+        get
+        {
+            if (_article is null) return Id is null;
+            if (!_article.CanEdit) return false;
+            return _article.Status is "Draft" or "Published";
+        }
+    }
+
+    // Leaving with changes that were not saved asks first.
+    private bool Unsaved
+    {
+        get
+        {
+            if (_article is null) return _title.Length > 0 || _summary.Length > 0 || _body.Length > 0;
+            return _title != _article.Title || _summary != _article.Summary || _body != _article.Body || _visibility != _article.Visibility;
+        }
+    }
+
+    // People who could be added: active staff who are not the author and not on the list yet.
+    private List<StaffMember> Candidates
+    {
+        get
+        {
+            var candidates = new List<StaffMember>();
+            if (_article is null) return candidates;
+
+            var taken = new HashSet<long> { _article.CreatedById };
+            foreach (var editor in _article.Editors)
+                taken.Add(editor.UserId);
+            foreach (var person in _staff)
+            {
+                if (!taken.Contains(person.Id)) candidates.Add(person);
+            }
+            return candidates;
+        }
+    }
+
+    // The body is plain text; a blank line starts a new paragraph.
+    private List<string> Paragraphs()
+    {
+        var paragraphs = new List<string>();
+        if (_article is null) return paragraphs;
+
+        var normal = _article.Body.Replace("\r\n", "\n");
+        foreach (var part in normal.Split("\n\n"))
+        {
+            var text = part.Trim();
+            if (text.Length > 0) paragraphs.Add(text);
+        }
+        return paragraphs;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        await Auth.GetAuthenticationStateAsync();
+        if (Id is null) return;
+        await Load(Id.Value);
+    }
+
+    private async Task Load(long id)
+    {
+        _article = await Api.Get<ArticleDetail>($"api/articles/{id}");
+        _rejecting = false;
+        _archiving = false;
+        if (_article is null) return;
+
+        _title = _article.Title;
+        _summary = _article.Summary;
+        _body = _article.Body;
+        _visibility = _article.Visibility;
+
+        if (_article.CanManageEditors && _staff.Count == 0)
+        {
+            var staff = await Api.Get<List<StaffMember>>("api/staff");
+            if (staff is not null) _staff = staff;
+        }
+        if (Candidates.Count > 0) _newEditorId = Candidates[0].Id;
+    }
+
+    private async Task Save()
+    {
+        if (_article is null)
+        {
+            var id = await Api.Create("api/articles", new { title = _title.Trim(), summary = _summary.Trim(), body = _body.Trim(), visibility = _visibility },
+                "Draft saved.");
+            if (id is null) return;
+            _title = "";   // saved: nothing left to lose on the way to the article's page
+            _summary = "";
+            _body = "";
+            Nav.NavigateTo($"kb/manage/{id}");
+            return;
+        }
+
+        var saved = await Api.Put($"api/articles/{_article.Id}",
+            new { title = _title.Trim(), summary = _summary.Trim(), body = _body.Trim(), visibility = _visibility }, "Saved.");
+        if (saved) await Load(_article.Id);
+    }
+
+    private async Task Submit()
+    {
+        await Step("submit", "Sent for review.");
+    }
+
+    private async Task Publish()
+    {
+        await Step("publish", "Published.");
+    }
+
+    private async Task Restore()
+    {
+        await Step("restore", "Restored as a draft.");
+    }
+
+    private async Task Archive()
+    {
+        await Step("archive", "Archived.");
+    }
+
+    private async Task Reject()
+    {
+        await Api.Post($"api/articles/{_article!.Id}/reject", new { reason = _reason.Trim() }, "Sent back.");
+        _reason = "";
+        await Load(_article.Id);
+    }
+
+    // One step of the review. Whether it worked or not, show the article as it is now.
+    private async Task Step(string action, string success)
+    {
+        await Api.Post($"api/articles/{_article!.Id}/{action}", success: success);
+        await Load(_article.Id);
+    }
+
+    private void StartRejecting()
+    {
+        _rejecting = true;
+    }
+
+    private void StopRejecting()
+    {
+        _rejecting = false;
+    }
+
+    private void StartArchiving()
+    {
+        _archiving = true;
+    }
+
+    private void StopArchiving()
+    {
+        _archiving = false;
+    }
+
+    private async Task AddEditor()
+    {
+        await Api.Post($"api/articles/{_article!.Id}/editors", new { userId = _newEditorId }, "Added to the edit list.");
+        await Load(_article.Id);
+    }
+
+    private async Task RemoveEditor(ArticleEditorInfo editor)
+    {
+        await Api.Delete($"api/articles/{_article!.Id}/editors/{editor.UserId}", "Removed from the edit list.");
+        await Load(_article.Id);
+    }
+}

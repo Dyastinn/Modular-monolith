@@ -1,0 +1,154 @@
+@page "/kb/manage"
+@attribute [Authorize(Roles = Roles.Agent + "," + Roles.TeamLead + "," + Roles.KbEditor + "," + Roles.Admin)]
+@inject ApiClient Api
+@inject NavigationManager Nav
+@inject ListMemory Memory
+
+<PageTitle>Manage articles · YASDA</PageTitle>
+
+<PageHeader Title="@(_result is null ? "Manage articles" : $"Manage articles ({_result.TotalCount})")" List="true">
+    <Actions><a href="kb/manage/new">New article</a></Actions>
+</PageHeader>
+
+@* The list's filters, sort and page live in the address, so Back, a bookmark or a pasted link shows the same list. *@
+<EditForm Model="this" OnSubmit="Find" class="search" role="search">
+    <div class="field">
+        <label for="search">Title or summary</label>
+        <InputText id="search" type="search" @bind-Value="_search" />
+    </div>
+    <div class="field">
+        <label for="status">Status</label>
+        <InputSelect id="status" @bind-Value="_status">
+            <option value="">Any</option>
+            @foreach (var s in KnowledgeChoices.Statuses)
+            {
+                <option value="@s">@KnowledgeChoices.StatusText(s)</option>
+            }
+        </InputSelect>
+    </div>
+    <div class="field">
+        <label for="visibility">Who can read it</label>
+        <InputSelect id="visibility" @bind-Value="_visibility">
+            <option value="">Anyone</option>
+            @foreach (var v in KnowledgeChoices.Visibilities)
+            {
+                <option value="@v">@v</option>
+            }
+        </InputSelect>
+    </div>
+    <div class="check">
+        <InputCheckbox id="mine" @bind-Value="_mine" />
+        <label for="mine">Only mine (I wrote it or may edit it)</label>
+    </div>
+    <button type="submit">Apply</button>
+    <a href="kb/manage">Clear</a>
+</EditForm>
+
+@if (Showing.Count > 0)
+{
+    <p>Showing: @string.Join(", ", Showing). <a href="kb/manage">Clear filters</a></p>
+}
+
+@if (_result is null)
+{
+    <p role="status">Loading…</p>
+}
+else if (_result.Items.Count == 0)
+{
+    <p>No articles match. <a href="kb/manage">Clear filters</a> or <a href="kb/manage/new">write a new article</a>.</p>
+}
+else
+{
+    <TableBox Label="Articles">
+        <table>
+            <thead>
+                <tr>
+                    <SortHeader Column="title" Title="Title" Sort="@Sort" Desc="Desc" />
+                    <SortHeader Column="status" Title="Status" Sort="@Sort" Desc="Desc" />
+                    <SortHeader Column="visibility" Title="Who can read it" Sort="@Sort" Desc="Desc" />
+                    <th scope="col">Published version</th>
+                    <SortHeader Column="author" Title="Author" Sort="@Sort" Desc="Desc" />
+                    <SortHeader Column="updated" Title="Updated" Sort="@Sort" Desc="Desc" />
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var article in _result.Items)
+                {
+                    <tr>
+                        <td class="truncate"><a href="@($"kb/manage/{article.Id}")">@article.Title</a></td>
+                        <td>
+                            @if (article.Status == "InReview")
+                            {
+                                <strong>In review</strong>
+                            }
+                            else
+                            {
+                                @KnowledgeChoices.StatusText(article.Status)
+                            }
+                        </td>
+                        <td>@article.Visibility</td>
+                        <td>@(article.CurrentVersion == 0 ? "None yet" : $"Version {article.CurrentVersion}")</td>
+                        <td>@article.CreatedByName</td>
+                        <td><TimeAgo Utc="article.UpdatedUtc" /></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </TableBox>
+    <Pager Page="_result.Page" PageSize="_result.PageSize" Total="_result.TotalCount" Noun="articles" />
+}
+
+@code {
+    private const int PageSize = 20;
+
+    [SupplyParameterFromQuery] public string? Search { get; set; }
+    [SupplyParameterFromQuery] public string? Status { get; set; }
+    [SupplyParameterFromQuery] public string? Visibility { get; set; }
+    [SupplyParameterFromQuery] public bool Mine { get; set; }
+    [SupplyParameterFromQuery] public string? Sort { get; set; }
+    [SupplyParameterFromQuery] public bool Desc { get; set; }
+    [SupplyParameterFromQuery(Name = "page")] public int? PageNumber { get; set; }
+
+    private PagedResult<ArticleSummary>? _result;
+    private string? _search, _status, _visibility;
+    private bool _mine;
+
+    // The filters in force, in words: "Showing: In review, Internal, only mine."
+    private List<string> Showing
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (!string.IsNullOrEmpty(Status)) parts.Add(KnowledgeChoices.StatusText(Status));
+            if (!string.IsNullOrEmpty(Visibility)) parts.Add(Visibility);
+            if (Mine) parts.Add("only mine");
+            if (!string.IsNullOrWhiteSpace(Search)) parts.Add($"matching \"{Search}\"");
+            return parts;
+        }
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _search = Search;
+        _status = Status ?? "";
+        _visibility = Visibility ?? "";
+        _mine = Mine;
+        Memory.Remember(Nav.ToBaseRelativePath(Nav.Uri));
+        _result = await Api.Get<PagedResult<ArticleSummary>>(Url.With("api/articles", ("search", Search), ("status", Status),
+            ("visibility", Visibility), ("mine", Mine ? true : null), ("sort", Sort), ("desc", Desc ? true : null), ("page", PageNumber),
+            ("pageSize", PageSize)));
+    }
+
+    // A new search starts again from page 1: page 3 of the old results may not exist.
+    private void Find()
+    {
+        Nav.NavigateTo(Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+        {
+            ["search"] = string.IsNullOrWhiteSpace(_search) ? null : _search.Trim(),
+            ["status"] = string.IsNullOrEmpty(_status) ? null : _status,
+            ["visibility"] = string.IsNullOrEmpty(_visibility) ? null : _visibility,
+            ["mine"] = _mine ? "true" : null,
+            ["page"] = null,
+        }));
+    }
+}

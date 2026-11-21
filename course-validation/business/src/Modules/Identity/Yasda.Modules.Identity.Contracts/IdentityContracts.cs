@@ -31,6 +31,10 @@ public interface ITeamDirectory
     // The teams this person is a member of.
     Task<IReadOnlyList<long>> TeamIdsOfAsync(long userId, CancellationToken ct);
 
+    // Is the first person an active team lead in a team the second person belongs to? Knowledge asks this to decide who may
+    // edit someone's draft.
+    Task<bool> LeadsTeamOfAsync(long leadUserId, long memberUserId, CancellationToken ct);
+
     // Who hears about work nobody has taken yet (decision D9): the team's leads always, plus the members its notify mode
     // adds. For work with no team, every active team lead. Only active accounts. Identity decides the list; the caller
     // only asks for it.

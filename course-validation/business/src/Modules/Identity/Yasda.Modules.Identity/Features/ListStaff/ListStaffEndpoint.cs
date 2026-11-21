@@ -7,7 +7,7 @@ namespace Yasda.Modules.Identity.Features;
 
 internal static class ListStaffEndpoint
 {
-    // Who a ticket can be assigned to; ?teamId= narrows it to one team. Staff only: requesters have no reason to list the team.
+    // Who a ticket can be assigned to; ?teamId= narrows it to one team. Staff only: requesters have no reason to list the team. KbEditors may too: they choose who joins an article's edit list.
     public static void Map(IEndpointRouteBuilder app)
     {
         app.MapGet("/staff", async ([AsParameters] ListStaffQuery query, ListStaffHandler handler, CancellationToken ct) =>
@@ -15,6 +15,6 @@ internal static class ListStaffEndpoint
             var staff = await handler.HandleAsync(query, ct);
             return TypedResults.Ok(staff);
         })
-        .RequireAuthorization(p => p.RequireRole(Roles.Agent, Roles.TeamLead, Roles.Admin));
+        .RequireAuthorization(p => p.RequireRole(Roles.Agent, Roles.TeamLead, Roles.KbEditor, Roles.Admin));
     }
 }
