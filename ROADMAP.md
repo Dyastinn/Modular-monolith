@@ -663,6 +663,29 @@ rules (public-only filter, archived filter, and the list's filter). What differs
   checklist 29 (29 lessons). README, START-HERE, WRITING-STYLE and lessons 02, 05, 12 and 19 were updated; older log lines keep the numbers they
   were written with.
 
+### Y5 — Real SLA ⬜ (planned 2026-11-21; decisions confirmed by the user the same day)
+
+Decisions:
+
+| # | Decision |
+|---|---|
+| F9 | **The time zone lives in the calendar row** (E3). A small singleton `CompanyZone` is loaded at startup and updated when an admin saves the calendar; `CompanyTimeProvider` reads it. The `Company:TimeZone` config value is removed. CLAUDE.md §5 ("Configuration describes the installation only") and its Time rule change in the same edit |
+| F10 | **Editing the calendar or an SLA policy recomputes the running clocks** from their start, under the new rules. Finished targets keep their due times. This one rule also upgrades Y3's 24/7 clocks |
+| F11 | **Five lessons**, so every later lesson moves up by 3 (32 in all): 22 business time (pure `BusinessCalendar` + FsCheck); 23 the calendar screen, holiday presets, CSV import; 24 clocks use the calendar, pause and resume; 25 the breach scheduler (warnings, breaches, escalation) and the review mail (E9); 26 automatic rules settings (E4). Renumber the docs when the lessons are written, not before |
+| F12 | **Holiday preset** (Philippines, 2026 and 2027) comes from the official proclamations, looked up, not from memory. Holidays not yet proclaimed are left out and flagged in the ROADMAP and the lesson; an admin adds them on the screen |
+
+Steps (build first, commit each; lessons after):
+
+- [ ] **S0** `BusinessCalendar` (pure, in Sla `Domain/`): working days with open/close per day, holidays, a time zone; `Add(start, duration)` and `Between(a, b)`. FsCheck properties from "Y5 business time". Unit tests. Own commit.
+- [ ] **S1** Calendar tables (`sla.calendar`, `sla.calendar_day`, `sla.holiday`), seeded Mon–Fri 08:00–17:00 Asia/Manila; read and write endpoints; `CompanyZone` and F9.
+- [ ] **S2** Holiday presets (Philippines) and CSV import; the calendar screen.
+- [ ] **S3** `SlaClock` uses the calendar for due times; policies gain an optional per-category override (`TicketCreated` gains `CategoryId`); recompute on calendar or policy save (F10).
+- [ ] **S4** Pause and resume: `TicketPending` pauses, new `TicketResumed` resumes; `DeadlinesChanged.Paused`; screen shows "Paused".
+- [ ] **S5** `SlaScheduler` (`FOR UPDATE SKIP LOCKED` through EF `FromSql` in a transaction, injected `TimeProvider`); warn once, breach once; mails through `IMailQueue`; `A_restart_mid_breach_escalates_once`.
+- [ ] **S6** Review mail (E9).
+- [ ] **S7** Automatic rules and their settings screen (E4).
+- [ ] **S8** Whole solution green, README and ROADMAP updated; then lessons 22–26 written, followed in the scratch project, ANSWER-KEY and GLOSSARY.
+
 ### Y4–Y7: decisions made ahead (detail each milestone's steps when the one before it is done)
 
 Confirmed by the user, 2026-11-20:
@@ -825,7 +848,7 @@ Retired risks are in [ROADMAP-HISTORY.md](ROADMAP-HISTORY.md).
   schemas incl. Knowledge), api, Caddy (HTTPS, CSP header), first-admin sign-in, `/health/ready` and a `pg_dump` (31 tables) all work.
   Two bugs found and fixed in `compose.yaml`: the `postgres` and `caddy` images were short names (Podman refuses to guess a registry
   with no terminal; now `docker.io/library/...`), and the data-protection certificate was a Compose `secrets:` file, which SELinux
-  blocked (now a plain `:ro,z` volume mount like the other files). **For lesson 28 to teach:** Fedora has no compose provider
+  blocked (now a plain `:ro,z` volume mount like the other files). Two separate blockers: SELinux (fixed by `,z`) and file permission: the app runs as uid 1654, so a `600` certificate owned by the host user is unreadable (proved with `podman run`); make it `644`, or `podman unshare chown 1654:1654` for a private one. **For lesson 28 to teach:** Fedora has no compose provider
   until `podman-compose` is installed; rootless Podman can't bind ports 80/443 (set `net.ipv4.ip_unprivileged_port_start=80` or
   map high ports); how to make the certificate (`openssl pkcs12 -export`) and its password. Not yet tried: a restore from the dump, a real domain.
 - **`podman exec` and crun 1.31** (carried over): if integration tests hang, check `rpm -q crun` first; fix
