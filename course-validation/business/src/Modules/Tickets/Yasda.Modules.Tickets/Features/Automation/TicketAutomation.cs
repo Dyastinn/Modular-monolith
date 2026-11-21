@@ -65,7 +65,8 @@ internal sealed class TicketAutomationRunner(TicketsDbContext db, TimeProvider t
         return done;
     }
 
-    // A ticket the requester never answered is cancelled, not resolved: nobody fixed it, so it must not count as a resolution.
+    // A ticket the requester never answered is CANCELLED, not closed or resolved: nobody fixed it, so it must not count as a resolution. The reason
+    // on the ticket says it was automatic.
     private async Task<int> CancelSilentTicketsAsync(int days, DateTime now, CancellationToken ct)
     {
         var cutoff = now.AddDays(-days);
@@ -74,7 +75,7 @@ internal sealed class TicketAutomationRunner(TicketsDbContext db, TimeProvider t
         var done = 0;
         foreach (var ticket in tickets)
         {
-            ticket.Cancel($"Cancelled automatically: no answer from the requester for {days} days.", now);
+            ticket.CancelForSilence(days, now);
             if (await TrySaveAsync(ct)) done++;
         }
         return done;

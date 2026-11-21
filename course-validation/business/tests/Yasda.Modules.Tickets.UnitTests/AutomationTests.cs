@@ -113,6 +113,21 @@ public class AutomationTests
     }
 
     [Fact]
+    public void A_ticket_nobody_answered_is_cancelled_with_an_automatic_reason_and_the_requester_is_told()
+    {
+        var ticket = PendingTicket();
+
+        ticket.CancelForSilence(14, Now.AddDays(15));
+
+        ticket.Status.Should().Be(TicketStatus.Cancelled);
+        ticket.CancelReason.Should().Be("Cancelled automatically: no answer from the requester for 14 days.");
+        ticket.DomainEvents.OfType<TicketCancelledEvent>().Should().ContainSingle("the SLA clock stops like for any cancelled ticket");
+        var told = ticket.DomainEvents.OfType<TicketCancelledForSilenceEvent>().Should().ContainSingle().Which;
+        told.RequesterId.Should().Be(Requester);
+        told.Days.Should().Be(14);
+    }
+
+    [Fact]
     public void A_ticket_that_is_not_waiting_is_never_reminded()
     {
         var ticket = PendingTicket();

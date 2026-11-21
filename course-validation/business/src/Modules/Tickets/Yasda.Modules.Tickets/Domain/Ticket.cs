@@ -214,6 +214,14 @@ internal sealed class Ticket : AggregateRoot<TicketId>
         Raise(new TicketCancelledEvent(Id, nowUtc));
     }
 
+    // The automatic rule for a requester who never answered (decision E4). The ticket is CANCELLED, not closed or resolved, and the
+    // requester is told so by mail.
+    public void CancelForSilence(int days, DateTime nowUtc)
+    {
+        Cancel($"Cancelled automatically: no answer from the requester for {days} days.", nowUtc);
+        Raise(new TicketCancelledForSilenceEvent(Guid.NewGuid(), Id, Subject, RequesterId, days));
+    }
+
     public void ChangePriority(TicketPriority priority, DateTime nowUtc)
     {
         EnsureNotFinished();

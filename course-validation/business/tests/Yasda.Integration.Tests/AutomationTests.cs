@@ -183,6 +183,10 @@ public class AutomationTests(CustomWebAppFactory factory)
             var cancelled = await Read(silent);
             cancelled.Status.Should().Be("Cancelled");
             cancelled.CancelReason.Should().Contain("no answer from the requester for 14 days");
+            await using var conn = factory.OpenDatabase();
+            await Waiting.OutboxesAreDrainedAsync(conn);
+            var told = await conn.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM identity.outgoing_mail WHERE subject LIKE @pattern", new { pattern = $"Your ticket #{silent} was cancelled:%" });
+            told.Should().Be(1, "the requester is told it was cancelled, not solved");
             (await Read(fresh)).Status.Should().Be("Pending");
         }
         finally

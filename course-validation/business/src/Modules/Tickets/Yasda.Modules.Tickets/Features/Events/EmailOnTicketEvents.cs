@@ -94,3 +94,16 @@ internal sealed class EmailOnPendingReminder(IMailQueue mail, IConfiguration con
         await mail.QueueAsync($"pending-reminder:{domainEvent.EventId}:{requester}", requester, subject, body, ct);
     }
 }
+
+// The requester is told their ticket was cancelled, and that it was automatic: not closed, not solved.
+internal sealed class EmailOnCancelledForSilence(IMailQueue mail, IConfiguration config) : IDomainEventHandler<TicketCancelledForSilenceEvent>
+{
+    public async Task HandleAsync(TicketCancelledForSilenceEvent domainEvent, CancellationToken ct)
+    {
+        var requester = domainEvent.RequesterId.Value;
+        var subject = $"Your ticket #{domainEvent.TicketId.Value} was cancelled: {domainEvent.Subject}";
+        var body = $"We asked you something and did not hear back for {domainEvent.Days} days, so the ticket was cancelled automatically. " +
+                   $"It was not solved.\n\nIf you still need help, open a new ticket: {TicketMail.LinkTo(config, domainEvent.TicketId)}";
+        await mail.QueueAsync($"cancelled-for-silence:{domainEvent.EventId}:{requester}", requester, subject, body, ct);
+    }
+}

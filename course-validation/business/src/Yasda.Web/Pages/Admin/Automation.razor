@@ -51,7 +51,7 @@ else
         </fieldset>
 
         <fieldset>
-            <legend>Cancel tickets nobody answers</legend>
+            <legend>Cancel tickets nobody answers (not the same as closing)</legend>
             <div class="check">
                 <InputCheckbox id="cancel-on" @bind-Value="_cancelOn" />
                 <label for="cancel-on">Cancel a ticket that has waited a long time for the requester</label>
@@ -61,7 +61,7 @@ else
                 <div class="field">
                     <label for="cancel-days">Days waiting before the ticket is cancelled</label>
                     <InputNumber id="cancel-days" @bind-Value="_cancelDays" min="1" max="365" aria-describedby="cancel-hint" />
-                    <span id="cancel-hint" class="hint">A cancelled ticket is not counted as resolved. If the reminder is on, this must be more days than the reminder.</span>
+                    <span id="cancel-hint" class="hint">This cancels the ticket: its status becomes Cancelled, not Closed or Resolved, and it says so on the ticket. A cancelled ticket is not counted as resolved. If the reminder is on, this must be more days than the reminder.</span>
                 </div>
             }
         </fieldset>
