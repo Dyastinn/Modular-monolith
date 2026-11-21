@@ -1,0 +1,244 @@
+@page "/business-hours"
+@attribute [Authorize(Roles = Roles.Admin)]
+@inject ApiClient Api
+@inject Notices Notices
+
+<PageTitle>Business hours · YASDA</PageTitle>
+
+<PageHeader Title="Business hours">
+    <Description>
+        When your organization is open. Deadlines count only open time: a ticket filed on Friday evening starts its clock on Monday
+        morning, and a holiday is skipped like a weekend.
+    </Description>
+</PageHeader>
+
+@if (_calendar is null)
+{
+    <p role="status">Loading…</p>
+}
+else
+{
+    <EditForm Model="this" OnSubmit="SaveWeek">
+        <h2>Working week</h2>
+        <div class="field">
+            <label for="time-zone">Time zone</label>
+            <InputText id="time-zone" @bind-Value="_timeZoneId" aria-describedby="time-zone-hint" />
+            <span id="time-zone-hint" class="hint">A name such as Asia/Manila or America/New_York. It also decides what "today" means in the app.</span>
+        </div>
+        @foreach (var day in _days)
+        {
+            <fieldset>
+                <legend>@day.Name</legend>
+                <div class="check">
+                    <InputCheckbox id="@($"open-{day.Name}")" @bind-Value="day.IsOpen" />
+                    <label for="@($"open-{day.Name}")">Open on @day.Name</label>
+                </div>
+                @if (day.IsOpen)
+                {
+                    <div class="field">
+                        <label for="@($"opens-{day.Name}")">@day.Name opens at</label>
+                        <InputText id="@($"opens-{day.Name}")" type="time" @bind-Value="day.Opens" required />
+                    </div>
+                    <div class="field">
+                        <label for="@($"closes-{day.Name}")">@day.Name closes at</label>
+                        <InputText id="@($"closes-{day.Name}")" type="time" @bind-Value="day.Closes" required />
+                    </div>
+                }
+            </fieldset>
+        }
+        <p class="muted">Last changed by @_calendar.UpdatedByName, <TimeAgo Utc="_calendar.UpdatedUtc" />.</p>
+        <div class="actions">
+            <button type="submit" disabled="@Api.Busy">Save working week</button>
+        </div>
+    </EditForm>
+
+    <h2>Holidays</h2>
+    @if (_calendar.Holidays.Count == 0)
+    {
+        <p>No holidays yet. Load a country's list, import a file, or add a date below.</p>
+    }
+    else
+    {
+        <TableBox Label="Holidays">
+            <table>
+                <thead>
+                    <tr>
+                        <th scope="col">Date</th>
+                        <th scope="col">Name</th>
+                        <th scope="col">Remove</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var holiday in _calendar.Holidays)
+                    {
+                        <tr>
+                            <td>@holiday.HolidayDate.ToString("yyyy-MM-dd")</td>
+                            <td>@holiday.Name</td>
+                            <td>
+                                @if (_removing == holiday.HolidayDate)
+                                {
+                                    <button type="button" @onclick="() => RemoveHoliday(holiday)" disabled="@Api.Busy" aria-label="@($"Yes, remove {holiday.Name}")">Remove</button>
+                                    <button type="button" @onclick="() => _removing = null">Not yet</button>
+                                }
+                                else
+                                {
+                                    <button type="button" @onclick="() => _removing = holiday.HolidayDate" aria-label="@($"Remove {holiday.Name}")">Remove…</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </TableBox>
+        @if (_removing is not null)
+        {
+            <p role="alert">Remove this holiday? Deadlines will count that day as a working day again.</p>
+        }
+    }
+
+    <EditForm Model="this" OnSubmit="AddHoliday" class="search">
+        <div class="field">
+            <label for="holiday-date">Date</label>
+            <InputText id="holiday-date" type="date" @bind-Value="_newDate" required />
+        </div>
+        <div class="field">
+            <label for="holiday-name">Name</label>
+            <InputText id="holiday-name" @bind-Value="_newName" required />
+        </div>
+        <div class="actions">
+            <button type="submit" disabled="@Api.Busy">Add holiday</button>
+        </div>
+    </EditForm>
+
+    <h2>Load a country's holidays</h2>
+    <p>
+        Adds every holiday of the list you pick. A date that is already a holiday keeps its name, so loading a list twice does no harm.
+        Holidays announced later, such as Eid'l Fitr and Eid'l Adha, are not in a list: add them above once they are proclaimed.
+    </p>
+    <EditForm Model="this" OnSubmit="LoadPreset" class="search">
+        <div class="field">
+            <label for="preset">Holiday list</label>
+            <InputSelect id="preset" @bind-Value="_presetCode">
+                @foreach (var preset in _presets)
+                {
+                    <option value="@preset.Code">@preset.Country (@preset.Holidays holidays)</option>
+                }
+            </InputSelect>
+        </div>
+        <div class="actions">
+            <button type="submit" disabled="@Api.Busy">Load list</button>
+        </div>
+    </EditForm>
+
+    <h2>Import holidays from a file</h2>
+    <EditForm Model="this" OnSubmit="ImportCsv">
+        <div class="field">
+            <label for="csv">Holidays, one per line</label>
+            <InputTextArea id="csv" @bind-Value="_csv" rows="6" aria-describedby="csv-hint" />
+            <span id="csv-hint" class="hint">Each line is a date and a name, like 2026-12-25,Christmas Day. Paste the contents of a CSV file. If one line can't be read, nothing is added.</span>
+        </div>
+        <div class="actions">
+            <button type="submit" disabled="@Api.Busy">Import holidays</button>
+        </div>
+    </EditForm>
+}
+
+@code {
+    // One per weekday: the hours as typed, until Save sends them.
+    private sealed class DayEdit
+    {
+        public string Name { get; init; } = "";
+        public bool IsOpen { get; set; }
+        public string Opens { get; set; } = "08:00";
+        public string Closes { get; set; } = "17:00";
+    }
+
+    private BusinessCalendar? _calendar;
+    private List<DayEdit> _days = [];
+    private string _timeZoneId = "";
+    private List<HolidayPreset> _presets = [];
+    private string _presetCode = "";
+    private string _newDate = "";
+    private string _newName = "";
+    private string _csv = "";
+    private DateOnly? _removing;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+        var presets = await Api.Get<List<HolidayPreset>>("api/sla/calendar/holiday-presets");
+        if (presets is null) return;
+
+        _presets = presets;
+        if (presets.Count > 0) _presetCode = presets[0].Code;
+    }
+
+    private async Task Load()
+    {
+        var calendar = await Api.Get<BusinessCalendar>("api/sla/calendar");
+        if (calendar is null) return;
+
+        var days = new List<DayEdit>();
+        foreach (var day in calendar.Days)
+        {
+            var edit = new DayEdit { Name = day.DayOfWeek, IsOpen = day.Opens is not null };
+            if (day.Opens is not null) edit.Opens = day.Opens.Value.ToString("HH:mm");
+            if (day.Closes is not null) edit.Closes = day.Closes.Value.ToString("HH:mm");
+            days.Add(edit);
+        }
+
+        _calendar = calendar;
+        _days = days;
+        _timeZoneId = calendar.TimeZoneId;
+        _removing = null;
+    }
+
+    // Whether or not it worked, show the calendar as it is now: a refused change should not look saved.
+    private async Task SaveWeek()
+    {
+        var sent = new List<object>();
+        foreach (var day in _days)
+        {
+            if (day.IsOpen) sent.Add(new { day = day.Name, opens = day.Opens, closes = day.Closes });
+            else sent.Add(new { day = day.Name, opens = (string?)null, closes = (string?)null });
+        }
+
+        await Api.Put("api/sla/calendar", new { timeZoneId = _timeZoneId.Trim(), days = sent }, "Working week saved.");
+        await Load();
+    }
+
+    private async Task AddHoliday()
+    {
+        var added = await Api.Post("api/sla/calendar/holidays", new { date = _newDate, name = _newName }, "Holiday added.");
+        if (added)
+        {
+            _newDate = "";
+            _newName = "";
+        }
+        await Load();
+    }
+
+    private async Task RemoveHoliday(CalendarHoliday holiday)
+    {
+        await Api.Delete($"api/sla/calendar/holidays/{holiday.HolidayDate:yyyy-MM-dd}", $"{holiday.Name} removed.");
+        await Load();
+    }
+
+    private async Task LoadPreset()
+    {
+        var result = await Api.Post<HolidaysLoaded>("api/sla/calendar/holiday-presets", new { code = _presetCode });
+        if (result is not null) Notices.Success($"{result.Added} holidays added, {result.AlreadyThere} were already there.");
+        await Load();
+    }
+
+    private async Task ImportCsv()
+    {
+        var result = await Api.Post<HolidaysLoaded>("api/sla/calendar/holidays/import", new { csv = _csv });
+        if (result is not null)
+        {
+            Notices.Success($"{result.Added} holidays added, {result.AlreadyThere} were already there.");
+            _csv = "";
+        }
+        await Load();
+    }
+}

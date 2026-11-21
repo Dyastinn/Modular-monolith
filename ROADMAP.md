@@ -678,7 +678,11 @@ Steps (build first, commit each; lessons after):
 
 - [x] **S0** `BusinessCalendar` (pure, in Sla `Domain/`): working days with open/close per day, holidays, a time zone; `Add(start, duration)` and `Between(a, b)`. FsCheck properties from "Y5 business time". Unit tests. Own commit.
 - [x] **S1** Calendar tables (`sla.work_calendar`, `sla.work_day`, `sla.holiday`), seeded Mon–Fri 08:00–17:00 Asia/Manila; read and write endpoints; `CompanyZone` and F9.
-- [ ] **S2** Holiday presets (Philippines) and CSV import; the calendar screen.
+- [x] **S2** Holiday presets (Philippines) and CSV import; the calendar screen (`/business-hours`, Admin only). Done 2026-11-21. The
+  Philippine list (36 dates, 2026 and 2027) was read from the proclamations on lawphil.net (No. 1006 s. 2025 and No. 1427 s. 2026; the Official
+  Gazette and PCO refuse automated fetches). **Left out and flagged:** Eid'l Fitr and Eid'l Adha (the proclamations say their dates come later),
+  the Metro Manila-only days of 16-18 November 2026 (Proclamation 1447), and the special *working* day of 25 February. An admin adds those on the
+  screen. Re-read the proclamations for 2028 once they are out.
 - [ ] **S3** `SlaClock` uses the calendar for due times; policies gain an optional per-category override (`TicketCreated` gains `CategoryId`); recompute on calendar or policy save (F10).
 - [ ] **S4** Pause and resume: `TicketPending` pauses, new `TicketResumed` resumes; `DeadlinesChanged.Paused`; screen shows "Paused".
 - [ ] **S5** `SlaScheduler` (`FOR UPDATE SKIP LOCKED` through EF `FromSql` in a transaction, injected `TimeProvider`); warn once, breach once; mails through `IMailQueue`; `A_restart_mid_breach_escalates_once`.

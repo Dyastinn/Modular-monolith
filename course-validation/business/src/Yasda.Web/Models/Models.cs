@@ -37,6 +37,17 @@ public sealed record TicketSlaFacts(DateTime ResponseDueUtc, bool? ResponseMet, 
 
 public sealed record SlaPolicy(string Priority, int RespondMinutes, int ResolveMinutes, DateTime UpdatedUtc, long UpdatedById, string UpdatedByName);
 
+// The organization's calendar: when it is open and when it is closed. Times come as "08:00:00"; a closed day has none.
+public sealed record CalendarDay(string DayOfWeek, TimeOnly? Opens, TimeOnly? Closes);
+
+public sealed record CalendarHoliday(DateOnly HolidayDate, string Name);
+
+public sealed record BusinessCalendar(string TimeZoneId, DateTime UpdatedUtc, string UpdatedByName, List<CalendarDay> Days, List<CalendarHoliday> Holidays);
+
+public sealed record HolidayPreset(string Code, string Country, int Holidays);
+
+public sealed record HolidaysLoaded(int Added, int AlreadyThere);
+
 public sealed record TeamSummary(long Id, string Name, bool IsActive, string NotifyMode, long MemberCount);
 
 public sealed record TeamMember(long UserId, string FullName, string Role, bool Notify, bool IsDisabled);

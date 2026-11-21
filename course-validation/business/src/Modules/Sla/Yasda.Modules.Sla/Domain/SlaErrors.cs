@@ -14,7 +14,7 @@ internal static class SlaErrors
     public static readonly ErrorCode ClosingBeforeOpening = new("SLA-0004", "A day must close after it opens",
         "Set the closing time later than the opening time on that day, or mark the day closed.");
     public static readonly ErrorCode UnknownTimeZone = new("SLA-0005", "That time zone isn't known",
-        "Use a time zone name such as Asia/Manila. The list on the calendar screen holds the names this server knows.");
+        "Use a time zone name such as Asia/Manila or America/New_York.");
     public static readonly ErrorCode DayListedTwice = new("SLA-0006", "A weekday is listed twice",
         "Send each weekday once, with its opening and closing times, or with none to close it.");
     public static readonly ErrorCode HolidayNameRequired = new("SLA-0007", "A holiday needs a name",

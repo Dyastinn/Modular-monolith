@@ -31,6 +31,14 @@ public sealed class ApiClient(HttpClient http, Notices notices, CookieAuthentica
         return await Send(HttpMethod.Post, url, body, success);
     }
 
+    // For actions that answer with a result, such as how many holidays a list added. null when the API said no.
+    public async Task<T?> Post<T>(string url, object body)
+    {
+        var response = await Change(() => http.PostAsJsonAsync(url, body));
+        if (!response.IsSuccessStatusCode) return await Fail<T>(response);
+        return await response.Content.ReadFromJsonAsync<T>();
+    }
+
     // For changes to something that already exists, such as a ticket's priority.
     public async Task<bool> Put(string url, object body, string? success = null)
     {
