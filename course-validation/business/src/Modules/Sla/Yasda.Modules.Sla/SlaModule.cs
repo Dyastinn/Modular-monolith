@@ -29,6 +29,7 @@ public static class SlaModule
         services.AddScoped<ChangeCalendarHandler>();
         services.AddScoped<AddHolidayHandler>();
         services.AddScoped<RemoveHolidayHandler>();
+        services.AddScoped<ImportHolidaysHandler>();
         services.AddHostedService<LoadCompanyZone>();
 
         // Event handlers are registered by the interface they answer to (the outbox looks them up that way).
@@ -54,6 +55,7 @@ public static class SlaModule
         GetCalendarEndpoint.Map(sla);
         ChangeCalendarEndpoint.Map(sla);
         HolidayEndpoints.Map(sla);
+        ImportHolidaysEndpoints.Map(sla);
         return api;
     }
 }

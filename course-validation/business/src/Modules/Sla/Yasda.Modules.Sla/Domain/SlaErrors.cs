@@ -21,4 +21,8 @@ internal static class SlaErrors
         "Give the holiday a short name, up to 100 characters, such as Christmas Day.");
     public static readonly ErrorCode HolidayAlreadyListed = new("SLA-0008", "That date is already a holiday",
         "Each date can be a holiday once. Remove the old one first if you want to rename it.");
+    public static readonly ErrorCode HolidayLineInvalid = new("SLA-0009", "A line of the holiday file can't be read",
+        "Write each holiday on its own line as a date and a name, like 2026-12-25,Christmas Day. Fix the line named in the message and import again.");
+    public static readonly ErrorCode UnknownHolidayPreset = new("SLA-0010", "That holiday list isn't known",
+        "Pick one of the lists the calendar screen offers. Anything else can be imported from a file.");
 }

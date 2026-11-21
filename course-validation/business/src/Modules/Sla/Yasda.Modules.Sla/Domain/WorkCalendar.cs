@@ -92,12 +92,36 @@ internal sealed class WorkCalendar : AggregateRoot<CalendarId>
 
     public void AddHoliday(DateOnly date, string name, UserId by, string byName, DateTime nowUtc)
     {
-        var text = name?.Trim() ?? "";
-        if (text.Length == 0 || text.Length > HolidayNameMaxLength) throw new DomainException(SlaErrors.HolidayNameRequired);
+        var text = CheckedHolidayName(name);
         if (FindHoliday(date) is not null) throw new DomainException(SlaErrors.HolidayAlreadyListed);
 
         _holidays.Add(new Holiday(date, text));
         Touch(by, byName, nowUtc);
+    }
+
+    // Adds many holidays at once (a country's list, or a file). A date that is already a holiday keeps its name, so loading
+    // the same list twice changes nothing. Returns how many were new. If one holiday is refused, none are added.
+    public int AddHolidays(IReadOnlyList<PresetHoliday> holidays, UserId by, string byName, DateTime nowUtc)
+    {
+        var added = new List<Holiday>();
+        var datesSeen = new HashSet<DateOnly>();
+        foreach (var holiday in _holidays)
+        {
+            datesSeen.Add(holiday.Date);
+        }
+
+        foreach (var incoming in holidays)
+        {
+            var name = CheckedHolidayName(incoming.Name);
+            if (!datesSeen.Add(incoming.Date)) continue;
+            added.Add(new Holiday(incoming.Date, name));
+        }
+
+        if (added.Count == 0) return 0;
+
+        _holidays.AddRange(added);
+        Touch(by, byName, nowUtc);
+        return added.Count;
     }
 
     // Removing a date that isn't a holiday changes nothing.
@@ -122,6 +146,13 @@ internal sealed class WorkCalendar : AggregateRoot<CalendarId>
 
         var dates = _holidays.Select(h => h.Date);
         return new BusinessCalendar(FindZone(TimeZoneId), week, dates);
+    }
+
+    private static string CheckedHolidayName(string name)
+    {
+        var text = name?.Trim() ?? "";
+        if (text.Length == 0 || text.Length > HolidayNameMaxLength) throw new DomainException(SlaErrors.HolidayNameRequired);
+        return text;
     }
 
     private static TimeZoneInfo FindZone(string timeZoneId)

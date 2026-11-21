@@ -164,4 +164,74 @@ public class SlaCalendarTests(CustomWebAppFactory factory)
 
         zone.Current.Id.Should().Be("Asia/Manila");
     }
+
+    private sealed record Loaded(int Added, int AlreadyThere);
+
+    private static async Task ClearHolidaysAsync(HttpClient admin)
+    {
+        var calendar = await ReadAsync(admin);
+        foreach (var holiday in calendar.Holidays)
+        {
+            await admin.DeleteAsync($"/api/sla/calendar/holidays/{holiday.HolidayDate}");
+        }
+    }
+
+    [Fact]
+    public async Task The_philippine_list_loads_once_and_loading_it_again_adds_nothing()
+    {
+        var admin = await factory.ClientFor(Admin);
+        try
+        {
+            var presets = await admin.GetFromJsonAsync<JsonElement[]>("/api/sla/calendar/holiday-presets");
+            presets!.Single().GetProperty("code").GetString().Should().Be("PH");
+
+            var first = await admin.PostAsJsonAsync("/api/sla/calendar/holiday-presets", new { code = "PH" });
+            var second = await admin.PostAsJsonAsync("/api/sla/calendar/holiday-presets", new { code = "ph" });
+
+            (await first.Content.ReadFromJsonAsync<Loaded>())!.Added.Should().Be(36);
+            (await second.Content.ReadFromJsonAsync<Loaded>()).Should().Be(new Loaded(0, 36));
+            var calendar = await ReadAsync(admin);
+            calendar.Holidays.Should().Contain(new Holiday("2026-12-25", "Christmas Day"));
+            calendar.Holidays.Should().Contain(new Holiday("2027-11-30", "Bonifacio Day"));
+        }
+        finally
+        {
+            await ClearHolidaysAsync(admin);
+        }
+    }
+
+    [Fact]
+    public async Task A_csv_file_adds_its_holidays_and_a_bad_line_adds_none_of_them()
+    {
+        var admin = await factory.ClientFor(Admin);
+        try
+        {
+            var bad = await admin.PostAsJsonAsync("/api/sla/calendar/holidays/import", new { csv = "date,name\n2026-12-25,Christmas Day\n2026-13-45,Oops" });
+            var unknown = await admin.PostAsJsonAsync("/api/sla/calendar/holiday-presets", new { code = "XX" });
+
+            bad.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+            (await CodeOf(bad)).Should().Be("SLA-0009");
+            (await CodeOf(unknown)).Should().Be("SLA-0010");
+            (await ReadAsync(admin)).Holidays.Should().BeEmpty("a bad file adds nothing");
+
+            var good = await admin.PostAsJsonAsync("/api/sla/calendar/holidays/import", new { csv = "date,name\n2026-12-25,Christmas Day\n2026-12-26,Boxing Day\n" });
+
+            (await good.Content.ReadFromJsonAsync<Loaded>()).Should().Be(new Loaded(2, 0));
+            (await ReadAsync(admin)).Holidays.Select(h => h.Name).Should().Equal("Christmas Day", "Boxing Day");
+        }
+        finally
+        {
+            await ClearHolidaysAsync(admin);
+        }
+    }
+
+    [Fact]
+    public async Task Only_an_admin_may_load_a_list_or_import_a_file()
+    {
+        var lead = await factory.ClientFor(Lead);
+
+        (await lead.GetAsync("/api/sla/calendar/holiday-presets")).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await lead.PostAsJsonAsync("/api/sla/calendar/holiday-presets", new { code = "PH" })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        (await lead.PostAsJsonAsync("/api/sla/calendar/holidays/import", new { csv = "2026-12-25,Christmas Day" })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
+    }
 }
