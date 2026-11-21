@@ -1059,7 +1059,7 @@ UPDATE sla.sla_clock SET response_due_utc = now() - interval '1 hour', response_
        next_check_utc = now() - interval '2 hours' WHERE ticket_id = (SELECT max(ticket_id) FROM sla.sla_clock);
 ```
 
-Within 30 seconds the app's log says the mail was queued for the assignee and the team, and the ticket's SLA column, in the queue, says it is breached. Run the same `UPDATE` again: nothing new is queued.
+Within 30 seconds the app's log shows the breach mail for the assignee and the team (with no mail server set, lesson 19's sender writes mail to the log). Run the same `UPDATE` again: nothing new appears, because the clock remembers it was breached.
 
 ## Let's check!
 
