@@ -598,3 +598,19 @@ How many times an article was read on one day: one number per article per day, w
 
 **Popular articles** (21)
 The five most read articles of the last 30 days that the reader may see.
+
+---
+
+## Business time
+
+**Business calendar** (22)
+The class that counts only open time. It answers "what moment is this much open time after that start?" and "how much open time lies between two moments?", and it knows nothing about databases or clocks.
+
+**Open time** (22)
+The hours an organization is open: the weekdays' opening and closing times, minus holidays. A deadline "in 4 hours" means four hours of open time.
+
+**Work calendar** (22)
+The business calendar's data: the time zone, the hours of each weekday and the holidays, stored in three tables an Admin edits.
+
+**Company zone** (22)
+The organization's time zone, held in memory and replaced when an Admin saves the calendar. It decides what "today" means in the app.

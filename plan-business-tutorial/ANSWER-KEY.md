@@ -715,3 +715,31 @@ Otherwise a requester could raise the count of an article they may not see, and 
 
 **8. Why does the popular list use the same rule as the reader list?**
 A list of the most read articles must not show a requester a title they couldn't open. The same filter, on the same version columns, keeps the two lists consistent.
+
+---
+
+## Lesson 22 — Business hours: time that only counts while you are open
+
+**1. Why does `Add` count one local date at a time instead of adding hours to the start?**
+Because a day is not always 24 hours long and not always open. Each local date has its own open stretch (none on a holiday or a closed weekday), and on the night the clocks change the stretch is an hour shorter or longer. Counting date by date, in the calendar's zone, handles all of that with one rule.
+
+**2. Why is a deadline that lands exactly at closing time left at closing time?**
+Because a reply made at that minute is on time. If the deadline moved to the next morning, a team that answers at 17:00 sharp would be given extra hours it never asked for, and one that is a minute late would look on time.
+
+**3. What does `Between(a, Add(a, d))` equal, and which test says so?**
+`d`. `Between_a_start_and_its_deadline_is_exactly_the_duration` checks it for thousands of generated starts and lengths.
+
+**4. Why do the property tests run in two time zones?**
+Manila never changes its clocks, so it shows the rules without surprises. New York skips an hour in spring and repeats one in autumn, which is where hand-written time math breaks. The same properties must hold in both.
+
+**5. Why does `WorkCalendar.Change` check everything before it changes anything?**
+So a refused change leaves the calendar exactly as it was. A half-applied week (some days changed, then an error) would be saved by nobody, but it could still be read from memory by the code that called it.
+
+**6. Why does every change to a holiday touch the calendar's own row?**
+The row's version is what refuses a second admin working from an older copy. A new holiday row alone would not change it, so the domain method also updates `UpdatedUtc`.
+
+**7. Why is the time zone a row an Admin edits, and not a setting in `appsettings.json`?**
+An organization changes its time zone on a screen, not by editing a file on the server. The calendar is business data, and every business value in YASDA is a row.
+
+**8. What is `CompanyZone` for, and what does it assume about how YASDA runs?**
+It holds the organization's time zone in memory, so `TimeProvider` can say what "today" means without a database call. It assumes one running instance, the course's target. Two instances would each need to hear about a change.

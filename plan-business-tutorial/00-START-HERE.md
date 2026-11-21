@@ -119,7 +119,7 @@ course is written alongside the product, so the lessons without a link are still
 | 19 | [Email](19-email.md) | Mail for new tickets, assignments and replies, queued and sent without blocking |
 | 20 | [The knowledge base, part one](20-articles.md) | Articles, a review that nobody passes alone, who may edit, and an audit trail |
 | 21 | [The knowledge base, part two](21-readers.md) | What requesters may read, view counts and popular articles, and every screen |
-| 22 | Business hours | Deadlines in business hours, holidays, pausing the clock |
+| 22 | Business hours | Counting only open time, and the calendar as data |
 | 23 | Breaches | A scheduler that warns and escalates, and survives a restart |
 | 24 | Attachments | Files on tickets, stored and served safely |
 | 25 | Search | Full-text search over tickets and articles; suggested answers |
