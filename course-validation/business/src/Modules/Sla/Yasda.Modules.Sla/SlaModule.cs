@@ -25,6 +25,11 @@ public static class SlaModule
         // Handlers: plain classes, injected straight into the endpoints that use them.
         services.AddScoped<GetPoliciesHandler>();
         services.AddScoped<ChangePolicyHandler>();
+        services.AddScoped<GetCalendarHandler>();
+        services.AddScoped<ChangeCalendarHandler>();
+        services.AddScoped<AddHolidayHandler>();
+        services.AddScoped<RemoveHolidayHandler>();
+        services.AddHostedService<LoadCompanyZone>();
 
         // Event handlers are registered by the interface they answer to (the outbox looks them up that way).
         services.AddScoped<IIntegrationEventHandler<TicketCreated>, StartClockOnTicketCreated>();
@@ -46,6 +51,9 @@ public static class SlaModule
         var sla = api.MapGroup("").WithTags("Sla");
         GetPoliciesEndpoint.Map(sla);
         ChangePolicyEndpoint.Map(sla);
+        GetCalendarEndpoint.Map(sla);
+        ChangeCalendarEndpoint.Map(sla);
+        HolidayEndpoints.Map(sla);
         return api;
     }
 }

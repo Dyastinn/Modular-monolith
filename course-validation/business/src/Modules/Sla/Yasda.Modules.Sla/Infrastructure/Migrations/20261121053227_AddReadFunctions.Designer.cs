@@ -12,7 +12,7 @@ using Yasda.Modules.Sla.Infrastructure;
 namespace Yasda.Modules.Sla.Infrastructure.Migrations
 {
     [DbContext(typeof(SlaDbContext))]
-    [Migration("20261120171015_AddReadFunctions")]
+    [Migration("20261121053227_AddReadFunctions")]
     partial class AddReadFunctions
     {
         /// <inheritdoc />
@@ -25,6 +25,28 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
+
+            modelBuilder.Entity("Yasda.Modules.Sla.Domain.Holiday", b =>
+                {
+                    b.Property<int>("CalendarId")
+                        .HasColumnType("integer")
+                        .HasColumnName("calendar_id");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date")
+                        .HasColumnName("date");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("name");
+
+                    b.HasKey("CalendarId", "Date")
+                        .HasName("pk_holiday");
+
+                    b.ToTable("holiday", "sla");
+                });
 
             modelBuilder.Entity("Yasda.Modules.Sla.Domain.SlaClock", b =>
                 {
@@ -175,6 +197,129 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Yasda.Modules.Sla.Domain.WorkCalendar", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<string>("TimeZoneId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("time_zone_id");
+
+                    b.Property<long>("UpdatedById")
+                        .HasColumnType("bigint")
+                        .HasColumnName("updated_by_id");
+
+                    b.Property<string>("UpdatedByName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("updated_by_name");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_utc");
+
+                    b.HasKey("Id")
+                        .HasName("pk_work_calendar");
+
+                    b.ToTable("work_calendar", "sla");
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            TimeZoneId = "Asia/Manila",
+                            UpdatedById = 0L,
+                            UpdatedByName = "Installation default",
+                            UpdatedUtc = new DateTime(2026, 11, 21, 0, 0, 0, 0, DateTimeKind.Utc)
+                        });
+                });
+
+            modelBuilder.Entity("Yasda.Modules.Sla.Domain.WorkDay", b =>
+                {
+                    b.Property<int>("CalendarId")
+                        .HasColumnType("integer")
+                        .HasColumnName("calendar_id");
+
+                    b.Property<string>("Day")
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)")
+                        .HasColumnName("day");
+
+                    b.Property<TimeOnly?>("Closes")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("closes");
+
+                    b.Property<TimeOnly?>("Opens")
+                        .HasColumnType("time without time zone")
+                        .HasColumnName("opens");
+
+                    b.HasKey("CalendarId", "Day")
+                        .HasName("pk_work_day");
+
+                    b.ToTable("work_day", "sla", t =>
+                        {
+                            t.HasCheckConstraint("ck_work_day_hours", "(opens IS NULL AND closes IS NULL) OR closes > opens");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            CalendarId = 1,
+                            Day = "Monday",
+                            Closes = new TimeOnly(17, 0, 0),
+                            Opens = new TimeOnly(8, 0, 0)
+                        },
+                        new
+                        {
+                            CalendarId = 1,
+                            Day = "Tuesday",
+                            Closes = new TimeOnly(17, 0, 0),
+                            Opens = new TimeOnly(8, 0, 0)
+                        },
+                        new
+                        {
+                            CalendarId = 1,
+                            Day = "Wednesday",
+                            Closes = new TimeOnly(17, 0, 0),
+                            Opens = new TimeOnly(8, 0, 0)
+                        },
+                        new
+                        {
+                            CalendarId = 1,
+                            Day = "Thursday",
+                            Closes = new TimeOnly(17, 0, 0),
+                            Opens = new TimeOnly(8, 0, 0)
+                        },
+                        new
+                        {
+                            CalendarId = 1,
+                            Day = "Friday",
+                            Closes = new TimeOnly(17, 0, 0),
+                            Opens = new TimeOnly(8, 0, 0)
+                        },
+                        new
+                        {
+                            CalendarId = 1,
+                            Day = "Saturday"
+                        },
+                        new
+                        {
+                            CalendarId = 1,
+                            Day = "Sunday"
+                        });
+                });
+
             modelBuilder.Entity("Yasda.Shared.BuildingBlocks.OutboxMessage", b =>
                 {
                     b.Property<Guid>("Id")
@@ -222,6 +367,33 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
                         .HasFilter("processed_utc IS NULL");
 
                     b.ToTable("outbox_message", "sla");
+                });
+
+            modelBuilder.Entity("Yasda.Modules.Sla.Domain.Holiday", b =>
+                {
+                    b.HasOne("Yasda.Modules.Sla.Domain.WorkCalendar", null)
+                        .WithMany("Holidays")
+                        .HasForeignKey("CalendarId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_holiday_work_calendar_calendar_id");
+                });
+
+            modelBuilder.Entity("Yasda.Modules.Sla.Domain.WorkDay", b =>
+                {
+                    b.HasOne("Yasda.Modules.Sla.Domain.WorkCalendar", null)
+                        .WithMany("Days")
+                        .HasForeignKey("CalendarId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_work_day_work_calendar_calendar_id");
+                });
+
+            modelBuilder.Entity("Yasda.Modules.Sla.Domain.WorkCalendar", b =>
+                {
+                    b.Navigation("Days");
+
+                    b.Navigation("Holidays");
                 });
 #pragma warning restore 612, 618
         }

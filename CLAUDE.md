@@ -270,8 +270,10 @@ A lesson may mention these only in a *"when you'd add this later, and why not no
   - Codes are never renumbered or reused. Tests prove they are unique, documented and used.
   - Every problem response has `code`, `type: /errors/{code}` and `traceId`. `/api/errors` serves the catalog;
     the app's `/errors/{code}` page shows it.
-- **Time:** inject `TimeProvider`. The host registers `CompanyTimeProvider`, whose local zone is the company's.
-  Use `time.GetUtcNow().UtcDateTime` and `time.Today()`. Tests use `FakeTimeProvider`.
+- **Time:** inject `TimeProvider`. The host registers `CompanyTimeProvider`, whose local zone is the company's: the time zone
+  on the calendar row (`sla.work_calendar`), held in the `CompanyZone` singleton, loaded at startup and replaced when an Admin
+  saves the calendar (user, 2026-11-21; one running instance is assumed). Use `time.GetUtcNow().UtcDateTime` and
+  `time.Today()`. Tests use `FakeTimeProvider`.
 
 ### Domain
 
@@ -341,8 +343,9 @@ A lesson may mention these only in a *"when you'd add this later, and why not no
 - **No money anywhere.** No prices, invoices, tax, fines or dues.
 - **Business values are table rows, edited on screens.** SLA policies, business hours, holidays, categories,
   teams and routing rules are data an admin or team lead edits.
-- **Configuration describes the installation only:** connection strings, certificates, SMTP, the time zone,
-  telemetry, the first admin. Never put a deadline, an hour or a holiday in `appsettings.json` or `.env`.
+- **Configuration describes the installation only:** connection strings, certificates, SMTP,
+  telemetry, the first admin. Never put a deadline, an hour, a holiday or the time zone in `appsettings.json` or `.env`: the
+  time zone is a calendar row an Admin edits (user, 2026-11-21).
 - **Time is the hard part of this domain.** Deadlines are stored, never kept as timers in memory. They're computed
   in business hours, in the organization's time zone, with holidays as rows (Philippine holidays seeded,
   editable).

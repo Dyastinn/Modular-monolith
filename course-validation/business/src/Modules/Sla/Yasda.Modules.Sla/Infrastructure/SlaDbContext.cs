@@ -13,6 +13,7 @@ internal sealed class SlaDbContext(DbContextOptions<SlaDbContext> options) : DbC
 
     public DbSet<SlaClock> Clocks => Set<SlaClock>();
     public DbSet<SlaPolicy> Policies => Set<SlaPolicy>();
+    public DbSet<WorkCalendar> Calendars => Set<WorkCalendar>();
 
     // Shared by the app and `dotnet ef`, so the two can't drift apart.
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder options, DbConnection connection)
@@ -36,6 +37,9 @@ internal sealed class SlaDbContext(DbContextOptions<SlaDbContext> options) : DbC
     {
         c.Properties<TicketId>().HaveConversion<TicketIdConverter>();
         c.Properties<UserId>().HaveConversion<UserIdConverter>();
+        c.Properties<CalendarId>().HaveConversion<CalendarIdConverter>();
+        // Weekdays are stored by name, like priorities.
+        c.Properties<DayOfWeek>().HaveConversion<string>().HaveMaxLength(10);
         // Priorities are stored by name: readable in SQL, and safe if the enum is ever reordered.
         c.Properties<Priority>().HaveConversion<string>().HaveMaxLength(20);
         // Targets are stored as whole minutes, the unit a person types.
@@ -97,6 +101,69 @@ internal sealed class SlaDbContext(DbContextOptions<SlaDbContext> options) : DbC
                 SeededPolicy(Priority.Normal, hours: 8, resolveHours: 72, installed),
                 SeededPolicy(Priority.Low, hours: 24, resolveHours: 120, installed));
         });
+
+        ConfigureCalendar(b);
+    }
+
+    private static void ConfigureCalendar(ModelBuilder b)
+    {
+        var calendarId = new CalendarId(1);
+        var installed = new DateTime(2026, 11, 21, 0, 0, 0, DateTimeKind.Utc);
+
+        b.Entity<WorkCalendar>(e =>
+        {
+            e.ToTable("work_calendar");
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.TimeZoneId).HasMaxLength(64);
+            e.Property(x => x.UpdatedByName).HasMaxLength(100);
+            // Two admins saving at once: the second save fails instead of overwriting the first.
+            e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");
+            e.Ignore(x => x.DomainEvents);
+
+            e.HasMany(x => x.Days).WithOne().HasForeignKey("CalendarId");
+            e.Navigation(x => x.Days).HasField("_days").UsePropertyAccessMode(PropertyAccessMode.Field);
+            e.HasMany(x => x.Holidays).WithOne().HasForeignKey("CalendarId");
+            e.Navigation(x => x.Holidays).HasField("_holidays").UsePropertyAccessMode(PropertyAccessMode.Field);
+
+            // Every installation starts Monday to Friday, 08:00 to 17:00, in Manila (decision E3). An admin edits it on a screen.
+            e.HasData(new
+            {
+                Id = calendarId,
+                TimeZoneId = "Asia/Manila",
+                UpdatedUtc = installed,
+                UpdatedById = new UserId(0),
+                UpdatedByName = "Installation default",
+            });
+        });
+
+        b.Entity<WorkDay>(e =>
+        {
+            e.ToTable("work_day", t => t.HasCheckConstraint("ck_work_day_hours", "(opens IS NULL AND closes IS NULL) OR closes > opens"));
+            e.HasKey("CalendarId", nameof(WorkDay.Day));
+            e.Ignore(x => x.IsOpen);
+            e.HasData(
+                SeededDay(calendarId, DayOfWeek.Monday, open: true),
+                SeededDay(calendarId, DayOfWeek.Tuesday, open: true),
+                SeededDay(calendarId, DayOfWeek.Wednesday, open: true),
+                SeededDay(calendarId, DayOfWeek.Thursday, open: true),
+                SeededDay(calendarId, DayOfWeek.Friday, open: true),
+                SeededDay(calendarId, DayOfWeek.Saturday, open: false),
+                SeededDay(calendarId, DayOfWeek.Sunday, open: false));
+        });
+
+        b.Entity<Holiday>(e =>
+        {
+            e.ToTable("holiday");
+            e.HasKey("CalendarId", nameof(Holiday.Date));
+            e.Property(x => x.Name).HasMaxLength(WorkCalendar.HolidayNameMaxLength);
+        });
+    }
+
+    private static object SeededDay(CalendarId calendarId, DayOfWeek day, bool open)
+    {
+        if (!open) return new { CalendarId = calendarId, Day = day, Opens = (TimeOnly?)null, Closes = (TimeOnly?)null };
+        return new { CalendarId = calendarId, Day = day, Opens = (TimeOnly?)new TimeOnly(8, 0), Closes = (TimeOnly?)new TimeOnly(17, 0) };
     }
 
     // HasData takes the property values, because the policy's setters are private.
@@ -116,6 +183,7 @@ internal sealed class SlaDbContext(DbContextOptions<SlaDbContext> options) : DbC
 
 internal sealed class TicketIdConverter() : ValueConverter<TicketId, long>(v => v.Value, v => new TicketId(v));
 internal sealed class UserIdConverter() : ValueConverter<UserId, long>(v => v.Value, v => new UserId(v));
+internal sealed class CalendarIdConverter() : ValueConverter<CalendarId, int>(v => v.Value, v => new CalendarId(v));
 internal sealed class MinutesConverter() : ValueConverter<TimeSpan, int>(v => (int)v.TotalMinutes, v => TimeSpan.FromMinutes(v));
 
 // For `dotnet ef migrations add`; never connects.

@@ -22,6 +22,7 @@ public static class DependencyInjection
         // This tells Dapper that the two are the same name, for every read query in every module.
         Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true;
         Dapper.SqlMapper.AddTypeHandler(new DateOnlyTypeHandler());
+        Dapper.SqlMapper.AddTypeHandler(new TimeOnlyTypeHandler());
 
         // Every module's DbContext picks up the registered interceptors (see each module's AddXModule).
         services.AddSingleton<IInterceptor, OutboxInterceptor>();
@@ -33,8 +34,8 @@ public static class DependencyInjection
 
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, CurrentUser>();
-        services.AddSingleton<TimeProvider>(new CompanyTimeProvider(
-            TimeZoneInfo.FindSystemTimeZoneById(config["Company:TimeZone"] ?? "Asia/Manila")));
+        services.AddSingleton<CompanyZone>();
+        services.AddSingleton<TimeProvider, CompanyTimeProvider>();
         return services;
     }
 }
