@@ -678,6 +678,8 @@ Confirmed by the user, 2026-11-20:
 | E7 | Y6 | **Search uses PostgreSQL's `simple` configuration with `unaccent`**, plus prefix matching, so Taglish works. No language stemming |
 | — | Y7 | **Still open, on purpose: which reports exist, and the backup schedule.** The reports are built on what Y3–Y5 store (SLA clocks and their met/missed results, pause time, breaches, teams, categories), and backups must cover Y6's attachment volume. Decide both, with the user, when Y5 and Y6 are done. Don't design them earlier |
 | E8 | Y7 | **Closed tickets are kept forever by default.** An Admin may set a retention period. A nightly job then deletes closed tickets older than that, with their attachments, and logs what it removed (Data Privacy Act) |
+| E9 | Y5/Y6 | **Review mail (user, 2026-11-21).** Submitting an article mails the KbEditors; rejecting or publishing mails the author. Reuses lesson 19's mail queue, keyed by the history entry. Lands with the next milestone that touches mail (Y5 scheduler) or Y6, whichever comes first |
+| E10 | after Y6 search | **Knowledge base extras, in the finished product (user, 2026-11-21):** article categories/tags (filter and search by them), "Was this helpful?" votes (one per signed-in person per article, feeds a quality report), and review-due dates (an article not reviewed in N months is flagged; N is an admin setting). Not in Y4. Plan them as their own lesson(s) after Y6's search, and renumber the lessons after |
 
 - **Y5 business time:**
   - The calendar of E3: working days and open and close times per day, in the calendar's own time zone.
@@ -819,8 +821,8 @@ Retired risks are in [ROADMAP-HISTORY.md](ROADMAP-HISTORY.md).
   landing at closing time). Retire it in Y5 with FsCheck properties before any screen depends on it.
 - **The breach scheduler must survive restarts** and never double-escalate: deadlines in the database, an
   idempotent escalation, a restart test.
-- **Full `podman compose up` not executed yet** (carried over from the ERP): run the install end to end on a Linux
-  server before the first release.
+- **Full `podman compose up` not executed yet** (carried over from the ERP): run it end to end **at the start of Y5** (user, 2026-11-21),
+  not in Y7, so a deploy surprise does not wait until lesson 28.
 - **`podman exec` and crun 1.31** (carried over): if integration tests hang, check `rpm -q crun` first; fix
   on the machine, never in the code.
 
