@@ -1736,4 +1736,4 @@ And that's where this lesson ends. The product can now answer a question before 
 
 ---
 
-← [Lesson 20 — The knowledge base, part one: articles and the review](20-articles.md) · Next: Lesson 22 — Business hours and holidays (coming with milestone Y5) →
+← [Lesson 20 — The knowledge base, part one: articles and the review](20-articles.md) · Next: [Lesson 22 — Business hours: time that only counts while you are open](22-business-time.md) →
