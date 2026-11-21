@@ -19,7 +19,10 @@ internal sealed class SlaDbContext(DbContextOptions<SlaDbContext> options) : DbC
     public static DbContextOptionsBuilder Configure(DbContextOptionsBuilder options, DbConnection connection)
     {
         return options
-            .UseNpgsql(connection, npg => npg.MigrationsHistoryTable("__EFMigrationsHistory", Schema))
+            .UseNpgsql(connection, npg => npg
+                .MigrationsHistoryTable("__EFMigrationsHistory", Schema)
+                // The calendar loads two lists (days and holidays); separate queries keep it from loading their product.
+                .UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery))
             .UseSnakeCaseNamingConvention();
     }
 
@@ -86,6 +89,8 @@ internal sealed class SlaDbContext(DbContextOptions<SlaDbContext> options) : DbC
             e.Ignore(x => x.AtRiskFromUtc);
             e.Ignore(x => x.IsRunning);
             e.Ignore(x => x.IsPaused);
+            // The scheduler finds the clocks whose check time has come: only running clocks have one.
+            e.HasIndex(x => x.NextCheckUtc).HasFilter("next_check_utc IS NOT NULL");
             // Open time paused is kept to the microsecond: the minutes the targets use would lose up to a minute per pause.
             e.Property(x => x.PausedFor).HasConversion<MicrosecondsConverter>();
             e.Ignore(x => x.DomainEvents);

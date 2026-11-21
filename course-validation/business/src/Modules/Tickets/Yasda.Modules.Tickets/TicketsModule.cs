@@ -51,6 +51,8 @@ public static class TicketsModule
         services.AddScoped<IDomainEventHandler<TicketAssignedEvent>, EmailOnAssignment>();
         services.AddScoped<IDomainEventHandler<ReplyAddedEvent>, EmailOnReply>();
         services.AddScoped<IIntegrationEventHandler<DeadlinesChanged>, StoreDeadlines>();
+        services.AddScoped<IIntegrationEventHandler<SlaBreachImminent>, EmailOnSlaWarning>();
+        services.AddScoped<IIntegrationEventHandler<SlaBreached>, EmailOnSlaBreach>();
         services.AddScoped<IIntegrationEventHandler<TeamRenamed>, RenameTeamCopies>();
 
         // Without includeInternalTypes no validator is found, and validation silently stops.

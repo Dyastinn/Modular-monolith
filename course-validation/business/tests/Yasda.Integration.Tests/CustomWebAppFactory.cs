@@ -56,6 +56,8 @@ public sealed class CustomWebAppFactory : WebApplicationFactory<Program>, IAsync
         builder.UseSetting("Outbox:PollIntervalMs", "200");
         builder.UseSetting("Mail:PollIntervalMs", "200");
         builder.UseSetting("Mail:MaxAttempts", "3");
+        // The SLA scheduler wakes once an hour here; the tests run its scanner themselves, when they want it.
+        builder.UseSetting("Sla:SchedulerSeconds", "3600");
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IMailer>();

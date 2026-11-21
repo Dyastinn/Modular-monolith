@@ -56,6 +56,11 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
                     paused_for = table.Column<long>(type: "bigint", nullable: false),
                     last_paused_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     last_resumed_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    response_warned_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    response_breached_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    resolve_warned_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    resolve_breached_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    next_check_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     version = table.Column<int>(type: "integer", nullable: false),
                     last_reopened_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     priority_changed_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
@@ -186,6 +191,13 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
                 table: "outbox_message",
                 column: "occurred_utc",
                 filter: "processed_utc IS NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "ix_sla_clock_next_check_utc",
+                schema: "sla",
+                table: "sla_clock",
+                column: "next_check_utc",
+                filter: "next_check_utc IS NOT NULL");
         }
 
         /// <inheritdoc />

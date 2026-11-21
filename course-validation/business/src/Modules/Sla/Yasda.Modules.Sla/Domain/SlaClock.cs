@@ -31,6 +31,16 @@ internal sealed class SlaClock : AggregateRoot<TicketId>
     public DateTime? LastPausedUtc { get; private set; }
     public DateTime? LastResumedUtc { get; private set; }
     public bool IsPaused => PausedSinceUtc is not null;
+
+    // Each warning and each breach is raised once per target and remembered, so a restart or a second scheduler never repeats it.
+    public DateTime? ResponseWarnedUtc { get; private set; }
+    public DateTime? ResponseBreachedUtc { get; private set; }
+    public DateTime? ResolveWarnedUtc { get; private set; }
+    public DateTime? ResolveBreachedUtc { get; private set; }
+
+    // The next moment the scheduler has something to do for this clock: a warning to send or a breach to announce. null when
+    // nothing is running, or while paused. The scheduler looks for clocks whose NextCheckUtc has come.
+    public DateTime? NextCheckUtc { get; private set; }
     public int Version { get; private set; }
 
     // Kept so a late event can be recognized as late.
@@ -262,8 +272,72 @@ internal sealed class SlaClock : AggregateRoot<TicketId>
         return new DateTime(value.Ticks - value.Ticks % TicksPerMicrosecond, value.Kind);
     }
 
+    // The scheduler asks each clock that is due a check: has a target run out of time, or entered its last quarter? Warned and
+    // breached are remembered, so asking again changes nothing. A target that is already past due is breached, not warned.
+    public void Scan(DateTime nowUtc)
+    {
+        nowUtc = WholeMicroseconds(nowUtc);
+        if (Cancelled || IsPaused) return;
+
+        if (RespondedUtc is null)
+        {
+            if (ResponseBreachedUtc is null && nowUtc > ResponseDueUtc)
+            {
+                ResponseBreachedUtc = nowUtc;
+                Raise(new SlaBreachedEvent(Id, SlaTarget.Response, ResponseDueUtc));
+            }
+            else if (ResponseBreachedUtc is null && ResponseWarnedUtc is null && nowUtc >= ResponseAtRiskUtc)
+            {
+                ResponseWarnedUtc = nowUtc;
+                Raise(new SlaBreachImminentEvent(Id, SlaTarget.Response, ResponseDueUtc));
+            }
+        }
+
+        if (ResolvedUtc is null)
+        {
+            if (ResolveBreachedUtc is null && nowUtc > ResolveDueUtc)
+            {
+                ResolveBreachedUtc = nowUtc;
+                Raise(new SlaBreachedEvent(Id, SlaTarget.Resolve, ResolveDueUtc));
+            }
+            else if (ResolveBreachedUtc is null && ResolveWarnedUtc is null && nowUtc >= ResolveAtRiskUtc)
+            {
+                ResolveWarnedUtc = nowUtc;
+                Raise(new SlaBreachImminentEvent(Id, SlaTarget.Resolve, ResolveDueUtc));
+            }
+        }
+
+        UpdateNextCheck();
+    }
+
+    private void UpdateNextCheck()
+    {
+        NextCheckUtc = null;
+        if (Cancelled || IsPaused) return;
+
+        if (RespondedUtc is null) NextCheckUtc = Earliest(NextCheckUtc, NextActionOf(ResponseWarnedUtc, ResponseBreachedUtc, ResponseAtRiskUtc, ResponseDueUtc));
+        if (ResolvedUtc is null) NextCheckUtc = Earliest(NextCheckUtc, NextActionOf(ResolveWarnedUtc, ResolveBreachedUtc, ResolveAtRiskUtc, ResolveDueUtc));
+    }
+
+    // For one running target: when the next warning or breach is due, or null when both have been sent.
+    private static DateTime? NextActionOf(DateTime? warnedUtc, DateTime? breachedUtc, DateTime atRiskUtc, DateTime dueUtc)
+    {
+        if (breachedUtc is not null) return null;
+        if (warnedUtc is null) return atRiskUtc;
+        return dueUtc;
+    }
+
+    private static DateTime? Earliest(DateTime? first, DateTime? second)
+    {
+        if (first is null) return second;
+        if (second is null) return first;
+        if (first < second) return first;
+        return second;
+    }
+
     private void Changed()
     {
+        UpdateNextCheck();
         Version++;
         Raise(new DeadlinesChangedEvent(Id, Version, ResponseDueUtc, ResponseMet, ResolveDueUtc, ResolutionMet,
             NextDueUtc, AtRiskFromUtc, IsPaused));

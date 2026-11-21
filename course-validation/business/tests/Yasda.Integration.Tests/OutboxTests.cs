@@ -42,6 +42,8 @@ public class OutboxTests(CustomWebAppFactory factory)
             new TicketsDomain.TicketResumedEvent(ticketsId, at),
             new SlaDomain.DeadlinesChangedEvent(new SlaDomain.TicketId(7), 3, at, true, at.AddHours(20), null, at.AddHours(20), at.AddHours(15), false),
             new SlaDomain.DeadlinesChangedEvent(new SlaDomain.TicketId(8), 1, at, null, at.AddHours(20), false, null, null, true),
+            new SlaDomain.SlaBreachImminentEvent(new SlaDomain.TicketId(7), SlaDomain.SlaTarget.Resolve, at),
+            new SlaDomain.SlaBreachedEvent(new SlaDomain.TicketId(7), SlaDomain.SlaTarget.Response, at),
         ];
 
         foreach (var original in events)
@@ -62,7 +64,7 @@ public class OutboxTests(CustomWebAppFactory factory)
             typeof(TicketsDomain.FirstAgentReplyEvent), typeof(TicketsDomain.TicketResolvedEvent),
             typeof(TicketsDomain.TicketReopenedEvent), typeof(TicketsDomain.TicketCancelledEvent), typeof(TicketsDomain.TicketPriorityChangedEvent),
             typeof(TicketsDomain.TicketPendingEvent), typeof(TicketsDomain.TicketResumedEvent),
-            typeof(SlaDomain.DeadlinesChangedEvent),
+            typeof(SlaDomain.DeadlinesChangedEvent), typeof(SlaDomain.SlaBreachImminentEvent), typeof(SlaDomain.SlaBreachedEvent),
         };
         Type[] anchors = [typeof(TicketsDomain.Ticket), typeof(SlaDomain.SlaClock)];
 

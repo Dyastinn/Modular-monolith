@@ -590,4 +590,134 @@ public class SlaClockTests
         clock.IsPaused.Should().BeTrue();
         clock.NextDueUtc.Should().BeNull();
     }
+
+    // ---- The scheduler's questions. Monday 09:00 Manila, 4 open hours to respond (due 13:00, at risk from 12:00), 24 to resolve.
+
+    [Fact]
+    public void A_new_clock_is_next_checked_when_its_response_target_enters_its_last_quarter()
+    {
+        var clock = MondayMorningClock();
+
+        clock.NextCheckUtc.Should().Be(ManilaTime(11, 23, 12));
+    }
+
+    [Fact]
+    public void Scanning_before_the_last_quarter_raises_nothing()
+    {
+        var clock = MondayMorningClock();
+
+        clock.Scan(ManilaTime(11, 23, 11, 59));
+
+        clock.DomainEvents.Should().BeEmpty();
+        clock.NextCheckUtc.Should().Be(ManilaTime(11, 23, 12));
+    }
+
+    [Fact]
+    public void Scanning_in_the_last_quarter_raises_one_warning_and_then_waits_for_the_due_time()
+    {
+        var clock = MondayMorningClock();
+
+        clock.Scan(ManilaTime(11, 23, 12, 30));
+        clock.Scan(ManilaTime(11, 23, 12, 31));
+
+        var warning = clock.DomainEvents.Should().ContainSingle().Which.Should().BeOfType<SlaBreachImminentEvent>().Which;
+        warning.Target.Should().Be(SlaTarget.Response);
+        warning.DueUtc.Should().Be(ManilaTime(11, 23, 13));
+        clock.NextCheckUtc.Should().Be(ManilaTime(11, 23, 13));
+    }
+
+    [Fact]
+    public void Scanning_after_the_due_time_raises_one_breach_and_then_checks_the_resolve_target()
+    {
+        var clock = MondayMorningClock();
+        clock.Scan(ManilaTime(11, 23, 12, 30));
+        clock.ClearEvents();
+
+        clock.Scan(ManilaTime(11, 23, 13, 1));
+        clock.Scan(ManilaTime(11, 23, 14));
+
+        clock.DomainEvents.Should().ContainSingle().Which.Should().BeOfType<SlaBreachedEvent>();
+        clock.ResponseBreachedUtc.Should().Be(ManilaTime(11, 23, 13, 1));
+        clock.NextCheckUtc.Should().Be(clock.ResolveAtRiskUtc, "the response target is done with; the resolve target is next");
+    }
+
+    [Fact]
+    public void A_target_found_already_late_is_breached_without_a_warning_first()
+    {
+        var clock = MondayMorningClock();
+
+        clock.Scan(ManilaTime(11, 24, 9));
+
+        clock.DomainEvents.Should().ContainSingle().Which.Should().BeOfType<SlaBreachedEvent>();
+        clock.ResponseWarnedUtc.Should().BeNull();
+    }
+
+    [Fact]
+    public void Scanning_exactly_at_the_due_time_is_not_yet_a_breach()
+    {
+        var clock = MondayMorningClock();
+        clock.Scan(ManilaTime(11, 23, 12, 30));
+        clock.ClearEvents();
+
+        clock.Scan(ManilaTime(11, 23, 13));
+
+        clock.DomainEvents.Should().BeEmpty("an answer at exactly the due time is still on time");
+    }
+
+    [Fact]
+    public void A_met_target_is_never_announced_and_a_clock_with_nothing_running_has_no_check_time()
+    {
+        var clock = MondayMorningClock();
+        clock.RecordResponse(ManilaTime(11, 23, 10), OfficeWeek());
+        clock.RecordResolution(ManilaTime(11, 23, 11), OfficeWeek());
+        clock.ClearEvents();
+
+        clock.Scan(ManilaTime(12, 30, 9));
+
+        clock.DomainEvents.Should().BeEmpty();
+        clock.NextCheckUtc.Should().BeNull();
+    }
+
+    [Fact]
+    public void A_paused_or_cancelled_clock_is_never_announced_and_has_no_check_time()
+    {
+        var paused = MondayMorningClock();
+        paused.Pause(ManilaTime(11, 23, 10));
+        var cancelled = MondayMorningClock();
+        cancelled.Cancel();
+        paused.ClearEvents();
+        cancelled.ClearEvents();
+
+        paused.Scan(ManilaTime(12, 30, 9));
+        cancelled.Scan(ManilaTime(12, 30, 9));
+
+        paused.DomainEvents.Should().BeEmpty();
+        cancelled.DomainEvents.Should().BeEmpty();
+        paused.NextCheckUtc.Should().BeNull();
+        cancelled.NextCheckUtc.Should().BeNull();
+    }
+
+    [Fact]
+    public void Resuming_makes_the_clock_checkable_again_at_its_new_times()
+    {
+        var clock = MondayMorningClock();
+        clock.Pause(ManilaTime(11, 23, 10));
+
+        clock.Resume(ManilaTime(11, 24, 10), OfficeWeek());
+
+        clock.NextCheckUtc.Should().Be(clock.ResponseAtRiskUtc);
+    }
+
+    [Fact]
+    public void A_warning_already_sent_is_not_sent_again_when_the_due_time_moves_later()
+    {
+        var clock = MondayMorningClock();
+        clock.Scan(ManilaTime(11, 23, 12, 30));
+        clock.ClearEvents();
+
+        clock.Recalculate(TimeSpan.FromHours(8), TimeSpan.FromHours(24), OfficeWeek());
+        clock.Scan(ManilaTime(11, 24, 9));
+
+        clock.DomainEvents.OfType<SlaBreachImminentEvent>().Should().BeEmpty("it was warned once already");
+    }
 }

@@ -12,8 +12,8 @@ using Yasda.Modules.Sla.Infrastructure;
 namespace Yasda.Modules.Sla.Infrastructure.Migrations
 {
     [DbContext(typeof(SlaDbContext))]
-    [Migration("20261121060610_AddReadFunctions")]
-    partial class AddReadFunctions
+    [Migration("20261121061610_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -70,6 +70,10 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_resumed_utc");
 
+                    b.Property<DateTime?>("NextCheckUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_check_utc");
+
                     b.Property<long>("PausedFor")
                         .HasColumnType("bigint")
                         .HasColumnName("paused_for");
@@ -92,9 +96,17 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("resolve_at_risk_utc");
 
+                    b.Property<DateTime?>("ResolveBreachedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolve_breached_utc");
+
                     b.Property<DateTime>("ResolveDueUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("resolve_due_utc");
+
+                    b.Property<DateTime?>("ResolveWarnedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolve_warned_utc");
 
                     b.Property<int>("ResolveWithin")
                         .HasColumnType("integer")
@@ -116,9 +128,17 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("response_at_risk_utc");
 
+                    b.Property<DateTime?>("ResponseBreachedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("response_breached_utc");
+
                     b.Property<DateTime>("ResponseDueUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("response_due_utc");
+
+                    b.Property<DateTime?>("ResponseWarnedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("response_warned_utc");
 
                     b.Property<uint>("RowVersion")
                         .IsConcurrencyToken()
@@ -136,6 +156,10 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_sla_clock");
+
+                    b.HasIndex("NextCheckUtc")
+                        .HasDatabaseName("ix_sla_clock_next_check_utc")
+                        .HasFilter("next_check_utc IS NOT NULL");
 
                     b.ToTable("sla_clock", "sla", t =>
                         {

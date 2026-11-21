@@ -43,6 +43,12 @@ public static class SlaModule
         services.AddScoped<IIntegrationEventHandler<TicketCancelled>, StopClockOnTicketCancelled>();
         services.AddScoped<IIntegrationEventHandler<TicketPriorityChanged>, ChangeTargetsOnPriorityChanged>();
         services.AddScoped<IDomainEventHandler<DeadlinesChangedEvent>, PublishDeadlinesChanged>();
+        services.AddScoped<IDomainEventHandler<SlaBreachImminentEvent>, PublishSlaBreachImminent>();
+        services.AddScoped<IDomainEventHandler<SlaBreachedEvent>, PublishSlaBreached>();
+
+        // The breach scheduler: warnings and breaches are found by polling the clocks' check times.
+        services.AddScoped<SlaScanner>();
+        services.AddHostedService<SlaScheduler>();
 
         // Without includeInternalTypes no validator is found, and validation silently stops.
         services.AddValidatorsFromAssembly(typeof(SlaModule).Assembly, includeInternalTypes: true);
