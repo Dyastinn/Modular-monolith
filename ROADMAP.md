@@ -64,7 +64,7 @@ to date by `DeadlinesChanged`.
   re-followed from the text, see Part D of Y3). Lesson 20 is the writing side (rules, review, edit list, audit trail, staff reads, all
   behind the API); lesson 21 is the reading side and every screen. Split in two by the user's decision on 2026-11-21 (the single lesson
   was 184 KB); every later lesson moved up by one. Details below.
-- **Y5 — Real SLA** ⬜ · lessons 22–23: business hours, Philippine holidays as editable data, pause/resume, FsCheck
+- **Y5 — Real SLA** 🟡 code S0–S7 done 2026-11-21 (S3b and the lessons open; see "Y5" below) · lessons 22–23 (now 22–26, F11): business hours, Philippine holidays as editable data, pause/resume, FsCheck
   properties; the breach scheduler with warnings, breaches and escalation.
 - **Y6 — Attachments and search** ⬜ · lessons 24–25: storage on a volume, limits, safe downloads; PostgreSQL full-text search
   over tickets and articles; suggested articles. A WYSIWYG editor for articles (user, 2026-11-21: plain text first) is planned between
@@ -663,7 +663,7 @@ rules (public-only filter, archived filter, and the list's filter). What differs
   checklist 29 (29 lessons). README, START-HERE, WRITING-STYLE and lessons 02, 05, 12 and 19 were updated; older log lines keep the numbers they
   were written with.
 
-### Y5 — Real SLA ⬜ (planned 2026-11-21; decisions confirmed by the user the same day)
+### Y5 — Real SLA 🟡 code S0–S7 done 2026-11-21; S3b (category overrides) and lessons 22–26 still open (planned 2026-11-21; decisions confirmed by the user the same day)
 
 Decisions:
 
