@@ -402,4 +402,38 @@ public class ArticleLifeTests
         if (status == ArticleStatus.InReview) return NewInReview();
         return NewPublished();
     }
+
+    [Fact]
+    public void Submitting_rejecting_and_publishing_each_raise_the_event_somebody_must_hear_about()
+    {
+        var article = NewDraft();
+        article.ClearEvents();
+
+        article.Submit(Author, Nothing, Now);
+        article.Reject("Add a screenshot", Kira, Now);
+        article.Submit(Author, Nothing, Now);
+        article.Publish(Kira, actorIsAdmin: false, Now);
+
+        article.DomainEvents.Should().HaveCount(4);
+        article.DomainEvents[0].Should().BeOfType<ArticleSubmittedEvent>().Which.SubmittedById.Should().Be(Author.Id);
+        var rejected = article.DomainEvents[1].Should().BeOfType<ArticleRejectedEvent>().Which;
+        rejected.AuthorId.Should().Be(Author.Id);
+        rejected.RejectedById.Should().Be(Kira.Id);
+        rejected.Reason.Should().Be("Add a screenshot");
+        var published = article.DomainEvents[3].Should().BeOfType<ArticlePublishedEvent>().Which;
+        published.VersionNumber.Should().Be(1);
+        published.PublishedById.Should().Be(Kira.Id);
+    }
+
+    [Fact]
+    public void A_refused_step_raises_nothing()
+    {
+        var article = NewDraft();
+        article.ClearEvents();
+
+        CodeOf(() => article.Reject("No", Kira, Now));
+        CodeOf(() => article.Publish(Kira, actorIsAdmin: false, Now));
+
+        article.DomainEvents.Should().BeEmpty();
+    }
 }

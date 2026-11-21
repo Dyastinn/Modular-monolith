@@ -94,6 +94,7 @@ internal sealed class Article : AggregateRoot<ArticleId>
         RejectionReason = null;
         UpdatedUtc = nowUtc;
         Record(ArticleAction.Submitted, actor, nowUtc);
+        Raise(new ArticleSubmittedEvent(Guid.NewGuid(), Id, Title, actor.Id));
     }
 
     // A reviewer sends it back to the author, and says why.
@@ -107,6 +108,7 @@ internal sealed class Article : AggregateRoot<ArticleId>
         RejectionReason = text;
         UpdatedUtc = nowUtc;
         Record(ArticleAction.Rejected, actor, nowUtc, note: text);
+        Raise(new ArticleRejectedEvent(Guid.NewGuid(), Id, Title, CreatedById, actor.Id, text));
     }
 
     // A reviewer approves it: the working copy becomes the next numbered version, which readers see from now on. The person
@@ -125,6 +127,7 @@ internal sealed class Article : AggregateRoot<ArticleId>
         RejectionReason = null;
         UpdatedUtc = nowUtc;
         Record(ArticleAction.Published, actor, nowUtc, versionNumber: CurrentVersion);
+        Raise(new ArticlePublishedEvent(Guid.NewGuid(), Id, Title, CreatedById, actor.Id, CurrentVersion));
     }
 
     // Takes the article away from readers, whatever its status. Its versions stay.

@@ -4,6 +4,7 @@ using AwesomeAssertions;
 using Dapper;
 using Yasda.Shared.BuildingBlocks;
 using Microsoft.Extensions.DependencyInjection;
+using KnowledgeDomain = Yasda.Modules.Knowledge.Domain;
 using SlaDomain = Yasda.Modules.Sla.Domain;
 using TicketsDomain = Yasda.Modules.Tickets.Domain;
 
@@ -44,6 +45,9 @@ public class OutboxTests(CustomWebAppFactory factory)
             new SlaDomain.DeadlinesChangedEvent(new SlaDomain.TicketId(8), 1, at, null, at.AddHours(20), false, null, null, true),
             new SlaDomain.SlaBreachImminentEvent(new SlaDomain.TicketId(7), SlaDomain.SlaTarget.Resolve, at),
             new SlaDomain.SlaBreachedEvent(new SlaDomain.TicketId(7), SlaDomain.SlaTarget.Response, at),
+            new KnowledgeDomain.ArticleSubmittedEvent(Guid.NewGuid(), new KnowledgeDomain.ArticleId(5), "How to reset a password", new KnowledgeDomain.UserId(3)),
+            new KnowledgeDomain.ArticleRejectedEvent(Guid.NewGuid(), new KnowledgeDomain.ArticleId(5), "How to reset a password", new KnowledgeDomain.UserId(3), new KnowledgeDomain.UserId(4), "Add a screenshot"),
+            new KnowledgeDomain.ArticlePublishedEvent(Guid.NewGuid(), new KnowledgeDomain.ArticleId(5), "How to reset a password", new KnowledgeDomain.UserId(3), new KnowledgeDomain.UserId(4), 2),
         ];
 
         foreach (var original in events)
@@ -65,8 +69,9 @@ public class OutboxTests(CustomWebAppFactory factory)
             typeof(TicketsDomain.TicketReopenedEvent), typeof(TicketsDomain.TicketCancelledEvent), typeof(TicketsDomain.TicketPriorityChangedEvent),
             typeof(TicketsDomain.TicketPendingEvent), typeof(TicketsDomain.TicketResumedEvent),
             typeof(SlaDomain.DeadlinesChangedEvent), typeof(SlaDomain.SlaBreachImminentEvent), typeof(SlaDomain.SlaBreachedEvent),
+            typeof(KnowledgeDomain.ArticleSubmittedEvent), typeof(KnowledgeDomain.ArticleRejectedEvent), typeof(KnowledgeDomain.ArticlePublishedEvent),
         };
-        Type[] anchors = [typeof(TicketsDomain.Ticket), typeof(SlaDomain.SlaClock)];
+        Type[] anchors = [typeof(TicketsDomain.Ticket), typeof(SlaDomain.SlaClock), typeof(KnowledgeDomain.Article)];
 
         var missing = new List<string>();
         foreach (var anchor in anchors)

@@ -697,7 +697,9 @@ Steps (build first, commit each; lessons after):
   (`*_warned_utc`, `*_breached_utc`); paused, cancelled and finished clocks have no check time. Tickets mails the assignee (warning) and the assignee plus the team's
   notify list (breach; it always holds the team leads, so this is a superset of the plan's "team leads"), keyed by kind, ticket, target and person. Done 2026-11-21.
   `A_restart_mid_breach_escalates_once` and a concurrent-scanner test are in `SlaSchedulerTests`.
-- [ ] **S6** Review mail (E9).
+- [x] **S6** Review mail (E9). Done 2026-11-21. Submitting tells the KbEditors (the Admins when the installation has none; never the submitter); sending back or
+  publishing tells the author (never when they did it themselves). `Article` raises `ArticleSubmitted/Rejected/PublishedEvent`; mail handlers in Knowledge queue through
+  `IMailQueue`, keyed by event. Identity gained `IUserDirectory.UsersInRoleAsync` (and `identity.users_in_role`).
 - [ ] **S7** Automatic rules and their settings screen (E4).
 - [ ] **S8** Whole solution green, README and ROADMAP updated; then lessons 22–26 written, followed in the scratch project, ANSWER-KEY and GLOSSARY.
 

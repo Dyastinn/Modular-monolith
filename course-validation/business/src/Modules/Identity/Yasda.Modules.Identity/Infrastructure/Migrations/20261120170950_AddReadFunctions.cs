@@ -1,4 +1,4 @@
-using Yasda.Shared.BuildingBlocks;
+﻿using Yasda.Shared.BuildingBlocks;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -23,10 +23,12 @@ namespace Yasda.Modules.Identity.Infrastructure.Migrations
             migrationBuilder.Sql(Sql("identity.teams_of_user.v1.sql"));
             migrationBuilder.Sql(Sql("identity.notify_list.v1.sql"));
             migrationBuilder.Sql(Sql("identity.leads_team_of.v1.sql"));
+            migrationBuilder.Sql(Sql("identity.users_in_role.v1.sql"));
         }
 
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql("DROP FUNCTION IF EXISTS identity.users_in_role(text);");
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS identity.leads_team_of(bigint, bigint);");
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS identity.notify_list(bigint);");
             migrationBuilder.Sql("DROP FUNCTION IF EXISTS identity.teams_of_user(bigint);");

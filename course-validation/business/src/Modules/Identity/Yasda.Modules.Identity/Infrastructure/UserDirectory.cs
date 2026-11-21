@@ -20,6 +20,14 @@ internal sealed class UserDirectory(IDbConnectionFactory connections) : IUserDir
             "SELECT full_name FROM identity.users WHERE id = @userId", new { userId }, cancellationToken: ct));
     }
 
+    public async Task<IReadOnlyList<long>> UsersInRoleAsync(string role, CancellationToken ct)
+    {
+        await using var conn = connections.Create();
+        var ids = await conn.QueryAsync<long>(new CommandDefinition(
+            "SELECT user_id FROM identity.users_in_role(@role)", new { role }, cancellationToken: ct));
+        return ids.ToList();
+    }
+
     public async Task<StaffMember?> FindStaffAsync(long userId, CancellationToken ct)
     {
         await using var conn = connections.Create();

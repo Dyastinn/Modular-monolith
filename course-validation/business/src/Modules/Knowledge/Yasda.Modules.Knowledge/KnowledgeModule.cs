@@ -37,6 +37,11 @@ public static class KnowledgeModule
         services.AddScoped<PopularArticlesHandler>();
         services.AddScoped<RecordArticleViewHandler>();
 
+        // Event handlers are registered by the interface they answer to (the outbox looks them up that way).
+        services.AddScoped<IDomainEventHandler<ArticleSubmittedEvent>, EmailOnArticleSubmitted>();
+        services.AddScoped<IDomainEventHandler<ArticleRejectedEvent>, EmailOnArticleRejected>();
+        services.AddScoped<IDomainEventHandler<ArticlePublishedEvent>, EmailOnArticlePublished>();
+
         // Without includeInternalTypes no validator is found, and validation silently stops.
         services.AddValidatorsFromAssembly(typeof(KnowledgeModule).Assembly, includeInternalTypes: true);
         services.AddSingleton(ErrorCatalog.From(typeof(KnowledgeErrors)));

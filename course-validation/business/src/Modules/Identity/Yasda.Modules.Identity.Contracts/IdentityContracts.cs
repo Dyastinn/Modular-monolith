@@ -13,6 +13,9 @@ public interface IUserDirectory
 
     // An active account that may handle tickets (Agent, TeamLead or Admin), or null.
     Task<StaffMember?> FindStaffAsync(long userId, CancellationToken ct);
+
+    // The active accounts that have this role (a name from Roles). Knowledge uses it to tell the editors an article is waiting.
+    Task<IReadOnlyList<long>> UsersInRoleAsync(string role, CancellationToken ct);
 }
 
 public sealed record StaffMember(long Id, string FullName, string Role);
