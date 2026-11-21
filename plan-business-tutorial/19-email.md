@@ -361,7 +361,7 @@ services.AddHostedService<MailSender>();
 },
 ```
 
-`App:PublicUrl` is the address people reach YASDA at; the links in mails start with it. Lesson 27, which deploys the product, makes it a required setting.
+`App:PublicUrl` is the address people reach YASDA at; the links in mails start with it. Lesson 28, which deploys the product, makes it a required setting.
 
 ## 3. Tickets says what happened
 
@@ -876,4 +876,4 @@ And that's where this lesson ends. The system now tells the right people about t
 
 ---
 
-← [Lesson 18 — Categories and routing](18-routing.md) · Next: Lesson 20 — Knowledge base (coming with milestone Y4) →
+← [Lesson 18 — Categories and routing](18-routing.md) · Next: [Lesson 20 — The knowledge base, part one: articles and the review](20-articles.md) →

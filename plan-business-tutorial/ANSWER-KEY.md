@@ -663,3 +663,30 @@ A crash between the mail server accepting a mail and the row being marked sent s
 **8. Why is `IMailer` a singleton?**
 The transient `IEmailSender` depends on it, and a transient service can't depend on a scoped one. The mailer holds no state, so a singleton is fine.
 
+
+## Lesson 20 — The knowledge base, part one: articles and the review
+
+**1. Why does an article keep a working copy and numbered versions, and not one body and a status?**
+Editing and reading need different things. Editors need a place to change words freely; readers need text that never changes under them. A published article's working copy can be rewritten while readers keep reading the last version, and every version records who published it and when.
+
+**2. Who can't publish an article, and what is the exception?**
+The person who last changed the text. An Admin is the exception, so an installation with a single person in it can still publish. The trail records who did it either way.
+
+**3. Why does every method of `Article` set `UpdatedUtc`, even one that only adds a history row?**
+The article's row carries PostgreSQL's `xmin` as its version. A change that only adds a row to a list leaves the article's own row untouched, so its version doesn't move, and two people changing it at once would both succeed. Touching the article makes the second one fail.
+
+**4. Why are `MayEdit` and `MayManageEditors` static?**
+So a query, which can't load the article, can ask the same question the article asks, on the data it just read, to decide which controls to show. One rule, written once.
+
+**5. Who may edit an article, and which of them is decided by another module?**
+The author, someone on its edit list, a KbEditor or Admin, and a team lead of the author's team. The last is a fact about teams, so Identity answers it (`LeadsTeamOfAsync`) and the handler passes the answer in.
+
+**6. Why does `Publish` compare the publisher with `LastEditedById` and not with the author?**
+The rule is about the words, not the job. If a KbEditor rewrites someone's draft, the KbEditor wrote what is now in review, so someone else has to approve it. Comparing with the author would let the rewriter approve their own rewrite.
+
+**7. Why does a module that raises no events still have an `outbox_message` table?**
+The outbox dispatcher, its backlog gauges and its health check look for that table in every module's schema. Without it, they would log an error on every tick.
+
+**8. Why does the article write its own history, and not an event handler?**
+An event would need a handler to justify it, and a handler runs after the commit, so a crash could lose the line. The article adds the history row in the same save as the change, so the trail can't be forgotten and can't disagree with what happened.
+

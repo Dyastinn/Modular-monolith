@@ -263,7 +263,7 @@ What changed, and why:
   password it made up. Nothing is hard-coded, so nothing can point at the wrong server.
 - **`YASDA_TEST_DB` and the hard-coded string are gone.** There's nothing to point anywhere: every run gets a brand-new
   server.
-- **`TestDatabase.Container()`** lives in its own class so a later factory, in lesson 27, can start a server of its
+- **`TestDatabase.Container()`** lives in its own class so a later factory, in lesson 28, can start a server of its
   own too.
 
 And the tests? Not one changes. Every test that looks at the database does it through `factory.OpenDatabase()`, so that was

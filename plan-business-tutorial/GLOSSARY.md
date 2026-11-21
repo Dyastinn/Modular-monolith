@@ -564,3 +564,28 @@ The unique name of one mail (`kind:eventId:userId`). Queueing the same key twice
 **SMTP** (19)
 The protocol mail servers speak. `SmtpMailer` is the one class that uses it.
 
+
+---
+
+## Knowledge base
+
+**Working copy** (20)
+The text of an article that editors change. It is never what readers see. Picture it as the desk.
+
+**Article version** (20)
+A numbered copy of an article, made each time it is published. A version never changes. Readers see the newest one. Picture it as the wall.
+
+**Review** (20)
+The steps an article takes before readers see it: draft, in review, published. A KbEditor or Admin decides.
+
+**Four-eyes rule** (20)
+The person who last changed an article's text can't publish it, unless they are an Admin. A second person always looks.
+
+**Edit list** (20)
+The people who may edit one article without being its author, put there by the author, a team lead of the author's team, a KbEditor or an Admin.
+
+**Audit trail** (20)
+A line for every step taken on an article: who, what and when. The article writes it in the same save as the change, and it is never edited.
+
+**Archive** (20)
+Taking an article away from readers without destroying it. Its versions stay, and restoring it brings it back as a draft.
