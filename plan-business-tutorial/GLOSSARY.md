@@ -614,3 +614,10 @@ The business calendar's data: the time zone, the hours of each weekday and the h
 
 **Company zone** (22)
 The organization's time zone, held in memory and replaced when an Admin saves the calendar. It decides what "today" means in the app.
+
+**Holiday list** (23)
+A ready-made list of a country's holidays that an Admin loads into the calendar in one click. It holds only the holidays proclaimed for the years it covers.
+
+**CSV import** (23)
+Adding many holidays from a pasted file of `date,name` lines. One unreadable line refuses the whole file.
+

@@ -743,3 +743,26 @@ An organization changes its time zone on a screen, not by editing a file on the 
 
 **8. What is `CompanyZone` for, and what does it assume about how YASDA runs?**
 It holds the organization's time zone in memory, so `TimeProvider` can say what "today" means without a database call. It assumes one running instance, the course's target. Two instances would each need to hear about a change.
+
+## Lesson 23 — Holidays and the business hours screen
+
+**1. Why does a list of holidays go through one domain method, `AddHolidays`, instead of adding them one at a time from the handler?**
+So the calendar can check every name before it changes anything, and so a list and a file follow the same rules. Added one at a time, a bad holiday in the middle would leave half the list saved.
+
+**2. What happens when one line of an imported file is wrong, and why?**
+Nothing is imported, and the message names the line (`Line 3: ...`). Importing the good lines would leave holidays missing, and nobody would know which.
+
+**3. Which two kinds of holiday are not in the Philippine list, and why?**
+Eid'l Fitr and Eid'l Adha, because the proclamations say their dates are set later, by separate proclamations; and holidays that apply to one region only, such as the Metro Manila days of November 2026. An Admin adds them on the screen.
+
+**4. Why does loading a list twice change nothing the second time?**
+A date that is already a holiday keeps its name and is skipped, so the second load finds nothing new. It also means a list never renames a holiday an Admin wrote.
+
+**5. Why is the file sent as a string in JSON and not as an upload?**
+So it goes through the one validation filter every `/api` request passes, which can refuse an empty file or one that is too large before the handler runs.
+
+**6. Why does the Remove button's accessible name include the holiday's name?**
+A table of holidays has many Remove buttons. A screen reader user hears each one's name, so "Remove Christmas Day" says which one it is. Browser tests find the button the same way.
+
+**7. Why does every action on the page reload the calendar, even when it was refused?**
+A refused change must not look saved. Reloading shows the calendar as it really is.
