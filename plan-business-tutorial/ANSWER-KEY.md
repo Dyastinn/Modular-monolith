@@ -795,3 +795,35 @@ Nothing is due while no time counts, so nothing can be breached or at risk. A de
 
 **9. Why does the migration for the at-risk columns say what the old rows get?**
 A new `NOT NULL` column in a table with rows needs a value for the rows already there. EF Core would give them the year 1, and every old clock would claim to be at risk since then.
+
+## Lesson 25 — Breaches: the scheduler that warns and escalates
+
+**1. Why are deadlines rows and not timers, and what does the scanner read?**
+A timer lives only in memory, so a restart loses it, it cannot follow a calendar change, and two copies of the app would both fire it. A row survives all of that. The scanner reads each clock's `next_check_utc`, the next moment anything needs doing for it.
+
+**2. What do `FOR UPDATE` and `SKIP LOCKED` each do, and what goes wrong without them?**
+`FOR UPDATE` locks the rows the query returns until the transaction ends. `SKIP LOCKED` makes a second scanner skip locked rows instead of waiting for them. Without the lock, two scanners could take the same clock and raise the same breach twice (the row version would stop one of them, but only by failing).
+
+**3. Why is a target that is already late breached and not warned?**
+A warning says "this is about to be late". If the deadline has passed, the warning is false and the breach is the news. After an outage, nobody should get a flood of stale warnings.
+
+**4. Why is a breach `now > due` and not `>=`?**
+A reply made at exactly the due time is on time. A breach at that instant would announce a failure that has not happened.
+
+**5. Why are the clock's change and its event saved in the same `SaveChanges`?**
+So they succeed or fail together. If the clock were marked first and the event lost in a crash, nobody would ever hear of the breach; if the event were saved first, a restart could send it twice.
+
+**6. Why does Tickets, and not Sla, send the mail about a deadline?**
+Sla knows deadlines, not people or ticket details. Tickets knows who has the ticket and which team it belongs to, and it already has the mail queue and the link to the ticket.
+
+**7. Why does the mail handler return when the ticket is gone, instead of throwing?**
+A handler that throws makes the outbox deliver the event again, and again. A deadline for a ticket that no longer exists is not worth blocking the outbox for.
+
+**8. What does the migration do for clocks that are already running, and why?**
+It gives each one its first check time: when its next target enters its last quarter. A running clock with no check time would never be looked at until something else changed it.
+
+**9. Why does `Task.Delay` take the `TimeProvider`?**
+So a test can move time instead of waiting for it. The delay and everything else in the scheduler use the same clock.
+
+**10. Who is told when an article is submitted for review, and who is not?**
+The KbEditors, or the Admins when there are no KbEditors. Not the person who submitted it: nobody is mailed about their own step.

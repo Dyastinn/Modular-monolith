@@ -627,3 +627,12 @@ Working every running clock's due times out again from its start, because the ca
 **Pause** (24)
 A ticket waiting on the requester stops its SLA clock. The open time it was paused is added to the deadlines when the wait ends.
 
+**Scheduler** (25)
+A background service that wakes up on an interval and does the work that has come due. The SLA scheduler finds clocks to warn or breach.
+
+**Breach** (25)
+A deadline that passed without its target being met. The SLA scheduler announces each breach once per target.
+
+**Skip locked** (25)
+A PostgreSQL option that makes a query pass over rows another transaction holds locked, so two workers never take the same row.
+
