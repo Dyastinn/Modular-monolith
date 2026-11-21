@@ -589,3 +589,12 @@ A line for every step taken on an article: who, what and when. The article write
 
 **Archive** (20)
 Taking an article away from readers without destroying it. Its versions stay, and restoring it brings it back as a draft.
+
+**Internal article** (21)
+An article only staff can read. A requester gets a 404 for it, never a 403.
+
+**View count** (21)
+How many times an article was read on one day: one number per article per day, with no person in it.
+
+**Popular articles** (21)
+The five most read articles of the last 30 days that the reader may see.

@@ -690,3 +690,28 @@ The outbox dispatcher, its backlog gauges and its health check look for that tab
 **8. Why does the article write its own history, and not an event handler?**
 An event would need a handler to justify it, and a handler runs after the commit, so a crash could lose the line. The article adds the history row in the same save as the change, so the trail can't be forgotten and can't disagree with what happened.
 
+## Lesson 21 — The knowledge base, part two: readers and screens
+
+**1. What does a reader see while a published article is being edited, and why?**
+The last published version. Readers read versions, never the working copy, so editing changes nothing for them until a KbEditor publishes.
+
+**2. Why does a requester get a 404, and not a 403, for an Internal article?**
+A 403 says "this exists, but not for you". A 404 says nothing, so a requester can't tell an Internal article from a draft, an archived article or one that never existed.
+
+**3. Why does the reader's visibility rule live in SQL, and why does it read the version's columns?**
+A query handler can't load the article, and a list couldn't ask it about every row. The rule is a plain `WHERE`. It reads the version's columns, so an editor switching the working copy to Internal, or rewriting it, changes nothing for readers until publishing.
+
+**4. Why does the handler decide "may read Internal" by "is staff", and not by "is not a requester"?**
+A role added later would otherwise read Internal articles by accident. Deciding by "is staff" makes the narrow view the default.
+
+**5. What is stored when an article is read, and what is deliberately not?**
+One number per article per day. No person is stored, so there is nothing personal to keep or delete.
+
+**6. Why is counting a view a `POST`, and why one atomic statement?**
+A `GET` that changes something is counted by link prefetches and crawlers. One insert-or-add statement means two readers at the same moment both count, which a read followed by a write would lose.
+
+**7. Why must the view statement check visibility too?**
+Otherwise a requester could raise the count of an article they may not see, and so push it up the popular list.
+
+**8. Why does the popular list use the same rule as the reader list?**
+A list of the most read articles must not show a requester a title they couldn't open. The same filter, on the same version columns, keeps the two lists consistent.
