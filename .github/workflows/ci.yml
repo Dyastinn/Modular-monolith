@@ -52,6 +52,8 @@ jobs:
         working-directory: course-validation/business/tests/Yasda.Modules.Identity.UnitTests
       - run: dotnet stryker
         working-directory: course-validation/business/tests/Yasda.Modules.Knowledge.UnitTests
+      - run: dotnet stryker
+        working-directory: course-validation/business/tests/Yasda.Modules.Sla.UnitTests
       - uses: actions/upload-artifact@v5
         if: always()
         with:

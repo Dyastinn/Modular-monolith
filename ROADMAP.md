@@ -676,7 +676,7 @@ Decisions:
 
 Steps (build first, commit each; lessons after):
 
-- [ ] **S0** `BusinessCalendar` (pure, in Sla `Domain/`): working days with open/close per day, holidays, a time zone; `Add(start, duration)` and `Between(a, b)`. FsCheck properties from "Y5 business time". Unit tests. Own commit.
+- [x] **S0** `BusinessCalendar` (pure, in Sla `Domain/`): working days with open/close per day, holidays, a time zone; `Add(start, duration)` and `Between(a, b)`. FsCheck properties from "Y5 business time". Unit tests. Own commit.
 - [ ] **S1** Calendar tables (`sla.calendar`, `sla.calendar_day`, `sla.holiday`), seeded Mon–Fri 08:00–17:00 Asia/Manila; read and write endpoints; `CompanyZone` and F9.
 - [ ] **S2** Holiday presets (Philippines) and CSV import; the calendar screen.
 - [ ] **S3** `SlaClock` uses the calendar for due times; policies gain an optional per-category override (`TicketCreated` gains `CategoryId`); recompute on calendar or policy save (F10).
