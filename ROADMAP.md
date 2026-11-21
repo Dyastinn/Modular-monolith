@@ -821,8 +821,13 @@ Retired risks are in [ROADMAP-HISTORY.md](ROADMAP-HISTORY.md).
   landing at closing time). Retire it in Y5 with FsCheck properties before any screen depends on it.
 - **The breach scheduler must survive restarts** and never double-escalate: deadlines in the database, an
   idempotent escalation, a restart test.
-- **Full `podman compose up` not executed yet** (carried over from the ERP): run it end to end **at the start of Y5** (user, 2026-11-21),
-  not in Y7, so a deploy surprise does not wait until lesson 28.
+- **Full `podman compose up`: run 2026-11-21 (Fedora, rootless Podman 6.2, podman-compose 1.6).** Build, migrations (all four
+  schemas incl. Knowledge), api, Caddy (HTTPS, CSP header), first-admin sign-in, `/health/ready` and a `pg_dump` (31 tables) all work.
+  Two bugs found and fixed in `compose.yaml`: the `postgres` and `caddy` images were short names (Podman refuses to guess a registry
+  with no terminal; now `docker.io/library/...`), and the data-protection certificate was a Compose `secrets:` file, which SELinux
+  blocked (now a plain `:ro,z` volume mount like the other files). **For lesson 28 to teach:** Fedora has no compose provider
+  until `podman-compose` is installed; rootless Podman can't bind ports 80/443 (set `net.ipv4.ip_unprivileged_port_start=80` or
+  map high ports); how to make the certificate (`openssl pkcs12 -export`) and its password. Not yet tried: a restore from the dump, a real domain.
 - **`podman exec` and crun 1.31** (carried over): if integration tests hang, check `rpm -q crun` first; fix
   on the machine, never in the code.
 
