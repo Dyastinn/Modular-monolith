@@ -12,8 +12,8 @@ using Yasda.Modules.Sla.Infrastructure;
 namespace Yasda.Modules.Sla.Infrastructure.Migrations
 {
     [DbContext(typeof(SlaDbContext))]
-    [Migration("20261121053227_AddReadFunctions")]
-    partial class AddReadFunctions
+    [Migration("20261121055428_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -72,6 +72,10 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("priority_changed_utc");
 
+                    b.Property<DateTime>("ResolveAtRiskUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolve_at_risk_utc");
+
                     b.Property<DateTime>("ResolveDueUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("resolve_due_utc");
@@ -91,6 +95,10 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
                     b.Property<DateTime?>("RespondedUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("responded_utc");
+
+                    b.Property<DateTime>("ResponseAtRiskUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("response_at_risk_utc");
 
                     b.Property<DateTime>("ResponseDueUtc")
                         .HasColumnType("timestamp with time zone")

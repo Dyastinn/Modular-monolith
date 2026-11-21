@@ -11,6 +11,20 @@ public class SlaClockTests
     private static readonly TimeSpan Respond = TimeSpan.FromHours(4);
     private static readonly TimeSpan Resolve = TimeSpan.FromHours(24);
 
+    // Open every hour of every day (to the last tick before midnight), so these tests can count time like a wall clock. The business
+    // hours themselves are tested in BusinessCalendarTests and at the end of this file.
+    private static readonly BusinessCalendar AllDay = AlwaysOpen();
+
+    private static BusinessCalendar AlwaysOpen()
+    {
+        var week = new Dictionary<DayOfWeek, OpenHours>();
+        foreach (var day in Enum.GetValues<DayOfWeek>())
+        {
+            week[day] = new OpenHours(new TimeOnly(0, 0), TimeOnly.MaxValue);
+        }
+        return new BusinessCalendar(TimeZoneInfo.Utc, week, []);
+    }
+
     // The ticket is created at 09:00; the test moves this clock to say when the other things happen.
     private readonly FakeTimeProvider _time = new(new DateTimeOffset(2026, 11, 20, 9, 0, 0, TimeSpan.Zero));
 
@@ -18,7 +32,7 @@ public class SlaClockTests
 
     private SlaClock NewClock()
     {
-        var clock = SlaClock.Start(Ticket, Priority.High, Now, Respond, Resolve);
+        var clock = SlaClock.Start(Ticket, Priority.High, Now, Respond, Resolve, AllDay);
         clock.ClearEvents();
         return clock;
     }
@@ -32,7 +46,7 @@ public class SlaClockTests
     [Fact]
     public void Starting_sets_both_due_times_from_the_ticket_time_and_the_targets()
     {
-        var clock = SlaClock.Start(Ticket, Priority.High, Now, Respond, Resolve);
+        var clock = SlaClock.Start(Ticket, Priority.High, Now, Respond, Resolve, AllDay);
 
         clock.ResponseDueUtc.Should().Be(Now.AddHours(4));
         clock.ResolveDueUtc.Should().Be(Now.AddHours(24));
@@ -43,7 +57,7 @@ public class SlaClockTests
     [Fact]
     public void Starting_raises_version_one_with_the_response_as_the_next_due_time()
     {
-        var clock = SlaClock.Start(Ticket, Priority.High, Now, Respond, Resolve);
+        var clock = SlaClock.Start(Ticket, Priority.High, Now, Respond, Resolve, AllDay);
 
         var changed = OnlyEventOf(clock);
 
@@ -207,7 +221,7 @@ public class SlaClockTests
         clock.RecordResponse(Now.AddHours(1));
         clock.RecordResolution(Now.AddHours(2));
         clock.Reopen(Now.AddHours(3));
-        clock.ChangeTargets(Priority.Critical, Now.AddHours(4), TimeSpan.FromHours(1), TimeSpan.FromHours(4));
+        clock.ChangeTargets(Priority.Critical, Now.AddHours(4), TimeSpan.FromHours(1), TimeSpan.FromHours(4), AllDay);
         clock.Cancel();
 
         clock.DomainEvents.Should().BeEmpty();
@@ -220,7 +234,7 @@ public class SlaClockTests
     {
         var clock = NewClock();
 
-        clock.ChangeTargets(Priority.Critical, Now.AddMinutes(30), TimeSpan.FromHours(1), TimeSpan.FromHours(4));
+        clock.ChangeTargets(Priority.Critical, Now.AddMinutes(30), TimeSpan.FromHours(1), TimeSpan.FromHours(4), AllDay);
 
         clock.Priority.Should().Be(Priority.Critical);
         clock.ResponseDueUtc.Should().Be(Now.AddHours(1));
@@ -234,7 +248,7 @@ public class SlaClockTests
         var clock = NewClock();
         clock.RecordResponse(Now.AddHours(1));
 
-        clock.ChangeTargets(Priority.Low, Now.AddHours(2), TimeSpan.FromHours(24), TimeSpan.FromHours(120));
+        clock.ChangeTargets(Priority.Low, Now.AddHours(2), TimeSpan.FromHours(24), TimeSpan.FromHours(120), AllDay);
 
         clock.ResponseDueUtc.Should().Be(Now.AddHours(4));
         clock.ResponseMet.Should().BeTrue();
@@ -246,8 +260,8 @@ public class SlaClockTests
     {
         var clock = NewClock();
 
-        clock.ChangeTargets(Priority.Critical, Now.AddHours(2), TimeSpan.FromHours(1), TimeSpan.FromHours(4));
-        clock.ChangeTargets(Priority.Low, Now.AddHours(1), TimeSpan.FromHours(24), TimeSpan.FromHours(120));
+        clock.ChangeTargets(Priority.Critical, Now.AddHours(2), TimeSpan.FromHours(1), TimeSpan.FromHours(4), AllDay);
+        clock.ChangeTargets(Priority.Low, Now.AddHours(1), TimeSpan.FromHours(24), TimeSpan.FromHours(120), AllDay);
 
         clock.Priority.Should().Be(Priority.Critical);
         clock.ResponseDueUtc.Should().Be(Now.AddHours(1));
@@ -258,7 +272,7 @@ public class SlaClockTests
     {
         var clock = NewClock();
 
-        clock.ChangeTargets(Priority.High, Now.AddHours(1), Respond, Resolve);
+        clock.ChangeTargets(Priority.High, Now.AddHours(1), Respond, Resolve, AllDay);
 
         clock.DomainEvents.Should().BeEmpty();
         clock.Version.Should().Be(1);
@@ -270,7 +284,7 @@ public class SlaClockTests
     public void A_response_at_the_due_time_is_on_time_even_when_the_event_time_has_finer_ticks_than_the_database_keeps()
     {
         var startedInDatabase = Now;
-        var clock = SlaClock.Start(Ticket, Priority.High, startedInDatabase, Respond, Resolve);
+        var clock = SlaClock.Start(Ticket, Priority.High, startedInDatabase, Respond, Resolve, AllDay);
         var eventTime = startedInDatabase.AddHours(4).AddTicks(8);
 
         clock.RecordResponse(eventTime);
@@ -309,5 +323,128 @@ public class SlaClockTests
 
         // A 24 hour target is at risk for its last 6 hours.
         clock.AtRiskFromUtc.Should().Be(Now.AddHours(18));
+    }
+
+    // Monday to Friday 08:00-17:00 in Manila. The ticket is made on Friday 2026-11-20 at 16:00 Manila time.
+    private static readonly TimeZoneInfo Manila = TimeZoneInfo.FindSystemTimeZoneById("Asia/Manila");
+
+    private static BusinessCalendar OfficeWeek(params DateOnly[] holidays)
+    {
+        var hours = new OpenHours(new TimeOnly(8, 0), new TimeOnly(17, 0));
+        var week = new Dictionary<DayOfWeek, OpenHours>
+        {
+            [DayOfWeek.Monday] = hours, [DayOfWeek.Tuesday] = hours, [DayOfWeek.Wednesday] = hours,
+            [DayOfWeek.Thursday] = hours, [DayOfWeek.Friday] = hours,
+        };
+        return new BusinessCalendar(Manila, week, holidays);
+    }
+
+    private static DateTime ManilaTime(int month, int day, int hour, int minute = 0)
+    {
+        return TimeZoneInfo.ConvertTimeToUtc(new DateTime(2026, month, day, hour, minute, 0, DateTimeKind.Unspecified), Manila);
+    }
+
+    [Fact]
+    public void Deadlines_count_open_hours_only_so_a_friday_afternoon_ticket_is_due_on_monday()
+    {
+        var friday4pm = ManilaTime(11, 20, 16);
+
+        var clock = SlaClock.Start(Ticket, Priority.High, friday4pm, TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
+
+        // One hour on Friday, three on Monday morning. 24 open hours: 1 on Friday, then Monday, Tuesday (9 each), Wednesday 5.
+        clock.ResponseDueUtc.Should().Be(ManilaTime(11, 23, 11));
+        clock.ResolveDueUtc.Should().Be(ManilaTime(11, 25, 13));
+    }
+
+    [Fact]
+    public void The_at_risk_point_is_three_quarters_through_the_open_time_not_the_wall_clock_time()
+    {
+        var friday4pm = ManilaTime(11, 20, 16);
+
+        var clock = SlaClock.Start(Ticket, Priority.High, friday4pm, TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
+
+        // 3 open hours after Friday 16:00 is Monday 10:00: the last open hour (10:00 to 11:00) is the at-risk hour.
+        clock.AtRiskFromUtc.Should().Be(ManilaTime(11, 23, 10));
+    }
+
+    [Fact]
+    public void A_ticket_made_on_a_holiday_starts_counting_at_the_next_opening()
+    {
+        var holidayNoon = ManilaTime(11, 30, 12);
+
+        var clock = SlaClock.Start(Ticket, Priority.High, holidayNoon, TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek(new DateOnly(2026, 11, 30)));
+
+        clock.ResponseDueUtc.Should().Be(ManilaTime(12, 1, 12));
+    }
+
+    [Fact]
+    public void Changing_the_calendar_moves_the_running_deadlines_and_tells_everyone_once()
+    {
+        var friday4pm = ManilaTime(11, 20, 16);
+        var clock = SlaClock.Start(Ticket, Priority.High, friday4pm, TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
+        clock.ClearEvents();
+
+        // The 23rd becomes a holiday: the response that was due Monday 11:00 is now due Tuesday 11:00.
+        clock.Recalculate(TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek(new DateOnly(2026, 11, 23)));
+
+        clock.ResponseDueUtc.Should().Be(ManilaTime(11, 24, 11));
+        var changed = OnlyEventOf(clock);
+        changed.Version.Should().Be(2);
+        changed.ResponseDueUtc.Should().Be(ManilaTime(11, 24, 11));
+    }
+
+    [Fact]
+    public void Recalculating_under_the_same_rules_changes_nothing()
+    {
+        var friday4pm = ManilaTime(11, 20, 16);
+        var clock = SlaClock.Start(Ticket, Priority.High, friday4pm, TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
+        clock.ClearEvents();
+
+        clock.Recalculate(TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
+
+        clock.DomainEvents.Should().BeEmpty();
+        clock.Version.Should().Be(1);
+    }
+
+    [Fact]
+    public void Recalculating_leaves_a_finished_target_with_its_due_time_and_its_numbers()
+    {
+        var friday4pm = ManilaTime(11, 20, 16);
+        var clock = SlaClock.Start(Ticket, Priority.High, friday4pm, TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
+        clock.RecordResponse(ManilaTime(11, 23, 9));
+        var dueBefore = clock.ResponseDueUtc;
+
+        clock.Recalculate(TimeSpan.FromHours(1), TimeSpan.FromHours(8), OfficeWeek(new DateOnly(2026, 11, 23)));
+
+        clock.ResponseDueUtc.Should().Be(dueBefore);
+        clock.RespondWithin.Should().Be(TimeSpan.FromHours(4));
+        clock.ResolveWithin.Should().Be(TimeSpan.FromHours(8), "the resolve target was still running, so it takes the new number");
+        clock.ResponseMet.Should().BeTrue();
+    }
+
+    [Fact]
+    public void A_cancelled_clock_ignores_a_recalculation()
+    {
+        var clock = NewClock();
+        clock.Cancel();
+        clock.ClearEvents();
+
+        clock.Recalculate(TimeSpan.FromHours(1), TimeSpan.FromHours(2), AllDay);
+
+        clock.DomainEvents.Should().BeEmpty();
+        clock.IsRunning.Should().BeFalse();
+    }
+
+    [Fact]
+    public void A_clock_is_running_until_both_targets_are_finished()
+    {
+        var clock = NewClock();
+        clock.IsRunning.Should().BeTrue();
+
+        clock.RecordResponse(Now.AddHours(1));
+        clock.IsRunning.Should().BeTrue();
+
+        clock.RecordResolution(Now.AddHours(2));
+        clock.IsRunning.Should().BeFalse();
     }
 }

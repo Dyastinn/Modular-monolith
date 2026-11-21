@@ -8,7 +8,8 @@ namespace Yasda.Modules.Sla.Features;
 
 internal sealed record ChangePolicyCommand(Priority Priority, int RespondMinutes, int ResolveMinutes);
 
-internal sealed class ChangePolicyHandler(SlaDbContext db, ICurrentUser currentUser, IUserDirectory users, TimeProvider time)
+internal sealed class ChangePolicyHandler(SlaDbContext db, ICurrentUser currentUser, IUserDirectory users, TimeProvider time,
+    ClockRecalculator recalculator)
 {
     // false when there is no policy for that priority. Whether the numbers are allowed is the policy's call.
     public async Task<bool> HandleAsync(ChangePolicyCommand cmd, CancellationToken ct)
@@ -21,6 +22,9 @@ internal sealed class ChangePolicyHandler(SlaDbContext db, ICurrentUser currentU
         policy.Change(TimeSpan.FromMinutes(cmd.RespondMinutes), TimeSpan.FromMinutes(cmd.ResolveMinutes),
             new UserId(currentUser.UserId), myName, time.GetUtcNow().UtcDateTime);
 
+        // New numbers move the running clocks' deadlines (decision F10), so they are saved in the same step.
+        var calendar = await db.GetBusinessCalendarAsync(ct);
+        await recalculator.RecalculateAsync(calendar, ct);
         await db.SaveChangesAsync(ct);
         return true;
     }

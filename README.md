@@ -113,7 +113,7 @@ And the tests. The integration tests start their own PostgreSQL with Testcontain
 Docker) running; on Linux, enable the Podman socket and point `DOCKER_HOST` at it:
 
 ```bash
-dotnet test     # 233 unit + 14 architecture + 274 integration; the 45 browser tests skip without YASDA_UI_URL
+dotnet test     # 252 unit + 14 architecture + 278 integration; the 45 browser tests skip without YASDA_UI_URL
 # Browser tests, with the app running. Every test signs in, so raise the sign-in limit for the run:
 #   RateLimiting__AuthRequestsPerMinute=1000 dotnet run --project src/Yasda.Api
 YASDA_UI_URL=http://localhost:5264 dotnet test --project tests/Yasda.Web.UiTests

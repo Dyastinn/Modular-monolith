@@ -30,6 +30,7 @@ public static class SlaModule
         services.AddScoped<AddHolidayHandler>();
         services.AddScoped<RemoveHolidayHandler>();
         services.AddScoped<ImportHolidaysHandler>();
+        services.AddScoped<ClockRecalculator>();
         services.AddHostedService<LoadCompanyZone>();
 
         // Event handlers are registered by the interface they answer to (the outbox looks them up that way).

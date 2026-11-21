@@ -234,4 +234,37 @@ public class SlaCalendarTests(CustomWebAppFactory factory)
         (await lead.PostAsJsonAsync("/api/sla/calendar/holiday-presets", new { code = "PH" })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
         (await lead.PostAsJsonAsync("/api/sla/calendar/holidays/import", new { csv = "2026-12-25,Christmas Day" })).StatusCode.Should().Be(HttpStatusCode.Forbidden);
     }
+
+    private sealed record Created(long Id);
+    private sealed record Deadlines(DateTime ResponseDueUtc, DateTime ResolveDueUtc);
+    private sealed record TicketView(Deadlines? Sla);
+
+    // Decision F10: the calendar is data, and a change to it moves the deadlines of tickets that are still running.
+    [Fact]
+    public async Task A_new_holiday_moves_a_running_tickets_deadline_and_removing_it_moves_it_back()
+    {
+        var requester = await factory.ClientFor(Requester);
+        var agent = await factory.ClientFor(Agent);
+        var admin = await factory.ClientFor(Admin);
+        var response = await requester.PostAsJsonAsync("/api/tickets", new { subject = $"Calendar {Guid.NewGuid():N}", message = "Please help.", priority = "High" });
+        var id = (await response.Content.ReadFromJsonAsync<Created>())!.Id;
+        var original = (await Waiting.Eventually(() => agent.GetFromJsonAsync<TicketView>($"/api/tickets/{id}")!, t => t!.Sla is not null))!.Sla!;
+
+        var manila = TimeZoneInfo.FindSystemTimeZoneById("Asia/Manila");
+        var dueDay = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(original.ResponseDueUtc, manila)).ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        try
+        {
+            (await admin.PostAsJsonAsync("/api/sla/calendar/holidays", new { date = dueDay, name = "Test holiday" })).EnsureSuccessStatusCode();
+
+            var moved = (await Waiting.Eventually(() => agent.GetFromJsonAsync<TicketView>($"/api/tickets/{id}")!, t => t!.Sla!.ResponseDueUtc != original.ResponseDueUtc))!.Sla!;
+            moved.ResponseDueUtc.Should().BeAfter(original.ResponseDueUtc, "the day it was due is now closed");
+        }
+        finally
+        {
+            await admin.DeleteAsync($"/api/sla/calendar/holidays/{dueDay}");
+        }
+
+        var back = (await Waiting.Eventually(() => agent.GetFromJsonAsync<TicketView>($"/api/tickets/{id}")!, t => t!.Sla!.ResponseDueUtc == original.ResponseDueUtc))!.Sla!;
+        back.ResolveDueUtc.Should().Be(original.ResolveDueUtc);
+    }
 }

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using AwesomeAssertions;
 using Dapper;
+using Yasda.Modules.Sla.Domain;
 using Yasda.Modules.Tickets.Contracts;
 using Yasda.Shared.BuildingBlocks;
 using Microsoft.Extensions.DependencyInjection;
@@ -22,6 +23,27 @@ public class SlaTests(CustomWebAppFactory factory)
     private sealed record TicketView(long Id, string Status, string Priority, DateTime CreatedUtc, Sla? Sla);
     private sealed record Row(long Id, DateTime? NextDueUtc, DateTime? AtRiskFromUtc);
     private sealed record Page(List<Row> Items);
+
+    // The installation's calendar (Monday to Friday, 08:00 to 17:00, Manila). The tests ask it where a deadline should land, so they
+    // pass at any time of day: counting open hours is the calendar's job, and its own tests prove it.
+    private static readonly BusinessCalendar OfficeHours = new(
+        TimeZoneInfo.FindSystemTimeZoneById("Asia/Manila"),
+        new Dictionary<DayOfWeek, OpenHours>
+        {
+            [DayOfWeek.Monday] = new(new TimeOnly(8, 0), new TimeOnly(17, 0)),
+            [DayOfWeek.Tuesday] = new(new TimeOnly(8, 0), new TimeOnly(17, 0)),
+            [DayOfWeek.Wednesday] = new(new TimeOnly(8, 0), new TimeOnly(17, 0)),
+            [DayOfWeek.Thursday] = new(new TimeOnly(8, 0), new TimeOnly(17, 0)),
+            [DayOfWeek.Friday] = new(new TimeOnly(8, 0), new TimeOnly(17, 0)),
+        },
+        []);
+
+    // The database keeps whole microseconds, so the ticket's time is cut the same way before counting.
+    private static DateTime DueAfter(DateTime createdUtc, TimeSpan openTime)
+    {
+        var whole = new DateTime(createdUtc.Ticks - createdUtc.Ticks % 10, DateTimeKind.Utc);
+        return OfficeHours.Add(whole, openTime);
+    }
 
     private static async Task<long> File(HttpClient client, string priority, string? subject = null)
     {
@@ -53,12 +75,13 @@ public class SlaTests(CustomWebAppFactory factory)
 
         var ticket = await ReadUntil(agent, id, HasDeadlines);
 
-        // High is 4 hours to respond and 24 hours to resolve (decision D3), counted from when the ticket was filed.
+        // High is 4 open hours to respond and 24 to resolve (decision D3), counted from when the ticket was filed. It is at risk
+        // for the last quarter of the open time, so from 3 open hours on.
         ticket.Sla.Should().NotBeNull();
-        ticket.Sla!.ResponseDueUtc.Should().Be(ticket.CreatedUtc.AddHours(4));
-        ticket.Sla.ResolveDueUtc.Should().Be(ticket.CreatedUtc.AddHours(24));
+        ticket.Sla!.ResponseDueUtc.Should().Be(DueAfter(ticket.CreatedUtc, TimeSpan.FromHours(4)));
+        ticket.Sla.ResolveDueUtc.Should().Be(DueAfter(ticket.CreatedUtc, TimeSpan.FromHours(24)));
         ticket.Sla.NextDueUtc.Should().Be(ticket.Sla.ResponseDueUtc);
-        ticket.Sla.AtRiskFromUtc.Should().Be(ticket.Sla.ResponseDueUtc.AddHours(-1));
+        ticket.Sla.AtRiskFromUtc.Should().Be(DueAfter(ticket.CreatedUtc, TimeSpan.FromHours(3)));
         ticket.Sla.ResponseMet.Should().BeNull();
         ticket.Sla.ResolutionMet.Should().BeNull();
     }
@@ -142,14 +165,14 @@ public class SlaTests(CustomWebAppFactory factory)
         var agent = await factory.ClientFor(Agent);
         var id = await File(requester, "Low");
         var before = await ReadUntil(agent, id, HasDeadlines);
-        before.Sla!.ResponseDueUtc.Should().Be(before.CreatedUtc.AddHours(24));
+        before.Sla!.ResponseDueUtc.Should().Be(DueAfter(before.CreatedUtc, TimeSpan.FromHours(24)));
 
         (await agent.PutAsJsonAsync($"/api/tickets/{id}/priority", new { priority = "Critical" })).EnsureSuccessStatusCode();
         var after = await ReadUntil(agent, id, t => t.Sla?.ResponseDueUtc != before.Sla.ResponseDueUtc);
 
-        // Critical is 1 hour to respond and 4 hours to resolve, still counted from when the ticket was filed.
-        after.Sla!.ResponseDueUtc.Should().Be(after.CreatedUtc.AddHours(1));
-        after.Sla.ResolveDueUtc.Should().Be(after.CreatedUtc.AddHours(4));
+        // Critical is 1 open hour to respond and 4 to resolve, still counted from when the ticket was filed.
+        after.Sla!.ResponseDueUtc.Should().Be(DueAfter(after.CreatedUtc, TimeSpan.FromHours(1)));
+        after.Sla.ResolveDueUtc.Should().Be(DueAfter(after.CreatedUtc, TimeSpan.FromHours(4)));
     }
 
     [Fact]
@@ -197,7 +220,8 @@ public class SlaTests(CustomWebAppFactory factory)
     public async Task A_reply_made_exactly_at_the_due_time_is_on_time_after_the_database_round_trip()
     {
         var ticketId = UniqueTicketId();
-        var filed = new DateTime(2026, 11, 20, 9, 0, 0, DateTimeKind.Utc).AddTicks(8);
+        // Wednesday 09:00 in Manila, inside open hours, so the 4 open hours end the same day at 13:00.
+        var filed = new DateTime(2026, 11, 18, 1, 0, 0, DateTimeKind.Utc).AddTicks(8);
         await DeliverTicketCreatedAsync(ticketId, filed);
 
         await using (var scope = factory.Services.CreateAsyncScope())
@@ -239,7 +263,7 @@ public class SlaTests(CustomWebAppFactory factory)
 
         await using var conn = factory.OpenDatabase();
         var due = await conn.QuerySingleAsync<DateTime>("SELECT response_due_utc FROM sla.sla_clock WHERE ticket_id = @ticketId", new { ticketId });
-        due.Should().BeCloseTo(filedTwoDaysAgo.AddHours(4), TimeSpan.FromMilliseconds(1));
+        due.Should().BeCloseTo(DueAfter(filedTwoDaysAgo, TimeSpan.FromHours(4)), TimeSpan.FromMilliseconds(1));
     }
 
     [Fact]

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using AwesomeAssertions;
+using Yasda.Modules.Sla.Domain;
 
 namespace Yasda.Integration.Tests;
 
@@ -17,6 +18,25 @@ public class SlaPolicyTests(CustomWebAppFactory factory)
     private sealed record Created(long Id);
     private sealed record Deadlines(DateTime ResponseDueUtc, DateTime ResolveDueUtc);
     private sealed record TicketView(DateTime CreatedUtc, Deadlines? Sla);
+
+    // Where a deadline lands under the installation's calendar (Monday to Friday, 08:00 to 17:00, Manila): see SlaTests.
+    private static readonly BusinessCalendar OfficeHours = new(
+        TimeZoneInfo.FindSystemTimeZoneById("Asia/Manila"),
+        new Dictionary<DayOfWeek, OpenHours>
+        {
+            [DayOfWeek.Monday] = new(new TimeOnly(8, 0), new TimeOnly(17, 0)),
+            [DayOfWeek.Tuesday] = new(new TimeOnly(8, 0), new TimeOnly(17, 0)),
+            [DayOfWeek.Wednesday] = new(new TimeOnly(8, 0), new TimeOnly(17, 0)),
+            [DayOfWeek.Thursday] = new(new TimeOnly(8, 0), new TimeOnly(17, 0)),
+            [DayOfWeek.Friday] = new(new TimeOnly(8, 0), new TimeOnly(17, 0)),
+        },
+        []);
+
+    private static DateTime DueAfter(DateTime createdUtc, TimeSpan openTime)
+    {
+        var whole = new DateTime(createdUtc.Ticks - createdUtc.Ticks % 10, DateTimeKind.Utc);
+        return OfficeHours.Add(whole, openTime);
+    }
 
     private static async Task<string?> CodeOf(HttpResponseMessage response)
     {
@@ -130,26 +150,29 @@ public class SlaPolicyTests(CustomWebAppFactory factory)
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
     }
 
-    // Decision D5: an edited policy is for tickets filed after it. A ticket filed before keeps the numbers it started with.
+    // Decision F10: an edited policy moves the deadlines of tickets still running too, not only those filed after it.
     [Fact]
-    public async Task A_changed_policy_applies_to_new_tickets_only()
+    public async Task A_changed_policy_moves_the_running_tickets_deadlines_too()
     {
         var lead = await factory.ClientFor(Lead);
         var requester = await factory.ClientFor(Requester);
         var before = await LowOf(lead);
         var older = await FileLow(requester);
-        await ReadDeadlines(lead, older);
+        var olderBefore = await ReadDeadlines(lead, older);
         try
         {
             await SetLow(lead, 600, 3000);
             var newer = await FileLow(requester);
 
-            var olderTicket = await ReadDeadlines(lead, older);
+            var olderNow = await Waiting.Eventually(() => lead.GetFromJsonAsync<TicketView>($"/api/tickets/{older}")!,
+                t => t!.Sla!.ResponseDueUtc != olderBefore.Sla!.ResponseDueUtc);
             var newerTicket = await ReadDeadlines(lead, newer);
 
-            olderTicket.Sla!.ResponseDueUtc.Should().Be(olderTicket.CreatedUtc.AddHours(24));
-            newerTicket.Sla!.ResponseDueUtc.Should().Be(newerTicket.CreatedUtc.AddMinutes(600));
-            newerTicket.Sla.ResolveDueUtc.Should().Be(newerTicket.CreatedUtc.AddMinutes(3000));
+            // 600 and 3000 open minutes: the same rule for the old ticket and the new one.
+            olderNow!.Sla!.ResponseDueUtc.Should().Be(DueAfter(olderNow.CreatedUtc, TimeSpan.FromMinutes(600)));
+            olderNow.Sla.ResolveDueUtc.Should().Be(DueAfter(olderNow.CreatedUtc, TimeSpan.FromMinutes(3000)));
+            newerTicket.Sla!.ResponseDueUtc.Should().Be(DueAfter(newerTicket.CreatedUtc, TimeSpan.FromMinutes(600)));
+            newerTicket.Sla.ResolveDueUtc.Should().Be(DueAfter(newerTicket.CreatedUtc, TimeSpan.FromMinutes(3000)));
         }
         finally
         {

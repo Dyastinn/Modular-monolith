@@ -33,6 +33,13 @@ internal sealed class SlaDbContext(DbContextOptions<SlaDbContext> options) : DbC
         return clock;
     }
 
+    // The organization's calendar as the pure class the deadline math runs on.
+    public async Task<BusinessCalendar> GetBusinessCalendarAsync(CancellationToken ct)
+    {
+        var calendar = await Calendars.Include(c => c.Days).Include(c => c.Holidays).SingleAsync(ct);
+        return calendar.ToBusinessCalendar();
+    }
+
     protected override void ConfigureConventions(ModelConfigurationBuilder c)
     {
         c.Properties<TicketId>().HaveConversion<TicketIdConverter>();
@@ -77,6 +84,7 @@ internal sealed class SlaDbContext(DbContextOptions<SlaDbContext> options) : DbC
             e.Ignore(x => x.ResolutionMet);
             e.Ignore(x => x.NextDueUtc);
             e.Ignore(x => x.AtRiskFromUtc);
+            e.Ignore(x => x.IsRunning);
             e.Ignore(x => x.DomainEvents);
         });
 

@@ -21,9 +21,10 @@ internal sealed class StartClockOnTicketCreated(SlaDbContext db) : IIntegrationE
 
         var priority = PriorityMapping.From(integrationEvent.Priority);
         var policy = await db.Policies.SingleAsync(p => p.Priority == priority, ct);
+        var calendar = await db.GetBusinessCalendarAsync(ct);
 
         // The due times come from the ticket's own time, never from now: a delivery that comes hours late must not move them.
-        var clock = SlaClock.Start(ticketId, priority, integrationEvent.CreatedUtc, policy.RespondWithin, policy.ResolveWithin);
+        var clock = SlaClock.Start(ticketId, priority, integrationEvent.CreatedUtc, policy.RespondWithin, policy.ResolveWithin, calendar);
         db.Clocks.Add(clock);
         try
         {
@@ -85,7 +86,8 @@ internal sealed class ChangeTargetsOnPriorityChanged(SlaDbContext db) : IIntegra
 
         // A priority change uses the policy as it is now (decision D5); only new tickets keep an edited policy's old numbers.
         var policy = await db.Policies.SingleAsync(p => p.Priority == priority, ct);
-        clock.ChangeTargets(priority, integrationEvent.ChangedUtc, policy.RespondWithin, policy.ResolveWithin);
+        var calendar = await db.GetBusinessCalendarAsync(ct);
+        clock.ChangeTargets(priority, integrationEvent.ChangedUtc, policy.RespondWithin, policy.ResolveWithin, calendar);
         await db.SaveChangesAsync(ct);
     }
 }

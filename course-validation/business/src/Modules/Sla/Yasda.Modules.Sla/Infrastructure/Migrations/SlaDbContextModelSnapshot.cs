@@ -69,6 +69,10 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("priority_changed_utc");
 
+                    b.Property<DateTime>("ResolveAtRiskUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolve_at_risk_utc");
+
                     b.Property<DateTime>("ResolveDueUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("resolve_due_utc");
@@ -88,6 +92,10 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
                     b.Property<DateTime?>("RespondedUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("responded_utc");
+
+                    b.Property<DateTime>("ResponseAtRiskUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("response_at_risk_utc");
 
                     b.Property<DateTime>("ResponseDueUtc")
                         .HasColumnType("timestamp with time zone")

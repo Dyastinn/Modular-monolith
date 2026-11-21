@@ -18,7 +18,7 @@ internal sealed record LoadPresetCommand(string Code);
 internal sealed record ImportCsvCommand(string Csv);
 
 // Two ways to add many holidays: a country's ready-made list, and a CSV file. Both end in the calendar's AddHolidays.
-internal sealed class ImportHolidaysHandler(SlaDbContext db, ICurrentUser currentUser, IUserDirectory users, TimeProvider time)
+internal sealed class ImportHolidaysHandler(SlaDbContext db, ICurrentUser currentUser, IUserDirectory users, TimeProvider time, ClockRecalculator recalculator)
 {
     public static List<PresetDto> ListPresets()
     {
@@ -46,10 +46,11 @@ internal sealed class ImportHolidaysHandler(SlaDbContext db, ICurrentUser curren
 
     private async Task<ImportResult> AddAsync(List<PresetHoliday> holidays, CancellationToken ct)
     {
-        var calendar = await db.Calendars.Include(c => c.Holidays).SingleAsync(ct);
+        var calendar = await db.Calendars.Include(c => c.Days).Include(c => c.Holidays).SingleAsync(ct);
 
         var myName = await users.NameOfAsync(currentUser.UserId, ct) ?? currentUser.Username;
         var added = calendar.AddHolidays(holidays, new UserId(currentUser.UserId), myName, time.GetUtcNow().UtcDateTime);
+        await recalculator.RecalculateAsync(calendar.ToBusinessCalendar(), ct);
         await db.SaveChangesAsync(ct);
 
         return new ImportResult(added, holidays.Count - added);

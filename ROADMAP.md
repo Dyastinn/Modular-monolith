@@ -683,7 +683,10 @@ Steps (build first, commit each; lessons after):
   Gazette and PCO refuse automated fetches). **Left out and flagged:** Eid'l Fitr and Eid'l Adha (the proclamations say their dates come later),
   the Metro Manila-only days of 16-18 November 2026 (Proclamation 1447), and the special *working* day of 25 February. An admin adds those on the
   screen. Re-read the proclamations for 2028 once they are out.
-- [ ] **S3** `SlaClock` uses the calendar for due times; policies gain an optional per-category override (`TicketCreated` gains `CategoryId`); recompute on calendar or policy save (F10).
+- [x] **S3a** `SlaClock` counts open time through the calendar (due times and the at-risk point, now stored per target); a calendar
+  or policy save recomputes every running clock in the same save (F10, `ClockRecalculator`). Done 2026-11-21. The policy screen's text
+  changed: a policy edit now reaches running tickets (this replaces Y3's decision D5, "new tickets only").
+- [ ] **S3b** Policies gain an optional per-category override (`TicketCreated` gains `CategoryId`, then a screen to edit overrides).
 - [ ] **S4** Pause and resume: `TicketPending` pauses, new `TicketResumed` resumes; `DeadlinesChanged.Paused`; screen shows "Paused".
 - [ ] **S5** `SlaScheduler` (`FOR UPDATE SKIP LOCKED` through EF `FromSql` in a transaction, injected `TimeProvider`); warn once, breach once; mails through `IMailQueue`; `A_restart_mid_breach_escalates_once`.
 - [ ] **S6** Review mail (E9).

@@ -9,11 +9,12 @@ namespace Yasda.Modules.Sla.Features;
 internal sealed record DayHours(DayOfWeek Day, TimeOnly? Opens, TimeOnly? Closes);
 internal sealed record ChangeCalendarCommand(string TimeZoneId, List<DayHours> Days);
 
-internal sealed class ChangeCalendarHandler(SlaDbContext db, ICurrentUser currentUser, IUserDirectory users, TimeProvider time, CompanyZone companyZone)
+internal sealed class ChangeCalendarHandler(SlaDbContext db, ICurrentUser currentUser, IUserDirectory users, TimeProvider time, CompanyZone companyZone,
+    ClockRecalculator recalculator)
 {
     public async Task HandleAsync(ChangeCalendarCommand cmd, CancellationToken ct)
     {
-        var calendar = await db.Calendars.Include(c => c.Days).SingleAsync(ct);
+        var calendar = await db.Calendars.Include(c => c.Days).Include(c => c.Holidays).SingleAsync(ct);
 
         var days = new List<WorkDay>();
         foreach (var hours in cmd.Days)
@@ -23,6 +24,9 @@ internal sealed class ChangeCalendarHandler(SlaDbContext db, ICurrentUser curren
 
         var myName = await users.NameOfAsync(currentUser.UserId, ct) ?? currentUser.Username;
         calendar.Change(cmd.TimeZoneId, days, new UserId(currentUser.UserId), myName, time.GetUtcNow().UtcDateTime);
+
+        // New hours move the running clocks' deadlines, so they are saved in the same step.
+        await recalculator.RecalculateAsync(calendar.ToBusinessCalendar(), ct);
         await db.SaveChangesAsync(ct);
 
         // Saved, so from now on "today" means today in the new zone.
