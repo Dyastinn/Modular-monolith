@@ -82,3 +82,15 @@ internal sealed class EmailOnReply(IMailQueue mail, ITeamDirectory teams, IConfi
         }
     }
 }
+
+// The automatic reminder: the requester is asked again to answer a ticket that has waited on them.
+internal sealed class EmailOnPendingReminder(IMailQueue mail, IConfiguration config) : IDomainEventHandler<PendingReminderEvent>
+{
+    public async Task HandleAsync(PendingReminderEvent domainEvent, CancellationToken ct)
+    {
+        var requester = domainEvent.RequesterId.Value;
+        var subject = $"We are still waiting for your answer on ticket #{domainEvent.TicketId.Value}: {domainEvent.Subject}";
+        var body = $"We asked you something and can't go on without your answer.\n\n{domainEvent.Subject}\n\nOpen the ticket and reply: {TicketMail.LinkTo(config, domainEvent.TicketId)}";
+        await mail.QueueAsync($"pending-reminder:{domainEvent.EventId}:{requester}", requester, subject, body, ct);
+    }
+}

@@ -20,6 +20,26 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
                 schema: "tickets");
 
             migrationBuilder.CreateTable(
+                name: "automation_settings",
+                schema: "tickets",
+                columns: table => new
+                {
+                    id = table.Column<int>(type: "integer", nullable: false),
+                    close_resolved_after_days = table.Column<int>(type: "integer", nullable: true),
+                    remind_pending_after_days = table.Column<int>(type: "integer", nullable: true),
+                    close_pending_after_days = table.Column<int>(type: "integer", nullable: true),
+                    updated_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    updated_by_id = table.Column<long>(type: "bigint", nullable: false),
+                    updated_by_name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
+                    xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_automation_settings", x => x.id);
+                    table.CheckConstraint("ck_automation_settings_days", "(close_resolved_after_days IS NULL OR close_resolved_after_days > 0) AND (remind_pending_after_days IS NULL OR remind_pending_after_days > 0) AND (close_pending_after_days IS NULL OR close_pending_after_days > 0)");
+                });
+
+            migrationBuilder.CreateTable(
                 name: "category",
                 schema: "tickets",
                 columns: table => new
@@ -76,6 +96,8 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
                     resolved_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     closed_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     cancel_reason = table.Column<string>(type: "character varying(500)", maxLength: 500, nullable: true),
+                    pending_since_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    reminder_sent_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     category_id = table.Column<long>(type: "bigint", nullable: true),
                     category_name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
                     team_id = table.Column<long>(type: "bigint", nullable: true),
@@ -136,6 +158,12 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
+            migrationBuilder.InsertData(
+                schema: "tickets",
+                table: "automation_settings",
+                columns: new[] { "id", "close_pending_after_days", "close_resolved_after_days", "remind_pending_after_days", "updated_by_id", "updated_by_name", "updated_utc" },
+                values: new object[] { 1, null, null, null, 0L, "Installation default", new DateTime(2026, 11, 21, 0, 0, 0, 0, DateTimeKind.Utc) });
+
             migrationBuilder.CreateIndex(
                 name: "ix_category_name",
                 schema: "tickets",
@@ -190,6 +218,10 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropTable(
+                name: "automation_settings",
+                schema: "tickets");
+
             migrationBuilder.DropTable(
                 name: "category",
                 schema: "tickets");

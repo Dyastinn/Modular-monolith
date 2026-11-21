@@ -37,6 +37,10 @@ public static class TicketsModule
         services.AddScoped<GetCategoryHandler>();
         services.AddScoped<CreateCategoryHandler>();
         services.AddScoped<UpdateCategoryHandler>();
+        services.AddScoped<GetAutomationSettingsHandler>();
+        services.AddScoped<ChangeAutomationSettingsHandler>();
+        services.AddScoped<TicketAutomationRunner>();
+        services.AddHostedService<TicketAutomationService>();
 
         // Event handlers are registered by the interface they answer to (the outbox looks them up that way).
         services.AddScoped<IDomainEventHandler<TicketCreatedEvent>, PublishTicketCreated>();
@@ -46,6 +50,7 @@ public static class TicketsModule
         services.AddScoped<IDomainEventHandler<TicketCancelledEvent>, PublishTicketCancelled>();
         services.AddScoped<IDomainEventHandler<TicketPriorityChangedEvent>, PublishTicketPriorityChanged>();
         services.AddScoped<IDomainEventHandler<TicketPendingEvent>, PublishTicketPending>();
+        services.AddScoped<IDomainEventHandler<PendingReminderEvent>, EmailOnPendingReminder>();
         services.AddScoped<IDomainEventHandler<TicketResumedEvent>, PublishTicketResumed>();
         services.AddScoped<IDomainEventHandler<TicketCreatedEvent>, EmailOnNewTicket>();
         services.AddScoped<IDomainEventHandler<TicketAssignedEvent>, EmailOnAssignment>();
@@ -77,6 +82,7 @@ public static class TicketsModule
         GetCategoryEndpoint.Map(tickets);
         CreateCategoryEndpoint.Map(tickets);
         UpdateCategoryEndpoint.Map(tickets);
+        AutomationSettingsEndpoints.Map(tickets);
         return api;
     }
 }

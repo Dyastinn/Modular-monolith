@@ -1,0 +1,120 @@
+@page "/automation"
+@attribute [Authorize(Roles = Roles.Admin)]
+@inject ApiClient Api
+
+<PageTitle>Automatic rules · YASDA</PageTitle>
+
+<PageHeader Title="Automatic rules">
+    <Description>
+        Nothing happens by itself until you switch a rule on. Agents close tickets and follow up on them themselves; these rules do it
+        for them after the number of days you choose.
+    </Description>
+</PageHeader>
+
+@if (_settings is null)
+{
+    <p role="status">Loading…</p>
+}
+else
+{
+    <EditForm Model="this" OnSubmit="Save">
+        <fieldset>
+            <legend>Close resolved tickets</legend>
+            <div class="check">
+                <InputCheckbox id="close-resolved-on" @bind-Value="_closeResolvedOn" />
+                <label for="close-resolved-on">Close a ticket that has been resolved for a number of days</label>
+            </div>
+            @if (_closeResolvedOn)
+            {
+                <div class="field">
+                    <label for="close-resolved-days">Days after it was resolved</label>
+                    <InputNumber id="close-resolved-days" @bind-Value="_closeResolvedDays" min="1" max="365" aria-describedby="close-resolved-hint" />
+                    <span id="close-resolved-hint" class="hint">Seven days is how long the requester can reopen it. A closed ticket can't be reopened.</span>
+                </div>
+            }
+        </fieldset>
+
+        <fieldset>
+            <legend>Remind requesters who do not answer</legend>
+            <div class="check">
+                <InputCheckbox id="remind-on" @bind-Value="_remindOn" />
+                <label for="remind-on">Email the requester when a ticket has waited for their answer</label>
+            </div>
+            @if (_remindOn)
+            {
+                <div class="field">
+                    <label for="remind-days">Days waiting before the reminder</label>
+                    <InputNumber id="remind-days" @bind-Value="_remindDays" min="1" max="365" aria-describedby="remind-hint" />
+                    <span id="remind-hint" class="hint">One reminder for each time a ticket waits.</span>
+                </div>
+            }
+        </fieldset>
+
+        <fieldset>
+            <legend>Cancel tickets nobody answers</legend>
+            <div class="check">
+                <InputCheckbox id="cancel-on" @bind-Value="_cancelOn" />
+                <label for="cancel-on">Cancel a ticket that has waited a long time for the requester</label>
+            </div>
+            @if (_cancelOn)
+            {
+                <div class="field">
+                    <label for="cancel-days">Days waiting before the ticket is cancelled</label>
+                    <InputNumber id="cancel-days" @bind-Value="_cancelDays" min="1" max="365" aria-describedby="cancel-hint" />
+                    <span id="cancel-hint" class="hint">A cancelled ticket is not counted as resolved. If the reminder is on, this must be more days than the reminder.</span>
+                </div>
+            }
+        </fieldset>
+
+        <p class="muted">Last changed by @_settings.UpdatedByName, <TimeAgo Utc="_settings.UpdatedUtc" />.</p>
+        <div class="actions">
+            <button type="submit" disabled="@Api.Busy">Save rules</button>
+        </div>
+    </EditForm>
+}
+
+@code {
+    private AutomationSettings? _settings;
+
+    // What is on screen until Save sends it. The numbers keep what was typed when a rule is switched off and on again.
+    private bool _closeResolvedOn;
+    private int _closeResolvedDays = 7;
+    private bool _remindOn;
+    private int _remindDays = 7;
+    private bool _cancelOn;
+    private int _cancelDays = 14;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        var settings = await Api.Get<AutomationSettings>("api/automation");
+        if (settings is null) return;
+
+        _settings = settings;
+        _closeResolvedOn = settings.CloseResolvedAfterDays is not null;
+        if (settings.CloseResolvedAfterDays is not null) _closeResolvedDays = settings.CloseResolvedAfterDays.Value;
+        _remindOn = settings.RemindPendingAfterDays is not null;
+        if (settings.RemindPendingAfterDays is not null) _remindDays = settings.RemindPendingAfterDays.Value;
+        _cancelOn = settings.ClosePendingAfterDays is not null;
+        if (settings.ClosePendingAfterDays is not null) _cancelDays = settings.ClosePendingAfterDays.Value;
+    }
+
+    // Whether or not it worked, show the rules as they are now: a refused change should not look saved.
+    private async Task Save()
+    {
+        int? closeResolved = null;
+        if (_closeResolvedOn) closeResolved = _closeResolvedDays;
+        int? remind = null;
+        if (_remindOn) remind = _remindDays;
+        int? cancel = null;
+        if (_cancelOn) cancel = _cancelDays;
+
+        await Api.Put("api/automation", new { closeResolvedAfterDays = closeResolved, remindPendingAfterDays = remind, closePendingAfterDays = cancel },
+            "Rules saved.");
+        await Load();
+    }
+}

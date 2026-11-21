@@ -13,6 +13,7 @@ internal sealed class TicketsDbContext(DbContextOptions<TicketsDbContext> option
 
     public DbSet<Ticket> Tickets => Set<Ticket>();
     public DbSet<TicketSla> TicketSlas => Set<TicketSla>();
+    public DbSet<AutomationSettings> AutomationSettings => Set<AutomationSettings>();
     public DbSet<Category> Categories => Set<Category>();
 
     // Shared by the app and `dotnet ef`, so the two can't drift apart.
@@ -43,6 +44,7 @@ internal sealed class TicketsDbContext(DbContextOptions<TicketsDbContext> option
     {
         c.Properties<TicketId>().HaveConversion<TicketIdConverter>();
         c.Properties<UserId>().HaveConversion<UserIdConverter>();
+        c.Properties<AutomationSettingsId>().HaveConversion<AutomationSettingsIdConverter>();
         c.Properties<CategoryId>().HaveConversion<CategoryIdConverter>();
         c.Properties<TeamId>().HaveConversion<TeamIdConverter>();
         // Statuses and priorities are stored by name: readable in SQL, and safe if the enum is ever reordered.
@@ -63,6 +65,28 @@ internal sealed class TicketsDbContext(DbContextOptions<TicketsDbContext> option
             e.Property(x => x.Payload).HasColumnType("jsonb");
             e.Property(x => x.TraceParent).HasMaxLength(55);   // a W3C traceparent is always 55 characters
             e.HasIndex(x => x.OccurredUtc).HasFilter("processed_utc IS NULL");
+        });
+
+        b.Entity<AutomationSettings>(e =>
+        {
+            e.ToTable("automation_settings", t =>
+            {
+                t.HasCheckConstraint("ck_automation_settings_days", "(close_resolved_after_days IS NULL OR close_resolved_after_days > 0) " +
+                    "AND (remind_pending_after_days IS NULL OR remind_pending_after_days > 0) AND (close_pending_after_days IS NULL OR close_pending_after_days > 0)");
+            });
+            e.HasKey(x => x.Id);
+            e.Property(x => x.Id).ValueGeneratedNever();
+            e.Property(x => x.UpdatedByName).HasMaxLength(100);
+            e.Property<uint>("RowVersion").IsRowVersion().HasColumnName("xmin");
+            e.Ignore(x => x.DomainEvents);
+            // Every installation starts with every rule off (decision E4): nothing is automatic until an Admin says so.
+            e.HasData(new
+            {
+                Id = new AutomationSettingsId(1),
+                UpdatedUtc = new DateTime(2026, 11, 21, 0, 0, 0, DateTimeKind.Utc),
+                UpdatedById = new UserId(0),
+                UpdatedByName = "Installation default",
+            });
         });
 
         b.Entity<TicketSla>(e =>
@@ -126,6 +150,7 @@ internal sealed class TicketsDbContext(DbContextOptions<TicketsDbContext> option
     }
 }
 
+internal sealed class AutomationSettingsIdConverter() : ValueConverter<AutomationSettingsId, int>(v => v.Value, v => new AutomationSettingsId(v));
 internal sealed class TicketIdConverter() : ValueConverter<TicketId, long>(v => v.Value, v => new TicketId(v));
 internal sealed class UserIdConverter() : ValueConverter<UserId, long>(v => v.Value, v => new UserId(v));
 internal sealed class CategoryIdConverter() : ValueConverter<CategoryId, long>(v => v.Value, v => new CategoryId(v));

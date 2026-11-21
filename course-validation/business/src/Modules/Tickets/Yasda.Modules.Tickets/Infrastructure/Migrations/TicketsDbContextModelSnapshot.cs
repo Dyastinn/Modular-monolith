@@ -25,6 +25,62 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
 
             modelBuilder.HasSequence("ticket_id_seq");
 
+            modelBuilder.Entity("Yasda.Modules.Tickets.Domain.AutomationSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("integer")
+                        .HasColumnName("id");
+
+                    b.Property<int?>("ClosePendingAfterDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("close_pending_after_days");
+
+                    b.Property<int?>("CloseResolvedAfterDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("close_resolved_after_days");
+
+                    b.Property<int?>("RemindPendingAfterDays")
+                        .HasColumnType("integer")
+                        .HasColumnName("remind_pending_after_days");
+
+                    b.Property<uint>("RowVersion")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
+                    b.Property<long>("UpdatedById")
+                        .HasColumnType("bigint")
+                        .HasColumnName("updated_by_id");
+
+                    b.Property<string>("UpdatedByName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("updated_by_name");
+
+                    b.Property<DateTime>("UpdatedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_utc");
+
+                    b.HasKey("Id")
+                        .HasName("pk_automation_settings");
+
+                    b.ToTable("automation_settings", "tickets", t =>
+                        {
+                            t.HasCheckConstraint("ck_automation_settings_days", "(close_resolved_after_days IS NULL OR close_resolved_after_days > 0) AND (remind_pending_after_days IS NULL OR remind_pending_after_days > 0) AND (close_pending_after_days IS NULL OR close_pending_after_days > 0)");
+                        });
+
+                    b.HasData(
+                        new
+                        {
+                            Id = 1,
+                            UpdatedById = 0L,
+                            UpdatedByName = "Installation default",
+                            UpdatedUtc = new DateTime(2026, 11, 21, 0, 0, 0, 0, DateTimeKind.Utc)
+                        });
+                });
+
             modelBuilder.Entity("Yasda.Modules.Tickets.Domain.Category", b =>
                 {
                     b.Property<long>("Id")
@@ -117,11 +173,19 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("first_response_utc");
 
+                    b.Property<DateTime?>("PendingSinceUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("pending_since_utc");
+
                     b.Property<string>("Priority")
                         .IsRequired()
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
                         .HasColumnName("priority");
+
+                    b.Property<DateTime?>("ReminderSentUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reminder_sent_utc");
 
                     b.Property<long>("RequesterId")
                         .HasColumnType("bigint")

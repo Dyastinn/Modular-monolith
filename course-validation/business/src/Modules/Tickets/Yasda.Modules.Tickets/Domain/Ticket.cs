@@ -28,6 +28,10 @@ internal sealed class Ticket : AggregateRoot<TicketId>
     public DateTime? ClosedUtc { get; private set; }
     public string? CancelReason { get; private set; }
 
+    // While the ticket waits on the requester: since when, and whether the automatic reminder has been sent for this wait.
+    public DateTime? PendingSinceUtc { get; private set; }
+    public DateTime? ReminderSentUtc { get; private set; }
+
     // Where the ticket belongs. Both are optional: "Not sure" leaves it unrouted for a team lead to sort (decision D4). The names
     // are copies, so a queue can show them without asking Identity.
     public CategoryId? CategoryId { get; private set; }
@@ -156,7 +160,20 @@ internal sealed class Ticket : AggregateRoot<TicketId>
     {
         EnsureIn("wait on the requester", TicketStatus.Open);
         Move(TicketStatus.Pending, nowUtc);
+        PendingSinceUtc = nowUtc;
+        ReminderSentUtc = null;
         Raise(new TicketPendingEvent(Id, nowUtc));
+    }
+
+    // The automatic reminder (decision E4): once for each wait, the requester is asked again. A ticket that is no longer waiting, or
+    // that has been reminded, changes nothing.
+    public void RemindRequester(DateTime nowUtc)
+    {
+        if (Status != TicketStatus.Pending) return;
+        if (ReminderSentUtc is not null) return;
+
+        ReminderSentUtc = nowUtc;
+        Raise(new PendingReminderEvent(Guid.NewGuid(), Id, Subject, RequesterId));
     }
 
     public void Resolve(DateTime nowUtc)

@@ -44,6 +44,9 @@ public sealed record CalendarHoliday(DateOnly HolidayDate, string Name);
 
 public sealed record BusinessCalendar(string TimeZoneId, DateTime UpdatedUtc, string UpdatedByName, List<CalendarDay> Days, List<CalendarHoliday> Holidays);
 
+// The automatic rules. A rule with no number is off.
+public sealed record AutomationSettings(int? CloseResolvedAfterDays, int? RemindPendingAfterDays, int? ClosePendingAfterDays, DateTime UpdatedUtc, string UpdatedByName);
+
 public sealed record HolidayPreset(string Code, string Country, int Holidays);
 
 public sealed record HolidaysLoaded(int Added, int AlreadyThere);

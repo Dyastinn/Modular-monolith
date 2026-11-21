@@ -700,7 +700,11 @@ Steps (build first, commit each; lessons after):
 - [x] **S6** Review mail (E9). Done 2026-11-21. Submitting tells the KbEditors (the Admins when the installation has none; never the submitter); sending back or
   publishing tells the author (never when they did it themselves). `Article` raises `ArticleSubmitted/Rejected/PublishedEvent`; mail handlers in Knowledge queue through
   `IMailQueue`, keyed by event. Identity gained `IUserDirectory.UsersInRoleAsync` (and `identity.users_in_role`).
-- [ ] **S7** Automatic rules and their settings screen (E4).
+- [x] **S7** Automatic rules and their settings screen (E4), `/automation`, Admin only. Done 2026-11-21. Three rules, each off until a number of days is set
+  (`tickets.automation_settings`): close a Resolved ticket after N days; remind the requester of a Pending ticket after N days (once per wait,
+  `Ticket.RemindRequester` raises `PendingReminderEvent`, mailed by `EmailOnPendingReminder`); cancel a Pending ticket after M days (M must be more than N when both
+  are on, `TICKETS-0018`). **Decision made here:** "close" a silent Pending ticket means *Cancelled* with a reason, not Resolved, so it never counts as a resolution
+  in the SLA reports. `TicketAutomationService` runs `TicketAutomationRunner` every `Tickets:AutomationMinutes` (60); each ticket is saved by itself.
 - [ ] **S8** Whole solution green, README and ROADMAP updated; then lessons 22–26 written, followed in the scratch project, ANSWER-KEY and GLOSSARY.
 
 ### Y4–Y7: decisions made ahead (detail each milestone's steps when the one before it is done)

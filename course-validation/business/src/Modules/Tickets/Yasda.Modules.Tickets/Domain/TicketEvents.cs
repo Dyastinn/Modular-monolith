@@ -22,6 +22,9 @@ internal sealed record TicketPriorityChangedEvent(TicketId TicketId, TicketPrior
 
 internal sealed record TicketPendingEvent(TicketId TicketId, DateTime PendingUtc) : IDomainEvent;
 
+// The ticket has waited on the requester for the days the Admin chose: ask them again. EventId keys the mail.
+internal sealed record PendingReminderEvent(Guid EventId, TicketId TicketId, string Subject, UserId RequesterId) : IDomainEvent;
+
 internal sealed record TicketResumedEvent(TicketId TicketId, DateTime ResumedUtc) : IDomainEvent;
 
 // Someone now has the ticket. Self-assignment (Take, or an agent's reply to an unowned ticket) raises it too, with

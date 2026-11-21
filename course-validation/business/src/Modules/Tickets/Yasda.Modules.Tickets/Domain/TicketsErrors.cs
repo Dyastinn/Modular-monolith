@@ -37,6 +37,8 @@ internal static class TicketsErrors
         "Give the category a name of 1 to 100 characters, such as \"Hardware\".");
     public static readonly ErrorCode CategoryNameTaken = new("TICKETS-0016", "A category with that name already exists",
         "Choose another name, or change the existing category.");
+    public static readonly ErrorCode CloseBeforeReminder = new("TICKETS-0018", "A ticket can't be cancelled before its reminder",
+        "Let the requester be reminded first: set the days before the ticket is cancelled higher than the days before the reminder, or switch one of the two rules off.");
     public static readonly ErrorCode CategoryNotAvailable = new("TICKETS-0017", "That category isn't available",
         "Choose a category from the list, or \"Not sure\" and a team lead will sort it.");
 }
