@@ -13,7 +13,7 @@ internal sealed record SearchTicketsQuery(string? Status = null, string? Priorit
     string? Team = null, string? Sort = null, bool Desc = false, int Page = 1, int PageSize = 20);
 
 internal sealed record TicketSummaryDto(long Id, string Subject, string Status, string Priority, long RequesterId, string RequesterName,
-    long? AssigneeId, string? AssigneeName, DateTime CreatedUtc, DateTime UpdatedUtc, DateTime? NextDueUtc, DateTime? AtRiskFromUtc,
+    long? AssigneeId, string? AssigneeName, DateTime CreatedUtc, DateTime UpdatedUtc, DateTime? NextDueUtc, DateTime? AtRiskFromUtc, bool? SlaPaused,
     string? TeamName, string? CategoryName);
 
 internal sealed class SearchTicketsValidator : AbstractValidator<SearchTicketsQuery>
@@ -80,7 +80,7 @@ internal sealed class SearchTicketsHandler(IDbConnectionFactory connections, ICu
         if (!isStaff)
         {
             for (var i = 0; i < items.Count; i++)
-                items[i] = items[i] with { NextDueUtc = null, AtRiskFromUtc = null };
+                items[i] = items[i] with { NextDueUtc = null, AtRiskFromUtc = null, SlaPaused = null };
         }
         return new PagedResult<TicketSummaryDto>(items, q.Page, q.PageSize, total);
     }

@@ -58,6 +58,22 @@ internal sealed class PublishTicketPriorityChanged(IIntegrationEventPublisher pu
     }
 }
 
+internal sealed class PublishTicketPending(IIntegrationEventPublisher publisher) : IDomainEventHandler<TicketPendingEvent>
+{
+    public async Task HandleAsync(TicketPendingEvent domainEvent, CancellationToken ct)
+    {
+        await publisher.PublishAsync(new TicketPending(domainEvent.TicketId.Value, domainEvent.PendingUtc), ct);
+    }
+}
+
+internal sealed class PublishTicketResumed(IIntegrationEventPublisher publisher) : IDomainEventHandler<TicketResumedEvent>
+{
+    public async Task HandleAsync(TicketResumedEvent domainEvent, CancellationToken ct)
+    {
+        await publisher.PublishAsync(new TicketResumed(domainEvent.TicketId.Value, domainEvent.ResumedUtc), ct);
+    }
+}
+
 // Tickets' domain keeps its own priority enum; the public one lives in the Contracts project. Both have the same names.
 internal static class PublishedPriority
 {

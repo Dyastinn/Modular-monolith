@@ -205,6 +205,10 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("next_due_utc");
 
+                    b.Property<bool>("Paused")
+                        .HasColumnType("boolean")
+                        .HasColumnName("paused");
+
                     b.Property<bool?>("ResolutionMet")
                         .HasColumnType("boolean")
                         .HasColumnName("resolution_met");

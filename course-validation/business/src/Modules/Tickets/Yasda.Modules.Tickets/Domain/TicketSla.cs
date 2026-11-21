@@ -15,6 +15,7 @@ internal sealed class TicketSla
     public bool? ResolutionMet { get; private set; }
     public DateTime? NextDueUtc { get; private set; }
     public DateTime? AtRiskFromUtc { get; private set; }
+    public bool Paused { get; private set; }
 
     public static TicketSla ForTicket(TicketId ticketId)
     {
@@ -23,7 +24,7 @@ internal sealed class TicketSla
 
     // Deliveries can repeat and arrive out of order. Only a newer version is taken, and the answer says whether it was.
     public bool Apply(int version, DateTime responseDueUtc, bool? responseMet, DateTime resolveDueUtc, bool? resolutionMet,
-        DateTime? nextDueUtc, DateTime? atRiskFromUtc)
+        DateTime? nextDueUtc, DateTime? atRiskFromUtc, bool paused)
     {
         if (version <= Version) return false;
 
@@ -34,6 +35,7 @@ internal sealed class TicketSla
         ResolutionMet = resolutionMet;
         NextDueUtc = nextDueUtc;
         AtRiskFromUtc = atRiskFromUtc;
+        Paused = paused;
         return true;
     }
 }

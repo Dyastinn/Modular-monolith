@@ -9,11 +9,11 @@ CREATE OR REPLACE FUNCTION tickets.search_tickets(
     p_sort text, p_desc boolean, p_page integer, p_page_size integer)
 RETURNS TABLE (id bigint, subject text, status text, priority text, requester_id bigint, requester_name text,
                assignee_id bigint, assignee_name text, created_utc timestamptz, updated_utc timestamptz,
-               next_due_utc timestamptz, at_risk_from_utc timestamptz, team_name text, category_name text)
+               next_due_utc timestamptz, at_risk_from_utc timestamptz, sla_paused boolean, team_name text, category_name text)
 LANGUAGE sql STABLE
 AS $$
     SELECT t.id, t.subject::text, t.status::text, t.priority::text, t.requester_id, t.requester_name::text,
-           t.assignee_id, t.assignee_name::text, t.created_utc, t.updated_utc, s.next_due_utc, s.at_risk_from_utc,
+           t.assignee_id, t.assignee_name::text, t.created_utc, t.updated_utc, s.next_due_utc, s.at_risk_from_utc, s.paused,
            t.team_name::text, t.category_name::text
     FROM tickets.ticket t
     LEFT JOIN tickets.ticket_sla s ON s.ticket_id = t.id

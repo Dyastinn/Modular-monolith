@@ -686,8 +686,12 @@ Steps (build first, commit each; lessons after):
 - [x] **S3a** `SlaClock` counts open time through the calendar (due times and the at-risk point, now stored per target); a calendar
   or policy save recomputes every running clock in the same save (F10, `ClockRecalculator`). Done 2026-11-21. The policy screen's text
   changed: a policy edit now reaches running tickets (this replaces Y3's decision D5, "new tickets only").
-- [ ] **S3b** Policies gain an optional per-category override (`TicketCreated` gains `CategoryId`, then a screen to edit overrides).
-- [ ] **S4** Pause and resume: `TicketPending` pauses, new `TicketResumed` resumes; `DeadlinesChanged.Paused`; screen shows "Paused".
+- [ ] **S3b (moved after S7: it is an extra, not part of "done" in CLAUDE.md §6)** Policies gain an optional per-category override (`TicketCreated` gains `CategoryId`, then a screen to edit overrides).
+- [x] **S4** Pause and resume: `TicketPending` pauses, new `TicketResumed` resumes (requester's answer, or routing that drops the owner);
+  `DeadlinesChanged.Paused`; the queue and ticket page say "Paused". Done 2026-11-21. The clock adds up the *open* time paused (`PausedFor`, kept to
+  the microsecond) and every due time is start + target + paused; resolving while paused ends the pause first; an agent's answer while paused is
+  measured against a due time that includes the pause so far. Cost to name in the lesson: `PausedFor` is a duration, so a later calendar edit does
+  not re-count a pause that already ended.
 - [ ] **S5** `SlaScheduler` (`FOR UPDATE SKIP LOCKED` through EF `FromSql` in a transaction, injected `TimeProvider`); warn once, breach once; mails through `IMailQueue`; `A_restart_mid_breach_escalates_once`.
 - [ ] **S6** Review mail (E9).
 - [ ] **S7** Automatic rules and their settings screen (E4).

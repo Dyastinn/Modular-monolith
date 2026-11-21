@@ -111,7 +111,7 @@ else
             <tbody>
                 @foreach (var t in _result.Items)
                 {
-                    var sla = Format.Sla(t.NextDueUtc, t.AtRiskFromUtc, Time.GetUtcNow().UtcDateTime);
+                    var sla = Format.Sla(t.NextDueUtc, t.AtRiskFromUtc, Time.GetUtcNow().UtcDateTime, t.SlaPaused == true);
                     <tr class="@RowClass(sla)">
                         <td class="num">@t.Id</td>
                         <td class="truncate"><a href="@($"tickets/{t.Id}")">@t.Subject</a></td>

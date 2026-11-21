@@ -73,6 +73,15 @@ public class FormatTests
     }
 
     [Fact]
+    public void A_paused_clock_says_paused_whatever_the_times_are()
+    {
+        var view = Format.Sla(NoonToday.AddHours(-3), NoonToday.AddHours(-5), NoonToday, paused: true);
+
+        view.State.Should().Be("paused");
+        view.Text.Should().Be("Paused");
+    }
+
+    [Fact]
     public void Nothing_running_says_nothing()
     {
         var view = Format.Sla(null, null, NoonToday);

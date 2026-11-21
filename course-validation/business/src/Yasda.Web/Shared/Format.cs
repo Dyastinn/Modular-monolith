@@ -31,9 +31,10 @@ public static class Format
 
     // An SLA deadline as DESIGN.md 5.2 says it: "Breached 40m ago", "1h 10m left" or "6h left", and which of the three it is
     // (the screens color the first two, and mark their rows). The server decides when a ticket is at risk (Sla's rule);
-    // this only compares those two times with now. No deadline running (a finished ticket) says nothing.
-    public static SlaView Sla(DateTime? nextDueUtc, DateTime? atRiskFromUtc, DateTime nowUtc)
+    // this only compares those two times with now. A ticket waiting on the requester says "Paused": no time is counting. No deadline running (a finished ticket) says nothing.
+    public static SlaView Sla(DateTime? nextDueUtc, DateTime? atRiskFromUtc, DateTime nowUtc, bool paused = false)
     {
+        if (paused) return new SlaView("Paused", "paused");
         if (nextDueUtc is null) return new SlaView("", "none");
 
         if (nowUtc > nextDueUtc)

@@ -71,7 +71,7 @@ public class SlaClockTests
     {
         var clock = NewClock();
 
-        clock.RecordResponse(Now.AddHours(1));
+        clock.RecordResponse(Now.AddHours(1), AllDay);
 
         clock.ResponseMet.Should().BeTrue();
         var changed = OnlyEventOf(clock);
@@ -85,7 +85,7 @@ public class SlaClockTests
     {
         var clock = NewClock();
 
-        clock.RecordResponse(Now.AddHours(4));
+        clock.RecordResponse(Now.AddHours(4), AllDay);
 
         clock.ResponseMet.Should().BeTrue();
     }
@@ -95,7 +95,7 @@ public class SlaClockTests
     {
         var clock = NewClock();
 
-        clock.RecordResponse(Now.AddHours(4).AddMinutes(1));
+        clock.RecordResponse(Now.AddHours(4).AddMinutes(1), AllDay);
 
         clock.ResponseMet.Should().BeFalse();
     }
@@ -104,10 +104,10 @@ public class SlaClockTests
     public void A_second_response_changes_nothing()
     {
         var clock = NewClock();
-        clock.RecordResponse(Now.AddHours(1));
+        clock.RecordResponse(Now.AddHours(1), AllDay);
         clock.ClearEvents();
 
-        clock.RecordResponse(Now.AddHours(3));
+        clock.RecordResponse(Now.AddHours(3), AllDay);
 
         clock.RespondedUtc.Should().Be(Now.AddHours(1));
         clock.Version.Should().Be(2);
@@ -120,8 +120,8 @@ public class SlaClockTests
         var onTime = NewClock();
         var late = NewClock();
 
-        onTime.RecordResolution(Now.AddHours(24));
-        late.RecordResolution(Now.AddHours(24).AddMinutes(1));
+        onTime.RecordResolution(Now.AddHours(24), AllDay);
+        late.RecordResolution(Now.AddHours(24).AddMinutes(1), AllDay);
 
         onTime.ResolutionMet.Should().BeTrue();
         late.ResolutionMet.Should().BeFalse();
@@ -131,9 +131,9 @@ public class SlaClockTests
     public void Resolving_after_the_response_leaves_nothing_running()
     {
         var clock = NewClock();
-        clock.RecordResponse(Now.AddHours(1));
+        clock.RecordResponse(Now.AddHours(1), AllDay);
 
-        clock.RecordResolution(Now.AddHours(5));
+        clock.RecordResolution(Now.AddHours(5), AllDay);
 
         clock.NextDueUtc.Should().BeNull();
         clock.AtRiskFromUtc.Should().BeNull();
@@ -143,7 +143,7 @@ public class SlaClockTests
     public void Reopening_runs_the_resolve_target_again_with_the_same_due_time()
     {
         var clock = NewClock();
-        clock.RecordResolution(Now.AddHours(5));
+        clock.RecordResolution(Now.AddHours(5), AllDay);
         clock.ClearEvents();
 
         clock.Reopen(Now.AddHours(6));
@@ -160,7 +160,7 @@ public class SlaClockTests
         var clock = NewClock();
 
         clock.Reopen(Now.AddHours(6));
-        clock.RecordResolution(Now.AddHours(5));
+        clock.RecordResolution(Now.AddHours(5), AllDay);
 
         clock.ResolvedUtc.Should().BeNull();
         clock.ResolutionMet.Should().BeNull();
@@ -170,12 +170,12 @@ public class SlaClockTests
     public void A_repeated_resolution_or_reopen_changes_nothing()
     {
         var clock = NewClock();
-        clock.RecordResolution(Now.AddHours(5));
+        clock.RecordResolution(Now.AddHours(5), AllDay);
         clock.Reopen(Now.AddHours(6));
         clock.ClearEvents();
         var version = clock.Version;
 
-        clock.RecordResolution(Now.AddHours(5));
+        clock.RecordResolution(Now.AddHours(5), AllDay);
         clock.Reopen(Now.AddHours(6));
 
         clock.Version.Should().Be(version);
@@ -187,9 +187,9 @@ public class SlaClockTests
     public void A_resolution_that_arrives_after_a_later_resolution_is_ignored()
     {
         var clock = NewClock();
-        clock.RecordResolution(Now.AddHours(5));
+        clock.RecordResolution(Now.AddHours(5), AllDay);
         clock.Reopen(Now.AddHours(6));
-        clock.RecordResolution(Now.AddHours(7));
+        clock.RecordResolution(Now.AddHours(7), AllDay);
 
         clock.Reopen(Now.AddHours(6));
 
@@ -218,8 +218,8 @@ public class SlaClockTests
         clock.Cancel();
         clock.ClearEvents();
 
-        clock.RecordResponse(Now.AddHours(1));
-        clock.RecordResolution(Now.AddHours(2));
+        clock.RecordResponse(Now.AddHours(1), AllDay);
+        clock.RecordResolution(Now.AddHours(2), AllDay);
         clock.Reopen(Now.AddHours(3));
         clock.ChangeTargets(Priority.Critical, Now.AddHours(4), TimeSpan.FromHours(1), TimeSpan.FromHours(4), AllDay);
         clock.Cancel();
@@ -246,7 +246,7 @@ public class SlaClockTests
     public void A_priority_change_leaves_a_finished_target_alone()
     {
         var clock = NewClock();
-        clock.RecordResponse(Now.AddHours(1));
+        clock.RecordResponse(Now.AddHours(1), AllDay);
 
         clock.ChangeTargets(Priority.Low, Now.AddHours(2), TimeSpan.FromHours(24), TimeSpan.FromHours(120), AllDay);
 
@@ -287,7 +287,7 @@ public class SlaClockTests
         var clock = SlaClock.Start(Ticket, Priority.High, startedInDatabase, Respond, Resolve, AllDay);
         var eventTime = startedInDatabase.AddHours(4).AddTicks(8);
 
-        clock.RecordResponse(eventTime);
+        clock.RecordResponse(eventTime, AllDay);
 
         clock.ResponseMet.Should().BeTrue();
     }
@@ -297,7 +297,7 @@ public class SlaClockTests
     {
         var clock = NewClock();
 
-        clock.RecordResolution(Now.AddHours(1));
+        clock.RecordResolution(Now.AddHours(1), AllDay);
 
         clock.ResolutionMet.Should().BeTrue();
         clock.ResponseMet.Should().BeNull();
@@ -319,7 +319,7 @@ public class SlaClockTests
     {
         var clock = NewClock();
 
-        clock.RecordResponse(Now.AddHours(1));
+        clock.RecordResponse(Now.AddHours(1), AllDay);
 
         // A 24 hour target is at risk for its last 6 hours.
         clock.AtRiskFromUtc.Should().Be(Now.AddHours(18));
@@ -411,7 +411,7 @@ public class SlaClockTests
     {
         var friday4pm = ManilaTime(11, 20, 16);
         var clock = SlaClock.Start(Ticket, Priority.High, friday4pm, TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
-        clock.RecordResponse(ManilaTime(11, 23, 9));
+        clock.RecordResponse(ManilaTime(11, 23, 9), AllDay);
         var dueBefore = clock.ResponseDueUtc;
 
         clock.Recalculate(TimeSpan.FromHours(1), TimeSpan.FromHours(8), OfficeWeek(new DateOnly(2026, 11, 23)));
@@ -441,10 +441,153 @@ public class SlaClockTests
         var clock = NewClock();
         clock.IsRunning.Should().BeTrue();
 
-        clock.RecordResponse(Now.AddHours(1));
+        clock.RecordResponse(Now.AddHours(1), AllDay);
         clock.IsRunning.Should().BeTrue();
 
-        clock.RecordResolution(Now.AddHours(2));
+        clock.RecordResolution(Now.AddHours(2), AllDay);
         clock.IsRunning.Should().BeFalse();
+    }
+
+    // ---- Pause and resume: a ticket waiting on the requester stops the clock. Mon 2026-11-23 09:00 Manila, 4 hours to respond.
+
+    private static SlaClock MondayMorningClock()
+    {
+        var clock = SlaClock.Start(Ticket, Priority.High, ManilaTime(11, 23, 9), TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek());
+        clock.ClearEvents();
+        return clock;
+    }
+
+    [Fact]
+    public void Pausing_stops_the_clock_so_nothing_is_due_or_at_risk_and_the_event_says_paused()
+    {
+        var clock = MondayMorningClock();
+
+        clock.Pause(ManilaTime(11, 23, 10));
+
+        clock.IsPaused.Should().BeTrue();
+        clock.NextDueUtc.Should().BeNull();
+        clock.AtRiskFromUtc.Should().BeNull();
+        var changed = OnlyEventOf(clock);
+        changed.Paused.Should().BeTrue();
+        changed.NextDueUtc.Should().BeNull();
+    }
+
+    [Fact]
+    public void Resuming_adds_the_open_time_it_was_paused_to_the_deadlines()
+    {
+        var clock = MondayMorningClock();
+        clock.Pause(ManilaTime(11, 23, 10));
+        clock.ClearEvents();
+
+        // Paused Monday 10:00 to Tuesday 10:00: 7 open hours on Monday and 2 on Tuesday.
+        clock.Resume(ManilaTime(11, 24, 10), OfficeWeek());
+
+        clock.IsPaused.Should().BeFalse();
+        clock.PausedFor.Should().Be(TimeSpan.FromHours(9));
+        clock.ResponseDueUtc.Should().Be(ManilaTime(11, 24, 13), "4 open hours after 09:00 was 13:00 Monday; 9 paused hours later it is 13:00 Tuesday");
+        var changed = OnlyEventOf(clock);
+        changed.Paused.Should().BeFalse();
+        changed.NextDueUtc.Should().Be(ManilaTime(11, 24, 13));
+    }
+
+    [Fact]
+    public void A_pause_over_a_weekend_costs_nothing_for_the_closed_days()
+    {
+        var clock = MondayMorningClock();
+        clock.Pause(ManilaTime(11, 27, 16));
+
+        // Friday 16:00 to the next Monday 09:00: one open hour on Friday and one on Monday.
+        clock.Resume(ManilaTime(11, 30, 9), OfficeWeek());
+
+        clock.PausedFor.Should().Be(TimeSpan.FromHours(2));
+    }
+
+    [Fact]
+    public void A_repeated_pause_or_resume_changes_nothing()
+    {
+        var clock = MondayMorningClock();
+        clock.Pause(ManilaTime(11, 23, 10));
+        clock.Resume(ManilaTime(11, 23, 11), OfficeWeek());
+        clock.ClearEvents();
+        var version = clock.Version;
+
+        clock.Pause(ManilaTime(11, 23, 10));
+        clock.Resume(ManilaTime(11, 23, 11), OfficeWeek());
+        clock.Resume(ManilaTime(11, 23, 12), OfficeWeek());
+
+        clock.Version.Should().Be(version);
+        clock.DomainEvents.Should().BeEmpty();
+        clock.PausedFor.Should().Be(TimeSpan.FromHours(1));
+    }
+
+    [Fact]
+    public void A_resume_that_arrives_before_its_pause_leaves_the_clock_running()
+    {
+        var clock = MondayMorningClock();
+
+        clock.Resume(ManilaTime(11, 23, 11), OfficeWeek());
+        clock.Pause(ManilaTime(11, 23, 10));
+
+        clock.IsPaused.Should().BeFalse();
+        clock.DomainEvents.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Pausing_a_clock_with_nothing_left_running_or_a_cancelled_one_changes_nothing()
+    {
+        var finished = MondayMorningClock();
+        finished.RecordResponse(ManilaTime(11, 23, 10), OfficeWeek());
+        finished.RecordResolution(ManilaTime(11, 23, 11), OfficeWeek());
+        var cancelled = MondayMorningClock();
+        cancelled.Cancel();
+        finished.ClearEvents();
+        cancelled.ClearEvents();
+
+        finished.Pause(ManilaTime(11, 23, 12));
+        cancelled.Pause(ManilaTime(11, 23, 12));
+
+        finished.IsPaused.Should().BeFalse();
+        cancelled.IsPaused.Should().BeFalse();
+        finished.DomainEvents.Should().BeEmpty();
+        cancelled.DomainEvents.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Resolving_while_paused_ends_the_pause_and_counts_the_paused_time_so_the_resolution_is_on_time()
+    {
+        var clock = MondayMorningClock();
+        clock.Pause(ManilaTime(11, 23, 10));
+
+        // The resolve target is 24 open hours (due Wednesday 15:00 without a pause). Resolved Wednesday 16:00 after a long pause.
+        clock.RecordResolution(ManilaTime(11, 25, 16), OfficeWeek());
+
+        clock.IsPaused.Should().BeFalse();
+        clock.ResolutionMet.Should().BeTrue();
+    }
+
+    [Fact]
+    public void A_response_given_while_paused_is_measured_against_a_due_time_that_includes_the_pause_so_far()
+    {
+        var clock = MondayMorningClock();
+        clock.Pause(ManilaTime(11, 23, 10));
+
+        // Due Monday 13:00 without a pause. The agent answers Tuesday 09:00 while the ticket still waits.
+        clock.RecordResponse(ManilaTime(11, 24, 9), OfficeWeek());
+
+        clock.ResponseMet.Should().BeTrue();
+        clock.IsPaused.Should().BeTrue("answering does not end the wait");
+    }
+
+    [Fact]
+    public void Changing_the_calendar_while_paused_keeps_the_clock_paused()
+    {
+        var clock = MondayMorningClock();
+        clock.Pause(ManilaTime(11, 23, 10));
+        clock.ClearEvents();
+
+        clock.Recalculate(TimeSpan.FromHours(4), TimeSpan.FromHours(24), OfficeWeek(new DateOnly(2026, 11, 25)));
+
+        clock.IsPaused.Should().BeTrue();
+        clock.NextDueUtc.Should().BeNull();
     }
 }

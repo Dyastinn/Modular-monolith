@@ -8,4 +8,4 @@ internal sealed record DeadlinesChangedEvent(
     TicketId TicketId, int Version,
     DateTime ResponseDueUtc, bool? ResponseMet,
     DateTime ResolveDueUtc, bool? ResolutionMet,
-    DateTime? NextDueUtc, DateTime? AtRiskFromUtc) : IDomainEvent;
+    DateTime? NextDueUtc, DateTime? AtRiskFromUtc, bool Paused) : IDomainEvent;

@@ -102,6 +102,7 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
                     resolution_met = table.Column<bool>(type: "boolean", nullable: true),
                     next_due_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
                     at_risk_from_utc = table.Column<DateTime>(type: "timestamp with time zone", nullable: true),
+                    paused = table.Column<bool>(type: "boolean", nullable: false),
                     xmin = table.Column<uint>(type: "xid", rowVersion: true, nullable: false)
                 },
                 constraints: table =>

@@ -85,6 +85,9 @@ internal sealed class SlaDbContext(DbContextOptions<SlaDbContext> options) : DbC
             e.Ignore(x => x.NextDueUtc);
             e.Ignore(x => x.AtRiskFromUtc);
             e.Ignore(x => x.IsRunning);
+            e.Ignore(x => x.IsPaused);
+            // Open time paused is kept to the microsecond: the minutes the targets use would lose up to a minute per pause.
+            e.Property(x => x.PausedFor).HasConversion<MicrosecondsConverter>();
             e.Ignore(x => x.DomainEvents);
         });
 
@@ -192,6 +195,7 @@ internal sealed class SlaDbContext(DbContextOptions<SlaDbContext> options) : DbC
 internal sealed class TicketIdConverter() : ValueConverter<TicketId, long>(v => v.Value, v => new TicketId(v));
 internal sealed class UserIdConverter() : ValueConverter<UserId, long>(v => v.Value, v => new UserId(v));
 internal sealed class CalendarIdConverter() : ValueConverter<CalendarId, int>(v => v.Value, v => new CalendarId(v));
+internal sealed class MicrosecondsConverter() : ValueConverter<TimeSpan, long>(v => v.Ticks / 10, v => TimeSpan.FromTicks(v * 10));
 internal sealed class MinutesConverter() : ValueConverter<TimeSpan, int>(v => (int)v.TotalMinutes, v => TimeSpan.FromMinutes(v));
 
 // For `dotnet ef migrations add`; never connects.

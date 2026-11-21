@@ -55,9 +55,25 @@ namespace Yasda.Modules.Sla.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("cancelled");
 
+                    b.Property<DateTime?>("LastPausedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_paused_utc");
+
                     b.Property<DateTime?>("LastReopenedUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("last_reopened_utc");
+
+                    b.Property<DateTime?>("LastResumedUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_resumed_utc");
+
+                    b.Property<long>("PausedFor")
+                        .HasColumnType("bigint")
+                        .HasColumnName("paused_for");
+
+                    b.Property<DateTime?>("PausedSinceUtc")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("paused_since_utc");
 
                     b.Property<string>("Priority")
                         .IsRequired()

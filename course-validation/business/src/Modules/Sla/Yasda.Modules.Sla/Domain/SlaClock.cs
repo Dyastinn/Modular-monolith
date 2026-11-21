@@ -23,6 +23,14 @@ internal sealed class SlaClock : AggregateRoot<TicketId>
     public DateTime ResolveAtRiskUtc { get; private set; }
     public DateTime? ResolvedUtc { get; private set; }
     public bool Cancelled { get; private set; }
+
+    // While the ticket waits on the requester no time counts. PausedSinceUtc is set during a pause; PausedFor adds up the open
+    // time of the pauses already over, and every due time is the start plus the target plus PausedFor.
+    public DateTime? PausedSinceUtc { get; private set; }
+    public TimeSpan PausedFor { get; private set; }
+    public DateTime? LastPausedUtc { get; private set; }
+    public DateTime? LastResumedUtc { get; private set; }
+    public bool IsPaused => PausedSinceUtc is not null;
     public int Version { get; private set; }
 
     // Kept so a late event can be recognized as late.
@@ -53,7 +61,7 @@ internal sealed class SlaClock : AggregateRoot<TicketId>
     {
         get
         {
-            if (Cancelled) return null;
+            if (Cancelled || IsPaused) return null;
             if (RespondedUtc is null) return ResponseDueUtc;
             if (ResolvedUtc is null) return ResolveDueUtc;
             return null;
@@ -65,7 +73,7 @@ internal sealed class SlaClock : AggregateRoot<TicketId>
     {
         get
         {
-            if (Cancelled) return null;
+            if (Cancelled || IsPaused) return null;
             if (RespondedUtc is null) return ResponseAtRiskUtc;
             if (ResolvedUtc is null) return ResolveAtRiskUtc;
             return null;
@@ -89,27 +97,69 @@ internal sealed class SlaClock : AggregateRoot<TicketId>
         return clock;
     }
 
-    // The first answer to the requester. Only the first counts.
-    public void RecordResponse(DateTime atUtc)
+    // The first answer to the requester. Only the first counts. An answer given during a pause is measured against a due time that
+    // already includes the pause so far.
+    public void RecordResponse(DateTime atUtc, BusinessCalendar calendar)
     {
         if (Cancelled) return;
         if (RespondedUtc is not null) return;
 
-        RespondedUtc = WholeMicroseconds(atUtc);
+        atUtc = WholeMicroseconds(atUtc);
+        if (PausedSinceUtc is not null && atUtc > PausedSinceUtc)
+        {
+            var pausedSoFar = PausedFor + calendar.Between(PausedSinceUtc.Value, atUtc);
+            ResponseDueUtc = WholeMicroseconds(calendar.Add(StartedUtc, RespondWithin + pausedSoFar));
+        }
+
+        RespondedUtc = atUtc;
         Changed();
     }
 
     // The ticket was resolved. Resolving does not count as a response: only an agent's public reply stops the response target
     // (decision of 2026-11-20), so a ticket fixed with no reply keeps showing its unanswered target.
     // A resolution that happened before the last reopen is old news, and one already known is a repeat.
-    public void RecordResolution(DateTime atUtc)
+    // Resolving ends a pause: the time paused until now is added to the deadlines first, so it is measured fairly.
+    public void RecordResolution(DateTime atUtc, BusinessCalendar calendar)
     {
         atUtc = WholeMicroseconds(atUtc);
         if (Cancelled) return;
         if (ResolvedUtc is not null) return;
         if (LastReopenedUtc is not null && atUtc < LastReopenedUtc) return;
 
+        if (IsPaused) EndPause(atUtc, calendar);
         ResolvedUtc = atUtc;
+        Changed();
+    }
+
+    // The ticket now waits on the requester: the clock stops. A repeat, or a pause that was already followed by a resume, changes
+    // nothing. Needs no calendar: the paused time is added up when the pause ends.
+    public void Pause(DateTime atUtc)
+    {
+        atUtc = WholeMicroseconds(atUtc);
+        if (!IsRunning) return;
+        if (LastPausedUtc is not null && atUtc <= LastPausedUtc) return;
+
+        LastPausedUtc = atUtc;
+        if (LastResumedUtc is not null && atUtc <= LastResumedUtc) return;
+        if (IsPaused) return;
+
+        PausedSinceUtc = atUtc;
+        Changed();
+    }
+
+    // The ticket no longer waits: the open time it was paused is added to every running target, and the due times are worked
+    // out again.
+    public void Resume(DateTime atUtc, BusinessCalendar calendar)
+    {
+        atUtc = WholeMicroseconds(atUtc);
+        if (Cancelled) return;
+        if (LastResumedUtc is not null && atUtc <= LastResumedUtc) return;
+
+        LastResumedUtc = atUtc;
+        if (!IsPaused) return;
+        if (atUtc < PausedSinceUtc) return;
+
+        EndPause(atUtc, calendar);
         Changed();
     }
 
@@ -175,23 +225,33 @@ internal sealed class SlaClock : AggregateRoot<TicketId>
     // True while at least one target is still running: a clock whose deadlines can still move.
     public bool IsRunning => !Cancelled && (RespondedUtc is null || ResolvedUtc is null);
 
-    private (Priority, TimeSpan, DateTime, DateTime, TimeSpan, DateTime, DateTime) Snapshot()
+    private (Priority, TimeSpan, DateTime, DateTime, TimeSpan, DateTime, DateTime, DateTime?) Snapshot()
     {
-        return (Priority, RespondWithin, ResponseDueUtc, ResponseAtRiskUtc, ResolveWithin, ResolveDueUtc, ResolveAtRiskUtc);
+        return (Priority, RespondWithin, ResponseDueUtc, ResponseAtRiskUtc, ResolveWithin, ResolveDueUtc, ResolveAtRiskUtc, PausedSinceUtc);
     }
 
     private void SetResponseTarget(TimeSpan within, BusinessCalendar calendar)
     {
         RespondWithin = within;
-        ResponseDueUtc = WholeMicroseconds(calendar.Add(StartedUtc, within));
-        ResponseAtRiskUtc = WholeMicroseconds(calendar.Add(StartedUtc, within * AtRiskAfterFraction));
+        ResponseDueUtc = WholeMicroseconds(calendar.Add(StartedUtc, within + PausedFor));
+        ResponseAtRiskUtc = WholeMicroseconds(calendar.Add(StartedUtc, within * AtRiskAfterFraction + PausedFor));
     }
 
     private void SetResolveTarget(TimeSpan within, BusinessCalendar calendar)
     {
         ResolveWithin = within;
-        ResolveDueUtc = WholeMicroseconds(calendar.Add(StartedUtc, within));
-        ResolveAtRiskUtc = WholeMicroseconds(calendar.Add(StartedUtc, within * AtRiskAfterFraction));
+        ResolveDueUtc = WholeMicroseconds(calendar.Add(StartedUtc, within + PausedFor));
+        ResolveAtRiskUtc = WholeMicroseconds(calendar.Add(StartedUtc, within * AtRiskAfterFraction + PausedFor));
+    }
+
+    // Adds the open time of the pause that is ending, and works the running targets out again. The caller raises the event.
+    private void EndPause(DateTime atUtc, BusinessCalendar calendar)
+    {
+        PausedFor = PausedFor + calendar.Between(PausedSinceUtc!.Value, atUtc);
+        PausedSinceUtc = null;
+
+        if (RespondedUtc is null) SetResponseTarget(RespondWithin, calendar);
+        if (ResolvedUtc is null) SetResolveTarget(ResolveWithin, calendar);
     }
 
     // PostgreSQL keeps whole microseconds; a time with finer ticks would compare differently before and after the clock is
@@ -206,6 +266,6 @@ internal sealed class SlaClock : AggregateRoot<TicketId>
     {
         Version++;
         Raise(new DeadlinesChangedEvent(Id, Version, ResponseDueUtc, ResponseMet, ResolveDueUtc, ResolutionMet,
-            NextDueUtc, AtRiskFromUtc));
+            NextDueUtc, AtRiskFromUtc, IsPaused));
     }
 }

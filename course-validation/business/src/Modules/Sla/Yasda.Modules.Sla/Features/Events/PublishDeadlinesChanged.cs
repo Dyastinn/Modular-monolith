@@ -11,7 +11,7 @@ internal sealed class PublishDeadlinesChanged(IIntegrationEventPublisher publish
     {
         var published = new DeadlinesChanged(domainEvent.TicketId.Value, domainEvent.Version,
             domainEvent.ResponseDueUtc, domainEvent.ResponseMet, domainEvent.ResolveDueUtc, domainEvent.ResolutionMet,
-            domainEvent.NextDueUtc, domainEvent.AtRiskFromUtc);
+            domainEvent.NextDueUtc, domainEvent.AtRiskFromUtc, domainEvent.Paused);
         await publisher.PublishAsync(published, ct);
     }
 }

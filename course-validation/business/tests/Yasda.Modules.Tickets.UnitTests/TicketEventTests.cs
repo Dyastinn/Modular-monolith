@@ -154,7 +154,7 @@ public class TicketEventTests
     }
 
     [Fact]
-    public void Taking_waiting_and_closing_raise_nothing_only_resolving_does()
+    public void Taking_and_closing_raise_nothing_waiting_raises_pending_and_resolving_raises_resolved()
     {
         var ticket = NewTicket();
         ticket.ClearEvents();
@@ -164,7 +164,33 @@ public class TicketEventTests
         ticket.Resolve(Now.AddMinutes(3));
         ticket.Close(Now.AddMinutes(4));
 
-        SlaEventsOf(ticket).Should().ContainSingle().Which.Should().BeOfType<TicketResolvedEvent>();
+        SlaEventsOf(ticket).Should().Equal(new TicketPendingEvent(Id, Now.AddMinutes(2)), new TicketResolvedEvent(Id, Now.AddMinutes(3)));
+    }
+
+    [Fact]
+    public void Waiting_on_the_requester_raises_pending_and_their_answer_raises_resumed()
+    {
+        var ticket = OpenTicket();
+        ticket.MarkPending(Now.AddMinutes(5));
+        ticket.ClearEvents();
+
+        ticket.Reply(Requester, "Rita Cruz", "Here you go.", isInternal: false, authorIsStaff: false, Now.AddMinutes(9));
+
+        SlaEventsOf(ticket).Should().ContainSingle().Which.Should().Be(new TicketResumedEvent(Id, Now.AddMinutes(9)));
+        ticket.Status.Should().Be(TicketStatus.Open);
+    }
+
+    [Fact]
+    public void An_agent_reply_or_a_note_while_waiting_does_not_resume_the_clock()
+    {
+        var ticket = OpenTicket();
+        ticket.MarkPending(Now.AddMinutes(5));
+        ticket.ClearEvents();
+
+        ticket.Reply(Agent, "Alan Reyes", "Reminder.", isInternal: false, authorIsStaff: true, Now.AddMinutes(9), authorIsMember: true);
+        ticket.Reply(Agent, "Alan Reyes", "Note.", isInternal: true, authorIsStaff: true, Now.AddMinutes(10));
+
+        SlaEventsOf(ticket).Should().NotContain(e => e is TicketResumedEvent);
     }
 
     [Fact]

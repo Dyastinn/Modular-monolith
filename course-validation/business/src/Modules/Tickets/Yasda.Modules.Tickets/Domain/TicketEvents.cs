@@ -20,6 +20,10 @@ internal sealed record TicketCancelledEvent(TicketId TicketId, DateTime Cancelle
 
 internal sealed record TicketPriorityChangedEvent(TicketId TicketId, TicketPriority Priority, DateTime ChangedUtc) : IDomainEvent;
 
+internal sealed record TicketPendingEvent(TicketId TicketId, DateTime PendingUtc) : IDomainEvent;
+
+internal sealed record TicketResumedEvent(TicketId TicketId, DateTime ResumedUtc) : IDomainEvent;
+
 // Someone now has the ticket. Self-assignment (Take, or an agent's reply to an unowned ticket) raises it too, with
 // AssignedById equal to AssigneeId; the mail handler skips that case.
 internal sealed record TicketAssignedEvent(Guid EventId, TicketId TicketId, string Subject, UserId AssigneeId, UserId AssignedById) : IDomainEvent;

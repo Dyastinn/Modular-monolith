@@ -21,7 +21,7 @@ internal sealed class StoreDeadlines(TicketsDbContext db) : IIntegrationEventHan
         }
 
         var applied = stored.Apply(integrationEvent.Version, integrationEvent.ResponseDueUtc, integrationEvent.ResponseMet,
-            integrationEvent.ResolveDueUtc, integrationEvent.ResolutionMet, integrationEvent.NextDueUtc, integrationEvent.AtRiskFromUtc);
+            integrationEvent.ResolveDueUtc, integrationEvent.ResolutionMet, integrationEvent.NextDueUtc, integrationEvent.AtRiskFromUtc, integrationEvent.Paused);
         if (!applied) return;
 
         await db.SaveChangesAsync(ct);

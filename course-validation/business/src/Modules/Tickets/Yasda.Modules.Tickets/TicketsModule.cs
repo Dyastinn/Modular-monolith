@@ -45,6 +45,8 @@ public static class TicketsModule
         services.AddScoped<IDomainEventHandler<TicketReopenedEvent>, PublishTicketReopened>();
         services.AddScoped<IDomainEventHandler<TicketCancelledEvent>, PublishTicketCancelled>();
         services.AddScoped<IDomainEventHandler<TicketPriorityChangedEvent>, PublishTicketPriorityChanged>();
+        services.AddScoped<IDomainEventHandler<TicketPendingEvent>, PublishTicketPending>();
+        services.AddScoped<IDomainEventHandler<TicketResumedEvent>, PublishTicketResumed>();
         services.AddScoped<IDomainEventHandler<TicketCreatedEvent>, EmailOnNewTicket>();
         services.AddScoped<IDomainEventHandler<TicketAssignedEvent>, EmailOnAssignment>();
         services.AddScoped<IDomainEventHandler<ReplyAddedEvent>, EmailOnReply>();

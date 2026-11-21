@@ -19,9 +19,9 @@ public class SlaTests(CustomWebAppFactory factory)
 
     private sealed record Created(long Id);
     private sealed record Sla(DateTime ResponseDueUtc, bool? ResponseMet, DateTime ResolveDueUtc, bool? ResolutionMet,
-        DateTime? NextDueUtc, DateTime? AtRiskFromUtc);
+        DateTime? NextDueUtc, DateTime? AtRiskFromUtc, bool Paused);
     private sealed record TicketView(long Id, string Status, string Priority, DateTime CreatedUtc, Sla? Sla);
-    private sealed record Row(long Id, DateTime? NextDueUtc, DateTime? AtRiskFromUtc);
+    private sealed record Row(long Id, DateTime? NextDueUtc, DateTime? AtRiskFromUtc, bool? SlaPaused);
     private sealed record Page(List<Row> Items);
 
     // The installation's calendar (Monday to Friday, 08:00 to 17:00, Manila). The tests ask it where a deadline should land, so they
@@ -173,6 +173,29 @@ public class SlaTests(CustomWebAppFactory factory)
         // Critical is 1 open hour to respond and 4 to resolve, still counted from when the ticket was filed.
         after.Sla!.ResponseDueUtc.Should().Be(DueAfter(after.CreatedUtc, TimeSpan.FromHours(1)));
         after.Sla.ResolveDueUtc.Should().Be(DueAfter(after.CreatedUtc, TimeSpan.FromHours(4)));
+    }
+
+    // Waiting on the requester stops the clock (decision E4): nothing is due while paused, and the requester's answer starts it again.
+    [Fact]
+    public async Task A_ticket_waiting_on_the_requester_pauses_its_clock_and_their_answer_resumes_it()
+    {
+        var requester = await factory.ClientFor(Requester);
+        var agent = await factory.ClientFor(Agent);
+        var id = await File(requester, "High");
+        await ReadUntil(agent, id, HasDeadlines);
+        (await agent.PostAsync($"/api/tickets/{id}/take", null)).EnsureSuccessStatusCode();
+
+        (await agent.PostAsync($"/api/tickets/{id}/pending", null)).EnsureSuccessStatusCode();
+        var paused = await ReadUntil(agent, id, t => t.Sla?.Paused == true);
+        paused.Sla!.NextDueUtc.Should().BeNull("a paused clock has nothing due");
+        paused.Sla.AtRiskFromUtc.Should().BeNull();
+        var queue = await agent.GetFromJsonAsync<Page>($"/api/tickets?search={id}&pageSize=100");
+        queue!.Items.Single(t => t.Id == id).SlaPaused.Should().BeTrue();
+
+        (await requester.PostAsJsonAsync($"/api/tickets/{id}/replies", new { body = "Here is the answer." })).EnsureSuccessStatusCode();
+        var running = await ReadUntil(agent, id, t => t.Sla?.Paused == false);
+        running.Sla!.NextDueUtc.Should().NotBeNull("the clock runs again");
+        running.Sla.ResponseDueUtc.Should().BeOnOrAfter(paused.Sla.ResponseDueUtc, "the time spent waiting is not held against the team");
     }
 
     [Fact]

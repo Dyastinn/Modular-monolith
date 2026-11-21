@@ -108,6 +108,7 @@ internal sealed class Ticket : AggregateRoot<TicketId>
         {
             AssigneeId = null;
             AssigneeName = null;
+            if (Status == TicketStatus.Pending) Raise(new TicketResumedEvent(Id, nowUtc));
             if (Status is TicketStatus.Open or TicketStatus.Pending) Status = TicketStatus.New;
         }
         UpdatedUtc = nowUtc;
@@ -124,7 +125,11 @@ internal sealed class Ticket : AggregateRoot<TicketId>
         if (!isInternal && !authorIsStaff)
         {
             // The requester answered: the ball is back with the agents.
-            if (Status == TicketStatus.Pending) Status = TicketStatus.Open;
+            if (Status == TicketStatus.Pending)
+            {
+                Status = TicketStatus.Open;
+                Raise(new TicketResumedEvent(Id, nowUtc));
+            }
             else if (Status == TicketStatus.Resolved) Reopen(nowUtc);
         }
         else if (!isInternal)
@@ -151,6 +156,7 @@ internal sealed class Ticket : AggregateRoot<TicketId>
     {
         EnsureIn("wait on the requester", TicketStatus.Open);
         Move(TicketStatus.Pending, nowUtc);
+        Raise(new TicketPendingEvent(Id, nowUtc));
     }
 
     public void Resolve(DateTime nowUtc)

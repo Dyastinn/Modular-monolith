@@ -29,7 +29,7 @@ else
             }
             Assigned: @(_ticket.AssigneeName ?? "Nobody yet") · Requester: @_ticket.RequesterName ·
             Filed <TimeAgo Utc="_ticket.CreatedUtc" /> · Updated <TimeAgo Utc="_ticket.UpdatedUtc" />
-            @if (IsStaff && _ticket.Sla is not null && _ticket.Sla.NextDueUtc is not null)
+            @if (IsStaff && _ticket.Sla is not null && (_ticket.Sla.NextDueUtc is not null || _ticket.Sla.Paused))
             {
                 <text> · SLA: </text><SlaText View="CurrentSla()" />
             }
@@ -202,7 +202,7 @@ else
     private SlaView CurrentSla()
     {
         if (_ticket?.Sla is null) return new SlaView("", "none");
-        return Format.Sla(_ticket.Sla.NextDueUtc, _ticket.Sla.AtRiskFromUtc, Time.GetUtcNow().UtcDateTime);
+        return Format.Sla(_ticket.Sla.NextDueUtc, _ticket.Sla.AtRiskFromUtc, Time.GetUtcNow().UtcDateTime, _ticket.Sla.Paused);
     }
 
     protected override void OnInitialized()

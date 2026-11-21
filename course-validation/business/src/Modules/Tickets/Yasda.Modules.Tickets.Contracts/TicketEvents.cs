@@ -16,3 +16,9 @@ public sealed record TicketReopened(long TicketId, DateTime ReopenedUtc) : IInte
 public sealed record TicketCancelled(long TicketId, DateTime CancelledUtc) : IIntegrationEvent;
 
 public sealed record TicketPriorityChanged(long TicketId, TicketPriority Priority, DateTime ChangedUtc) : IIntegrationEvent;
+
+// The ticket is waiting on the requester, and its SLA clock stops until the requester answers (or the ticket moves on).
+public sealed record TicketPending(long TicketId, DateTime PendingUtc) : IIntegrationEvent;
+
+// The ticket is no longer waiting on the requester: its SLA clock runs again.
+public sealed record TicketResumed(long TicketId, DateTime ResumedUtc) : IIntegrationEvent;

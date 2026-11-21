@@ -42,7 +42,8 @@ internal sealed class StopResponseOnFirstReply(SlaDbContext db) : IIntegrationEv
     public async Task HandleAsync(FirstAgentReply integrationEvent, CancellationToken ct)
     {
         var clock = await db.GetClockAsync(integrationEvent.TicketId, ct);
-        clock.RecordResponse(integrationEvent.RepliedUtc);
+        var calendar = await db.GetBusinessCalendarAsync(ct);
+        clock.RecordResponse(integrationEvent.RepliedUtc, calendar);
         await db.SaveChangesAsync(ct);
     }
 }
@@ -52,7 +53,8 @@ internal sealed class StopResolveOnTicketResolved(SlaDbContext db) : IIntegratio
     public async Task HandleAsync(TicketResolved integrationEvent, CancellationToken ct)
     {
         var clock = await db.GetClockAsync(integrationEvent.TicketId, ct);
-        clock.RecordResolution(integrationEvent.ResolvedUtc);
+        var calendar = await db.GetBusinessCalendarAsync(ct);
+        clock.RecordResolution(integrationEvent.ResolvedUtc, calendar);
         await db.SaveChangesAsync(ct);
     }
 }
@@ -63,6 +65,27 @@ internal sealed class RestartResolveOnTicketReopened(SlaDbContext db) : IIntegra
     {
         var clock = await db.GetClockAsync(integrationEvent.TicketId, ct);
         clock.Reopen(integrationEvent.ReopenedUtc);
+        await db.SaveChangesAsync(ct);
+    }
+}
+
+internal sealed class PauseClockOnTicketPending(SlaDbContext db) : IIntegrationEventHandler<TicketPending>
+{
+    public async Task HandleAsync(TicketPending integrationEvent, CancellationToken ct)
+    {
+        var clock = await db.GetClockAsync(integrationEvent.TicketId, ct);
+        clock.Pause(integrationEvent.PendingUtc);
+        await db.SaveChangesAsync(ct);
+    }
+}
+
+internal sealed class ResumeClockOnTicketResumed(SlaDbContext db) : IIntegrationEventHandler<TicketResumed>
+{
+    public async Task HandleAsync(TicketResumed integrationEvent, CancellationToken ct)
+    {
+        var clock = await db.GetClockAsync(integrationEvent.TicketId, ct);
+        var calendar = await db.GetBusinessCalendarAsync(ct);
+        clock.Resume(integrationEvent.ResumedUtc, calendar);
         await db.SaveChangesAsync(ct);
     }
 }

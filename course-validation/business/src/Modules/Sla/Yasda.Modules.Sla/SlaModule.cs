@@ -38,6 +38,8 @@ public static class SlaModule
         services.AddScoped<IIntegrationEventHandler<FirstAgentReply>, StopResponseOnFirstReply>();
         services.AddScoped<IIntegrationEventHandler<TicketResolved>, StopResolveOnTicketResolved>();
         services.AddScoped<IIntegrationEventHandler<TicketReopened>, RestartResolveOnTicketReopened>();
+        services.AddScoped<IIntegrationEventHandler<TicketPending>, PauseClockOnTicketPending>();
+        services.AddScoped<IIntegrationEventHandler<TicketResumed>, ResumeClockOnTicketResumed>();
         services.AddScoped<IIntegrationEventHandler<TicketCancelled>, StopClockOnTicketCancelled>();
         services.AddScoped<IIntegrationEventHandler<TicketPriorityChanged>, ChangeTargetsOnPriorityChanged>();
         services.AddScoped<IDomainEventHandler<DeadlinesChangedEvent>, PublishDeadlinesChanged>();

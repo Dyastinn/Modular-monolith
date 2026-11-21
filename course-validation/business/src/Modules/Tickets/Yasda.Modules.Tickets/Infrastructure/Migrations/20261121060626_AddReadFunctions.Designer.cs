@@ -12,7 +12,7 @@ using Yasda.Modules.Tickets.Infrastructure;
 namespace Yasda.Modules.Tickets.Infrastructure.Migrations
 {
     [DbContext(typeof(TicketsDbContext))]
-    [Migration("20261120171003_AddReadFunctions")]
+    [Migration("20261121060626_AddReadFunctions")]
     partial class AddReadFunctions
     {
         /// <inheritdoc />
@@ -207,6 +207,10 @@ namespace Yasda.Modules.Tickets.Infrastructure.Migrations
                     b.Property<DateTime?>("NextDueUtc")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("next_due_utc");
+
+                    b.Property<bool>("Paused")
+                        .HasColumnType("boolean")
+                        .HasColumnName("paused");
 
                     b.Property<bool?>("ResolutionMet")
                         .HasColumnType("boolean")

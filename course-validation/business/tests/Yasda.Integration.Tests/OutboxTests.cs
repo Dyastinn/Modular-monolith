@@ -38,8 +38,10 @@ public class OutboxTests(CustomWebAppFactory factory)
             new TicketsDomain.TicketReopenedEvent(ticketsId, at),
             new TicketsDomain.TicketCancelledEvent(ticketsId, at),
             new TicketsDomain.TicketPriorityChangedEvent(ticketsId, TicketsDomain.TicketPriority.Critical, at),
-            new SlaDomain.DeadlinesChangedEvent(new SlaDomain.TicketId(7), 3, at, true, at.AddHours(20), null, at.AddHours(20), at.AddHours(15)),
-            new SlaDomain.DeadlinesChangedEvent(new SlaDomain.TicketId(8), 1, at, null, at.AddHours(20), false, null, null),
+            new TicketsDomain.TicketPendingEvent(ticketsId, at),
+            new TicketsDomain.TicketResumedEvent(ticketsId, at),
+            new SlaDomain.DeadlinesChangedEvent(new SlaDomain.TicketId(7), 3, at, true, at.AddHours(20), null, at.AddHours(20), at.AddHours(15), false),
+            new SlaDomain.DeadlinesChangedEvent(new SlaDomain.TicketId(8), 1, at, null, at.AddHours(20), false, null, null, true),
         ];
 
         foreach (var original in events)
@@ -59,6 +61,7 @@ public class OutboxTests(CustomWebAppFactory factory)
             typeof(TicketsDomain.TicketCreatedEvent), typeof(TicketsDomain.TicketAssignedEvent), typeof(TicketsDomain.ReplyAddedEvent),
             typeof(TicketsDomain.FirstAgentReplyEvent), typeof(TicketsDomain.TicketResolvedEvent),
             typeof(TicketsDomain.TicketReopenedEvent), typeof(TicketsDomain.TicketCancelledEvent), typeof(TicketsDomain.TicketPriorityChangedEvent),
+            typeof(TicketsDomain.TicketPendingEvent), typeof(TicketsDomain.TicketResumedEvent),
             typeof(SlaDomain.DeadlinesChangedEvent),
         };
         Type[] anchors = [typeof(TicketsDomain.Ticket), typeof(SlaDomain.SlaClock)];
